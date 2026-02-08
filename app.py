@@ -34,9 +34,9 @@ print(f"----> DATABASE: {'SUPABASE (PostgreSQL)' if db_url else 'LOCAL (SQLite)'
 
 db.init_app(app)
 
-@app.route('/')
-def index():
-    return render_template('index.html')
+# @app.route('/')
+# def index():
+#     return render_template('index.html')
 
 @app.route('/configuracion')
 def taxonomy_page():
