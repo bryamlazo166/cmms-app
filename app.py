@@ -904,8 +904,50 @@ def handle_notices():
             last = MaintenanceNotice.query.order_by(MaintenanceNotice.id.desc()).first()
             next_id = (last.id if last else 0) + 1
             clean_data['code'] = f"AV-{next_id:04d}"
+
+            # --- DUPLICATE DETECTION LOGIC ---
+            is_duplicate = False
+            duplicate_reason = ""
             
-            return create_entry(MaintenanceNotice, clean_data, [])
+            target_equip = clean_data.get('equipment_id')
+            if target_equip:
+                # 1. Check for Active Notices (Pendiente, En Progreso, En Tratamiento)
+                existing_notice = MaintenanceNotice.query.filter(
+                    MaintenanceNotice.equipment_id == target_equip,
+                    MaintenanceNotice.status.in_(['Pendiente', 'En Progreso', 'En Tratamiento'])
+                ).first()
+                
+                if existing_notice:
+                    is_duplicate = True
+                    duplicate_reason = f"Aviso previo activo ({existing_notice.code})"
+
+                # 2. Check for Active Work Orders (Abierta, Programada, En Progreso)
+                if not is_duplicate:
+                    existing_ot = WorkOrder.query.filter(
+                        WorkOrder.equipment_id == target_equip,
+                        WorkOrder.status.in_(['Abierta', 'Programada', 'En Progreso'])
+                    ).first()
+                    
+                    if existing_ot:
+                        is_duplicate = True
+                        duplicate_reason = f"OT activa asociada ({existing_ot.code})"
+            
+            if is_duplicate:
+                clean_data['status'] = 'Duplicado'
+                original_desc = clean_data.get('description', '') or ''
+                clean_data['description'] = f"[POSIBLE DUPLICADO: {duplicate_reason}] {original_desc}"
+                logger.warning(f"Notice marked as duplicate: {duplicate_reason}")
+
+            new_entry = MaintenanceNotice(**clean_data)
+            db.session.add(new_entry)
+            db.session.commit()
+            
+            resp_data = new_entry.to_dict()
+            if is_duplicate:
+                resp_data['is_duplicate'] = True
+                resp_data['duplicate_reason'] = duplicate_reason
+                
+            return jsonify(resp_data), 201
         except Exception as e:
             db.session.rollback()
             import traceback

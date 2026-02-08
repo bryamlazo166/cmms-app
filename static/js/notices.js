@@ -80,6 +80,7 @@ async function loadNotices() {
             if (n.status === 'En Progreso') statusColor = '#00bcd4';
             if (n.status === 'Cerrado') statusColor = '#4caf50';
             if (n.status === 'Anulado') statusColor = '#757575';
+            if (n.status === 'Duplicado') statusColor = '#ff5722';
 
             const statusBadge = `<span style="background-color: ${statusColor}; color: white; padding: 2px 8px; border-radius: 4px; font-size: 0.85em;">${n.status || 'Pendiente'}</span>`;
 
@@ -142,7 +143,8 @@ function updateKPIIndicators(notices) {
         'Pendiente': { bg: '#ff9800', text: '#000' },
         'En Tratamiento': { bg: '#2196f3', text: '#fff' },
         'En Progreso': { bg: '#00bcd4', text: '#000' },
-        'Cerrado': { bg: '#4caf50', text: '#fff' }
+        'Cerrado': { bg: '#4caf50', text: '#fff' },
+        'Duplicado': { bg: '#ff5722', text: '#fff' }
     };
 
     const statusCounts = {};
@@ -221,8 +223,13 @@ async function saveNotice(e) {
             body: JSON.stringify(data)
         });
         if (res.ok) {
+            const respJson = await res.json();
             document.getElementById('noticeModal').close();
             loadNotices();
+
+            if (respJson.is_duplicate) {
+                alert(`⚠️ ATENCIÓN: El aviso fue creado pero marcado como DUPLICADO.\nMotivo: ${respJson.duplicate_reason}`);
+            }
         } else {
             alert("Error guardando aviso");
         }
