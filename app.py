@@ -100,6 +100,10 @@ def dashboard_stats():
         logger.error(f"Dashboard Stats Error: {e}")
         return jsonify({"error": str(e)}), 500
 
+@app.route('/')
+def index():
+    return redirect(url_for('notices_page'))
+
 @app.route('/avisos')
 def notices_page():
     return render_template('notices.html')
