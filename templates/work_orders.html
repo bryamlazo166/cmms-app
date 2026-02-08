@@ -1,0 +1,825 @@
+<!DOCTYPE html>
+<html lang="es">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Gestión de Órdenes de Trabajo - CMMS</title>
+    <link rel="stylesheet" href="/static/css/style.css">
+    <link rel="stylesheet" href="/static/css/kanban.css">
+    <link rel="stylesheet" href="/static/css/sidebar.css">
+    <script src='https://cdn.jsdelivr.net/npm/fullcalendar@6.1.10/index.global.min.js'></script>
+    <link href="https://fonts.googleapis.com/css2?family=Roboto:wght@300;400;500;700&display=swap" rel="stylesheet">
+    <!-- FontAwesome for Icons -->
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css">
+</head>
+
+<body>
+
+    <nav class="sidebar">
+        <div class="logo-details">
+            <i class="fas fa-industry icon"></i>
+            <div class="logo_name">CMMS Pro</div>
+            <i class="fas fa-bars" id="btn_toggle"></i>
+        </div>
+        <ul class="nav-list">
+            <li>
+                <a href="/">
+                    <i class="fas fa-chart-line"></i>
+                    <span class="links_name">Dashboard</span>
+                </a>
+                <span class="tooltip">Dashboard</span>
+            </li>
+            <li>
+                <a href="/avisos">
+                    <i class="fas fa-bell"></i>
+                    <span class="links_name">Avisos</span>
+                </a>
+                <span class="tooltip">Avisos</span>
+            </li>
+            <li>
+                <a href="/ordenes">
+                    <i class="fas fa-tools"></i>
+                    <span class="links_name">Órdenes</span>
+                </a>
+                <span class="tooltip">Órdenes</span>
+            </li>
+            <li>
+                <a href="/compras">
+                    <i class="fas fa-shopping-cart"></i>
+                    <span class="links_name">Compras</span>
+                </a>
+                <span class="tooltip">Compras</span>
+            </li>
+            <li>
+                <a href="/almacen">
+                    <i class="fas fa-boxes"></i>
+                    <span class="links_name">Almacén</span>
+                </a>
+                <span class="tooltip">Almacén</span>
+            </li>
+            <li>
+                <a href="/configuracion">
+                    <i class="fas fa-sitemap"></i>
+                    <span class="links_name">Activos</span>
+                </a>
+                <span class="tooltip">Activos</span>
+            </li>
+            <li>
+                <a href="/reportes">
+                    <i class="fas fa-file-contract"></i>
+                    <span class="links_name">Reportes</span>
+                </a>
+                <span class="tooltip">Reportes</span>
+            </li>
+        </ul>
+    </nav>
+    <section class="home-section">
+        <div class="top-bar">
+            <h1><i class="fas fa-tools"></i> Gestión de Órdenes de Trabajo (OT)</h1>
+        </div>
+        <div class="main-container">
+
+            <div class="container-fluid">
+
+                <!-- TABS NAVIGATION -->
+                <div class="tabs">
+                    <button class="tab-link active" onclick="openTab(event, 'tab-planning')"><i
+                            class="fas fa-calendar-alt"></i>
+                        Planificación</button>
+                    <button class="tab-link" onclick="openTab(event, 'tab-execution')"><i class="fas fa-hard-hat"></i>
+                        Ejecución
+                        y Cierre</button>
+                    <button class="tab-link" onclick="openTab(event, 'tab-providers')"><i class="fas fa-users-cog"></i>
+                        Proveedores</button>
+                    <button class="tab-link" onclick="openTab(event, 'tab-technicians')"><i
+                            class="fas fa-user-hard-hat"></i>
+                        Técnicos</button>
+                    <button class="tab-link" onclick="openTab(event, 'tab-notices')"><i
+                            class="fas fa-clipboard-list"></i>
+                        Avisos Pendientes</button>
+                </div>
+
+                <!-- TAB: PLANIFICACION -->
+                <div id="tab-planning" class="tab-content active">
+                    <div class="toolbar">
+                        <button class="btn-primary" onclick="openCreateOTModal()"><i class="fas fa-plus"></i> Nueva OT
+                            (Manual)</button>
+                        <a href="/api/export-ots" target="_blank" style="text-decoration:none;">
+                            <button class="btn-secondary"
+                                style="background:#28a745; color:white; border:none; padding: 10px 20px;">
+                                <i class="fas fa-file-excel"></i> Exportar
+                            </button>
+                        </a>
+                        <div class="search-bar">
+                            <input type="text" id="searchPlanning" placeholder="Buscar OT...">
+                        </div>
+
+                        <div class="view-toggle"
+                            style="margin-left: 10px; display: flex; background: #333; border-radius: 4px; padding: 2px;">
+                            <button id="viewListBtn" class="btn-icon active" onclick="switchView('list')"
+                                style="padding: 8px 12px; background: #555; border:none; color:white;"><i
+                                    class="fas fa-list"></i></button>
+                            <button id="viewKanbanBtn" class="btn-icon" onclick="switchView('kanban')"
+                                style="padding: 8px 12px; background: transparent; border:none; color:#aaa;"><i
+                                    class="fas fa-columns"></i></button>
+                            <button id="viewCalendarBtn" class="btn-icon" onclick="switchView('calendar')"
+                                style="padding: 8px 12px; background: transparent; border:none; color:#aaa;"
+                                title="Calendario"><i class="fas fa-calendar-alt"></i></button>
+                        </div>
+                    </div>
+
+                    <div id="listView" class="table-container">
+                        <table class="data-table" id="planningTable">
+                            <thead>
+                                <tr>
+                                    <th>Código</th>
+                                    <th>Aviso Rel.</th>
+                                    <th>Área</th>
+                                    <th>Línea</th>
+                                    <th>Equipo</th>
+                                    <th>Sistema</th>
+                                    <th>Componente</th>
+                                    <th>Criticidad</th>
+                                    <th>Descripción</th>
+                                    <th>Tipo</th>
+                                    <th>Estado</th>
+                                    <th>Prioridad</th>
+                                    <th>Fecha Prog.</th>
+                                    <th>Técnico/Prov.</th>
+                                    <th>Acciones</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                <!-- Populated by JS -->
+                            </tbody>
+                        </table>
+                    </div>
+                    <div id="kanbanView" class="kanban-board"
+                        style="display: none; gap: 15px; overflow-x: auto; padding-bottom: 20px;">
+                        <!-- COL 1: Abierta -->
+                        <div class="kanban-column"
+                            style="background: #1e1e1e; min-width: 300px; border-radius: 8px; border: 1px solid #333; display: flex; flex-direction: column;">
+                            <div
+                                style="background: #252526; padding: 15px; border-bottom: 2px solid #ff9800; font-weight: bold; display: flex; justify-content: space-between;">
+                                <span><i class="fas fa-clock" style="color:#ff9800;"></i> Abiertas</span>
+                                <span class="badge-count" id="count-Abierta">0</span>
+                            </div>
+                            <div class="kanban-body" id="col-Abierta" ondrop="drop(event, 'Abierta')"
+                                ondragover="allowDrop(event)"
+                                style="padding: 10px; flex: 1; overflow-y: auto; height: 600px;">
+                            </div>
+                        </div>
+
+                        <!-- COL 2: Programada -->
+                        <div class="kanban-column"
+                            style="background: #1e1e1e; min-width: 300px; border-radius: 8px; border: 1px solid #333; display: flex; flex-direction: column;">
+                            <div
+                                style="background: #252526; padding: 15px; border-bottom: 2px solid #2196f3; font-weight: bold; display: flex; justify-content: space-between;">
+                                <span><i class="fas fa-calendar-alt" style="color:#2196f3;"></i> Programadas</span>
+                                <span class="badge-count" id="count-Programada">0</span>
+                            </div>
+                            <div class="kanban-body" id="col-Programada" ondrop="drop(event, 'Programada')"
+                                ondragover="allowDrop(event)"
+                                style="padding: 10px; flex: 1; overflow-y: auto; height: 600px;">
+                            </div>
+                        </div>
+
+                        <!-- COL 3: En Progreso -->
+                        <div class="kanban-column"
+                            style="background: #1e1e1e; min-width: 300px; border-radius: 8px; border: 1px solid #333; display: flex; flex-direction: column;">
+                            <div
+                                style="background: #252526; padding: 15px; border-bottom: 2px solid #03dac6; font-weight: bold; display: flex; justify-content: space-between;">
+                                <span><i class="fas fa-tools" style="color:#03dac6;"></i> En Progreso</span>
+                                <span class="badge-count" id="count-En_Progreso">0</span>
+                            </div>
+                            <div class="kanban-body" id="col-En Progreso" ondrop="drop(event, 'En Progreso')"
+                                ondragover="allowDrop(event)"
+                                style="padding: 10px; flex: 1; overflow-y: auto; height: 600px;">
+                            </div>
+                        </div>
+
+                        <!-- COL 4: Cerrada -->
+                        <div class="kanban-column"
+                            style="background: #1e1e1e; min-width: 300px; border-radius: 8px; border: 1px solid #333; display: flex; flex-direction: column;">
+                            <div
+                                style="background: #252526; padding: 15px; border-bottom: 2px solid #4caf50; font-weight: bold; display: flex; justify-content: space-between;">
+                                <span><i class="fas fa-check-circle" style="color:#4caf50;"></i> Cerradas</span>
+                                <span class="badge-count" id="count-Cerrada">0</span>
+                            </div>
+                            <div class="kanban-body" id="col-Cerrada" ondrop="drop(event, 'Cerrada')"
+                                ondragover="allowDrop(event)"
+                                style="padding: 10px; flex: 1; overflow-y: auto; height: 600px;">
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <div id="calendarView"
+                    style="display: none; background: #1e1e1e; padding: 20px; border-radius: 8px; border: 1px solid #333; margin-top: 20px;">
+                    <div id='calendar' style="max-height: 800px;"></div>
+                </div>
+            </div>
+
+            <!-- TAB: EJECUCION -->
+            <div id="tab-execution" class="tab-content">
+                <div class="execution-panel">
+                    <div class="tech-lookup">
+                        <h3>Panel del Técnico</h3>
+                        <input type="text" id="executionSearch"
+                            placeholder="Escanear o buscar Código OT (ej. OT-001)...">
+                        <button class="btn-primary" onclick="searchForExecution()">Buscar</button>
+                    </div>
+
+                    <div id="execution-details" class="execution-card hidden">
+                        <!-- Header de la OT -->
+                        <div
+                            style="display: flex; justify-content: space-between; align-items: center; border-bottom: 2px solid #03dac6; padding-bottom: 10px; margin-bottom: 15px;">
+                            <h2 id="exec-ot-code" style="margin: 0; color: #03dac6;">OT-XXXX</h2>
+                            <div class="status-badge" id="exec-status">Estado</div>
+                        </div>
+
+                        <!-- Resumen de la Tarea -->
+                        <div style="background: #1e1e1e; border-radius: 8px; padding: 15px; margin-bottom: 15px;">
+                            <h4 style="margin: 0 0 10px 0; color: #ff9800;"><i class="fas fa-clipboard-list"></i>
+                                Resumen de
+                                la Tarea</h4>
+                            <p id="exec-desc" style="margin: 0 0 10px 0; font-size: 1.1em;">Descripción...</p>
+                            <div
+                                style="display: grid; grid-template-columns: repeat(auto-fill, minmax(180px, 1fr)); gap: 10px;">
+                                <div><strong style="color: #aaa;">Tipo Mtto:</strong> <span id="exec-type">-</span>
+                                </div>
+                                <div><strong style="color: #aaa;">Prioridad:</strong> <span id="exec-priority">-</span>
+                                </div>
+                                <div><strong style="color: #aaa;">Fecha Prog:</strong> <span
+                                        id="exec-scheduled">-</span>
+                                </div>
+                                <div><strong style="color: #aaa;">Duración Est:</strong> <span
+                                        id="exec-duration">-</span>
+                                </div>
+                                <div><strong style="color: #aaa;">Técnico:</strong> <span id="exec-technician">-</span>
+                                </div>
+                                <div><strong style="color: #aaa;">Proveedor:</strong> <span id="exec-provider">-</span>
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- Lista de Herramientas -->
+                        <div style="background: #1e1e1e; border-radius: 8px; padding: 15px; margin-bottom: 15px;">
+                            <h4 style="margin: 0 0 10px 0; color: #2196f3;"><i class="fas fa-wrench"></i> Herramientas
+                                Requeridas</h4>
+                            <div id="exec-tools-list">
+                                <p style="color: #888; font-style: italic;">Cargando herramientas...</p>
+                            </div>
+                        </div>
+
+                        <!-- Lista de Repuestos -->
+                        <div style="background: #1e1e1e; border-radius: 8px; padding: 15px; margin-bottom: 15px;">
+                            <h4 style="margin: 0 0 10px 0; color: #4caf50;"><i class="fas fa-box"></i> Repuestos
+                                Requeridos
+                            </h4>
+                            <div id="exec-parts-list">
+                                <p style="color: #888; font-style: italic;">Cargando repuestos...</p>
+                            </div>
+                        </div>
+
+                        <!-- Botones de Acción -->
+                        <div class="actions-execution"
+                            style="display: flex; gap: 10px; justify-content: center; padding-top: 10px; border-top: 1px solid #444;">
+                            <button id="btn-start-job" class="btn-success hidden" onclick="startJob()"
+                                style="padding: 12px 30px; font-size: 1.1em;">
+                                <i class="fas fa-play"></i> Iniciar Trabajo
+                            </button>
+                            <button id="btn-finish-job" class="btn-danger hidden" onclick="openCloseModal()"
+                                style="padding: 12px 30px; font-size: 1.1em;">
+                                <i class="fas fa-check-circle"></i> Cerrar Trabajo
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+
+            <!-- TAB: AVISOS PENDIENTES -->
+            <div id="tab-notices" class="tab-content">
+                <div class="toolbar">
+                    <h3 style="margin: 0; color: #03dac6;"><i class="fas fa-clipboard-list"></i> Avisos sin OT -
+                        Convertir a
+                        Orden de Trabajo</h3>
+                </div>
+                <div class="table-container" style="margin-top: 15px;">
+                    <table class="data-table" id="pendingNoticesTable">
+                        <thead>
+                            <tr>
+                                <th>ID</th>
+                                <th>Área Reporta</th>
+                                <th>Equipo</th>
+                                <th>Descripción</th>
+                                <th>Criticidad</th>
+                                <th>Prioridad</th>
+                                <th>F. Solicitud</th>
+                                <th>Estado</th>
+                                <th>Acciones</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            <!-- Populated by JS -->
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+
+            <!-- TAB: PROVEEDORES -->
+            <div id="tab-providers" class="tab-content">
+                <div class="toolbar">
+                    <button class="btn-primary" onclick="openProviderModal()"><i class="fas fa-plus"></i> Nuevo
+                        Proveedor</button>
+                </div>
+                <div class="grid-container" id="providersGrid">
+                    <!-- Cards populated by JS -->
+                </div>
+            </div>
+
+            <!-- TAB: TECNICOS -->
+            <div id="tab-technicians" class="tab-content">
+                <div class="toolbar">
+                    <button class="btn-primary" onclick="openTechnicianModal()"><i class="fas fa-plus"></i> Nuevo
+                        Técnico</button>
+                    <label style="margin-left: 15px;">
+                        <input type="checkbox" id="showInactiveTechs" onchange="loadTechnicians()"> Mostrar inactivos
+                    </label>
+                </div>
+                <div class="grid-container" id="techniciansGrid">
+                    <!-- Cards populated by JS -->
+                </div>
+            </div>
+
+        </div>
+
+        <!-- MODAL: CREATE/EDIT OT -->
+        <dialog id="otModal" style="max-width: 950px; width:95%; max-height: 90vh; overflow-y: auto;">
+            <form id="otForm" method="dialog">
+                <h2>Gestión de Orden de Trabajo</h2>
+                <input type="hidden" id="otId">
+                <input type="hidden" id="otNoticeId">
+
+                <!-- Sub-tabs Navigation -->
+                <div class="ot-subtabs"
+                    style="display: flex; gap: 5px; margin-bottom: 15px; border-bottom: 2px solid #444; padding-bottom: 10px;">
+                    <button type="button" class="ot-subtab active" onclick="openOTSubTab(event, 'ot-tab-general')"
+                        style="padding: 8px 20px; background: #03dac6; color: #000; border: none; border-radius: 5px 5px 0 0; cursor: pointer;">
+                        <i class="fas fa-info-circle"></i> General
+                    </button>
+                    <button type="button" class="ot-subtab" onclick="openOTSubTab(event, 'ot-tab-personal')"
+                        style="padding: 8px 20px; background: #333; color: #aaa; border: none; border-radius: 5px 5px 0 0; cursor: pointer;">
+                        <i class="fas fa-users"></i> Personal
+                    </button>
+                    <button type="button" class="ot-subtab" onclick="openOTSubTab(event, 'ot-tab-materials')"
+                        style="padding: 8px 20px; background: #333; color: #aaa; border: none; border-radius: 5px 5px 0 0; cursor: pointer;">
+                        <i class="fas fa-tools"></i> Materiales
+                    </button>
+                </div>
+
+                <!-- TAB: GENERAL (existing content) -->
+                <div id="ot-tab-general" class="ot-tab-content" style="display: block;">
+                    <!-- Notice Data Section -->
+                    <fieldset style="margin-bottom: 15px;">
+                        <legend>Datos del Aviso</legend>
+                        <div class="form-row">
+                            <div class="form-group">
+                                <label>Quién Reporta</label>
+                                <input type="text" id="otReporterName">
+                            </div>
+                            <div class="form-group">
+                                <label>Especialidad</label>
+                                <select id="otSpecialty">
+                                    <option value="">- Seleccione -</option>
+                                    <option value="MECANICO">MECANICO</option>
+                                    <option value="ELECTRICO">ELECTRICO</option>
+                                </select>
+                            </div>
+                            <div class="form-group">
+                                <label>Turno</label>
+                                <select id="otShift">
+                                    <option value="Día">Día</option>
+                                    <option value="Noche">Noche</option>
+                                </select>
+                            </div>
+                        </div>
+
+                        <!-- FEEDBACK CONTAINER -->
+                        <div id="feedbackContainer"
+                            style="display: none; background: #332b00; padding: 10px; border: 1px solid #ffd700; border-radius: 5px; margin-bottom: 15px;">
+                            <h4 style="margin-top: 0; color: #ffd700;"><i class="fas fa-lightbulb"></i> Lecciones
+                                Aprendidas
+                                (Historial)</h4>
+                            <div id="feedbackList" style="max-height: 150px; overflow-y: auto; font-size: 0.9em;"></div>
+                        </div>
+
+                        <div class="form-group">
+                            <label>Descripción del Aviso</label>
+                            <textarea id="otDescription" required></textarea>
+                        </div>
+                        <div class="form-row">
+                            <div class="form-group">
+                                <label>Criticidad</label>
+                                <select id="otCriticality">
+                                    <option value="Baja">Baja</option>
+                                    <option value="Media">Media</option>
+                                    <option value="Alta">Alta</option>
+                                </select>
+                            </div>
+                            <div class="form-group">
+                                <label>Prioridad</label>
+                                <select id="otPriority">
+                                    <option value="Baja">Baja</option>
+                                    <option value="Media">Media</option>
+                                    <option value="Alta">Alta</option>
+                                    <option value="Emergencia">Emergencia</option>
+                                </select>
+                            </div>
+                        </div>
+                    </fieldset>
+
+                    <!-- OT Data Section -->
+                    <fieldset>
+                        <legend>Datos de la Orden de Trabajo</legend>
+                        <div class="form-row">
+                            <div class="form-group">
+                                <select id="otType">
+                                    <option value="Preventivo">Preventivo</option>
+                                    <option value="Correctivo">Correctivo</option>
+                                    <option value="Predictivo">Predictivo</option>
+                                    <option value="Mejora">Mejora</option>
+                                </select>
+                            </div>
+                            <div class="form-group">
+                                <label>Modo de Falla / Diagnóstico</label>
+                                <input type="text" id="otFailureMode" placeholder="Ej: Desgaste de rodamiento">
+                            </div>
+                            <div class="form-group">
+                                <label>Estado</label>
+                                <select id="otStatus">
+                                    <option value="Abierta">Abierta</option>
+                                    <option value="Programada">Programada</option>
+                                    <option value="En Progreso">En Progreso</option>
+                                    <option value="Cerrada">Cerrada</option>
+                                </select>
+                            </div>
+                        </div>
+                    </fieldset>
+
+                    <fieldset>
+                        <legend>Asignación</legend>
+                        <div class="form-row">
+                            <div class="form-group">
+                                <label>Proveedor (Opcional)</label>
+                                <select id="otProvider">
+                                    <option value="">- Interno -</option>
+                                </select>
+                            </div>
+                            <div class="form-group">
+                                <label>Técnico / Responsable</label>
+                                <select id="otTechnician">
+                                    <option value="">- Seleccione -</option>
+                                    <!-- Populated by JS -->
+                                </select>
+                            </div>
+                        </div>
+                        <div class="form-row">
+                            <div class="form-group">
+                                <label>Fecha Programada</label>
+                                <input type="date" id="otScheduledDate">
+                            </div>
+                            <div class="form-group">
+                                <label>Duración Est. (Hrs)</label>
+                                <div style="display: flex; gap: 5px;">
+                                    <input type="number" id="otEstDuration" step="0.5">
+                                    <button type="button" class="btn-success" onclick="checkSuggestions()"
+                                        title="Auto-completar desde historial" style="padding: 0 10px;">
+                                        <i class="fas fa-magic"></i>
+                                    </button>
+                                </div>
+                            </div>
+
+                        </div>
+                    </fieldset>
+                </div> <!-- End ot-tab-general -->
+
+                <!-- TAB: PERSONAL -->
+                <div id="ot-tab-personal" class="ot-tab-content" style="display: none;">
+                    <div
+                        style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 15px;">
+                        <h4 style="margin: 0; color: #03dac6;"><i class="fas fa-users"></i> Personal Asignado</h4>
+                        <button type="button" class="btn-primary" onclick="addPersonnelRow()"
+                            style="padding: 5px 15px;">
+                            <i class="fas fa-plus"></i> Agregar Personal
+                        </button>
+                    </div>
+                    <table class="data-table" id="otPersonnelTable" style="width: 100%;">
+                        <thead>
+                            <tr>
+                                <th>Técnico</th>
+                                <th>Especialidad</th>
+                                <th>Horas Asignadas</th>
+                                <th>Acciones</th>
+                            </tr>
+                        </thead>
+                        <tbody id="personnelTableBody">
+                            <!-- Filled by JS -->
+                        </tbody>
+                    </table>
+                    <div id="personnelEmpty" style="text-align: center; color: #888; padding: 20px;">
+                        No hay personal asignado. Haga clic en "Agregar Personal".
+                    </div>
+                </div>
+
+                <!-- TAB: MATERIALS -->
+                <div id="ot-tab-materials" class="ot-tab-content" style="display: none;">
+                    <div
+                        style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 15px;">
+                        <h4 style="margin: 0; color: #03dac6;"><i class="fas fa-tools"></i> Materiales y Herramientas
+                        </h4>
+                        <div>
+                            <button type="button" class="btn-primary" onclick="openAddMaterialModal('warehouse')"
+                                style="padding: 5px 15px;">
+                                <i class="fas fa-box"></i> Agregar Repuesto
+                            </button>
+                            <button type="button" class="btn-secondary" onclick="openAddMaterialModal('tool')"
+                                style="padding: 5px 15px; margin-left: 5px;">
+                                <i class="fas fa-wrench"></i> Agregar Herramienta
+                            </button>
+                            <button type="button" class="btn-primary" onclick="openPurchaseModal()"
+                                style="background: #ff9800; color: black; padding: 5px 15px; margin-left: 5px; border:none;">
+                                <i class="fas fa-shopping-cart"></i> Solicitar Compra
+                            </button>
+                        </div>
+                    </div>
+                    <table class="data-table" id="otMaterialsTable" style="width: 100%;">
+                        <thead>
+                            <tr>
+                                <th>Tipo</th>
+                                <th>Código</th>
+                                <th>Nombre</th>
+                                <th>Cantidad</th>
+                                <th>Acciones</th>
+                            </tr>
+                        </thead>
+                        <tbody id="materialsTableBody">
+                            <!-- Filled by JS -->
+                        </tbody>
+                    </table>
+                    <div id="materialsEmpty" style="text-align: center; color: #888; padding: 20px;">
+                        No hay materiales asignados. Use los botones para agregar.
+                    </div>
+                </div>
+
+                <div class="modal-actions" style="margin-top: 20px;">
+                    <button type="button" class="btn-secondary"
+                        onclick="document.getElementById('otModal').close()">Cancelar</button>
+                    <button type="submit" class="btn-primary">Guardar</button>
+                </div>
+            </form>
+        </dialog>
+
+        <!-- MODAL: PURCHASE REQUEST -->
+        <dialog id="purchaseModal" class="modal">
+            <h3><i class="fas fa-shopping-cart"></i> Solicitud de Compra / Servicio</h3>
+            <form id="purchaseForm" method="dialog">
+                <input type="hidden" id="reqOtId">
+
+                <label>Tipo</label>
+                <select id="reqType" onchange="toggleReqFields()" required
+                    style="width:100%; margin-bottom:10px; padding:5px;">
+                    <option value="MATERIAL">Material / Repuesto (Falta Stock)</option>
+                    <option value="SERVICIO">Servicio Externo</option>
+                </select>
+
+                <div id="fieldMaterial">
+                    <label>Repuesto (Estandarizado)</label>
+                    <div style="position: relative; display: flex; gap: 5px;">
+                        <!-- Search Input -->
+                        <div style="position: relative; flex-grow: 1;">
+                            <input type="text" id="reqSpareSearch" placeholder="🔍 Escriba para buscar repuesto..."
+                                onkeyup="filterSpares()" onfocus="filterSpares()" autocomplete="off"
+                                style="width:100%; padding:8px; background:#333; color:white; border:1px solid #555; border-radius:4px;">
+
+                            <!-- Hidden Real ID -->
+                            <input type="hidden" id="reqSpareId">
+
+                            <!-- Dropdown Results -->
+                            <div id="reqSpareList"
+                                style="display:none; position:absolute; top:100%; left:0; right:0; max-height:200px; overflow-y:auto; background:#252526; border:1px solid #03dac6; z-index:1000; box-shadow: 0 4px 6px rgba(0,0,0,0.5);">
+                                <!-- JS fills this -->
+                            </div>
+                        </div>
+
+                        <button type="button" onclick="loadSparesForReq(true)" title="Actualizar Catálogo"
+                            style="background:#444; border:1px solid #555; color:white; border-radius:4px; padding:0 10px; cursor:pointer;">
+                            <i class="fas fa-sync-alt"></i>
+                        </button>
+                    </div>
+
+                    <!-- Selected Item Display -->
+                    <div id="selectedSpareDisplay"
+                        style="margin-top:5px; font-size:0.9em; color:#03dac6; font-weight:bold; display:none;">
+                        <i class="fas fa-check-circle"></i> <span id="selectedSpareName"></span>
+                        <button type="button" onclick="clearSpareSelection()"
+                            style="background:none; border:none; color:#f44336; cursor:pointer; margin-left:10px;"
+                            title="Quitar selección"><i class="fas fa-times"></i></button>
+                    </div>
+
+                    <small style="color:#aaa;">* Solo repuestos registrados en Almacén</small>
+                </div>
+
+                <div id="fieldService" style="display:none;">
+                    <label>Descripción del Servicio</label>
+                    <textarea id="reqDesc" placeholder="Detalle del trabajo a contratar..."
+                        style="width:100%; height:80px;"></textarea>
+                </div>
+
+                <label>Cantidad</label>
+                <input type="number" id="reqQty" value="1" min="0.1" step="0.1" required
+                    style="width:100%; padding:5px;">
+
+                <!-- ADD TO CART BUTTON -->
+                <div style="text-align:right; margin-top:10px; padding-bottom:15px; border-bottom:1px solid #444;">
+                    <button type="button" class="btn-primary" onclick="addToPurchaseCart()"
+                        style="background:#03dac6; color:black;">
+                        <i class="fas fa-plus"></i> Agregar a la Lista
+                    </button>
+                </div>
+
+                <!-- CART TABLE -->
+                <div style="margin-top:15px;">
+                    <h4 style="margin:5px 0; color:#ddd;">Lista de Items a Solicitar</h4>
+                    <table style="width:100%; border-collapse:collapse; font-size:0.9em;">
+                        <thead>
+                            <tr style="background:#333; color:#aaa; text-align:left;">
+                                <th style="padding:5px;">Tipo</th>
+                                <th style="padding:5px;">Detalle</th>
+                                <th style="padding:5px;">Cant.</th>
+                                <th style="padding:5px; width:40px;"></th>
+                            </tr>
+                        </thead>
+                        <tbody id="purchaseCartBody">
+                            <!-- Filled by JS -->
+                            <tr>
+                                <td colspan="4" style="text-align:center; padding:10px; color:#666;">Lista vacía</td>
+                            </tr>
+                        </tbody>
+                    </table>
+                </div>
+
+                <div class="modal-actions" style="margin-top:20px; border-top:1px solid #444; padding-top:15px;">
+                    <button type="button" class="btn-secondary"
+                        onclick="document.getElementById('purchaseModal').close()">Cancelar / Cerrar</button>
+                    <button type="submit" class="btn-primary" id="btnSubmitPurchase" disabled>
+                        <i class="fas fa-paper-plane"></i> Enviar Solicitud(es)
+                    </button>
+                </div>
+            </form>
+        </dialog>
+
+        <!-- MODAL: ADD MATERIAL -->
+        <dialog id="addMaterialModal"
+            style="background: #252526; color: white; border: 1px solid #444; padding: 20px; border-radius: 8px; max-width: 400px;">
+            <h3 id="addMaterialTitle"><i class="fas fa-box"></i> Agregar Material</h3>
+            <input type="hidden" id="materialType">
+            <div class="form-group">
+                <label>Seleccionar Item</label>
+                <select id="materialItemSelect" style="width: 100%;"></select>
+            </div>
+            <div class="form-group">
+                <label>Cantidad</label>
+                <input type="number" id="materialQuantity" value="1" min="1" style="width: 100%;">
+            </div>
+            <div style="display: flex; gap: 10px; margin-top: 15px;">
+                <button type="button" onclick="document.getElementById('addMaterialModal').close()"
+                    class="btn-secondary">Cancelar</button>
+                <button type="button" onclick="confirmAddMaterial()" class="btn-primary">Agregar</button>
+            </div>
+        </dialog>
+
+        <!-- MODAL: ADD PERSONNEL -->
+        <dialog id="addPersonnelModal"
+            style="background: #252526; color: white; border: 1px solid #444; padding: 20px; border-radius: 8px; max-width: 400px;">
+            <h3><i class="fas fa-user-plus"></i> Agregar Personal</h3>
+            <div class="form-group">
+                <label>Técnico</label>
+                <select id="personnelTechSelect" style="width: 100%;"></select>
+            </div>
+            <div class="form-group">
+                <label>Especialidad</label>
+                <select id="personnelSpecialty" style="width: 100%;">
+                    <option value="MECANICO">MECÁNICO</option>
+                    <option value="ELECTRICO">ELÉCTRICO</option>
+                    <option value="INSTRUMENTISTA">INSTRUMENTISTA</option>
+                    <option value="MULTIDISCIPLINARIO">MULTIDISCIPLINARIO</option>
+                    <option value="SOLDADOR">SOLDADOR</option>
+                    <option value="GENERAL">GENERAL</option>
+                </select>
+            </div>
+            <div class="form-group">
+                <label>Horas Asignadas</label>
+                <input type="number" id="personnelHours" value="8" min="0.5" step="0.5" style="width: 100%;">
+            </div>
+            <div style="display: flex; gap: 10px; margin-top: 15px;">
+                <button type="button" onclick="document.getElementById('addPersonnelModal').close()"
+                    class="btn-secondary">Cancelar</button>
+                <button type="button" onclick="confirmAddPersonnel()" class="btn-primary">Agregar</button>
+            </div>
+        </dialog>
+
+        <!-- MODAL: PROVIDER -->
+        <dialog id="providerModal">
+            <form id="providerForm" method="dialog">
+                <h2>Nuevo Proveedor</h2>
+                <div class="form-group">
+                    <label>Nombre Empresa</label>
+                    <input type="text" id="provName" required>
+                </div>
+                <div class="form-group">
+                    <label>Especialidad</label>
+                    <input type="text" id="provSpecialty">
+                </div>
+                <div class="form-group">
+                    <label>Contacto (Tel/Email)</label>
+                    <input type="text" id="provContact">
+                </div>
+                <div class="modal-actions">
+                    <button type="button" class="btn-secondary"
+                        onclick="document.getElementById('providerModal').close()">Cancelar</button>
+                    <button type="submit" class="btn-primary">Guardar</button>
+                </div>
+            </form>
+        </dialog>
+
+        <!-- MODAL: TECHNICIAN -->
+        <dialog id="technicianModal">
+            <form id="technicianForm" method="dialog">
+                <h2 id="techModalTitle">Nuevo Técnico</h2>
+                <input type="hidden" id="techId">
+                <div class="form-group">
+                    <label>Nombre Completo</label>
+                    <input type="text" id="techName" required>
+                </div>
+                <div class="form-group">
+                    <label>Especialidad</label>
+                    <select id="techSpecialty">
+                        <option value="">- Seleccione -</option>
+                        <option value="MECANICO">MECANICO</option>
+                        <option value="ELECTRICO">ELECTRICO</option>
+                        <option value="INSTRUMENTISTA">INSTRUMENTISTA</option>
+                        <option value="MULTIDISCIPLINARIO">MULTIDISCIPLINARIO</option>
+                    </select>
+                </div>
+                <div class="form-group">
+                    <label>Contacto (Tel/Email)</label>
+                    <input type="text" id="techContact">
+                </div>
+                <div class="modal-actions">
+                    <button type="button" class="btn-secondary"
+                        onclick="document.getElementById('technicianModal').close()">Cancelar</button>
+                    <button type="submit" class="btn-primary">Guardar</button>
+                </div>
+            </form>
+        </dialog>
+
+        <!-- MODAL: CLOSE OT -->
+        <dialog id="closeOTModal">
+            <form id="closeOTForm" method="dialog">
+                <h2>Cierre Técnico de OT</h2>
+                <input type="hidden" id="closeOtId">
+
+                <div class="form-group">
+                    <label>Comentarios de Ejecución</label>
+                    <textarea id="closeComments" required placeholder="Describa el trabajo realizado..."></textarea>
+                </div>
+
+                <div class="form-row">
+                    <div class="form-group">
+                        <label>Inicio Real</label>
+                        <input type="datetime-local" id="realStart" required>
+                    </div>
+                    <div class="form-group">
+                        <label>Fin Real</label>
+                        <input type="datetime-local" id="realEnd" required>
+                    </div>
+                </div>
+
+                <div class="modal-actions">
+                    <button type="button" class="btn-secondary"
+                        onclick="document.getElementById('closeOTModal').close()">Cancelar</button>
+                    <button type="submit" class="btn-danger">Cerrar Orden</button>
+                </div>
+            </form>
+        </dialog>
+
+        <script src="/static/js/work_orders.js"></script>
+        </div>
+    </section>
+    <script src="/static/js/sidebar.js"></script>
+</body>
+
+</html>

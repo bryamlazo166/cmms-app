@@ -1,0 +1,273 @@
+<!DOCTYPE html>
+<html lang="es">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Herramientas - CMMS</title>
+    <link rel="stylesheet" href="/static/css/style.css">
+    <link href="https://fonts.googleapis.com/css2?family=Roboto:wght@300;400;500;700&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css">
+    <style>
+        .status-disponible {
+            background: #4caf50;
+        }
+
+        .status-en-uso {
+            background: #ff9800;
+        }
+
+        .status-mantenimiento {
+            background: #f44336;
+        }
+
+        .tool-card {
+            background: #2d2d2d;
+            border-radius: 10px;
+            padding: 15px;
+            display: flex;
+            flex-direction: column;
+            gap: 10px;
+            border: 1px solid #444;
+            transition: transform 0.2s;
+        }
+
+        .tool-card:hover {
+            transform: translateY(-3px);
+            border-color: #03dac6;
+        }
+
+        .tools-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+            gap: 20px;
+            margin-top: 20px;
+        }
+    </style>
+</head>
+
+<body>
+    <header class="main-header">
+        <h1><i class="fas fa-wrench"></i> Catálogo de Herramientas</h1>
+        <nav>
+            <a href="/" class="btn-nav"><i class="fas fa-home"></i> Inicio</a>
+            <a href="/ordenes" class="btn-nav"><i class="fas fa-tools"></i> Órdenes</a>
+            <a href="/almacen" class="btn-nav"><i class="fas fa-warehouse"></i> Almacén</a>
+            <a href="/reportes" class="btn-nav"><i class="fas fa-chart-line"></i> Reportes</a>
+        </nav>
+    </header>
+
+    <div class="container-fluid">
+        <!-- KPI Cards -->
+        <div style="display: flex; gap: 20px; margin-bottom: 20px; flex-wrap: wrap;">
+            <div
+                style="background: linear-gradient(135deg, #1e3a5f 0%, #2a5298 100%); border-radius: 12px; padding: 20px; min-width: 180px; flex: 1;">
+                <div style="color: #a0c4ff; font-size: 0.85em; text-transform: uppercase;">🔧 Total Herramientas</div>
+                <div id="kpiTotal" style="font-size: 2.5em; font-weight: bold; color: #fff;">0</div>
+            </div>
+            <div
+                style="background: linear-gradient(135deg, #1a472a 0%, #2d6a4f 100%); border-radius: 12px; padding: 20px; min-width: 180px; flex: 1;">
+                <div style="color: #b7e4c7; font-size: 0.85em; text-transform: uppercase;">✅ Disponibles</div>
+                <div id="kpiAvailable" style="font-size: 2.5em; font-weight: bold; color: #fff;">0</div>
+            </div>
+            <div
+                style="background: linear-gradient(135deg, #4a1942 0%, #7b2869 100%); border-radius: 12px; padding: 20px; min-width: 180px; flex: 1;">
+                <div style="color: #ffb6c1; font-size: 0.85em; text-transform: uppercase;">🔄 En Uso</div>
+                <div id="kpiInUse" style="font-size: 2.5em; font-weight: bold; color: #fff;">0</div>
+            </div>
+        </div>
+
+        <!-- Toolbar -->
+        <div class="toolbar">
+            <button class="btn-primary" onclick="openToolModal()">
+                <i class="fas fa-plus"></i> Nueva Herramienta
+            </button>
+            <div class="search-bar">
+                <input type="text" id="searchTools" placeholder="Buscar herramienta..." onkeyup="filterTools()">
+            </div>
+            <label style="display: flex; align-items: center; gap: 5px; color: #aaa;">
+                <input type="checkbox" id="showInactive" onchange="loadTools()"> Mostrar inactivos
+            </label>
+        </div>
+
+        <!-- Tools Grid -->
+        <div class="tools-grid" id="toolsGrid">
+            <!-- Populated by JS -->
+        </div>
+    </div>
+
+    <!-- Modal -->
+    <dialog id="toolModal" class="modal"
+        style="background: #252526; color: white; border: 1px solid #444; padding: 20px; border-radius: 8px; max-width: 450px;">
+        <h3 id="modalTitle"><i class="fas fa-wrench"></i> Nueva Herramienta</h3>
+        <form id="toolForm">
+            <input type="hidden" id="toolId">
+
+            <div style="display: grid; gap: 15px;">
+                <div class="form-group">
+                    <label>Nombre *</label>
+                    <input type="text" id="toolName" required>
+                </div>
+                <div class="form-group">
+                    <label>Categoría</label>
+                    <select id="toolCategory">
+                        <option value="">- Seleccione -</option>
+                        <option value="Manual">Manual</option>
+                        <option value="Eléctrica">Eléctrica</option>
+                        <option value="Neumática">Neumática</option>
+                        <option value="Medición">Medición</option>
+                        <option value="Corte">Corte</option>
+                        <option value="Soldadura">Soldadura</option>
+                        <option value="Seguridad">Seguridad</option>
+                    </select>
+                </div>
+                <div class="form-group">
+                    <label>Descripción</label>
+                    <textarea id="toolDescription" rows="2"></textarea>
+                </div>
+                <div class="form-group">
+                    <label>Estado</label>
+                    <select id="toolStatus">
+                        <option value="Disponible">Disponible</option>
+                        <option value="En Uso">En Uso</option>
+                        <option value="Mantenimiento">Mantenimiento</option>
+                    </select>
+                </div>
+                <div class="form-group">
+                    <label>Ubicación</label>
+                    <input type="text" id="toolLocation" placeholder="Ej: Gabinete B-2">
+                </div>
+            </div>
+
+            <div style="display: flex; justify-content: flex-end; gap: 10px; margin-top: 20px;">
+                <button type="button" onclick="document.getElementById('toolModal').close()"
+                    class="btn-secondary">Cancelar</button>
+                <button type="submit" class="btn-primary">Guardar</button>
+            </div>
+        </form>
+    </dialog>
+
+    <script>
+        let tools = [];
+
+        document.addEventListener('DOMContentLoaded', () => {
+            loadTools();
+            document.getElementById('toolForm').onsubmit = saveTool;
+        });
+
+        async function loadTools() {
+            const showAll = document.getElementById('showInactive')?.checked;
+            const res = await fetch(`/api/tools${showAll ? '?all=true' : ''}`);
+            tools = await res.json();
+            renderTools();
+            updateKPIs();
+        }
+
+        function renderTools() {
+            const grid = document.getElementById('toolsGrid');
+            grid.innerHTML = '';
+
+            tools.forEach(tool => {
+                const statusClass = tool.status === 'Disponible' ? 'status-disponible' :
+                    tool.status === 'En Uso' ? 'status-en-uso' : 'status-mantenimiento';
+
+                const card = document.createElement('div');
+                card.className = 'tool-card';
+                card.style.opacity = tool.is_active ? '1' : '0.5';
+                card.innerHTML = `
+                    <div style="display: flex; justify-content: space-between; align-items: center;">
+                        <strong style="color: #03dac6;">${tool.code}</strong>
+                        <span class="${statusClass}" style="padding: 3px 10px; border-radius: 10px; font-size: 0.8em;">${tool.status}</span>
+                    </div>
+                    <h4 style="margin: 0; color: #fff;">${tool.name}</h4>
+                    <p style="margin: 0; color: #888; font-size: 0.9em;">${tool.description || 'Sin descripción'}</p>
+                    <div style="display: flex; gap: 10px; color: #aaa; font-size: 0.85em;">
+                        <span><i class="fas fa-tag"></i> ${tool.category || 'N/A'}</span>
+                        <span><i class="fas fa-map-marker-alt"></i> ${tool.location || 'N/A'}</span>
+                    </div>
+                    <div style="display: flex; gap: 10px; margin-top: 5px;">
+                        <button onclick="editTool(${tool.id})" class="btn-small"><i class="fas fa-edit"></i> Editar</button>
+                        <button onclick="toggleTool(${tool.id})" class="btn-small" style="background: ${tool.is_active ? '#f44336' : '#4caf50'}">
+                            <i class="fas fa-${tool.is_active ? 'ban' : 'check'}"></i> ${tool.is_active ? 'Desactivar' : 'Activar'}
+                        </button>
+                    </div>
+                `;
+                grid.appendChild(card);
+            });
+        }
+
+        function updateKPIs() {
+            const activeTools = tools.filter(t => t.is_active);
+            document.getElementById('kpiTotal').textContent = activeTools.length;
+            document.getElementById('kpiAvailable').textContent = activeTools.filter(t => t.status === 'Disponible').length;
+            document.getElementById('kpiInUse').textContent = activeTools.filter(t => t.status === 'En Uso').length;
+        }
+
+        function filterTools() {
+            const search = document.getElementById('searchTools').value.toLowerCase();
+            const cards = document.querySelectorAll('.tool-card');
+            cards.forEach(card => {
+                const text = card.textContent.toLowerCase();
+                card.style.display = text.includes(search) ? '' : 'none';
+            });
+        }
+
+        function openToolModal() {
+            document.getElementById('toolForm').reset();
+            document.getElementById('toolId').value = '';
+            document.getElementById('modalTitle').innerHTML = '<i class="fas fa-wrench"></i> Nueva Herramienta';
+            document.getElementById('toolModal').showModal();
+        }
+
+        function editTool(id) {
+            const tool = tools.find(t => t.id === id);
+            if (!tool) return;
+
+            document.getElementById('toolId').value = tool.id;
+            document.getElementById('toolName').value = tool.name;
+            document.getElementById('toolCategory').value = tool.category || '';
+            document.getElementById('toolDescription').value = tool.description || '';
+            document.getElementById('toolStatus').value = tool.status;
+            document.getElementById('toolLocation').value = tool.location || '';
+
+            document.getElementById('modalTitle').innerHTML = '<i class="fas fa-edit"></i> Editar Herramienta';
+            document.getElementById('toolModal').showModal();
+        }
+
+        async function saveTool(e) {
+            e.preventDefault();
+            const id = document.getElementById('toolId').value;
+            const data = {
+                name: document.getElementById('toolName').value,
+                category: document.getElementById('toolCategory').value || null,
+                description: document.getElementById('toolDescription').value || null,
+                status: document.getElementById('toolStatus').value,
+                location: document.getElementById('toolLocation').value || null
+            };
+
+            const url = id ? `/api/tools/${id}` : '/api/tools';
+            const method = id ? 'PUT' : 'POST';
+
+            const res = await fetch(url, {
+                method,
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(data)
+            });
+
+            if (res.ok) {
+                document.getElementById('toolModal').close();
+                loadTools();
+            } else {
+                alert('Error guardando herramienta');
+            }
+        }
+
+        async function toggleTool(id) {
+            if (!confirm('¿Cambiar estado de la herramienta?')) return;
+            await fetch(`/api/tools/${id}`, { method: 'DELETE' });
+            loadTools();
+        }
+    </script>
+</body>
+
+</html>

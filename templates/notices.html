@@ -1,0 +1,401 @@
+<!DOCTYPE html>
+<html lang="es">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Gestor de Avisos - CMMS</title>
+    <link rel="stylesheet" href="/static/css/style.css">
+    <link rel="stylesheet" href="/static/css/sidebar.css">
+    <style>
+        .grid-container {
+            width: 100%;
+            overflow-x: auto;
+            background: #1e1e1e;
+            padding: 10px;
+            border-radius: 8px;
+        }
+
+        table {
+            width: 100%;
+            border-collapse: collapse;
+            font-size: 0.85em;
+            min-width: 2000px;
+            /* Allow horizontal scroll */
+        }
+
+        th,
+        td {
+            border: 1px solid #444;
+            padding: 8px;
+            text-align: left;
+        }
+
+        th {
+            background-color: #333;
+            color: #03dac6;
+            position: sticky;
+            top: 0;
+        }
+
+        tr:nth-child(even) {
+            background-color: #252526;
+        }
+
+        tr:hover {
+            background-color: #37373d;
+        }
+
+        .modal {
+            max-width: 900px;
+            width: 95%;
+        }
+
+        .form-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
+            gap: 10px;
+        }
+
+        /* Tree Modal Styles */
+        #selectionTree {
+            max-height: 400px;
+            overflow-y: auto;
+            background: #111;
+            padding: 10px;
+            border: 1px solid #555;
+            list-style-type: none;
+        }
+
+        #selectionTree li {
+            margin: 5px 0;
+            padding-left: 10px;
+            position: relative;
+        }
+
+        #selectionTree span.node-label {
+            cursor: pointer;
+            padding: 2px 5px;
+            border-radius: 4px;
+        }
+
+        #selectionTree span.node-label:hover {
+            background-color: #03dac6;
+            color: black;
+        }
+
+        .nested {
+            margin-left: 20px;
+            border-left: 1px solid #444;
+        }
+    </style>
+</head>
+
+<body>
+    <div class="container" style="max-width: 98%;">
+        <nav class="sidebar">
+            <div class="logo-details">
+                <i class="fas fa-industry icon"></i>
+                <div class="logo_name">CMMS Pro</div>
+                <i class="fas fa-bars" id="btn_toggle"></i>
+            </div>
+            <ul class="nav-list">
+                <li>
+                    <a href="/">
+                        <i class="fas fa-chart-line"></i>
+                        <span class="links_name">Dashboard</span>
+                    </a>
+                    <span class="tooltip">Dashboard</span>
+                </li>
+                <li>
+                    <a href="/avisos">
+                        <i class="fas fa-bell"></i>
+                        <span class="links_name">Avisos</span>
+                    </a>
+                    <span class="tooltip">Avisos</span>
+                </li>
+                <li>
+                    <a href="/ordenes">
+                        <i class="fas fa-tools"></i>
+                        <span class="links_name">Órdenes</span>
+                    </a>
+                    <span class="tooltip">Órdenes</span>
+                </li>
+                <li>
+                    <a href="/almacen">
+                        <i class="fas fa-boxes"></i>
+                        <span class="links_name">Almacén</span>
+                    </a>
+                    <span class="tooltip">Almacén</span>
+                </li>
+                <li>
+                    <a href="/configuracion">
+                        <i class="fas fa-sitemap"></i>
+                        <span class="links_name">Activos</span>
+                    </a>
+                    <span class="tooltip">Activos</span>
+                </li>
+                <li>
+                    <a href="/reportes">
+                        <i class="fas fa-file-contract"></i>
+                        <span class="links_name">Reportes</span>
+                    </a>
+                    <span class="tooltip">Reportes</span>
+                </li>
+            </ul>
+        </nav>
+        <section class="home-section">
+            <div class="top-bar">
+                <h1><i class="fas fa-bell"></i> Avisos de Mantenimiento</h1>
+            </div>
+            <div class="main-container">
+
+                <div class="toolbar" style="margin-bottom: 20px;">
+                    <button id="newNoticeBtn" class="btn-primary"><i class="fas fa-plus"></i> Nuevo Aviso</button>
+                </div>
+
+                <!-- KPI Indicators Section -->
+                <div id="kpiSection" style="display: flex; flex-wrap: wrap; gap: 20px; margin-bottom: 20px;">
+                    <!-- Total Notices Card -->
+                    <div class="kpi-card"
+                        style="background: linear-gradient(135deg, #1e3a5f 0%, #2a5298 100%); border-radius: 12px; padding: 20px; min-width: 180px; flex: 1; box-shadow: 0 4px 15px rgba(0,0,0,0.3);">
+                        <div style="display: flex; align-items: center; gap: 10px; margin-bottom: 10px;">
+                            <span style="font-size: 1.8em;">📋</span>
+                            <span style="color: #a0c4ff; font-size: 0.85em; text-transform: uppercase;">Total
+                                Avisos</span>
+                        </div>
+                        <div id="kpiTotalNotices" style="font-size: 2.5em; font-weight: bold; color: #fff;">0</div>
+                    </div>
+
+                    <!-- Status Breakdown Card -->
+                    <div class="kpi-card"
+                        style="background: linear-gradient(135deg, #1e1e1e 0%, #2d2d2d 100%); border-radius: 12px; padding: 20px; min-width: 300px; flex: 2; box-shadow: 0 4px 15px rgba(0,0,0,0.3); border: 1px solid #444;">
+                        <div style="display: flex; align-items: center; gap: 10px; margin-bottom: 15px;">
+                            <span style="font-size: 1.5em;">📊</span>
+                            <span
+                                style="color: #03dac6; font-size: 0.9em; text-transform: uppercase; font-weight: 600;">Por
+                                Estado</span>
+                        </div>
+                        <div id="kpiStatusBreakdown" style="display: flex; flex-wrap: wrap; gap: 10px;">
+                            <!-- Status badges will be injected here -->
+                        </div>
+                    </div>
+
+                    <!-- Area Breakdown Card -->
+                    <div class="kpi-card"
+                        style="background: linear-gradient(135deg, #1e1e1e 0%, #2d2d2d 100%); border-radius: 12px; padding: 20px; min-width: 300px; flex: 2; box-shadow: 0 4px 15px rgba(0,0,0,0.3); border: 1px solid #444;">
+                        <div style="display: flex; align-items: center; gap: 10px; margin-bottom: 15px;">
+                            <span style="font-size: 1.5em;">🏭</span>
+                            <span
+                                style="color: #bb86fc; font-size: 0.9em; text-transform: uppercase; font-weight: 600;">Por
+                                Área</span>
+                        </div>
+                        <div id="kpiAreaBreakdown"
+                            style="display: flex; flex-wrap: wrap; gap: 8px; max-height: 100px; overflow-y: auto;">
+                            <!-- Area badges will be injected here -->
+                        </div>
+                    </div>
+                </div>
+
+                <div class="grid-container">
+                    <table id="noticesTable">
+                        <thead>
+                            <tr>
+                                <th>ID</th>
+                                <th>Hist. Fallas</th>
+                                <th>Área Reporta</th>
+                                <th>Proveedor</th>
+                                <th>Especialidad</th>
+                                <th>Turno</th>
+                                <th>Area</th>
+                                <th>Linea</th>
+                                <th>Equipo</th>
+                                <th>Sistema</th>
+                                <th>Comp.</th>
+                                <th>Desc. Aviso</th>
+                                <th>Critic.</th>
+                                <th>Priorit.</th>
+                                <th>F. Solic</th>
+                                <th>F. Trat</th>
+                                <th>F. Prog</th>
+                                <th>Modo de Falla</th>
+                                <th>Tipo Mtto</th>
+                                <th>Actividad</th>
+                                <th>OT</th>
+                                <th>F. Term</th>
+                                <th>% Avance</th>
+                                <th>Estado</th>
+                                <th>Tecnico</th>
+                                <th>Cant Tec</th>
+                                <th>Acciones</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            <!-- JS renders items here -->
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+
+            <!-- NEW NOTICE MODAL -->
+            <dialog id="noticeModal" class="modal"
+                style="background: #252526; color: white; border: 1px solid #444; padding: 20px; border-radius: 8px;">
+                <h3 id="modalTitle">Nuevo Aviso</h3>
+                <form id="noticeForm">
+                    <input type="hidden" id="noticeId">
+
+                    <div class="form-grid">
+                        <!-- Group 1: General -->
+                        <div class="form-row">
+                            <div class="form-group">
+                                <label>Proveedor</label>
+                                <select id="provider">
+                                    <option value="">- Seleccione -</option>
+                                    <!-- Populated via JS -->
+                                </select>
+                            </div>
+                            <div class="form-group">
+                                <label>Área que Reporta</label>
+                                <select id="reporterArea">
+                                    <option value="">- Seleccione -</option>
+                                    <option value="MANTENIMIENTO">MANTENIMIENTO</option>
+                                    <option value="PRODUCCION">PRODUCCIÓN</option>
+                                    <option value="SEGURIDAD">SEGURIDAD</option>
+                                    <option value="CALIDAD">CALIDAD</option>
+                                    <option value="PROTOCOLO">PROTOCOLO</option>
+                                </select>
+                            </div>
+                        </div>
+
+                        <div class="form-row">
+                            <div class="form-group">
+                                <label>Especialidad</label>
+                                <select id="specialty">
+                                    <option value="">- Seleccione -</option>
+                                    <option value="MECANICO">MECANICO</option>
+                                    <option value="ELECTRICO">ELECTRICO</option>
+                                </select>
+                            </div>
+                        </div>
+
+                        <div class="form-row">
+                            <div class="form-group">
+                                <label>Turno</label>
+                                <select id="shift">
+                                    <option value="Día">Día</option>
+                                    <option value="Noche">Noche</option>
+                                </select>
+                            </div>
+                            <div class="form-group">
+                                <label>Estado</label>
+                                <input type="text" id="status" value="Pendiente" readonly
+                                    style="background-color: #333; border: none; color: white;">
+                            </div>
+                        </div>
+
+                        <div class="form-row">
+                            <div class="form-group">
+                                <label>Quién Reporta (Nombre)</label>
+                                <input type="text" id="reporterName" placeholder="Ej. Juan Pérez">
+                            </div>
+                        </div>
+
+                        <!-- Group 2: Hierarchy (Replaced with Tree Button) -->
+                        <div style="border: 1px solid #444; padding: 10px; border-radius: 5px; margin-bottom: 10px;">
+                            <label style="color: #03dac6;">Ubicación Técnica</label>
+                            <button type="button" onclick="openTreeSelection()" style="width: 100%; margin: 5px 0;">📍
+                                Seleccionar del Árbol de Equipos</button>
+                            <div id="hierarchyDisplay" style="font-size: 0.85rem; color: #aaa; margin-top: 5px;">
+                                No seleccionado
+                            </div>
+                            <!-- Hidden inputs -->
+                            <input type="hidden" id="areaId"><input type="hidden" id="lineId"><input type="hidden"
+                                id="equipmentId">
+                            <input type="hidden" id="systemId"><input type="hidden" id="componentId">
+                        </div>
+
+                        <div class="form-group">
+                            <label>Descripción del Aviso</label>
+                            <textarea id="description" rows="3"></textarea>
+                        </div>
+
+                        <div class="form-row">
+                            <div class="form-group">
+                                <label>Criticidad <small style="color:#888;">(según equipo)</small></label>
+                                <input type="text" id="criticality" readonly
+                                    style="background-color: #333; border: none; color: #aaa;"
+                                    placeholder="Se asigna según equipo">
+                            </div>
+                            <div class="form-group">
+                                <label>Prioridad</label>
+                                <select id="priority">
+                                    <option value="Baja">Baja</option>
+                                    <option value="Media">Media</option>
+                                    <option value="Alta">Alta</option>
+                                </select>
+                            </div>
+                        </div>
+
+                        <div class="form-row">
+                            <div class="form-group">
+                                <label>Fecha Solicitud</label>
+                                <input type="date" id="requestDate">
+                            </div>
+                            <div class="form-group">
+                                <label>Fecha Programación</label>
+                                <input type="date" id="planningDate">
+                            </div>
+                        </div>
+
+                        <div id="advancedFields"
+                            style="display:block; border-top: 1px solid #444; padding-top:10px; margin-top:10px;">
+                            <h4>Detalles de Gestión <small style="color:#888; font-weight:normal;">(Auto-completados
+                                    desde
+                                    OT)</small></h4>
+                            <div class="form-row">
+                                <div class="form-group">
+                                    <label>Tipo Mtto</label>
+                                    <input type="text" id="maintType" readonly
+                                        style="background-color: #333; border: none; color: #aaa;"
+                                        placeholder="Se completa desde OT">
+                                </div>
+                                <div class="form-group">
+                                    <label>N° OT</label>
+                                    <input type="text" id="otNumber" readonly
+                                        style="background-color: #333; border: none; color: #aaa;"
+                                        placeholder="Se completa desde OT">
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div style="margin-top: 20px; text-align: right;">
+                        <button type="button" onclick="document.getElementById('noticeModal').close()"
+                            style="background: transparent; color: #888; border: 1px solid #888; margin-right: 10px;">Cancelar</button>
+                        <button type="submit" style="background: #03dac6; color: black;">Guardar Aviso</button>
+                    </div>
+                </form>
+            </dialog>
+
+            <!-- TREE SELECTION MODAL -->
+            <dialog id="treeModal" class="modal" style="background: #1e1e1e; border: 1px solid #555;">
+                <h3>Seleccionar Ubicación Técnica</h3>
+                <p style="font-size: 0.9em; color: #aaa;">Navega por el árbol y haz clic en el elemento que deseas
+                    asignar al
+                    aviso.</p>
+                <ul id="selectionTree">
+                    <!-- Tree loaded via JS -->
+                </ul>
+                <div style="text-align: right; margin-top: 10px;">
+                    <button onclick="document.getElementById('treeModal').close()"
+                        style="background: #cf6679;">Cerrar</button>
+                </div>
+            </dialog>
+
+            <script src="/static/js/notices.js"></script>
+    </div>
+    </section>
+    <script src="/static/js/sidebar.js"></script>
+</body>
+
+</html>

@@ -1,0 +1,378 @@
+<!DOCTYPE html>
+<html lang="es">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>CMMS Industrial - Taxonomía Completa</title>
+    <link rel="stylesheet" href="/static/css/style.css">
+    <link rel="stylesheet" href="/static/css/sidebar.css">
+    <style>
+        .pipeline-container {
+            display: flex;
+            gap: 10px;
+            overflow-x: auto;
+            padding-bottom: 20px;
+        }
+
+        .pipeline-step {
+            min-width: 250px;
+            background: #252526;
+            padding: 15px;
+            border-radius: 6px;
+            border: 1px solid #3e3e42;
+        }
+
+        .pipeline-step h3 {
+            margin-top: 0;
+            color: #03dac6;
+            border-bottom: 1px solid #444;
+            padding-bottom: 5px;
+        }
+
+        select,
+        input {
+            width: 100%;
+            margin-bottom: 5px;
+            /* Reduced to fit labels */
+            box-sizing: border-box;
+        }
+
+        label {
+            display: block;
+            margin-top: 10px;
+            color: #bbb;
+            font-size: 0.9em;
+        }
+
+        .item-list {
+            margin-top: 10px;
+            max-height: 200px;
+            overflow-y: auto;
+            background: #1e1e1e;
+            padding: 5px;
+            font-size: 0.9em;
+        }
+
+        .item-row {
+            cursor: pointer;
+            padding: 4px;
+            border-bottom: 1px solid #333;
+        }
+
+        .item-row:hover,
+        .item-row.selected {
+            background-color: #37373d;
+            color: white;
+        }
+
+        small {
+            color: #888;
+        }
+
+        /* Mobile Responsive */
+        @media (max-width: 768px) {
+            .pipeline-container {
+                flex-direction: column;
+            }
+
+            .pipeline-step {
+                min-width: 100%;
+            }
+
+            header {
+                flex-direction: column;
+                gap: 10px;
+                text-align: center;
+            }
+        }
+    </style>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css">
+</head>
+
+<body>
+    <div class="container" style="max-width: 100%;">
+        <nav class="sidebar">
+            <div class="logo-details">
+                <i class="fas fa-industry icon"></i>
+                <div class="logo_name">CMMS Pro</div>
+                <i class="fas fa-bars" id="btn_toggle"></i>
+            </div>
+            <ul class="nav-list">
+                <li>
+                    <a href="/">
+                        <i class="fas fa-chart-line"></i>
+                        <span class="links_name">Dashboard</span>
+                    </a>
+                    <span class="tooltip">Dashboard</span>
+                </li>
+                <li>
+                    <a href="/avisos">
+                        <i class="fas fa-bell"></i>
+                        <span class="links_name">Avisos</span>
+                    </a>
+                    <span class="tooltip">Avisos</span>
+                </li>
+                <li>
+                    <a href="/ordenes">
+                        <i class="fas fa-tools"></i>
+                        <span class="links_name">Órdenes</span>
+                    </a>
+                    <span class="tooltip">Órdenes</span>
+                </li>
+                <li>
+                    <a href="/compras">
+                        <i class="fas fa-shopping-cart"></i>
+                        <span class="links_name">Compras</span>
+                    </a>
+                    <span class="tooltip">Compras</span>
+                </li>
+                <li>
+                    <a href="/almacen">
+                        <i class="fas fa-boxes"></i>
+                        <span class="links_name">Almacén</span>
+                    </a>
+                    <span class="tooltip">Almacén</span>
+                </li>
+                <li>
+                    <a href="/configuracion">
+                        <i class="fas fa-sitemap"></i>
+                        <span class="links_name">Activos</span>
+                    </a>
+                    <span class="tooltip">Activos</span>
+                </li>
+                <li>
+                    <a href="/reportes">
+                        <i class="fas fa-file-contract"></i>
+                        <span class="links_name">Reportes</span>
+                    </a>
+                    <span class="tooltip">Reportes</span>
+                </li>
+            </ul>
+        </nav>
+        <section class="home-section">
+            <div class="top-bar">
+                <h1><i class="fas fa-sitemap"></i> Configuración de Activos</h1>
+            </div>
+            <div class="main-container">
+
+                <div class="container" style="max-width: 100%;">
+                    <div class="toolbar" style="justify-content: center; margin-bottom: 20px;">
+                        <button id="importBtn" class="btn-primary" style="background:#03dac6; color:black;">📥 Importar
+                            / Carga
+                            Masiva</button>
+                        <a href="/api/export-data" target="_blank" style="text-decoration:none;">
+                            <button class="btn-secondary" style="background:#bb86fc; color:black;">📤 Descargar
+                                Excel</button>
+                        </a>
+                        <button id="resetDbBtn" class="btn-danger" style="background:#cf6679;">Reiniciar DB</button>
+                    </div>
+
+                    <!-- EDIT MODAL -->
+                    <dialog id="editModal"
+                        style="background: #252526; color: white; border: 1px solid #444; padding: 20px; border-radius: 8px; width: 400px;">
+                        <h3>Editar Elemento</h3>
+                        <form id="editForm">
+                            <input type="hidden" id="editEntityId">
+                            <input type="hidden" id="editEntityType">
+
+                            <label>Nombre</label>
+                            <input type="text" id="editName" required>
+
+                            <div id="editExtraFields"></div>
+
+                            <div style="margin-top: 15px; display: flex; gap: 10px;">
+                                <button type="submit" style="background: #03dac6; color: black; flex: 1;">Guardar
+                                    Cambios</button>
+                                <button type="button" onclick="document.getElementById('editModal').close()"
+                                    style="background: transparent; border: 1px solid #888; color: #888; flex: 1;">Cancelar</button>
+                            </div>
+                        </form>
+                    </dialog>
+
+                    <!-- IMPORT MODAL -->
+                    <dialog id="importModal"
+                        style="background: #252526; color: white; border: 1px solid #444; padding: 20px; border-radius: 8px; max-width: 600px; width: 90%;">
+                        <h3>Carga Masiva</h3>
+                        <div style="margin-bottom: 10px; border-bottom: 1px solid #444; padding-bottom: 10px;">
+                            <label style="display:inline-block; margin-right: 15px; cursor: pointer; color:white;">
+                                <input type="radio" name="importMode" value="file" checked
+                                    onchange="toggleImportMode()">
+                                Archivo
+                                Excel
+                            </label>
+                            <label style="display:inline-block; margin-right: 15px; cursor: pointer; color:white;">
+                                <input type="radio" name="importMode" value="paste" onchange="toggleImportMode()">
+                                Copiar y
+                                Pegar
+                                (Por Entidad)
+                            </label>
+                            <label style="display:inline-block; cursor: pointer; color:white;">
+                                <input type="radio" name="importMode" value="hierarchy" onchange="toggleImportMode()">
+                                Jerarquía
+                                Completa
+                            </label>
+                        </div>
+
+                        <!-- MODE: FILE -->
+                        <div id="modeFile">
+                            <p>El Excel debe tener hojas: Areas, Lines, Equipments, Systems, Components, SpareParts.</p>
+                            <div style="margin-bottom: 15px;">
+                                <a href="/api/download-template" target="_blank"
+                                    style="color: #03dac6; text-decoration: none; border: 1px solid #03dac6; padding: 5px 10px; border-radius: 4px;">📥
+                                    Descargar Plantilla / Formato</a>
+                            </div>
+                            <form id="uploadForm">
+                                <input type="file" id="excelFile" accept=".xlsx" required style="margin-bottom:10px;">
+                                <button type="submit" style="width:100%;">Subir y Procesar</button>
+                            </form>
+                        </div>
+
+                        <!-- MODE: PASTE DOCTYPE -->
+                        <div id="modePaste" style="display: none;">
+                            <p>Copia las celdas directamente desde Excel (con encabezados) y pégalas aquí.</p>
+
+                            <select id="pasteEntityType" onchange="updatePasteHint()" style="margin-bottom: 5px;">
+                                <option value="Areas">1. Areas</option>
+                                <option value="Lines">2. Lines</option>
+                                <option value="Equipments">3. Equipments</option>
+                                <option value="Systems">4. Systems</option>
+                                <option value="Components">5. Components</option>
+                                <option value="SpareParts">6. SpareParts</option>
+                            </select>
+
+                            <div id="pasteHint" style="font-size: 0.85em; color: #888; margin-bottom: 10px;">
+                                Columnas requeridas: Name, [Description]
+                            </div>
+
+                            <textarea id="pasteContent" rows="10" placeholder="Name&#9;Description&#10;Area1&#9;Desc..."
+                                style="width: 100%; background: #1e1e1e; color: white; border: 1px solid #444; font-family: monospace; white-space: pre; overflow: auto; margin-bottom: 10px;"></textarea>
+
+                            <button id="btnProcessPaste" onclick="processPaste()" style="width:100%;">Procesar
+                                Pegado</button>
+                        </div>
+
+                        <!-- MODE: HIERARCHY -->
+                        <div id="modeHierarchy" style="display: none;">
+                            <p>Pega las columnas desde Excel en orden: <b>Area | Linea | Equipo | Sistema |
+                                    Componente</b></p>
+                            <small style="color: #bb86fc; display:block; margin-bottom:5px;">* Copia las filas
+                                directamente
+                                desde
+                                Excel (Ctrl+C) y pégalas aquí (Ctrl+V). NO incluir encabezados.</small>
+
+                            <textarea id="hierarchyContent" rows="12" placeholder="RECEPCION DE MATERIA PRIMA	HIDROLAVADORA	HIDROLAVADORA 1	MOTOR ELECTRICO	RODAMIENTO
+RECEPCION DE MATERIA PRIMA	HIDROLAVADORA	HIDROLAVADORA 1	MOTOR ELECTRICO	EJE SALIDA
+RECEPCION DE MATERIA PRIMA	HIDROLAVADORA	HIDROLAVADORA 1	BOMBA	BOMBA (ALTA PRESION)"
+                                style="width: 100%; background: #1e1e1e; color: white; border: 1px solid #444; font-family: monospace; white-space: pre; overflow: auto; margin-bottom: 10px;"></textarea>
+
+                            <button id="btnProcessHierarchy" onclick="processHierarchyPaste()"
+                                style="width:100%; background-color: #bb86fc; color: black;">Procesar Jerarquía
+                                Completa</button>
+                        </div>
+
+                        <button onclick="document.getElementById('importModal').close()"
+                            style="margin-top:10px; background: transparent; border: 1px solid #888; color: #888;">Cerrar</button>
+                    </dialog>
+
+                    <div class="pipeline-container">
+
+                        <!-- 1. AREA -->
+                        <div class="pipeline-step">
+                            <h3>1. Área</h3>
+                            <form id="areaForm">
+                                <label>Nombre del Área</label>
+                                <input type="text" id="areaName" placeholder="Ej. Planta Procesos" required>
+                                <button type="submit">Crear</button>
+                            </form>
+                            <div id="areaList" class="item-list"></div>
+                        </div>
+
+                        <!-- 2. LINE -->
+                        <div class="pipeline-step">
+                            <h3>2. Línea</h3>
+                            <small>Selecciona un Área primero</small>
+                            <form id="lineForm">
+                                <label>Nombre de la Línea</label>
+                                <input type="text" id="lineName" placeholder="Ej. Línea Envasado 1" required>
+                                <button type="submit">Crear</button>
+                            </form>
+                            <div id="lineList" class="item-list"></div>
+                        </div>
+
+                        <!-- 3. EQUIPMENT -->
+                        <div class="pipeline-step">
+                            <h3>3. Equipo</h3>
+                            <small>Selecciona una Línea primero</small>
+                            <form id="equipForm">
+                                <label>Nombre del Equipo</label>
+                                <input type="text" id="equipName" placeholder="Ej. Llenadora Rotativa" required>
+                                <label>TAG (Código)</label>
+                                <input type="text" id="equipTag" placeholder="Ej. LLEN-01" required>
+                                <button type="submit">Crear</button>
+                            </form>
+                            <div id="equipList" class="item-list"></div>
+                        </div>
+
+                        <!-- 4. SYSTEM -->
+                        <div class="pipeline-step">
+                            <h3>4. Sistema</h3>
+                            <small>Selecciona un Equipo primero</small>
+                            <form id="sysForm">
+                                <label>Nombre del Sistema</label>
+                                <input type="text" id="sysName" placeholder="Ej. Sistema Hidráulico" required>
+                                <button type="submit">Crear</button>
+                            </form>
+                            <div id="sysList" class="item-list"></div>
+                        </div>
+
+                        <!-- 5. COMPONENT -->
+                        <div class="pipeline-step">
+                            <h3>5. Componente</h3>
+                            <small>Selecciona un Sistema</small>
+                            <form id="compForm">
+                                <label>Nombre del Componente</label>
+                                <input type="text" id="compName" placeholder="Ej. Bomba Principal" required>
+                                <button type="submit">Crear</button>
+                            </form>
+                            <div id="compList" class="item-list"></div>
+                        </div>
+
+                        <!-- 6. SPARE PART -->
+                        <div class="pipeline-step" style="min-width: 300px; border-color: #bb86fc;">
+                            <h3>6. Repuesto</h3>
+                            <small>Selecciona un Componente</small>
+                            <form id="spareForm">
+                                <label>Nombre del Repuesto</label>
+                                <input type="text" id="spareName" placeholder="Ej. Sello Mecánico" required>
+
+                                <label>Código (SKU/Ref)</label>
+                                <input type="text" id="spareCode" placeholder="Ej. SM-1234">
+
+                                <label>Marca / Fabricante</label>
+                                <input type="text" id="spareBrand" placeholder="Ej. John Crane">
+
+                                <label>Cantidad en Stock</label>
+                                <input type="number" id="spareQty" placeholder="Ej. 5">
+
+                                <button type="submit">Asociar Repuesto</button>
+                            </form>
+                            <div id="spareList" class="item-list"></div>
+                        </div>
+
+                    </div>
+
+                    <hr>
+
+                    <h2>Vista Jerárquica Global</h2>
+                    <button onclick="loadGlobalTree()">Actualizar Árbol</button>
+                    <!-- Removed column-count: 2 to make it vertical list (1 column) -->
+                    <div id="globalTree" style="margin-top: 20px;"></div>
+                </div>
+                <script src="/static/js/app.js"></script>
+            </div>
+        </section>
+        <script src="/static/js/sidebar.js"></script>
+</body>
+
+</html>

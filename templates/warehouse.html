@@ -1,0 +1,752 @@
+<!DOCTYPE html>
+<html lang="es">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Almacén - CMMS</title>
+    <link rel="stylesheet" href="/static/css/style.css">
+    <link rel="stylesheet" href="/static/css/sidebar.css">
+    <link href="https://fonts.googleapis.com/css2?family=Roboto:wght@300;400;500;700&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css">
+    <style>
+        .stock-warning {
+            background: #ff9800 !important;
+        }
+
+        .stock-critical {
+            background: #f44336 !important;
+        }
+
+        .stock-ok {
+            background: #4caf50 !important;
+        }
+
+        .category-badge {
+            padding: 3px 10px;
+            border-radius: 12px;
+            font-size: 0.8em;
+            font-weight: 500;
+        }
+    </style>
+</head>
+
+<body>
+    <nav class="sidebar">
+        <div class="logo-details">
+            <i class="fas fa-industry icon"></i>
+            <div class="logo_name">CMMS Pro</div>
+            <i class="fas fa-bars" id="btn_toggle"></i>
+        </div>
+        <ul class="nav-list">
+            <li>
+                <a href="/">
+                    <i class="fas fa-chart-line"></i>
+                    <span class="links_name">Dashboard</span>
+                </a>
+                <span class="tooltip">Dashboard</span>
+            </li>
+            <li>
+                <a href="/avisos">
+                    <i class="fas fa-bell"></i>
+                    <span class="links_name">Avisos</span>
+                </a>
+                <span class="tooltip">Avisos</span>
+            </li>
+            <li>
+                <a href="/ordenes">
+                    <i class="fas fa-tools"></i>
+                    <span class="links_name">Órdenes</span>
+                </a>
+                <span class="tooltip">Órdenes</span>
+            </li>
+            <li>
+                <a href="/compras">
+                    <i class="fas fa-shopping-cart"></i>
+                    <span class="links_name">Compras</span>
+                </a>
+                <span class="tooltip">Compras</span>
+            </li>
+            <li>
+                <a href="/almacen">
+                    <i class="fas fa-boxes"></i>
+                    <span class="links_name">Almacén</span>
+                </a>
+                <span class="tooltip">Almacén</span>
+            </li>
+            <li>
+                <a href="/configuracion">
+                    <i class="fas fa-sitemap"></i>
+                    <span class="links_name">Activos</span>
+                </a>
+                <span class="tooltip">Activos</span>
+            </li>
+            <li>
+                <a href="/reportes">
+                    <i class="fas fa-file-contract"></i>
+                    <span class="links_name">Reportes</span>
+                </a>
+                <span class="tooltip">Reportes</span>
+            </li>
+        </ul>
+    </nav>
+    <section class="home-section">
+        <div class="top-bar">
+            <h1><i class="fas fa-warehouse"></i> Gestión de Almacén</h1>
+        </div>
+        <div class="main-container">
+
+            <div class="container-fluid">
+                <!-- KPI Cards -->
+                <div style="display: flex; gap: 20px; margin-bottom: 20px; flex-wrap: wrap;">
+                    <div
+                        style="background: linear-gradient(135deg, #1e3a5f 0%, #2a5298 100%); border-radius: 12px; padding: 20px; min-width: 180px; flex: 1;">
+                        <div style="color: #a0c4ff; font-size: 0.85em; text-transform: uppercase;">📦 Total Items</div>
+                        <div id="kpiTotal" style="font-size: 2.5em; font-weight: bold; color: #fff;">0</div>
+                    </div>
+                    <div
+                        style="background: linear-gradient(135deg, #4a1942 0%, #7b2869 100%); border-radius: 12px; padding: 20px; min-width: 180px; flex: 1;">
+                        <div style="color: #ffb6c1; font-size: 0.85em; text-transform: uppercase;">⚠️ Stock Bajo</div>
+                        <div id="kpiLowStock" style="font-size: 2.5em; font-weight: bold; color: #fff;">0</div>
+                    </div>
+                    <div
+                        style="background: linear-gradient(135deg, #1a472a 0%, #2d6a4f 100%); border-radius: 12px; padding: 20px; min-width: 180px; flex: 1;">
+                        <div style="color: #b7e4c7; font-size: 0.85em; text-transform: uppercase;">💰 Valor Total</div>
+                        <div id="kpiValue" style="font-size: 2em; font-weight: bold; color: #fff;">$0</div>
+                    </div>
+                </div>
+
+                <!-- TABS NAVIGATION -->
+                <div class="tabs">
+                    <button class="tab-link active" onclick="openTab(event, 'tab-master')"><i class="fas fa-list"></i>
+                        Listado
+                        Maestro</button>
+                    <button class="tab-link" onclick="openTab(event, 'tab-mgmt')"><i class="fas fa-chart-bar"></i>
+                        Parámetros de
+                        Gestión</button>
+                </div>
+
+                <!-- TAB: MASTER LIST -->
+                <div id="tab-master" class="tab-content active">
+                    <!-- Toolbar -->
+                    <div class="toolbar">
+                        <button class="btn-primary" onclick="openItemModal()">
+                            <i class="fas fa-plus"></i> Nuevo Item
+                        </button>
+                        <div style="display:flex; gap:10px;">
+                            <a href="/api/warehouse/export" target="_blank" style="text-decoration:none;">
+                                <button class="btn-secondary"
+                                    style="background:#28a745; color:white; border:none; padding: 8px 15px;">
+                                    <i class="fas fa-file-excel"></i> Exportar Maestro
+                                </button>
+                            </a>
+                            <a href="/api/warehouse/export-kardex" target="_blank" style="text-decoration:none;">
+                                <button class="btn-secondary"
+                                    style="background:#17a2b8; color:white; border:none; padding: 8px 15px;">
+                                    <i class="fas fa-history"></i> Exportar Kardex
+                                </button>
+                            </a>
+                        </div>
+                        <div class="search-bar">
+                            <input type="text" id="searchWarehouse" placeholder="Buscar repuesto..."
+                                onkeyup="filterTable()">
+                        </div>
+                        <!-- FILTERS -->
+                        <select id="filterFamily" onchange="filterTable()"
+                            style="padding: 8px; background: #333; color: white; border: 1px solid #555; border-radius: 5px;">
+                            <option value="">Todas las Familiias</option>
+                            <!-- Populated by JS -->
+                        </select>
+                        <label
+                            style="display: flex; align-items: center; gap: 5px; color: #ff9800; font-weight: bold; margin-left: 10px; cursor: pointer;">
+                            <input type="checkbox" id="filterReplenish" onchange="filterTable()">
+                            <i class="fas fa-exclamation-triangle"></i> Por Reposición
+                        </label>
+
+                        <div style="flex:1;"></div>
+
+                        <label style="display: flex; align-items: center; gap: 5px; color: #aaa;">
+                            <input type="checkbox" id="showInactive" onchange="loadWarehouse()"> Mostrar inactivos
+                        </label>
+                    </div>
+
+                    <!-- Table -->
+                    <div class="table-container">
+                        <table class="data-table" id="warehouseTable">
+                            <thead>
+                                <tr>
+                                    <th>Código</th>
+                                    <th>Nombre</th>
+                                    <th>Familia</th>
+                                    <th>Marca</th>
+                                    <th>Stock</th>
+                                    <th>Criticidad</th>
+                                    <th>Ubicación</th>
+                                    <th>Costo Prom.</th>
+                                    <th>Estado</th>
+                                    <th>Acciones</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                <!-- Populated by JS -->
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+
+                <!-- TAB: MANAGEMENT -->
+                <div id="tab-mgmt" class="tab-content" style="display: none;">
+                    <div class="toolbar">
+                        <button class="btn-success" onclick="calculateParams()"><i class="fas fa-calculator"></i>
+                            Recalcular
+                            Parámetros (ABC/XYZ)</button>
+                        <div class="search-bar">
+                            <input type="text" id="searchMgmt" placeholder="Buscar..." onkeyup="renderMgmtTable()">
+                        </div>
+                    </div>
+                    <div class="table-container">
+                        <table class="data-table" id="mgmtTable">
+                            <thead>
+                                <tr>
+                                    <th>Código</th>
+                                    <th>Nombre</th>
+                                    <th>Clasif. ABC</th>
+                                    <th>Clasif. XYZ</th>
+                                    <th>Lead Time (Días)</th>
+                                    <th>Stock Seguridad</th>
+                                    <th>Punto Reorden (ROP)</th>
+                                    <th>Stock Máximo</th>
+                                    <th>Lote Mínimo</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                <!-- Populated by JS -->
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+
+            </div>
+
+            <!-- Modal -->
+            <dialog id="itemModal" class="modal"
+                style="background: #252526; color: white; border: 1px solid #444; padding: 20px; border-radius: 8px; max-width: 500px;">
+                <h3 id="modalTitle"><i class="fas fa-box"></i> Nuevo Item de Almacén</h3>
+                <form id="itemForm">
+                    <input type="hidden" id="itemId">
+
+                    <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 15px;">
+                        <div class="form-group">
+                            <label>Nombre *</label>
+                            <input type="text" id="itemName" required>
+                        </div>
+                        <!-- NEW FIELDS -->
+                        <div class="form-group">
+                            <label>Familia / Agrupador</label>
+                            <input type="text" id="itemFamily" placeholder="Ej: Rodamientos, Válvulas">
+                        </div>
+                        <div class="form-group">
+                            <label>Marca</label>
+                            <input type="text" id="itemBrand">
+                        </div>
+                        <div class="form-group">
+                            <label>Cód. Fabricante</label>
+                            <input type="text" id="itemManufacturerCode">
+                        </div>
+                        <div class="form-group">
+                            <label>Criticidad</label>
+                            <select id="itemCriticality">
+                                <option value="Baja">Baja</option>
+                                <option value="Media" selected>Media</option>
+                                <option value="Alta">Alta</option>
+                            </select>
+                        </div>
+                        <div class="form-group">
+                            <label>Costo Promedio</label>
+                            <input type="number" id="itemAvgCost" step="0.01" min="0">
+                        </div>
+                        <div class="form-group">
+                            </select>
+                        </div>
+
+                        <h4
+                            style="grid-column: span 2; margin: 10px 0 5px 0; color: #03dac6; border-bottom: 1px solid #444;">
+                            Gestión de Inventario</h4>
+
+                        <div class="form-group">
+                            <label>Lead Time (Días)</label>
+                            <input type="number" id="itemLeadTime" min="0">
+                        </div>
+                        <div class="form-group">
+                            <label>Stock Seguridad</label>
+                            <input type="number" id="itemSafetyStock" min="0">
+                        </div>
+                        <div class="form-group">
+                            <label>Pto. Reorden (ROP)</label>
+                            <input type="number" id="itemROP" min="0">
+                        </div>
+                        <div class="form-group">
+                            <label>Lote Mínimo</label>
+                            <input type="number" id="itemMinOrder" min="1" value="1">
+                        </div>
+                        <div class="form-group">
+                            <label>Stock Máximo</label>
+                            <input type="number" id="itemMaxStock" min="0">
+                        </div>
+                        <div class="form-group">
+                            <label>Clasificación ABC/XYZ</label>
+                            <div style="display:flex; gap: 5px;">
+                                <input type="text" id="itemABC" placeholder="ABC" style="width: 50%" readonly>
+                                <input type="text" id="itemXYZ" placeholder="XYZ" style="width: 50%" readonly>
+                            </div>
+                        </div>
+
+
+                        <div class="form-group">
+                            <label>Categoría</label>
+                            <select id="itemCategory">
+                                <option value="">- Seleccione -</option>
+                                <option value="Repuesto">Repuesto</option>
+                                <option value="Consumible">Consumible</option>
+                                <option value="Lubricante">Lubricante</option>
+                                <option value="Herramienta">Herramienta</option>
+                                <option value="Eléctrico">Eléctrico</option>
+                                <option value="Mecánico">Mecánico</option>
+                            </select>
+                        </div>
+                        <div class="form-group" style="grid-column: span 2;">
+                            <label>Descripción</label>
+                            <textarea id="itemDescription" rows="2"></textarea>
+                        </div>
+                        <div class="form-group">
+                            <label>Stock Actual</label>
+                            <input type="number" id="itemStock" value="0" min="0">
+                        </div>
+                        <div class="form-group">
+                            <label>Stock Mínimo</label>
+                            <input type="number" id="itemMinStock" value="0" min="0">
+                        </div>
+                        <div class="form-group">
+                            <label>Unidad</label>
+                            <select id="itemUnit">
+                                <option value="pza">Pieza</option>
+                                <option value="kg">Kilogramo</option>
+                                <option value="lt">Litro</option>
+                                <option value="m">Metro</option>
+                                <option value="und">Unidad</option>
+                            </select>
+                        </div>
+                        <div class="form-group">
+                            <label>Costo Unitario</label>
+                            <input type="number" id="itemCost" step="0.01" min="0">
+                        </div>
+                        <div class="form-group" style="grid-column: span 2;">
+                            <label>Ubicación</label>
+                            <input type="text" id="itemLocation" placeholder="Ej: Estante A-3">
+                        </div>
+                    </div>
+
+                    <div style="display: flex; justify-content: flex-end; gap: 10px; margin-top: 20px;">
+                        <button type="button" onclick="document.getElementById('itemModal').close()"
+                            class="btn-secondary">Cancelar</button>
+                        <button type="submit" class="btn-primary">Guardar</button>
+                    </div>
+                </form>
+            </dialog>
+
+            <!-- Modal Movimientos -->
+            <dialog id="movementsModal" class="modal"
+                style="background: #252526; color: white; border: 1px solid #444; padding: 20px; border-radius: 8px; max-width: 700px; width: 90%;">
+                <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px;">
+                    <h3 id="movModalTitle" style="margin: 0;"><i class="fas fa-history"></i> Kardex</h3>
+                    <button onclick="document.getElementById('movementsModal').close()" class="btn-icon"><i
+                            class="fas fa-times"></i></button>
+                </div>
+
+                <!-- Form Manual -->
+                <div
+                    style="background: #333; padding: 15px; margin-bottom: 20px; border-radius: 8px; border: 1px solid #555;">
+                    <h4 style="margin-top: 0; color: #aaa; font-size: 0.9em;">REGISTRAR MOVIMIENTO MANUAL</h4>
+                    <div style="display: flex; gap: 10px; flex-wrap: wrap; align-items: end;">
+                        <div style="flex: 1; min-width: 120px;">
+                            <label style="display: block; font-size: 0.8em; margin-bottom: 5px;">Tipo</label>
+                            <select id="movType"
+                                style="width: 100%; padding: 8px; background: #222; color: white; border: 1px solid #555; border-radius: 4px;">
+                                <option value="IN">Entrada (Compra)</option>
+                                <option value="OUT">Salida (Ajuste)</option>
+                            </select>
+                        </div>
+                        <div style="flex: 1; min-width: 100px;">
+                            <label style="display: block; font-size: 0.8em; margin-bottom: 5px;">Cantidad</label>
+                            <input type="number" id="movQty" min="1"
+                                style="width: 100%; padding: 8px; background: #222; color: white; border: 1px solid #555; border-radius: 4px;">
+                        </div>
+                        <div style="flex: 2; min-width: 200px;">
+                            <label style="display: block; font-size: 0.8em; margin-bottom: 5px;">Razón / Detalle</label>
+                            <input type="text" id="movReason" placeholder="Ej: Factura F-123456"
+                                style="width: 100%; padding: 8px; background: #222; color: white; border: 1px solid #555; border-radius: 4px;">
+                        </div>
+                        <div>
+                            <button onclick="saveMovement()" class="btn-success" style="padding: 10px 20px;"><i
+                                    class="fas fa-save"></i> Registrar</button>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Tabla -->
+                <div class="table-container" style="max-height: 400px; overflow-y: auto;">
+                    <table class="data-table" style="width: 100%;">
+                        <thead style="position: sticky; top: 0; background: #252526;">
+                            <tr>
+                                <th>Fecha</th>
+                                <th>Tipo</th>
+                                <th>Cantidad</th>
+                                <th>Razón</th>
+                                <th>Ref.</th>
+                            </tr>
+                        </thead>
+                        <tbody id="movTableBody">
+                            <!-- Loaded via JS -->
+                        </tbody>
+                    </table>
+                </div>
+            </dialog>
+
+
+            <script>
+                let warehouseItems = [];
+
+                document.addEventListener('DOMContentLoaded', () => {
+                    loadWarehouse();
+                    document.getElementById('itemForm').onsubmit = saveItem;
+                });
+
+                function openTab(evt, tabName) {
+                    const tabcontent = document.getElementsByClassName("tab-content");
+                    for (let i = 0; i < tabcontent.length; i++) {
+                        tabcontent[i].style.display = "none";
+                        tabcontent[i].classList.remove("active");
+                    }
+                    const tablinks = document.getElementsByClassName("tab-link");
+                    for (let i = 0; i < tablinks.length; i++) {
+                        tablinks[i].className = tablinks[i].className.replace(" active", "");
+                    }
+                    document.getElementById(tabName).style.display = "block";
+                    document.getElementById(tabName).classList.add("active");
+                    evt.currentTarget.classList.add("active");
+
+                    if (tabName === 'tab-mgmt') renderMgmtTable();
+                }
+
+                async function loadWarehouse() {
+                    const showAll = document.getElementById('showInactive')?.checked;
+                    const res = await fetch(`/api/warehouse${showAll ? '?all=true' : ''}`);
+                    warehouseItems = await res.json();
+
+                    // Populate Family Filter
+                    const families = [...new Set(warehouseItems.map(i => i.family).filter(f => f))];
+                    const sel = document.getElementById('filterFamily');
+                    sel.innerHTML = '<option value="">Todas las Familias</option>';
+                    families.forEach(f => {
+                        const opt = document.createElement('option');
+                        opt.value = f;
+                        opt.textContent = f;
+                        sel.appendChild(opt);
+                    });
+
+                    renderTable();
+                    updateKPIs();
+                }
+
+                function renderTable() {
+                    const tbody = document.querySelector('#warehouseTable tbody');
+                    tbody.innerHTML = '';
+
+                    // FILTERS
+                    const search = document.getElementById('searchWarehouse').value.toLowerCase();
+                    const familyFilter = document.getElementById('filterFamily').value;
+                    const replenishFilter = document.getElementById('filterReplenish').checked;
+
+                    warehouseItems.forEach(item => {
+                        // Search Logic
+                        const text = (item.code + ' ' + item.name + ' ' + (item.family || '') + ' ' + (item.brand || '')).toLowerCase();
+                        if (!text.includes(search)) return;
+
+                        // Family Logic
+                        if (familyFilter && item.family !== familyFilter) return;
+
+                        // Replenish Logic
+                        if (replenishFilter && item.stock > item.min_stock) return;
+
+                        const stockClass = item.stock <= 0 ? 'stock-critical' :
+                            item.stock <= item.min_stock ? 'stock-warning' : 'stock-ok';
+
+                        const tr = document.createElement('tr');
+                        tr.style.opacity = item.is_active ? '1' : '0.5';
+
+                        // Criticality Badge Color
+                        let critColor = '#888';
+                        if (item.criticality === 'Alta') critColor = '#f44336';
+                        if (item.criticality === 'Media') critColor = '#ff9800';
+                        if (item.criticality === 'Baja') critColor = '#4caf50';
+
+                        tr.innerHTML = `
+                    <td><strong>${item.code}</strong><br><small style="color:#aaa">${item.manufacturer_code || ''}</small></td>
+                    <td>
+                        ${item.name}<br>
+                        <small style="color:#aaa">${item.category || ''}</small>
+                    </td>
+                    <td>${item.family || '-'}</td>
+                    <td>${item.brand || '-'}</td>
+                    <td>
+                        <span class="${stockClass}" style="padding: 3px 8px; border-radius: 10px;">${item.stock}</span>
+                        <small>/ ${item.min_stock} ${item.unit}</small>
+                    </td>
+                    <td><span class="category-badge" style="background: ${critColor};">${item.criticality || 'Media'}</span></td>
+                    <td>${item.location || '-'}</td>
+                    <td>${item.average_cost ? '$' + item.average_cost.toFixed(2) : '-'}</td>
+                    <td>${item.is_active ? '✅' : '❌'}</td>
+                    <td>
+                        <button onclick="openMovements(${item.id})" title="Kardex / Movimientos" style="color: #03dac6;"><i class="fas fa-history"></i></button>
+                        <button onclick="editItem(${item.id})" title="Editar"><i class="fas fa-edit"></i></button>
+                        <button onclick="toggleItem(${item.id})" title="${item.is_active ? 'Desactivar' : 'Activar'}">
+                            <i class="fas fa-${item.is_active ? 'ban' : 'check'}"></i>
+                        </button>
+                    </td>
+                `;
+                        tbody.appendChild(tr);
+                    });
+                }
+
+                function updateKPIs() {
+                    const activeItems = warehouseItems.filter(i => i.is_active);
+                    document.getElementById('kpiTotal').textContent = activeItems.length;
+                    document.getElementById('kpiLowStock').textContent = activeItems.filter(i => i.stock <= i.min_stock).length;
+
+                    const totalValue = activeItems.reduce((sum, i) => sum + (i.stock * (i.unit_cost || 0)), 0);
+                    document.getElementById('kpiValue').textContent = '$' + totalValue.toLocaleString('es-MX', { minimumFractionDigits: 2 });
+                }
+
+                function filterTable() {
+                    renderTable();
+                }
+
+                function renderMgmtTable() {
+                    const tbody = document.querySelector('#mgmtTable tbody');
+                    tbody.innerHTML = '';
+                    const search = document.getElementById('searchMgmt') ? document.getElementById('searchMgmt').value.toLowerCase() : '';
+
+                    warehouseItems.forEach(item => {
+                        const text = (item.code + ' ' + item.name).toLowerCase();
+                        if (!text.includes(search)) return;
+
+                        const tr = document.createElement('tr');
+                        tr.innerHTML = `
+                    <td>${item.code}</td>
+                    <td>${item.name}</td>
+                    <td style="font-weight:bold; text-align:center;">${item.abc_class || '-'}</td>
+                    <td style="font-weight:bold; text-align:center;">${item.xyz_class || '-'}</td>
+                    <td>${item.lead_time || 0}</td>
+                    <td>${item.safety_stock || 0}</td>
+                    <td style="color:#03dac6; font-weight:bold;">${item.rop || 0}</td>
+                    <td>${item.max_stock || 0}</td>
+                    <td>${item.min_order_qty || 1}</td>
+                 `;
+                        tbody.appendChild(tr);
+                    });
+                }
+
+                async function calculateParams() {
+                    if (!confirm("¿Recalcular parámetros ABC/XYZ y ROP basado en histórico?")) return;
+                    try {
+                        const res = await fetch('/api/warehouse/calculate', { method: 'POST' });
+                        const data = await res.json();
+                        if (res.ok) {
+                            alert("Cálculo completado.");
+                            console.log(data.log);
+                            loadWarehouse(); // Reload to see new values
+                        } else {
+                            alert("Error: " + data.error);
+                        }
+                    } catch (e) { console.error(e); alert("Error de red"); }
+                }
+
+                function openItemModal() {
+                    document.getElementById('itemForm').reset();
+                    document.getElementById('itemId').value = '';
+                    document.getElementById('modalTitle').innerHTML = '<i class="fas fa-box"></i> Nuevo Item de Almacén';
+                    document.getElementById('itemModal').showModal();
+                }
+
+                function editItem(id) {
+                    const item = warehouseItems.find(i => i.id === id);
+                    if (!item) return;
+
+                    document.getElementById('itemId').value = item.id;
+                    document.getElementById('itemName').value = item.name;
+                    document.getElementById('itemCategory').value = item.category || '';
+                    document.getElementById('itemDescription').value = item.description || '';
+                    document.getElementById('itemStock').value = item.stock;
+                    document.getElementById('itemMinStock').value = item.min_stock;
+                    document.getElementById('itemUnit').value = item.unit;
+                    document.getElementById('itemCost').value = item.unit_cost || '';
+                    document.getElementById('itemLocation').value = item.location || '';
+
+                    // New Fields
+                    document.getElementById('itemFamily').value = item.family || '';
+                    document.getElementById('itemBrand').value = item.brand || '';
+                    document.getElementById('itemManufacturerCode').value = item.manufacturer_code || '';
+                    document.getElementById('itemCriticality').value = item.criticality || 'Media';
+                    document.getElementById('itemAvgCost').value = item.average_cost || '';
+
+                    // Mgmt Fields
+                    document.getElementById('itemLeadTime').value = item.lead_time || 0;
+                    document.getElementById('itemSafetyStock').value = item.safety_stock || 0;
+                    document.getElementById('itemROP').value = item.rop || 0;
+                    document.getElementById('itemMinOrder').value = item.min_order_qty || 1;
+                    document.getElementById('itemMaxStock').value = item.max_stock || 0;
+                    document.getElementById('itemABC').value = item.abc_class || '';
+                    document.getElementById('itemXYZ').value = item.xyz_class || '';
+
+                    document.getElementById('modalTitle').innerHTML = '<i class="fas fa-edit"></i> Editar Item';
+                    document.getElementById('itemModal').showModal();
+                }
+
+                async function saveItem(e) {
+                    e.preventDefault();
+                    const id = document.getElementById('itemId').value;
+                    const data = {
+                        name: document.getElementById('itemName').value,
+                        category: document.getElementById('itemCategory').value || null,
+                        description: document.getElementById('itemDescription').value || null,
+                        stock: parseInt(document.getElementById('itemStock').value) || 0,
+                        min_stock: parseInt(document.getElementById('itemMinStock').value) || 0,
+                        unit: document.getElementById('itemUnit').value,
+                        unit_cost: parseFloat(document.getElementById('itemCost').value) || null,
+                        location: document.getElementById('itemLocation').value || null,
+
+                        // New Fields
+                        family: document.getElementById('itemFamily').value || null,
+                        brand: document.getElementById('itemBrand').value || null,
+                        manufacturer_code: document.getElementById('itemManufacturerCode').value || null,
+                        criticality: document.getElementById('itemCriticality').value || 'Media',
+                        criticality: document.getElementById('itemCriticality').value || 'Media',
+                        average_cost: parseFloat(document.getElementById('itemAvgCost').value) || null,
+
+                        // Mgmt Fields
+                        lead_time: parseInt(document.getElementById('itemLeadTime').value) || 0,
+                        safety_stock: parseInt(document.getElementById('itemSafetyStock').value) || 0,
+                        rop: parseInt(document.getElementById('itemROP').value) || 0,
+                        min_order_qty: parseInt(document.getElementById('itemMinOrder').value) || 1,
+                        max_stock: parseInt(document.getElementById('itemMaxStock').value) || 0,
+                        abc_class: document.getElementById('itemABC').value,
+                        xyz_class: document.getElementById('itemXYZ').value
+                    };
+
+                    const url = id ? `/api/warehouse/${id}` : '/api/warehouse';
+                    const method = id ? 'PUT' : 'POST';
+
+                    const res = await fetch(url, {
+                        method,
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify(data)
+                    });
+
+                    if (res.ok) {
+                        document.getElementById('itemModal').close();
+                        loadWarehouse();
+                    } else {
+                        alert('Error guardando item');
+                    }
+                }
+
+                async function toggleItem(id) {
+                    if (!confirm('¿Cambiar estado del item?')) return;
+                    await fetch(`/api/warehouse/${id}`, { method: 'DELETE' });
+                    loadWarehouse();
+                }
+
+                // --- MOVEMENTS LOGIC ---
+                let currentMovItem = null;
+
+                async function openMovements(id) {
+                    const item = warehouseItems.find(i => i.id === id);
+                    if (!item) return;
+
+                    currentMovItem = item;
+                    document.getElementById('movModalTitle').innerHTML = `<i class="fas fa-history"></i> Kardex: <span style="color:#03dac6">${item.name}</span> <small>(${item.code})</small>`;
+                    document.getElementById('movQty').value = '';
+                    document.getElementById('movReason').value = '';
+
+                    await loadMovements(id);
+                    document.getElementById('movementsModal').showModal();
+                }
+
+                async function loadMovements(id) {
+                    const tbody = document.getElementById('movTableBody');
+                    tbody.innerHTML = '<tr><td colspan="5">Cargando...</td></tr>';
+
+                    try {
+                        const res = await fetch(`/api/warehouse/${id}/movements`);
+                        const moves = await res.json();
+
+                        tbody.innerHTML = moves.map(m => `
+                    <tr style="border-bottom: 1px solid #444;">
+                        <td>${m.date.replace('T', ' ').substring(0, 16)}</td>
+                        <td><span class="badge ${m.movement_type === 'IN' || m.movement_type === 'RETURN' ? 'stock-ok' : 'stock-critical'}">${m.movement_type}</span></td>
+                        <td>${m.quantity}</td>
+                        <td>${m.reason || '-'}</td>
+                        <td>${m.reference_id ? 'OT-' + m.reference_id : '-'}</td>
+                    </tr>
+                `).join('');
+
+                        if (moves.length === 0) tbody.innerHTML = '<tr><td colspan="5" style="text-align: center;">Sin movimientos registrados</td></tr>';
+
+                    } catch (e) {
+                        console.error(e);
+                        tbody.innerHTML = '<tr><td colspan="5" style="color: red;">Error cargando historial</td></tr>';
+                    }
+                }
+
+                async function saveMovement() {
+                    if (!currentMovItem) return;
+
+                    const qty = document.getElementById('movQty').value;
+                    const type = document.getElementById('movType').value;
+                    const reason = document.getElementById('movReason').value;
+
+                    if (!qty || qty <= 0) {
+                        alert("Ingrese una cantidad válida");
+                        return;
+                    }
+
+                    try {
+                        const res = await fetch('/api/warehouse/movements', {
+                            method: 'POST',
+                            headers: { 'Content-Type': 'application/json' },
+                            body: JSON.stringify({
+                                item_id: currentMovItem.id,
+                                quantity: qty,
+                                movement_type: type,
+                                reason: reason
+                            })
+                        });
+
+                        if (res.ok) {
+                            await loadMovements(currentMovItem.id);
+                            document.getElementById('movQty').value = '';
+                            document.getElementById('movReason').value = '';
+                            loadWarehouse(); // Reload main table to update stock
+                        } else {
+                            const err = await res.json();
+                            alert("Error: " + (err.error || 'Desconocido'));
+                        }
+                    } catch (e) { console.error(e); alert("Error de red"); }
+                }
+            </script>
+        </div>
+    </section>
+    <script src="/static/js/sidebar.js"></script>
+</body>
+
+</html>

@@ -1,0 +1,179 @@
+<!DOCTYPE html>
+<html lang="es">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Gestión de Compras - CMMS</title>
+    <link rel="stylesheet" href="/static/css/style.css">
+    <link rel="stylesheet" href="/static/css/sidebar.css">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css">
+    <style>
+        .purchase-card {
+            background: #1e1e1e;
+            border: 1px solid #333;
+            border-radius: 8px;
+            padding: 15px;
+            margin-bottom: 10px;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+
+        .status-pill {
+            padding: 4px 12px;
+            border-radius: 12px;
+            font-size: 0.8em;
+            font-weight: bold;
+        }
+
+        .status-pendiente {
+            background: #ff9800;
+            color: black;
+        }
+
+        .status-en_orden {
+            background: #2196f3;
+            color: white;
+        }
+
+        .status-emitida {
+            background: #2196f3;
+            color: white;
+        }
+
+        .status-recibido {
+            background: #4caf50;
+            color: white;
+        }
+
+        .status-cerrada {
+            background: #4caf50;
+            color: white;
+        }
+
+        /* Checkbox custom */
+        input[type="checkbox"] {
+            width: 20px;
+            height: 20px;
+            accent-color: #03dac6;
+        }
+    </style>
+</head>
+
+<body>
+    <nav class="sidebar">
+        <div class="logo-details">
+            <i class="fas fa-industry icon"></i>
+            <div class="logo_name">CMMS Pro</div>
+            <i class="fas fa-bars" id="btn_toggle"></i>
+        </div>
+        <ul class="nav-list">
+            <li><a href="/"><i class="fas fa-chart-line"></i><span class="links_name">Dashboard</span></a><span
+                    class="tooltip">Dashboard</span></li>
+            <li><a href="/avisos"><i class="fas fa-bell"></i><span class="links_name">Avisos</span></a><span
+                    class="tooltip">Avisos</span></li>
+            <li><a href="/ordenes"><i class="fas fa-tools"></i><span class="links_name">Órdenes</span></a><span
+                    class="tooltip">Órdenes</span></li>
+            <li><a href="/compras" class="active"><i class="fas fa-shopping-cart"></i><span
+                        class="links_name">Compras</span></a><span class="tooltip">Compras</span></li>
+            <li><a href="/almacen"><i class="fas fa-boxes"></i><span class="links_name">Almacén</span></a><span
+                    class="tooltip">Almacén</span></li>
+            <li><a href="/configuracion"><i class="fas fa-sitemap"></i><span class="links_name">Activos</span></a><span
+                    class="tooltip">Activos</span></li>
+            <li><a href="/reportes"><i class="fas fa-file-contract"></i><span
+                        class="links_name">Reportes</span></a><span class="tooltip">Reportes</span></li>
+        </ul>
+    </nav>
+
+    <section class="home-section">
+        <div class="top-bar">
+            <h1><i class="fas fa-shopping-cart"></i> Gestión de Compras y Requerimientos</h1>
+        </div>
+
+        <div class="main-container">
+            <div class="container-fluid">
+                <!-- TABS -->
+                <div class="tabs">
+                    <button class="tab-link active" onclick="openTab(event, 'tab-requests')">
+                        <i class="fas fa-clipboard-list"></i> Requerimientos Pendientes
+                    </button>
+                    <button class="tab-link" onclick="openTab(event, 'tab-orders')">
+                        <i class="fas fa-file-invoice-dollar"></i> Órdenes de Compra
+                    </button>
+                </div>
+
+                <!-- TAB 1: REQUESTS -->
+                <div id="tab-requests" class="tab-content" style="display: block;">
+                    <div class="toolbar" style="justify-content: space-between;">
+                        <h3>Bandeja de Entrada de Solicitudes</h3>
+                        <button class="btn-primary" onclick="createPurchaseOrder()">
+                            <i class="fas fa-plus"></i> Generar Orden de Compra
+                        </button>
+                    </div>
+
+                    <div id="requestsList">
+                        <!-- Loaded via JS -->
+                        <div style="text-align:center; padding: 20px;">Cargando...</div>
+                    </div>
+                </div>
+
+                <!-- TAB 2: ORDERS -->
+                <div id="tab-orders" class="tab-content" style="display: none;">
+                    <div class="toolbar">
+                        <h3>Historial de Órdenes de Compra (OC)</h3>
+                        <button class="btn-secondary" onclick="loadOrders()"><i class="fas fa-sync"></i>
+                            Refrescar</button>
+                    </div>
+
+                    <div class="table-container">
+                        <table class="data-table" id="ordersTable">
+                            <thead>
+                                <tr>
+                                    <th>Código OC</th>
+                                    <th>Proveedor</th>
+                                    <th>Fecha Emisión</th>
+                                    <th>Estado</th>
+                                    <th>Ítems</th>
+                                    <th>Acciones</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                <!-- JS -->
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+
+            </div>
+        </div>
+    </section>
+
+    <!-- MODAL GENERATE PO -->
+    <dialog id="poModal" class="modal">
+        <h3>Generar Orden de Compra</h3>
+        <p>Estás agrupando <span id="selectedCount" style="color: #03dac6; font-weight: bold;">0</span> requerimientos.
+        </p>
+        <form id="poForm" method="dialog">
+            <label>Proveedor</label>
+            <select id="poProvider" required>
+                <!-- Loaded via JS -->
+                <option value="Proveedor Genérico">Proveedor Genérico</option>
+            </select>
+
+            <label>Notas / Referencia</label>
+            <textarea id="poNotes" placeholder="Condiciones de pago, entrega..."></textarea>
+
+            <div class="modal-actions">
+                <button type="button" class="btn-secondary"
+                    onclick="document.getElementById('poModal').close()">Cancelar</button>
+                <button type="submit" class="btn-primary">Emitir OC</button>
+            </div>
+        </form>
+    </dialog>
+
+    <script src="/static/js/purchasing.js"></script>
+    <script src="/static/js/sidebar.js"></script>
+</body>
+
+</html>
