@@ -618,7 +618,7 @@ def handle_ot_materials(ot_id):
                     item_id=item.id,
                     quantity=-qty,
                     movement_type='OUT',
-                    date=datetime.now().isoformat(),
+                    date=datetime.now().strftime('%Y-%m-%d %H:%M:%S'),
                     reference_id=ot_id,
                     reason=f"Uso en OT-{ot_id}"
                 )
@@ -681,7 +681,7 @@ def handle_ot_material_id(ot_id, id):
                 item_id=item.id,
                 quantity=qty,
                 movement_type='RETURN',
-                date=datetime.now().isoformat(),
+                date=datetime.now().strftime('%Y-%m-%d %H:%M:%S'),
                 reference_id=ot_id,
                 reason=f"Devolución de OT-{ot_id}"
             )
