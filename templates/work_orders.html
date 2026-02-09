@@ -12,6 +12,65 @@
     <link href="https://fonts.googleapis.com/css2?family=Roboto:wght@300;400;500;700&display=swap" rel="stylesheet">
     <!-- FontAwesome for Icons -->
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css">
+    <style>
+        /* Multi-select Filter Styles */
+        .filter-wrapper {
+            position: relative;
+            display: inline-block;
+        }
+
+        .filter-btn {
+            background: #333;
+            color: white;
+            border: 1px solid #555;
+            padding: 8px 12px;
+            border-radius: 4px;
+            cursor: pointer;
+            font-size: 14px;
+            display: flex;
+            align-items: center;
+            gap: 5px;
+        }
+
+        .filter-btn:hover {
+            background: #444;
+        }
+
+        .filter-content {
+            display: none;
+            position: absolute;
+            background-color: #252526;
+            min-width: 200px;
+            max-height: 300px;
+            overflow-y: auto;
+            box-shadow: 0px 8px 16px 0px rgba(0, 0, 0, 0.5);
+            z-index: 1000;
+            border: 1px solid #444;
+            border-radius: 4px;
+            padding: 5px;
+        }
+
+        .filter-content.show {
+            display: block;
+        }
+
+        .filter-content label {
+            display: block;
+            padding: 5px 10px;
+            color: #ccc;
+            cursor: pointer;
+            font-size: 13px;
+        }
+
+        .filter-content label:hover {
+            background-color: #333;
+            color: white;
+        }
+
+        .filter-content input[type="checkbox"] {
+            margin-right: 8px;
+        }
+    </style>
 </head>
 
 <body>
@@ -111,8 +170,54 @@
                                 <i class="fas fa-file-excel"></i> Exportar
                             </button>
                         </a>
+                        <div style="display: flex; gap: 10px; flex-wrap: wrap; align-items: center;">
+                            <!-- Area Filter -->
+                            <div class="filter-wrapper">
+                                <button class="filter-btn" onclick="toggleFilter('area')">Área <i
+                                        class="fas fa-chevron-down"></i></button>
+                                <div id="dropdown-area" class="filter-content">
+                                    <label><input type="checkbox" value="ALL" checked
+                                            onchange="toggleSelectAll('area')"> (Seleccionar todo)</label>
+                                    <div id="list-area"></div>
+                                </div>
+                            </div>
+
+                            <!-- Line Filter -->
+                            <div class="filter-wrapper">
+                                <button class="filter-btn" onclick="toggleFilter('line')">Línea <i
+                                        class="fas fa-chevron-down"></i></button>
+                                <div id="dropdown-line" class="filter-content">
+                                    <label><input type="checkbox" value="ALL" checked
+                                            onchange="toggleSelectAll('line')"> (Seleccionar todo)</label>
+                                    <div id="list-line"></div>
+                                </div>
+                            </div>
+
+                            <!-- Equipment Filter -->
+                            <div class="filter-wrapper">
+                                <button class="filter-btn" onclick="toggleFilter('equip')">Equipo <i
+                                        class="fas fa-chevron-down"></i></button>
+                                <div id="dropdown-equip" class="filter-content">
+                                    <label><input type="checkbox" value="ALL" checked
+                                            onchange="toggleSelectAll('equip')"> (Seleccionar todo)</label>
+                                    <div id="list-equip"></div>
+                                </div>
+                            </div>
+
+                            <!-- Status Filter -->
+                            <div class="filter-wrapper">
+                                <button class="filter-btn" onclick="toggleFilter('status')">Estado <i
+                                        class="fas fa-chevron-down"></i></button>
+                                <div id="dropdown-status" class="filter-content">
+                                    <label><input type="checkbox" value="ALL" checked
+                                            onchange="toggleSelectAll('status')"> (Seleccionar todo)</label>
+                                    <div id="list-status"></div>
+                                </div>
+                            </div>
+                        </div>
+
                         <div class="search-bar">
-                            <input type="text" id="searchPlanning" placeholder="Buscar OT...">
+                            <input type="text" id="searchPlanning" placeholder="Buscar OT..." onkeyup="applyFilters()">
                         </div>
 
                         <div class="view-toggle"

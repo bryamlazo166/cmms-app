@@ -623,6 +623,13 @@ def handle_ot_materials(ot_id):
                     reason=f"Uso en OT-{ot_id}"
                 )
                 db.session.add(move)
+            
+            elif data['item_type'] == 'tool':
+                # Validate it exists in Warehouse but DO NOT deduct stock
+                item = WarehouseItem.query.get(data['item_id'])
+                if not item:
+                    return jsonify({"error": "Herramienta no encontrada en Almacén"}), 404
+                # No stock deduction for tools
 
             material = OTMaterial(**data)
             db.session.add(material)
@@ -639,14 +646,12 @@ def handle_ot_materials(ot_id):
     result = []
     for m in materials:
         data = m.to_dict()
-        if m.item_type == 'tool':
-            tool = Tool.query.get(m.item_id)
-            data['item_name'] = tool.name if tool else 'Unknown'
-            data['item_code'] = tool.code if tool else ''
-        else:
-            item = WarehouseItem.query.get(m.item_id)
-            data['item_name'] = item.name if item else 'Unknown'
-            data['item_code'] = item.code if item else ''
+        # Always fetch from WarehouseItem now (Unified Catalog)
+        item = WarehouseItem.query.get(m.item_id)
+        data['item_name'] = item.name if item else 'Unknown'
+        data['item_code'] = item.code if item else ''
+        data['item_category'] = item.category if item else ''
+        
         result.append(data)
     
     return jsonify(result)

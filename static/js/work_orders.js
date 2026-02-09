@@ -57,6 +57,102 @@ document.addEventListener('DOMContentLoaded', () => {
     document.getElementById('closeOTForm').addEventListener('submit', handleCloseOTSubmit);
 });
 
+async function loadHierarchyData() {
+    try {
+        const [areas, lines, equips] = await Promise.all([
+            fetch('/api/areas').then(r => r.json()),
+            fetch('/api/lines').then(r => r.json()),
+            fetch('/api/equipments').then(r => r.json())
+        ]);
+
+        allAreas = areas.sort((a, b) => a.name.localeCompare(b.name));
+        allLines = lines.sort((a, b) => a.name.localeCompare(b.name));
+        allEquips = equips.sort((a, b) => a.name.localeCompare(b.name));
+
+        // Populate modal dropdowns if needed (not filters)
+    } catch (e) { console.error("Error loading hierarchy:", e); }
+}
+
+// Global state for filters
+let activeFilters = {
+    area: [],
+    line: [],
+    equip: [],
+    status: []
+};
+
+function populateMultiSelectFilters() {
+    // Extract unique values from allWorkOrders
+    const areas = [...new Set(allWorkOrders.map(ot => ot.area_name || '(Sin Área)').filter(x => x))].sort();
+    const lines = [...new Set(allWorkOrders.map(ot => ot.line_name || '(Sin Línea)').filter(x => x))].sort();
+    const equips = [...new Set(allWorkOrders.map(ot => ot.equipment_name || '(Sin Equipo)').filter(x => x))].sort();
+    const statuses = [...new Set(allWorkOrders.map(ot => ot.status).filter(x => x))].sort();
+
+    renderCheckboxList('area', areas);
+    renderCheckboxList('line', lines);
+    renderCheckboxList('equip', equips);
+    renderCheckboxList('status', statuses);
+
+    // Initialize activeFilters based on all checkboxes being checked by default
+    activeFilters.area = areas;
+    activeFilters.line = lines;
+    activeFilters.equip = equips;
+    activeFilters.status = statuses;
+}
+
+function renderCheckboxList(type, items) {
+    const container = document.getElementById(`list-${type}`);
+    if (!container) return;
+
+    // Add "Select All" option
+    let html = `
+        <label>
+            <input type="checkbox" value="ALL" checked onchange="toggleSelectAll('${type}')"> Seleccionar Todo
+        </label>
+        <div class="filter-divider"></div>
+    `;
+
+    html += items.map(item => `
+        <label>
+            <input type="checkbox" value="${item}" checked onchange="applyFilters()"> ${item}
+        </label>
+    `).join('');
+    container.innerHTML = html;
+}
+
+window.toggleFilter = (type) => {
+    // Close others
+    document.querySelectorAll('.filter-content').forEach(el => {
+        if (el.id !== `dropdown-${type}`) el.classList.remove('show');
+    });
+    document.getElementById(`dropdown-${type}`).classList.toggle('show');
+}
+
+window.toggleSelectAll = (type) => {
+    const parent = document.getElementById(`list-${type}`); // Use list-${type} for the container
+    const selectAllCb = parent.querySelector('input[value="ALL"]');
+    const checkboxes = parent.querySelectorAll('input:not([value="ALL"])');
+
+    checkboxes.forEach(cb => cb.checked = selectAllCb.checked);
+    applyFilters();
+}
+
+// Close dropdowns when clicking outside
+window.onclick = function (event) {
+    if (!event.target.matches('.filter-btn')) {
+        var dropdowns = document.getElementsByClassName("filter-content");
+        for (var i = 0; i < dropdowns.length; i++) {
+            var openDropdown = dropdowns[i];
+            if (openDropdown.classList.contains('show')) {
+                // Determine if click was inside the dropdown
+                if (!openDropdown.contains(event.target)) {
+                    openDropdown.classList.remove('show');
+                }
+            }
+        }
+    }
+}
+
 /* --- TABS LOGIC --- */
 function openTab(evt, tabName) {
     currentTab = tabName;
@@ -92,7 +188,12 @@ async function loadWorkOrders() {
     try {
         const res = await fetch('/api/work-orders');
         allWorkOrders = await res.json();
-        renderPlanningTable();
+
+        // Initialize Multi-selects
+        populateMultiSelectFilters();
+
+        // Initially render all
+        applyFilters();
     } catch (e) { console.error(e); }
 }
 
@@ -149,10 +250,79 @@ function getCriticalityColor(crit) {
     return '#777';
 }
 
-function renderPlanningTable() {
+window.applyFilters = () => {
+    // Helper to get selected values
+    const getSelected = (type) => {
+        const container = document.getElementById(`list-${type}`);
+        if (!container) return [];
+        const checkboxes = container.querySelectorAll('input:not([value="ALL"]):checked');
+        return Array.from(checkboxes).map(cb => cb.value);
+    };
+
+    const selectedAreas = getSelected('area');
+    const selectedLines = getSelected('line');
+    const selectedEquips = getSelected('equip');
+    const selectedStatuses = getSelected('status');
+    const search = document.getElementById('searchPlanning')?.value.toLowerCase().trim();
+
+    // Check "Select All" state to optimize
+    // Actually, if "Select All" is checked, usually all sub-checkboxes are checked too.
+    // If NO checkboxes are checked, typically that means "None", effectively hiding everything.
+    // BUT user expects Excel behavior: if you uncheck all, you see nothing.
+
+    const filtered = allWorkOrders.filter(ot => {
+        // 1. Multi-select Filters
+        // Match by Name because we populated lists with Names
+        const otArea = ot.area_name || '(Sin Área)';
+        const otLine = ot.line_name || '(Sin Línea)';
+        const otEquip = ot.equipment_name || '(Sin Equipo)';
+        const otStatus = ot.status;
+
+        if (selectedAreas.length > 0 && !selectedAreas.includes(otArea)) return false;
+        if (selectedLines.length > 0 && !selectedLines.includes(otLine)) return false;
+        if (selectedEquips.length > 0 && !selectedEquips.includes(otEquip)) return false;
+        if (selectedStatuses.length > 0 && !selectedStatuses.includes(otStatus)) return false;
+
+        // 2. Search Text
+        if (search) {
+            const code = (ot.code || '').toLowerCase();
+            const desc = (ot.description || '').toLowerCase();
+            const equip = (ot.equipment_name || '').toLowerCase();
+            const provider = (allProviders.find(p => p.id === ot.provider_id)?.name || '').toLowerCase();
+            const tech = (ot.technician_id || '').toLowerCase();
+
+            if (!code.includes(search) &&
+                !desc.includes(search) &&
+                !equip.includes(search) &&
+                !provider.includes(search) &&
+                !tech.includes(search)) {
+                return false;
+            }
+        }
+        return true;
+    });
+
+    renderPlanningTable(filtered);
+}
+
+function renderPlanningTable(data = null) {
+    // If no data passed, use allWorkOrders (initial load)
+    // BUT we should probably apply filters if they exist.
+    // Better pattern: if data is null, call applyFilters() which calls this with data.
+    // For now, to support direct calls, we'll default to allWorkOrders if null
+
+    // However, calling applyFilters() indiscriminately might cause loops if not careful.
+    // Let's rely on data passed in.
+
+    const list = data || allWorkOrders;
     const tbody = document.querySelector('#planningTable tbody');
-    // Filter logic can go here
-    tbody.innerHTML = allWorkOrders.map(ot => {
+
+    if (list.length === 0) {
+        tbody.innerHTML = '<tr><td colspan="15" style="text-align:center; padding:20px; color:#aaa;">No se encontraron órdenes de trabajo.</td></tr>';
+        return;
+    }
+
+    tbody.innerHTML = list.map(ot => {
         let statusClass = 'status-open';
         if (ot.status === 'En Progreso') statusClass = 'status-progress';
         if (ot.status === 'Cerrada') statusClass = 'status-closed';
@@ -1361,67 +1531,40 @@ window.openAddMaterialModal = async function (type) {
     }
 
     document.getElementById('materialType').value = type;
+    currentMaterialType = type;
     document.getElementById('materialQuantity').value = 1;
 
-    // Load items
-    const endpoint = type === 'tool' ? '/api/tools' : '/api/warehouse';
-    const res = await fetch(endpoint);
-    const items = await res.json();
+    // Update Title
+    const title = type === 'tool' ? 'Agregar Herramienta (Catálogo)' : 'Agregar Repuesto / Material';
+    const icon = type === 'tool' ? 'wrench' : 'box';
+    document.getElementById('addMaterialTitle').innerHTML = `<i class="fas fa-${icon}"></i> ${title}`;
 
-    const select = document.getElementById('materialItemSelect');
-    select.innerHTML = items.map(i => {
-        const stock = (i.stock !== undefined) ? i.stock : 9999; // Tools might not have stock
-        const stockText = type !== 'tool' ? ` (Stock: ${stock})` : '';
-        const disabled = (type !== 'tool' && stock <= 0) ? 'disabled style="color:red;"' : '';
-        // We allow selection but warn, or disable? User asked for warning.
-        // Let's add data-stock attr
-        return `<option value="${i.id}" data-stock="${stock}">${i.code} - ${i.name}${stockText}</option>`;
-    }).join('');
-
-    // Update title
-    document.getElementById('addMaterialTitle').innerHTML =
-        type === 'tool' ? '<i class="fas fa-wrench"></i> Agregar Herramienta' : '<i class="fas fa-box"></i> Agregar Repuesto';
-
-    // Add listener for stock warning
-    select.onchange = function () {
-        const opt = this.options[this.selectedIndex];
-        const stock = parseInt(opt.getAttribute('data-stock'));
-        const type = document.getElementById('materialType').value;
-        const msgDiv = document.getElementById('stockWarningMsg'); // We need to add this to HTML or create dynamically
-
-        if (!msgDiv) {
-            const div = document.createElement('div');
-            div.id = 'stockWarningMsg';
-            div.style.marginTop = '10px';
-            div.style.fontWeight = 'bold';
-            this.parentNode.appendChild(div);
-        }
-
-        const warningDiv = document.getElementById('stockWarningMsg');
-        if (type !== 'tool') {
-            if (stock <= 0) {
-                warningDiv.innerHTML = '⚠️ SIN STOCK EN ALMACÉN';
-                warningDiv.style.color = '#ff5252';
-            } else {
-                warningDiv.innerHTML = `✅ Disponible: ${stock}`;
-                warningDiv.style.color = '#4caf50';
-            }
-        } else {
-            warningDiv.innerHTML = '';
-        }
-    };
-
-    // Trigger change
-    select.onchange();
+    // Load Items
+    await loadWarehouseItemsForSelect();
 
     document.getElementById('addMaterialModal').showModal();
 }
 
-// Confirm Add Material
-// Confirm Add Material
-window.confirmAddMaterial = async function () {
+async function loadWarehouseItemsForSelect() {
+    const select = document.getElementById('materialItemSelect');
+    select.innerHTML = '<option>Cargando...</option>';
+
+    try {
+        const res = await fetch('/api/warehouse');
+        const items = await res.json();
+
+        select.innerHTML = items.map(i => {
+            const stock = (i.stock !== undefined) ? i.stock : 'N/A';
+            return `<option value="${i.id}" data-stock="${stock}">${i.code} - ${i.name} (Stock: ${stock})</option>`;
+        }).join('');
+    } catch (e) {
+        select.innerHTML = '<option>Error cargando items</option>';
+        console.error(e);
+    }
+}
+
+async function confirmAddMaterial() {
     const otId = document.getElementById('otId').value;
-    const type = document.getElementById('materialType').value;
     const itemId = document.getElementById('materialItemSelect').value;
     const quantity = document.getElementById('materialQuantity').value;
 
@@ -1439,7 +1582,7 @@ window.confirmAddMaterial = async function () {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({
-                item_type: type,
+                item_type: currentMaterialType, // 'warehouse' or 'tool'
                 item_id: parseInt(itemId),
                 quantity: parseInt(quantity)
             })
@@ -1450,12 +1593,9 @@ window.confirmAddMaterial = async function () {
             loadOTMaterials(otId);
         } else {
             const err = await res.json();
-            alert("Error al agregar material: " + (err.error || "Error desconocido"));
+            alert("Error: " + (err.error || "Error desconocido"));
         }
-    } catch (e) {
-        console.error(e);
-        alert("Error de red o conexión.");
-    }
+    } catch (e) { console.error(e); }
 }
 
 // Remove Material
