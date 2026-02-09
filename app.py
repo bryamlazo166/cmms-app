@@ -1170,7 +1170,7 @@ def handle_warehouse_movements():
             item_id=item_id,
             quantity=qty if m_type == 'IN' else -qty,
             movement_type=m_type,
-            date=datetime.now().isoformat(),
+            date=datetime.now().strftime('%Y-%m-%d %H:%M:%S'),
             reason=reason
         )
         db.session.add(move)
@@ -1659,6 +1659,41 @@ def download_template():
         
     except Exception as e:
         logger.error(f"Template Download Failed: {e}")
+        return jsonify({"error": str(e)}), 500
+
+
+@app.route('/api/predictive/check-duplicates', methods=['GET'])
+def check_duplicates():
+    try:
+        equip_id = request.args.get('equipment_id')
+        exclude_notice_id = request.args.get('exclude_notice_id')
+        
+        if not equip_id:
+            return jsonify({"error": "Equipment ID required"}), 400
+
+        # 1. Active Notices
+        notice_query = MaintenanceNotice.query.filter(
+            MaintenanceNotice.equipment_id == equip_id,
+            MaintenanceNotice.status.in_(['Pendiente', 'En Progreso', 'En Tratamiento'])
+        )
+        if exclude_notice_id:
+            notice_query = notice_query.filter(MaintenanceNotice.id != exclude_notice_id)
+            
+        duplicate_notices = notice_query.all()
+        
+        # 2. Active Work Orders
+        duplicate_ots = WorkOrder.query.filter(
+            WorkOrder.equipment_id == equip_id,
+            WorkOrder.status.in_(['Abierta', 'Programada', 'En Progreso'])
+        ).all()
+        
+        return jsonify({
+            "notices": [n.to_dict() for n in duplicate_notices],
+            "work_orders": [ot.to_dict() for ot in duplicate_ots]
+        })
+        
+    except Exception as e:
+        logger.error(f"Duplicate Check Error: {e}")
         return jsonify({"error": str(e)}), 500
 
 @app.route('/api/predictive/ot-suggestions', methods=['GET'])

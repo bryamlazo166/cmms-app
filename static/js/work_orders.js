@@ -1270,6 +1270,7 @@ function getNameFromList(list, id) {
 }
 
 // Render Pending Notices Table
+// Render Pending Notices Table
 function renderPendingNotices() {
     const tbody = document.querySelector('#pendingNoticesTable tbody');
     if (!tbody) return;
@@ -1277,14 +1278,10 @@ function renderPendingNotices() {
     tbody.innerHTML = '';
 
     allPendingNotices.forEach(n => {
-        // Get equipment name or fallback to system/component
+        // Get equipment name
         let equipName = getNameFromList(allEquips, n.equipment_id);
-        if (equipName === '-') {
-            equipName = getNameFromList(allSystems, n.system_id);
-        }
-        if (equipName === '-') {
-            equipName = getNameFromList(allComponents, n.component_id);
-        }
+        if (equipName === '-') equipName = getNameFromList(allSystems, n.system_id);
+        if (equipName === '-') equipName = getNameFromList(allComponents, n.component_id);
 
         // Status badge color
         const statusColors = {
@@ -1299,15 +1296,22 @@ function renderPendingNotices() {
             <td>${n.code || n.id}</td>
             <td>${n.reporter_type || '-'}</td>
             <td>${equipName}</td>
-            <td>${n.description ? (n.description.length > 40 ? n.description.substring(0, 40) + '...' : n.description) : '-'}</td>
+            <td>${n.description ? (n.description.length > 30 ? n.description.substring(0, 30) + '...' : n.description) : '-'}</td>
             <td>${n.criticality || '-'}</td>
             <td>${n.priority || '-'}</td>
             <td>${n.request_date || '-'}</td>
-            <td><span style="background: ${statusColor}; padding: 3px 8px; border-radius: 10px; font-size: 0.85em;">${n.status || 'Pendiente'}</span></td>
+            <td>${n.reporter_name || '-'}</td>
+            <td>${n.maintenance_type || '-'}</td>
+            <td><span style="background: ${statusColor}; padding: 3px 8px; border-radius: 10px; font-size: 0.8em; color: white;">${n.status || 'Pendiente'}</span></td>
             <td>
-                <button onclick="convertNoticeToOT(${n.id})" class="btn-success" style="padding: 5px 10px;" title="Convertir a OT">
-                    <i class="fas fa-wrench"></i> Crear OT
-                </button>
+                <div style="display: flex; gap: 5px;">
+                    <button onclick="viewNoticeDetails(${n.id})" class="btn-info" style="padding: 5px 8px;" title="Ver Detalle y Duplicados">
+                        <i class="fas fa-eye"></i>
+                    </button>
+                    <button onclick="convertNoticeToOT(${n.id})" class="btn-success" style="padding: 5px 8px;" title="Crear OT">
+                        <i class="fas fa-wrench"></i>
+                    </button>
+                </div>
             </td>
         `;
         tbody.appendChild(tr);
@@ -1315,8 +1319,63 @@ function renderPendingNotices() {
 
     // Show message if no pending notices
     if (allPendingNotices.length === 0) {
-        tbody.innerHTML = '<tr><td colspan="9" style="text-align: center; color: #888; padding: 20px;">No hay avisos pendientes para convertir en OT</td></tr>';
+        tbody.innerHTML = '<tr><td colspan="11" style="text-align: center; color: #888; padding: 20px;">No hay avisos pendientes para convertir en OT</td></tr>';
     }
+}
+
+// View Notice Details & Check Duplicates
+window.viewNoticeDetails = async function (id) {
+    try {
+        const n = allPendingNotices.find(x => x.id === id);
+        if (!n) return;
+
+        document.getElementById('detail-code').textContent = n.code || n.id;
+        document.getElementById('detail-status').textContent = n.status || '-';
+        document.getElementById('detail-reporter-type').textContent = n.reporter_type || '-';
+        document.getElementById('detail-reporter-name').textContent = n.reporter_name || '-';
+        document.getElementById('detail-request-date').textContent = n.request_date || '-';
+        document.getElementById('detail-maint-type').textContent = n.maintenance_type || '-';
+        document.getElementById('detail-description').textContent = n.description || '-';
+
+        // Hierarchy
+        let hText = `Area: ${getNameFromList(allAreas, n.area_id)} | Línea: ${getNameFromList(allLines, n.line_id)} | Equipo: ${getNameFromList(allEquips, n.equipment_id)}`;
+        document.getElementById('detail-hierarchy').textContent = hText;
+
+        // Reset & Actions
+        document.getElementById('detail-actions').innerHTML = `
+            <button class="btn-primary" onclick="convertNoticeToOT(${n.id}); document.getElementById('noticeDetailModal').close();">
+                <i class="fas fa-wrench"></i> Crear OT Ahora
+            </button>
+        `;
+
+        // Check Duplicates
+        const warningSection = document.getElementById('duplicate-warning-section');
+        const list = document.getElementById('duplicate-list');
+        warningSection.style.display = 'none';
+        list.innerHTML = '';
+
+        if (n.equipment_id) {
+            const res = await fetch(`/api/predictive/check-duplicates?equipment_id=${n.equipment_id}&exclude_notice_id=${n.id}`);
+            const data = await res.json();
+
+            if ((data.notices && data.notices.length > 0) || (data.work_orders && data.work_orders.length > 0)) {
+                warningSection.style.display = 'block';
+
+                // Add Notices
+                data.notices.forEach(d => {
+                    list.innerHTML += `<li>⚠️ Aviso <strong>${d.code || d.id}</strong> (${d.status}): "${d.description}"</li>`;
+                });
+
+                // Add Work Orders
+                data.work_orders.forEach(ot => {
+                    list.innerHTML += `<li>⚠️ OT Activa <strong>${ot.code || ot.id}</strong> (${ot.status}): "${ot.description}"</li>`;
+                });
+            }
+        }
+
+        document.getElementById('noticeDetailModal').showModal();
+
+    } catch (e) { console.error(e); alert("Error cargando detalles"); }
 }
 
 // Convert Notice to OT

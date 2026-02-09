@@ -423,6 +423,8 @@
                                 <th>Criticidad</th>
                                 <th>Prioridad</th>
                                 <th>F. Solicitud</th>
+                                <th>Solicitante</th>
+                                <th>Tipo de Aviso</th>
                                 <th>Estado</th>
                                 <th>Acciones</th>
                             </tr>
@@ -919,6 +921,72 @@
                     <button type="submit" class="btn-danger">Cerrar Orden</button>
                 </div>
             </form>
+        </dialog>
+
+        <!-- MODAL: DETALLE DE AVISO (NUEVO) -->
+        <dialog id="noticeDetailModal" class="modal">
+            <div class="modal-content" style="max-width: 800px; width: 90%;">
+                <div class="modal-header">
+                    <h3 id="detailNoticeTitle">Detalle del Aviso</h3>
+                    <button class="close-modal"
+                        onclick="document.getElementById('noticeDetailModal').close()">✖</button>
+                </div>
+                <div class="modal-body">
+                    <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 15px;">
+                        <div>
+                            <strong style="color: #03dac6;">Código:</strong> <span id="detail-code">-</span>
+                        </div>
+                        <div>
+                            <strong style="color: #03dac6;">Estado:</strong> <span id="detail-status">-</span>
+                        </div>
+                        <div>
+                            <strong style="color: #03dac6;">Área Reporta:</strong> <span
+                                id="detail-reporter-type">-</span>
+                        </div>
+                        <div>
+                            <strong style="color: #03dac6;">Solicitante:</strong> <span
+                                id="detail-reporter-name">-</span>
+                        </div>
+                        <div>
+                            <strong style="color: #03dac6;">Fecha Solicitud:</strong> <span
+                                id="detail-request-date">-</span>
+                        </div>
+                        <div>
+                            <strong style="color: #03dac6;">Tipo Mtto:</strong> <span id="detail-maint-type">-</span>
+                        </div>
+                    </div>
+
+                    <div style="margin-top: 15px; border-top: 1px solid #444; padding-top: 10px;">
+                        <strong style="color: #03dac6;">Ubicación Técnica:</strong>
+                        <div id="detail-hierarchy"
+                            style="background: #222; padding: 5px; border-radius: 4px; margin-top: 5px; font-size: 0.9em;">
+                            -
+                        </div>
+                    </div>
+
+                    <div style="margin-top: 15px;">
+                        <strong style="color: #03dac6;">Descripción:</strong>
+                        <p id="detail-description"
+                            style="background: #222; padding: 10px; border-radius: 5px; margin-top: 5px;">-</p>
+                    </div>
+
+                    <div id="duplicate-warning-section"
+                        style="display: none; margin-top: 20px; background: #3e2723; padding: 10px; border-radius: 5px; border: 1px solid #bf360c;">
+                        <strong style="color: #ffccbc;"><i class="fas fa-exclamation-triangle"></i> Posibles Duplicados
+                            Detectados:</strong>
+                        <ul id="duplicate-list" style="margin-top: 5px; padding-left: 20px; color: #ffab91;">
+                            <!-- JS populated -->
+                        </ul>
+                    </div>
+                </div>
+                <div class="modal-footer" style="justify-content: space-between;">
+                    <button class="btn-secondary"
+                        onclick="document.getElementById('noticeDetailModal').close()">Cerrar</button>
+                    <div id="detail-actions">
+                        <!-- Dynamic Buttons -->
+                    </div>
+                </div>
+            </div>
         </dialog>
 
         <script src="/static/js/work_orders.js"></script>
