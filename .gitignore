@@ -7,3 +7,5 @@ instance/
 venv/
 .idea/
 .vscode/
+.venv/
+*.db
