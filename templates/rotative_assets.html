@@ -1,0 +1,149 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Activos Rotativos - CMMS</title>
+    <link rel="stylesheet" href="/static/css/style.css">
+    <link rel="stylesheet" href="/static/css/sidebar.css?v=20260319">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css">
+    <style>
+        .kpi-grid { display:grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap:10px; margin-bottom:14px; }
+        .kpi-card { background:#111927; border:1px solid #2b3342; border-radius:12px; padding:12px; }
+        .kpi-card .label { color:#89a9ca; font-size:.8rem; text-transform:uppercase; }
+        .kpi-card .value { font-size:1.7rem; font-weight:700; margin-top:4px; }
+        .toolbar-grid { display:grid; grid-template-columns: repeat(6, minmax(130px, 1fr)); gap:10px; margin-bottom:14px; }
+        .toolbar-grid select, .toolbar-grid input { width:100%; }
+        .pill { padding:3px 8px; border-radius:12px; font-size:.76rem; font-weight:600; border:1px solid transparent; }
+        .status-disponible { background:rgba(33, 150, 243, .17); color:#95d2ff; border-color:rgba(33,150,243,.45); }
+        .status-instalado { background:rgba(76, 175, 80, .17); color:#9de4a1; border-color:rgba(76,175,80,.45); }
+        .status-taller { background:rgba(255, 193, 7, .17); color:#ffd76f; border-color:rgba(255,193,7,.45); }
+        .status-baja { background:rgba(244, 67, 54, .17); color:#ff9d95; border-color:rgba(244,67,54,.45); }
+        .actions-row { display:flex; gap:6px; flex-wrap:wrap; }
+        .btn-micro { border:1px solid #3a5372; background:#172338; color:#d7e7fa; border-radius:8px; padding:4px 7px; font-size:.75rem; cursor:pointer; }
+        @media (max-width: 1200px) { .toolbar-grid { grid-template-columns: repeat(2, minmax(120px, 1fr)); } }
+    </style>
+</head>
+<body>
+    <nav class="sidebar">
+        <div class="logo-details">
+            <i class="fas fa-industry icon"></i>
+            <div class="logo_name">CMMS Pro</div>
+            <i class="fas fa-bars" id="btn_toggle"></i>
+        </div>
+        <ul class="nav-list">
+            <li><a href="/"><i class="fas fa-chart-line"></i><span class="links_name">Dashboard</span></a><span class="tooltip">Dashboard</span></li>
+            <li><a href="/avisos"><i class="fas fa-bell"></i><span class="links_name">Avisos</span></a><span class="tooltip">Avisos</span></li>
+            <li><a href="/ordenes"><i class="fas fa-tools"></i><span class="links_name">Ordenes</span></a><span class="tooltip">Ordenes</span></li>
+            <li><a href="/activos-rotativos"><i class="fas fa-sync-alt"></i><span class="links_name">Act. Rotativos</span></a><span class="tooltip">Act. Rotativos</span></li>
+            <li><a href="/configuracion"><i class="fas fa-sitemap"></i><span class="links_name">Activos</span></a><span class="tooltip">Activos</span></li>
+            <li><a href="/monitoreo"><i class="fas fa-wave-square"></i><span class="links_name">Monitoreo</span></a><span class="tooltip">Monitoreo</span></li>
+            <li><a href="/lubricacion"><i class="fas fa-oil-can"></i><span class="links_name">Lubricacion</span></a><span class="tooltip">Lubricacion</span></li>
+            <li><a href="/reportes"><i class="fas fa-file-contract"></i><span class="links_name">Reportes</span></a><span class="tooltip">Reportes</span></li>
+        </ul>
+    </nav>
+    <section class="home-section">
+        <div class="top-bar">
+            <h1><i class="fas fa-sync-alt"></i> Activos Rotativos</h1>
+        </div>
+        <div class="main-container">
+            <div class="toolbar" style="margin-bottom:10px;">
+                <button class="btn-primary" onclick="openAssetModal()"><i class="fas fa-plus"></i> Nuevo Activo</button>
+                <button class="btn-secondary" onclick="reloadRotative()"><i class="fas fa-sync"></i> Actualizar</button>
+            </div>
+
+            <div class="kpi-grid">
+                <div class="kpi-card"><div class="label">Total</div><div id="kpiTotal" class="value">0</div></div>
+                <div class="kpi-card"><div class="label">Instalados</div><div id="kpiInstalled" class="value">0</div></div>
+                <div class="kpi-card"><div class="label">Disponibles</div><div id="kpiAvailable" class="value">0</div></div>
+                <div class="kpi-card"><div class="label">En Taller / Baja</div><div id="kpiOut" class="value">0</div></div>
+            </div>
+
+            <div class="toolbar-grid">
+                <select id="fArea"><option value="">Area: Todas</option></select>
+                <select id="fLine"><option value="">Linea: Todas</option></select>
+                <select id="fEquip"><option value="">Equipo: Todos</option></select>
+                <select id="fStatus">
+                    <option value="">Estado: Todos</option>
+                    <option value="Instalado">Instalado</option>
+                    <option value="Disponible">Disponible</option>
+                    <option value="En Taller">En Taller</option>
+                    <option value="Baja">Baja</option>
+                </select>
+                <input id="fSearch" placeholder="Buscar por codigo, nombre, serie">
+                <button class="btn-secondary" onclick="reloadRotative()">Aplicar</button>
+            </div>
+
+            <div class="table-wrap">
+                <table class="table-sm">
+                    <thead>
+                        <tr>
+                            <th>Codigo</th><th>Nombre</th><th>Categoria</th><th>Marca/Modelo</th><th>Serie</th><th>Ubicacion</th><th>Estado</th><th>Acciones</th>
+                        </tr>
+                    </thead>
+                    <tbody id="assetsBody">
+                        <tr><td colspan="8">Cargando...</td></tr>
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    </section>
+
+    <dialog id="assetModal" class="modal" style="max-width: 720px; border-radius:12px;">
+        <h3 id="assetModalTitle"><i class="fas fa-plus"></i> Nuevo Activo Rotativo</h3>
+        <form id="assetForm">
+            <input id="assetId" type="hidden">
+            <div style="display:grid; grid-template-columns: 1fr 1fr; gap:10px;">
+                <div class="form-group"><label>Nombre *</label><input id="aName" required></div>
+                <div class="form-group"><label>Categoria</label><input id="aCategory" placeholder="Motorreductor"></div>
+                <div class="form-group"><label>Marca</label><input id="aBrand"></div>
+                <div class="form-group"><label>Modelo</label><input id="aModel"></div>
+                <div class="form-group"><label>Serie</label><input id="aSerial"></div>
+                <div class="form-group"><label>Estado</label>
+                    <select id="aStatus">
+                        <option value="Disponible">Disponible</option>
+                        <option value="Instalado">Instalado</option>
+                        <option value="En Taller">En Taller</option>
+                        <option value="Baja">Baja</option>
+                    </select>
+                </div>
+                <div class="form-group"><label>Area</label><select id="aArea"></select></div>
+                <div class="form-group"><label>Linea</label><select id="aLine"></select></div>
+                <div class="form-group"><label>Equipo</label><select id="aEquip"></select></div>
+                <div class="form-group"><label>Sistema (ID opcional)</label><input id="aSystemId" type="number" min="1"></div>
+                <div class="form-group"><label>Componente (ID opcional)</label><input id="aComponentId" type="number" min="1"></div>
+                <div class="form-group"><label>Fecha instalacion</label><input id="aInstallDate" type="date"></div>
+                <div class="form-group" style="grid-column: 1 / -1;"><label>Notas</label><textarea id="aNotes" rows="2"></textarea></div>
+            </div>
+            <div style="display:flex; justify-content:flex-end; gap:8px; margin-top:12px;">
+                <button type="button" class="btn-secondary" onclick="closeDialog('assetModal')">Cancelar</button>
+                <button type="submit" class="btn-success">Guardar</button>
+            </div>
+        </form>
+    </dialog>
+
+    <dialog id="installModal" class="modal" style="max-width: 560px; border-radius:12px;">
+        <h3><i class="fas fa-map-marker-alt"></i> Instalar Activo</h3>
+        <form id="installForm">
+            <input id="installAssetId" type="hidden">
+            <div style="display:grid; grid-template-columns: 1fr 1fr; gap:10px;">
+                <div class="form-group"><label>Fecha</label><input id="insDate" type="date"></div>
+                <div class="form-group"><label>Area</label><select id="insArea"></select></div>
+                <div class="form-group"><label>Linea</label><select id="insLine"></select></div>
+                <div class="form-group"><label>Equipo</label><select id="insEquip"></select></div>
+                <div class="form-group"><label>Sistema (ID opcional)</label><input id="insSystem" type="number" min="1"></div>
+                <div class="form-group"><label>Componente (ID opcional)</label><input id="insComp" type="number" min="1"></div>
+                <div class="form-group" style="grid-column: 1 / -1;"><label>Comentarios</label><textarea id="insComments" rows="2"></textarea></div>
+            </div>
+            <div style="display:flex; justify-content:flex-end; gap:8px; margin-top:12px;">
+                <button type="button" class="btn-secondary" onclick="closeDialog('installModal')">Cancelar</button>
+                <button type="submit" class="btn-success">Confirmar Instalacion</button>
+            </div>
+        </form>
+    </dialog>
+
+    <script src="/static/js/sidebar.js?v=20260319"></script>
+    <script src="/static/js/rotative_assets.js"></script>
+</body>
+</html>
+

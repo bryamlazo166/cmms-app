@@ -263,7 +263,8 @@ window.applyFilters = () => {
     const selectedLines = getSelected('line');
     const selectedEquips = getSelected('equip');
     const selectedStatuses = getSelected('status');
-    const search = document.getElementById('searchPlanning')?.value.toLowerCase().trim();
+    const searchInput = document.getElementById('searchPlanning');
+    const search = searchInput ? searchInput.value.toLowerCase().trim() : '';
 
     // Check "Select All" state to optimize
     // Actually, if "Select All" is checked, usually all sub-checkboxes are checked too.
@@ -288,7 +289,8 @@ window.applyFilters = () => {
             const code = (ot.code || '').toLowerCase();
             const desc = (ot.description || '').toLowerCase();
             const equip = (ot.equipment_name || '').toLowerCase();
-            const provider = (allProviders.find(p => p.id === ot.provider_id)?.name || '').toLowerCase();
+            const providerMatch = allProviders.find(p => p.id === ot.provider_id);
+            const provider = ((providerMatch && providerMatch.name) || '').toLowerCase();
             const tech = (ot.technician_id || '').toLowerCase();
 
             if (!code.includes(search) &&
@@ -1135,7 +1137,8 @@ async function handleCloseOTSubmit(e) {
 /* --- TECHNICIAN MANAGEMENT --- */
 async function loadTechnicians() {
     try {
-        const showAll = document.getElementById('showInactiveTechs')?.checked || false;
+        const showInactiveEl = document.getElementById('showInactiveTechs');
+        const showAll = showInactiveEl ? showInactiveEl.checked : false;
         const url = showAll ? '/api/technicians?all=true' : '/api/technicians';
         const res = await fetch(url);
         allTechnicians = await res.json();
@@ -1196,7 +1199,7 @@ window.editTechnician = (id) => {
 
 window.toggleTechnician = async (id) => {
     const t = allTechnicians.find(x => x.id === id);
-    const action = t?.is_active ? 'dar de baja' : 'dar de alta';
+    const action = (t && t.is_active) ? 'dar de baja' : 'dar de alta';
     if (!confirm(`¿Desea ${action} a este técnico?`)) return;
 
     await fetch(`/api/technicians/${id}`, { method: 'DELETE' });
@@ -1753,7 +1756,8 @@ window.addPersonnelRow = function () {
 window.confirmAddPersonnel = function () {
     const techSelect = document.getElementById('personnelTechSelect');
     const techId = techSelect.value;
-    const techName = techSelect.options[techSelect.selectedIndex]?.text || '';
+    const selectedOption = techSelect.options[techSelect.selectedIndex];
+    const techName = selectedOption ? selectedOption.text : '';
 
     if (!techId) {
         return alert('Seleccione un técnico');
@@ -1944,7 +1948,8 @@ window.addPersonnelRow = function () {
 window.confirmAddPersonnel = function () {
     const techSelect = document.getElementById('personnelTechSelect');
     const techId = techSelect.value;
-    const techName = techSelect.options[techSelect.selectedIndex]?.text || '';
+    const selectedOption = techSelect.options[techSelect.selectedIndex];
+    const techName = selectedOption ? selectedOption.text : '';
     if (!techId) return alert('Seleccione un técnico');
 
     const specialty = document.getElementById('personnelSpecialty').value;
@@ -2262,3 +2267,4 @@ if (pForm) {
         }
     };
 }
+

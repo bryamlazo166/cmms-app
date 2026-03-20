@@ -1,0 +1,102 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Lubricacion - CMMS</title>
+    <link rel="stylesheet" href="/static/css/style.css">
+    <link rel="stylesheet" href="/static/css/sidebar.css?v=20260319">
+    <link href="https://fonts.googleapis.com/css2?family=Roboto:wght@300;400;500;700&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css">
+    <style>
+        .wrap{max-width:1500px;margin:0 auto;padding:16px}
+        .header{background:linear-gradient(120deg,#1e2430,#151b24);border:1px solid #2d3f56;border-radius:12px;padding:16px;margin-bottom:12px}
+        .kpis{display:grid;grid-template-columns:repeat(6,minmax(140px,1fr));gap:10px;margin-bottom:12px}
+        .kpi{background:#1b212b;border:1px solid #31455f;border-radius:10px;padding:10px}.kpi .lbl{font-size:.75rem;color:#9ab3d0;text-transform:uppercase}.kpi .val{font-size:1.6rem;font-weight:700;color:#eff6ff;margin-top:6px}
+        .panel{background:#181d24;border:1px solid #2f4257;border-radius:12px;padding:10px;margin-bottom:12px}
+        .toolbar{display:grid;grid-template-columns:repeat(8,minmax(120px,1fr));gap:8px;align-items:end;margin-bottom:10px}
+        .toolbar label{display:block;font-size:.72rem;color:#9ab0cb;margin-bottom:4px;text-transform:uppercase}
+        .toolbar input,.toolbar select{width:100%;height:36px;background:#0f1319;color:#d5e2f5;border:1px solid #344964;border-radius:8px;padding:6px 8px}
+        .btn{height:36px;border:1px solid #385273;border-radius:8px;background:#193451;color:#d7e9ff;padding:0 12px;font-weight:600;cursor:pointer}
+        .btn.secondary{background:#2a2d35;border-color:#4a5361;color:#d6d8de}
+        .table-wrap{max-height:420px;overflow:auto}
+        table{width:100%;border-collapse:collapse} th{position:sticky;top:0;background:#243047;color:#9fe5ff;text-align:left;padding:8px;font-size:.78rem;border-bottom:1px solid #3a4f68}
+        td{padding:8px;color:#dbe8fb;font-size:.82rem;border-bottom:1px solid rgba(255,255,255,.08)}
+        .pill{display:inline-block;padding:2px 8px;border-radius:999px;font-size:.78rem;font-weight:700}
+        .VERDE{background:rgba(67,160,71,.22);color:#8df39d}.AMARILLO{background:rgba(255,193,7,.22);color:#ffd966}.ROJO{background:rgba(244,67,54,.24);color:#ff9690}.PENDIENTE{background:rgba(255,255,255,.1);color:#bdc7d8}
+        @media(max-width:1200px){.kpis{grid-template-columns:repeat(3,minmax(140px,1fr))}.toolbar{grid-template-columns:repeat(4,minmax(120px,1fr))}}
+    </style>
+</head>
+<body>
+<nav class="sidebar">
+    <div class="logo-details"><i class="fas fa-industry icon"></i><div class="logo_name">CMMS Pro</div><i class="fas fa-bars" id="btn_toggle"></i></div>
+    <ul class="nav-list">
+        <li><a href="/"><i class="fas fa-chart-line"></i><span class="links_name">Dashboard</span></a></li>
+        <li><a href="/avisos"><i class="fas fa-bell"></i><span class="links_name">Avisos</span></a></li>
+        <li><a href="/ordenes"><i class="fas fa-tools"></i><span class="links_name">Ordenes</span></a></li>
+        <li><a href="/compras"><i class="fas fa-shopping-cart"></i><span class="links_name">Compras</span></a></li>
+        <li><a href="/almacen"><i class="fas fa-boxes"></i><span class="links_name">Almacen</span></a></li>
+        <li><a href="/configuracion"><i class="fas fa-sitemap"></i><span class="links_name">Activos</span></a></li>
+        <li><a href="/lubricacion"><i class="fas fa-oil-can"></i><span class="links_name">Lubricacion</span></a></li>
+        <li><a href="/reportes"><i class="fas fa-file-contract"></i><span class="links_name">Reportes</span></a></li>
+    </ul>
+</nav>
+<section class="home-section">
+    <div class="wrap">
+        <div class="header"><h1><i class="fas fa-oil-can"></i> Plan de Lubricacion</h1><p>Control de cambios de aceite y tareas de lubricacion conectadas al arbol de equipos.</p></div>
+        <div class="kpis">
+            <div class="kpi"><div class="lbl">Total puntos</div><div class="val" id="kpiTotal">0</div></div>
+            <div class="kpi"><div class="lbl">Verde</div><div class="val" id="kpiGreen">0</div></div>
+            <div class="kpi"><div class="lbl">Amarillo</div><div class="val" id="kpiYellow">0</div></div>
+            <div class="kpi"><div class="lbl">Rojo</div><div class="val" id="kpiRed">0</div></div>
+            <div class="kpi"><div class="lbl">Pendiente</div><div class="val" id="kpiPending">0</div></div>
+            <div class="kpi"><div class="lbl">Cumplimiento</div><div class="val" id="kpiCompliance">0%</div></div>
+        </div>
+
+        <div class="panel">
+            <div class="toolbar">
+                <div><label>Nombre punto</label><input id="fName" type="text" placeholder="Ej: MR-01 Nivel aceite"></div>
+                <div><label>Equipo</label><select id="fEquipment"></select></div>
+                <div><label>Sistema</label><select id="fSystem"></select></div>
+                <div><label>Componente</label><select id="fComponent"></select></div>
+                <div><label>Lubricante</label><input id="fLub" type="text" placeholder="ISO VG 220"></div>
+                <div><label>Frecuencia (dias)</label><input id="fFreq" type="number" value="30" min="1"></div>
+                <div><label>Alerta (dias)</label><input id="fWarn" type="number" value="3" min="0"></div>
+                <div><label>&nbsp;</label><button class="btn" id="btnCreate">Agregar Punto</button></div>
+            </div>
+            <div class="toolbar" style="grid-template-columns:repeat(6,minmax(120px,1fr));margin-top:6px;">
+                <div><label>Fecha ejecucion</label><input id="fExecDate" type="date"></div>
+                <div><label>Ejecutado por</label><input id="fBy" type="text" placeholder="Tecnico"></div>
+                <div><label>Cantidad</label><input id="fQty" type="number" step="0.1" min="0"></div>
+                <div><label>Selecciona punto</label><select id="fPoint"></select></div>
+                <div><label>Anomalia</label><select id="fAnom"><option value="0">No</option><option value="1">Si</option></select></div>
+                <div><label>&nbsp;</label><button class="btn secondary" id="btnExec">Registrar Ejecucion</button></div>
+            </div>
+        </div>
+
+        <div class="panel">
+            <h3>Puntos de Lubricacion</h3>
+            <div class="table-wrap">
+                <table>
+                    <thead><tr><th>Codigo</th><th>Punto</th><th>Equipo</th><th>Sistema</th><th>Componente</th><th>Lubricante</th><th>Frecuencia</th><th>Ultimo</th><th>Proximo</th><th>Semaforo</th><th>Accion</th></tr></thead>
+                    <tbody id="tbodyPoints"><tr><td colspan="11">Cargando...</td></tr></tbody>
+                </table>
+            </div>
+        </div>
+
+        <div class="panel">
+            <h3>Historial de Ejecuciones</h3>
+            <div class="table-wrap" style="max-height:320px;">
+                <table>
+                    <thead><tr><th>Fecha</th><th>Punto</th><th>Accion</th><th>Cantidad</th><th>Tecnico</th><th>Anomalia</th><th>Aviso</th><th>Comentario</th></tr></thead>
+                    <tbody id="tbodyExec"><tr><td colspan="8">Cargando...</td></tr></tbody>
+                </table>
+            </div>
+        </div>
+    </div>
+</section>
+<script src="/static/js/sidebar.js?v=20260319"></script>
+<script src="/static/js/lubrication.js"></script>
+</body>
+</html>
+

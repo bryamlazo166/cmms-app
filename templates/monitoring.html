@@ -1,0 +1,268 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Monitoreo - CMMS</title>
+    <link rel="stylesheet" href="/static/css/style.css">
+    <link rel="stylesheet" href="/static/css/sidebar.css?v=20260319">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css">
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <style>
+        .kpi-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(170px, 1fr));
+            gap: 12px;
+            margin-bottom: 14px;
+        }
+        .kpi-card {
+            border: 1px solid #2b3342;
+            border-radius: 12px;
+            padding: 12px;
+            background: #0f1723;
+        }
+        .kpi-card h4 {
+            margin: 0 0 8px 0;
+            color: #8fb2d9;
+            font-size: 0.82rem;
+            text-transform: uppercase;
+            letter-spacing: 0.04em;
+        }
+        .kpi-card .v {
+            font-size: 1.6rem;
+            font-weight: 700;
+        }
+        .toolbar-monitor {
+            display: grid;
+            grid-template-columns: repeat(6, minmax(120px, 1fr));
+            gap: 10px;
+            margin-bottom: 14px;
+        }
+        .toolbar-monitor select {
+            width: 100%;
+        }
+        .panel {
+            background: #111927;
+            border: 1px solid #2b3342;
+            border-radius: 12px;
+            padding: 12px;
+            margin-bottom: 14px;
+        }
+        .panel-title {
+            margin: 0 0 10px 0;
+            color: #d8ecff;
+            font-size: 1rem;
+        }
+        .two-col {
+            display: grid;
+            grid-template-columns: 1.35fr 1fr;
+            gap: 12px;
+        }
+        .table-sm th, .table-sm td {
+            padding: 7px 8px;
+            font-size: 0.86rem;
+            vertical-align: middle;
+        }
+        .pill {
+            padding: 3px 8px;
+            border-radius: 12px;
+            font-size: 0.78rem;
+            font-weight: 600;
+            display: inline-block;
+        }
+        .pill-green { background: rgba(76, 175, 80, 0.18); color: #9de4a1; border: 1px solid rgba(76, 175, 80, 0.45); }
+        .pill-yellow { background: rgba(255, 193, 7, 0.18); color: #ffd76f; border: 1px solid rgba(255, 193, 7, 0.45); }
+        .pill-red { background: rgba(244, 67, 54, 0.18); color: #ff9d95; border: 1px solid rgba(244, 67, 54, 0.45); }
+        .pill-muted { background: rgba(124, 140, 165, 0.15); color: #b2bfd1; border: 1px solid rgba(124, 140, 165, 0.35); }
+        .actions-row {
+            display: flex;
+            gap: 6px;
+            flex-wrap: wrap;
+        }
+        .btn-micro {
+            border: 1px solid #39506d;
+            background: #172338;
+            color: #d7e7fa;
+            border-radius: 8px;
+            padding: 4px 7px;
+            cursor: pointer;
+            font-size: 0.75rem;
+        }
+        .btn-micro:hover { filter: brightness(1.12); }
+        .muted {
+            color: #95a6bb;
+            font-size: 0.84rem;
+        }
+        @media (max-width: 1200px) {
+            .toolbar-monitor {
+                grid-template-columns: repeat(2, minmax(120px, 1fr));
+            }
+            .two-col {
+                grid-template-columns: 1fr;
+            }
+        }
+    </style>
+</head>
+<body>
+    <nav class="sidebar">
+        <div class="logo-details">
+            <i class="fas fa-industry icon"></i>
+            <div class="logo_name">CMMS Pro</div>
+            <i class="fas fa-bars" id="btn_toggle"></i>
+        </div>
+        <ul class="nav-list">
+            <li><a href="/"><i class="fas fa-chart-line"></i><span class="links_name">Dashboard</span></a><span class="tooltip">Dashboard</span></li>
+            <li><a href="/avisos"><i class="fas fa-bell"></i><span class="links_name">Avisos</span></a><span class="tooltip">Avisos</span></li>
+            <li><a href="/ordenes"><i class="fas fa-tools"></i><span class="links_name">Ordenes</span></a><span class="tooltip">Ordenes</span></li>
+            <li><a href="/activos-rotativos"><i class="fas fa-sync-alt"></i><span class="links_name">Act. Rotativos</span></a><span class="tooltip">Act. Rotativos</span></li>
+            <li><a href="/configuracion"><i class="fas fa-sitemap"></i><span class="links_name">Activos</span></a><span class="tooltip">Activos</span></li>
+            <li><a href="/monitoreo"><i class="fas fa-wave-square"></i><span class="links_name">Monitoreo</span></a><span class="tooltip">Monitoreo</span></li>
+            <li><a href="/lubricacion"><i class="fas fa-oil-can"></i><span class="links_name">Lubricacion</span></a><span class="tooltip">Lubricacion</span></li>
+            <li><a href="/reportes"><i class="fas fa-file-contract"></i><span class="links_name">Reportes</span></a><span class="tooltip">Reportes</span></li>
+        </ul>
+    </nav>
+    <section class="home-section">
+        <div class="top-bar">
+            <h1><i class="fas fa-wave-square"></i> Monitoreo de Condicion</h1>
+        </div>
+        <div class="main-container">
+            <div class="toolbar" style="margin-bottom:10px;">
+                <button class="btn-primary" onclick="openPointModal()"><i class="fas fa-plus"></i> Nuevo Punto</button>
+                <button class="btn-success" onclick="openReadingModal()"><i class="fas fa-clipboard-check"></i> Registrar Lectura</button>
+                <button class="btn-secondary" onclick="reloadMonitoring()"><i class="fas fa-sync"></i> Actualizar</button>
+            </div>
+
+            <div class="toolbar-monitor">
+                <select id="filterArea"><option value="">Area: Todas</option></select>
+                <select id="filterLine"><option value="">Linea: Todas</option></select>
+                <select id="filterEquipment"><option value="">Equipo: Todos</option></select>
+                <select id="filterDue">
+                    <option value="">Pendencia: Todo</option>
+                    <option value="today">Pendientes de hoy + vencidos</option>
+                    <option value="overdue">Solo vencidos</option>
+                    <option value="upcoming">Proximos 7 dias</option>
+                </select>
+                <select id="trendPointSelect"><option value="">Grafica: Seleccionar punto</option></select>
+                <button class="btn-secondary" onclick="reloadMonitoring()">Aplicar</button>
+            </div>
+
+            <div class="kpi-grid">
+                <div class="kpi-card"><h4>Total Puntos</h4><div class="v" id="kpiTotal">0</div></div>
+                <div class="kpi-card"><h4>Hoy + Vencidos</h4><div class="v" id="kpiDue">0</div></div>
+                <div class="kpi-card"><h4>Vencidos</h4><div class="v" id="kpiOverdue">0</div></div>
+                <div class="kpi-card"><h4>Proximos 7 dias</h4><div class="v" id="kpiUpcoming">0</div></div>
+                <div class="kpi-card"><h4>Semaforo</h4><div class="v"><span id="kpiSem">0V / 0A / 0R</span></div></div>
+            </div>
+
+            <div class="two-col">
+                <div class="panel">
+                    <h3 class="panel-title">Pendientes Del Dia</h3>
+                    <div class="table-wrap">
+                        <table class="table-sm">
+                            <thead>
+                                <tr>
+                                    <th>Codigo</th><th>Punto</th><th>Equipo</th><th>Tipo</th><th>Prox. Fecha</th><th>Semaforo</th><th>Accion</th>
+                                </tr>
+                            </thead>
+                            <tbody id="tablePendingBody">
+                                <tr><td colspan="7" class="muted">Sin datos.</td></tr>
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+
+                <div class="panel">
+                    <h3 class="panel-title">Tendencia Del Punto</h3>
+                    <div class="muted" id="trendSubtitle">Selecciona un punto para ver su grafica.</div>
+                    <div style="height: 270px; margin-top: 8px;">
+                        <canvas id="trendChart"></canvas>
+                    </div>
+                </div>
+            </div>
+
+            <div class="panel">
+                <h3 class="panel-title">Puntos De Monitoreo</h3>
+                <div class="table-wrap">
+                    <table class="table-sm">
+                        <thead>
+                            <tr>
+                                <th>Codigo</th><th>Punto</th><th>Tipo</th><th>Equipo</th><th>Frecuencia</th><th>Ultima</th><th>Proxima</th><th>Semaforo</th><th>Acciones</th>
+                            </tr>
+                        </thead>
+                        <tbody id="tablePointsBody">
+                            <tr><td colspan="9" class="muted">Cargando...</td></tr>
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+    </section>
+
+    <dialog id="pointModal" class="modal" style="max-width: 680px; border-radius:12px;">
+        <h3 id="pointModalTitle"><i class="fas fa-plus"></i> Nuevo Punto</h3>
+        <form id="pointForm">
+            <input type="hidden" id="pointId">
+            <div style="display:grid; grid-template-columns: 1fr 1fr; gap:10px;">
+                <div class="form-group"><label>Nombre *</label><input id="pName" required></div>
+                <div class="form-group"><label>Tipo *</label>
+                    <select id="pType" required>
+                        <option value="VIBRACION">VIBRACION</option>
+                        <option value="TEMPERATURA">TEMPERATURA</option>
+                        <option value="ULTRASONIDO">ULTRASONIDO</option>
+                        <option value="OTRO">OTRO</option>
+                    </select>
+                </div>
+                <div class="form-group"><label>Eje</label>
+                    <select id="pAxis">
+                        <option value="">N/A</option>
+                        <option value="VERTICAL">VERTICAL</option>
+                        <option value="HORIZONTAL">HORIZONTAL</option>
+                        <option value="AXIAL">AXIAL</option>
+                    </select>
+                </div>
+                <div class="form-group"><label>Unidad</label><input id="pUnit" value="mm/s"></div>
+                <div class="form-group"><label>Frecuencia (dias)</label><input id="pFreq" type="number" min="1" value="7"></div>
+                <div class="form-group"><label>Alerta previa (dias)</label><input id="pWarn" type="number" min="0" value="1"></div>
+                <div class="form-group"><label>Normal Min</label><input id="pNMin" type="number" step="any"></div>
+                <div class="form-group"><label>Normal Max</label><input id="pNMax" type="number" step="any"></div>
+                <div class="form-group"><label>Alarma Min</label><input id="pAMin" type="number" step="any"></div>
+                <div class="form-group"><label>Alarma Max</label><input id="pAMax" type="number" step="any"></div>
+                <div class="form-group"><label>Area</label><select id="pArea"></select></div>
+                <div class="form-group"><label>Linea</label><select id="pLine"></select></div>
+                <div class="form-group"><label>Equipo</label><select id="pEquip"></select></div>
+                <div class="form-group"><label>Ultima medicion</label><input id="pLastDate" type="date"></div>
+                <div class="form-group" style="grid-column: 1 / -1;"><label>Notas</label><textarea id="pNotes" rows="2"></textarea></div>
+            </div>
+            <div style="display:flex; justify-content:flex-end; gap:8px; margin-top:12px;">
+                <button type="button" class="btn-secondary" onclick="closeModal('pointModal')">Cancelar</button>
+                <button type="submit" class="btn-success">Guardar</button>
+            </div>
+        </form>
+    </dialog>
+
+    <dialog id="readingModal" class="modal" style="max-width: 560px; border-radius:12px;">
+        <h3><i class="fas fa-clipboard-check"></i> Registrar Lectura</h3>
+        <form id="readingForm">
+            <div style="display:grid; grid-template-columns: 1fr 1fr; gap:10px;">
+                <div class="form-group" style="grid-column: 1 / -1;"><label>Punto *</label><select id="rPoint" required></select></div>
+                <div class="form-group"><label>Fecha *</label><input id="rDate" type="date" required></div>
+                <div class="form-group"><label>Valor *</label><input id="rValue" type="number" step="any" required></div>
+                <div class="form-group"><label>Ejecutado por</label><input id="rBy" placeholder="Tecnico"></div>
+                <div class="form-group"><label>Foto URL (opcional)</label><input id="rPhoto" placeholder="https://..."></div>
+                <div class="form-group" style="grid-column: 1 / -1;"><label>Comentarios</label><textarea id="rNotes" rows="2"></textarea></div>
+                <label style="display:flex; gap:7px; align-items:center; grid-column: 1 / -1;">
+                    <input id="rRegularized" type="checkbox"> Lectura regularizada (carga atrasada)
+                </label>
+            </div>
+            <div style="display:flex; justify-content:flex-end; gap:8px; margin-top:12px;">
+                <button type="button" class="btn-secondary" onclick="closeModal('readingModal')">Cancelar</button>
+                <button type="submit" class="btn-success">Guardar lectura</button>
+            </div>
+        </form>
+    </dialog>
+
+    <script src="/static/js/sidebar.js?v=20260319"></script>
+    <script src="/static/js/monitoring.js"></script>
+</body>
+</html>
+

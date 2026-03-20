@@ -400,3 +400,309 @@ class PurchaseRequest(db.Model):
             'purchase_order_id': self.purchase_order_id,
             'po_code': self.purchase_order.po_code if self.purchase_order else None
         }
+
+
+class LubricationPoint(db.Model):
+    __tablename__ = 'lubrication_points'
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    code: Mapped[str | None] = mapped_column(String(30), unique=True, nullable=True)
+    name: Mapped[str] = mapped_column(String(120), nullable=False)
+    description: Mapped[str | None] = mapped_column(Text, nullable=True)
+
+    # Hierarchy links
+    area_id: Mapped[int | None] = mapped_column(ForeignKey('areas.id'), nullable=True)
+    line_id: Mapped[int | None] = mapped_column(ForeignKey('lines.id'), nullable=True)
+    equipment_id: Mapped[int | None] = mapped_column(ForeignKey('equipments.id'), nullable=True)
+    system_id: Mapped[int | None] = mapped_column(ForeignKey('systems.id'), nullable=True)
+    component_id: Mapped[int | None] = mapped_column(ForeignKey('components.id'), nullable=True)
+
+    lubricant_name: Mapped[str | None] = mapped_column(String(100), nullable=True)
+    quantity_nominal: Mapped[float | None] = mapped_column(Float, nullable=True)
+    quantity_unit: Mapped[str] = mapped_column(String(20), nullable=False, default='L')
+
+    frequency_days: Mapped[int] = mapped_column(Integer, nullable=False, default=30)
+    warning_days: Mapped[int] = mapped_column(Integer, nullable=False, default=3)
+
+    last_service_date: Mapped[str | None] = mapped_column(String(20), nullable=True)
+    next_due_date: Mapped[str | None] = mapped_column(String(20), nullable=True)
+    semaphore_status: Mapped[str] = mapped_column(String(20), nullable=False, default='PENDIENTE')
+    is_active: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
+
+    area = relationship("Area")
+    line = relationship("Line")
+    equipment = relationship("Equipment")
+    system = relationship("System")
+    component = relationship("Component")
+    executions = relationship("LubricationExecution", back_populates="point", cascade="all, delete-orphan")
+
+    def to_dict(self):
+        return {
+            "id": self.id,
+            "code": self.code,
+            "name": self.name,
+            "description": self.description,
+            "area_id": self.area_id,
+            "line_id": self.line_id,
+            "equipment_id": self.equipment_id,
+            "system_id": self.system_id,
+            "component_id": self.component_id,
+            "area_name": self.area.name if self.area else None,
+            "line_name": self.line.name if self.line else None,
+            "equipment_name": self.equipment.name if self.equipment else None,
+            "system_name": self.system.name if self.system else None,
+            "component_name": self.component.name if self.component else None,
+            "lubricant_name": self.lubricant_name,
+            "quantity_nominal": self.quantity_nominal,
+            "quantity_unit": self.quantity_unit,
+            "frequency_days": self.frequency_days,
+            "warning_days": self.warning_days,
+            "last_service_date": self.last_service_date,
+            "next_due_date": self.next_due_date,
+            "semaphore_status": self.semaphore_status,
+            "is_active": self.is_active
+        }
+
+
+class LubricationExecution(db.Model):
+    __tablename__ = 'lubrication_executions'
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    point_id: Mapped[int] = mapped_column(ForeignKey('lubrication_points.id'), nullable=False)
+    execution_date: Mapped[str] = mapped_column(String(20), nullable=False)
+    action_type: Mapped[str] = mapped_column(String(30), nullable=False, default='SERVICIO')
+    quantity_used: Mapped[float | None] = mapped_column(Float, nullable=True)
+    quantity_unit: Mapped[str] = mapped_column(String(20), nullable=False, default='L')
+    executed_by: Mapped[str | None] = mapped_column(String(120), nullable=True)
+    leak_detected: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
+    anomaly_detected: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
+    comments: Mapped[str | None] = mapped_column(Text, nullable=True)
+    created_notice_id: Mapped[int | None] = mapped_column(ForeignKey('maintenance_notices.id'), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+
+    point = relationship("LubricationPoint", back_populates="executions")
+    created_notice = relationship("MaintenanceNotice")
+
+    def to_dict(self):
+        return {
+            "id": self.id,
+            "point_id": self.point_id,
+            "point_name": self.point.name if self.point else None,
+            "execution_date": self.execution_date,
+            "action_type": self.action_type,
+            "quantity_used": self.quantity_used,
+            "quantity_unit": self.quantity_unit,
+            "executed_by": self.executed_by,
+            "leak_detected": self.leak_detected,
+            "anomaly_detected": self.anomaly_detected,
+            "comments": self.comments,
+            "created_notice_id": self.created_notice_id,
+            "created_notice_code": self.created_notice.code if self.created_notice else None,
+            "created_at": self.created_at.isoformat() if self.created_at else None
+        }
+
+
+class MonitoringPoint(db.Model):
+    __tablename__ = 'monitoring_points'
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    code: Mapped[str | None] = mapped_column(String(30), unique=True, nullable=True)
+    name: Mapped[str] = mapped_column(String(120), nullable=False)
+    measurement_type: Mapped[str] = mapped_column(String(60), nullable=False, default='VIBRACION')
+    axis: Mapped[str | None] = mapped_column(String(20), nullable=True)  # VERTICAL, HORIZONTAL, N/A
+    unit: Mapped[str] = mapped_column(String(20), nullable=False, default='mm/s')
+    notes: Mapped[str | None] = mapped_column(Text, nullable=True)
+
+    # Hierarchy links
+    area_id: Mapped[int | None] = mapped_column(ForeignKey('areas.id'), nullable=True)
+    line_id: Mapped[int | None] = mapped_column(ForeignKey('lines.id'), nullable=True)
+    equipment_id: Mapped[int | None] = mapped_column(ForeignKey('equipments.id'), nullable=True)
+    system_id: Mapped[int | None] = mapped_column(ForeignKey('systems.id'), nullable=True)
+    component_id: Mapped[int | None] = mapped_column(ForeignKey('components.id'), nullable=True)
+
+    # Limits and frequency
+    normal_min: Mapped[float | None] = mapped_column(Float, nullable=True)
+    normal_max: Mapped[float | None] = mapped_column(Float, nullable=True)
+    alarm_min: Mapped[float | None] = mapped_column(Float, nullable=True)
+    alarm_max: Mapped[float | None] = mapped_column(Float, nullable=True)
+    frequency_days: Mapped[int] = mapped_column(Integer, nullable=False, default=7)
+    warning_days: Mapped[int] = mapped_column(Integer, nullable=False, default=1)
+
+    last_measurement_date: Mapped[str | None] = mapped_column(String(20), nullable=True)
+    next_due_date: Mapped[str | None] = mapped_column(String(20), nullable=True)
+    semaphore_status: Mapped[str] = mapped_column(String(20), nullable=False, default='PENDIENTE')
+    is_active: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
+
+    area = relationship("Area")
+    line = relationship("Line")
+    equipment = relationship("Equipment")
+    system = relationship("System")
+    component = relationship("Component")
+    readings = relationship("MonitoringReading", back_populates="point", cascade="all, delete-orphan")
+
+    def to_dict(self):
+        return {
+            "id": self.id,
+            "code": self.code,
+            "name": self.name,
+            "measurement_type": self.measurement_type,
+            "axis": self.axis,
+            "unit": self.unit,
+            "notes": self.notes,
+            "area_id": self.area_id,
+            "line_id": self.line_id,
+            "equipment_id": self.equipment_id,
+            "system_id": self.system_id,
+            "component_id": self.component_id,
+            "area_name": self.area.name if self.area else None,
+            "line_name": self.line.name if self.line else None,
+            "equipment_name": self.equipment.name if self.equipment else None,
+            "system_name": self.system.name if self.system else None,
+            "component_name": self.component.name if self.component else None,
+            "normal_min": self.normal_min,
+            "normal_max": self.normal_max,
+            "alarm_min": self.alarm_min,
+            "alarm_max": self.alarm_max,
+            "frequency_days": self.frequency_days,
+            "warning_days": self.warning_days,
+            "last_measurement_date": self.last_measurement_date,
+            "next_due_date": self.next_due_date,
+            "semaphore_status": self.semaphore_status,
+            "is_active": self.is_active
+        }
+
+
+class MonitoringReading(db.Model):
+    __tablename__ = 'monitoring_readings'
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    point_id: Mapped[int] = mapped_column(ForeignKey('monitoring_points.id'), nullable=False)
+    reading_date: Mapped[str] = mapped_column(String(20), nullable=False)
+    value: Mapped[float] = mapped_column(Float, nullable=False)
+    executed_by: Mapped[str | None] = mapped_column(String(120), nullable=True)
+    notes: Mapped[str | None] = mapped_column(Text, nullable=True)
+    photo_url: Mapped[str | None] = mapped_column(String(250), nullable=True)
+    is_regularization: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
+    created_notice_id: Mapped[int | None] = mapped_column(ForeignKey('maintenance_notices.id'), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+
+    point = relationship("MonitoringPoint", back_populates="readings")
+    created_notice = relationship("MaintenanceNotice")
+
+    def to_dict(self):
+        return {
+            "id": self.id,
+            "point_id": self.point_id,
+            "point_name": self.point.name if self.point else None,
+            "reading_date": self.reading_date,
+            "value": self.value,
+            "unit": self.point.unit if self.point else None,
+            "executed_by": self.executed_by,
+            "notes": self.notes,
+            "photo_url": self.photo_url,
+            "is_regularization": self.is_regularization,
+            "created_notice_id": self.created_notice_id,
+            "created_notice_code": self.created_notice.code if self.created_notice else None,
+            "created_at": self.created_at.isoformat() if self.created_at else None
+        }
+
+
+class RotativeAsset(db.Model):
+    __tablename__ = 'rotative_assets'
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    code: Mapped[str] = mapped_column(String(30), unique=True, nullable=False)
+    name: Mapped[str] = mapped_column(String(120), nullable=False)
+    category: Mapped[str | None] = mapped_column(String(80), nullable=True)
+    brand: Mapped[str | None] = mapped_column(String(80), nullable=True)
+    model: Mapped[str | None] = mapped_column(String(80), nullable=True)
+    serial_number: Mapped[str | None] = mapped_column(String(100), nullable=True)
+    status: Mapped[str] = mapped_column(String(30), nullable=False, default='Disponible')  # Disponible, Instalado, En Taller, Baja
+    install_date: Mapped[str | None] = mapped_column(String(20), nullable=True)
+    notes: Mapped[str | None] = mapped_column(Text, nullable=True)
+    is_active: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
+
+    area_id: Mapped[int | None] = mapped_column(ForeignKey('areas.id'), nullable=True)
+    line_id: Mapped[int | None] = mapped_column(ForeignKey('lines.id'), nullable=True)
+    equipment_id: Mapped[int | None] = mapped_column(ForeignKey('equipments.id'), nullable=True)
+    system_id: Mapped[int | None] = mapped_column(ForeignKey('systems.id'), nullable=True)
+    component_id: Mapped[int | None] = mapped_column(ForeignKey('components.id'), nullable=True)
+
+    area = relationship("Area")
+    line = relationship("Line")
+    equipment = relationship("Equipment")
+    system = relationship("System")
+    component = relationship("Component")
+    history = relationship("RotativeAssetHistory", back_populates="asset", cascade="all, delete-orphan")
+
+    def to_dict(self):
+        return {
+            "id": self.id,
+            "code": self.code,
+            "name": self.name,
+            "category": self.category,
+            "brand": self.brand,
+            "model": self.model,
+            "serial_number": self.serial_number,
+            "status": self.status,
+            "install_date": self.install_date,
+            "notes": self.notes,
+            "is_active": self.is_active,
+            "area_id": self.area_id,
+            "line_id": self.line_id,
+            "equipment_id": self.equipment_id,
+            "system_id": self.system_id,
+            "component_id": self.component_id,
+            "area_name": self.area.name if self.area else None,
+            "line_name": self.line.name if self.line else None,
+            "equipment_name": self.equipment.name if self.equipment else None,
+            "system_name": self.system.name if self.system else None,
+            "component_name": self.component.name if self.component else None
+        }
+
+
+class RotativeAssetHistory(db.Model):
+    __tablename__ = 'rotative_asset_history'
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    asset_id: Mapped[int] = mapped_column(ForeignKey('rotative_assets.id'), nullable=False)
+    event_type: Mapped[str] = mapped_column(String(30), nullable=False)  # INSTALACION, RETIRO, CAMBIO_ESTADO, ACTUALIZACION
+    event_date: Mapped[str] = mapped_column(String(20), nullable=False)
+    comments: Mapped[str | None] = mapped_column(Text, nullable=True)
+
+    area_id: Mapped[int | None] = mapped_column(ForeignKey('areas.id'), nullable=True)
+    line_id: Mapped[int | None] = mapped_column(ForeignKey('lines.id'), nullable=True)
+    equipment_id: Mapped[int | None] = mapped_column(ForeignKey('equipments.id'), nullable=True)
+    system_id: Mapped[int | None] = mapped_column(ForeignKey('systems.id'), nullable=True)
+    component_id: Mapped[int | None] = mapped_column(ForeignKey('components.id'), nullable=True)
+
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+
+    asset = relationship("RotativeAsset", back_populates="history")
+    area = relationship("Area")
+    line = relationship("Line")
+    equipment = relationship("Equipment")
+    system = relationship("System")
+    component = relationship("Component")
+
+    def to_dict(self):
+        return {
+            "id": self.id,
+            "asset_id": self.asset_id,
+            "asset_code": self.asset.code if self.asset else None,
+            "asset_name": self.asset.name if self.asset else None,
+            "event_type": self.event_type,
+            "event_date": self.event_date,
+            "comments": self.comments,
+            "area_id": self.area_id,
+            "line_id": self.line_id,
+            "equipment_id": self.equipment_id,
+            "system_id": self.system_id,
+            "component_id": self.component_id,
+            "area_name": self.area.name if self.area else None,
+            "line_name": self.line.name if self.line else None,
+            "equipment_name": self.equipment.name if self.equipment else None,
+            "system_name": self.system.name if self.system else None,
+            "component_name": self.component.name if self.component else None,
+            "created_at": self.created_at.isoformat() if self.created_at else None
+        }

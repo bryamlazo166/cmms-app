@@ -50,7 +50,8 @@ async function loadNotices() {
 
         notices.forEach(n => {
             // Helper to find provider name
-            const provName = allProviders.find(p => p.id === n.provider_id)?.name || '-';
+            const foundProvider = allProviders.find(p => p.id === n.provider_id);
+            const provName = (foundProvider && foundProvider.name) ? foundProvider.name : '-';
 
             const tr = document.createElement('tr');
 
@@ -634,3 +635,4 @@ window.convertToOT = async (noticeId) => {
         alert("Error de red: " + e);
     }
 }
+
