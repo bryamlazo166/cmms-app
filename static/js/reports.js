@@ -1,6 +1,8 @@
-let chartBreakdown = null;
+﻿let chartBreakdown = null;
 let chartTrend = null;
 let chartCauses = null;
+let chartWeeklyLoad = null;
+let chartWeeklySpecialty = null;
 
 const state = { areas: [], lines: [], equipments: [] };
 
@@ -63,7 +65,7 @@ function fillEquipments() {
         .map(e => `<option value="${e.id}">${e.tag ? `${e.tag} - ` : ""}${e.name}</option>`).join("");
 }
 
-function currentFilters() {
+function currentExecutiveFilters() {
     return {
         start_date: document.getElementById("startDate").value,
         end_date: document.getElementById("endDate").value,
@@ -71,6 +73,64 @@ function currentFilters() {
         line_id: document.getElementById("filterLine").value || null,
         equipment_id: document.getElementById("filterEquipment").value || null
     };
+}
+
+function currentWeeklyFilters() {
+    return {
+        window: document.getElementById("weeklyWindow").value || "current_week",
+        start_date: document.getElementById("weeklyStartDate").value || null,
+        end_date: document.getElementById("weeklyEndDate").value || null,
+        specialty: document.getElementById("weeklySpecialty").value || null,
+        maintenance_type: document.getElementById("weeklyType").value || null,
+        status: document.getElementById("weeklyStatus").value || null,
+        area_id: document.getElementById("filterArea").value || null,
+        line_id: document.getElementById("filterLine").value || null,
+        equipment_id: document.getElementById("filterEquipment").value || null
+    };
+}
+
+function toInputDate(dateObj) {
+    const y = dateObj.getFullYear();
+    const m = String(dateObj.getMonth() + 1).padStart(2, "0");
+    const d = String(dateObj.getDate()).padStart(2, "0");
+    return `${y}-${m}-${d}`;
+}
+
+function computeWeekWindow(windowKey) {
+    const now = new Date();
+    const jsDay = now.getDay();
+    const mondayOffset = jsDay === 0 ? -6 : 1 - jsDay;
+    const monday = new Date(now);
+    monday.setDate(now.getDate() + mondayOffset);
+    monday.setHours(0, 0, 0, 0);
+
+    let start = new Date(monday);
+    let end = new Date(monday);
+
+    if (windowKey === "next_week") {
+        start.setDate(start.getDate() + 7);
+        end = new Date(start);
+        end.setDate(end.getDate() + 6);
+    } else if (windowKey === "weekend") {
+        start.setDate(start.getDate() + 5);
+        end = new Date(start);
+        end.setDate(end.getDate() + 1);
+        if (now > end) {
+            start.setDate(start.getDate() + 7);
+            end.setDate(end.getDate() + 7);
+        }
+    } else {
+        end.setDate(end.getDate() + 6);
+    }
+
+    return { start: toInputDate(start), end: toInputDate(end) };
+}
+
+function setWeeklyWindowDates(windowKey) {
+    if (windowKey === "custom") return;
+    const range = computeWeekWindow(windowKey);
+    document.getElementById("weeklyStartDate").value = range.start;
+    document.getElementById("weeklyEndDate").value = range.end;
 }
 
 function renderSummary(s, m) {
@@ -122,7 +182,11 @@ function drawBreakdown(rows, key) {
                 { label: "Correctivo", data: top.map(r => Number(r.corrective_count || 0)), backgroundColor: "rgba(244,67,54,.82)" }
             ]
         },
-        options: { responsive: true, maintainAspectRatio: false, plugins: { title: { display: true, text: `Preventivo vs Correctivo (${key})`, color: "#d8ebff" } } }
+        options: {
+            responsive: true,
+            maintainAspectRatio: false,
+            plugins: { title: { display: true, text: `Preventivo vs Correctivo (${key})`, color: "#d8ebff" } }
+        }
     });
 }
 
@@ -148,7 +212,10 @@ function drawCauses(rows) {
     const top = (rows || []).slice(0, 10);
     chartCauses = new Chart(ctx, {
         type: "bar",
-        data: { labels: top.map(r => r.cause || "Sin clasificar"), datasets: [{ label: "Horas de paro", data: top.map(r => Number(r.downtime_hours || 0)), backgroundColor: "rgba(255,152,0,.85)" }] },
+        data: {
+            labels: top.map(r => r.cause || "Sin clasificar"),
+            datasets: [{ label: "Horas de paro", data: top.map(r => Number(r.downtime_hours || 0)), backgroundColor: "rgba(255,152,0,.85)" }]
+        },
         options: { indexAxis: "y", responsive: true, maintainAspectRatio: false }
     });
 }
@@ -168,7 +235,7 @@ function renderEvents(rows) {
 
 async function loadExecutive() {
     try {
-        const data = await getJson(`/api/reports/executive?${qs(currentFilters())}`);
+        const data = await getJson(`/api/reports/executive?${qs(currentExecutiveFilters())}`);
         const key = document.getElementById("groupBySelect").value || "areas";
         const rows = (data.breakdown && data.breakdown[key]) ? data.breakdown[key] : [];
         renderSummary(data.summary || {}, data.meta || {});
@@ -217,6 +284,119 @@ async function loadRadar() {
     }
 }
 
+function renderWeeklySummary(summary, meta) {
+    setText("weeklyPeriod", `${meta.start_date} a ${meta.end_date} | ${meta.days} dias`);
+    setText("wkTotal", num(summary.total));
+    setText("wkPreventive", num(summary.preventive));
+    setText("wkCorrective", num(summary.corrective));
+    setText("wkClosed", num(summary.closed));
+    setText("wkBlocked", num(summary.blocked));
+    setText("wkCompliance", `${num(summary.completion_percent, 1)}%`);
+}
+
+function drawWeeklyLoad(dailyRows) {
+    if (chartWeeklyLoad) chartWeeklyLoad.destroy();
+    const ctx = document.getElementById("chartWeeklyLoad").getContext("2d");
+    const labels = (dailyRows || []).map(d => d.date);
+    const preventive = (dailyRows || []).map(d => Number(d.preventive || 0));
+    const corrective = (dailyRows || []).map(d => Number(d.corrective || 0));
+    const blocked = (dailyRows || []).map(d => Number(d.blocked || 0));
+
+    chartWeeklyLoad = new Chart(ctx, {
+        type: "bar",
+        data: {
+            labels,
+            datasets: [
+                { label: "Preventivo", data: preventive, backgroundColor: "rgba(76,175,80,.82)" },
+                { label: "Correctivo", data: corrective, backgroundColor: "rgba(244,67,54,.82)" },
+                { label: "Bloqueadas", data: blocked, backgroundColor: "rgba(255,152,0,.82)" }
+            ]
+        },
+        options: {
+            responsive: true,
+            maintainAspectRatio: false,
+            scales: { y: { beginAtZero: true, ticks: { precision: 0 } } }
+        }
+    });
+}
+
+function drawWeeklySpecialty(summary) {
+    if (chartWeeklySpecialty) chartWeeklySpecialty.destroy();
+    const ctx = document.getElementById("chartWeeklySpecialty").getContext("2d");
+    const counts = (summary && summary.specialty_counts) ? summary.specialty_counts : {};
+    const labels = Object.keys(counts);
+    const values = labels.map(k => Number(counts[k] || 0));
+
+    if (labels.length === 0) {
+        labels.push("Sin datos");
+        values.push(1);
+    }
+
+    chartWeeklySpecialty = new Chart(ctx, {
+        type: "doughnut",
+        data: {
+            labels,
+            datasets: [{
+                data: values,
+                backgroundColor: ["#26a69a", "#42a5f5", "#ab47bc", "#ffa726", "#90a4ae", "#ef5350"]
+            }]
+        },
+        options: {
+            responsive: true,
+            maintainAspectRatio: false,
+            plugins: { legend: { position: "bottom" } }
+        }
+    });
+}
+
+function renderWeeklyTable(items) {
+    const tbody = document.getElementById("tableWeeklyBody");
+    if (!items || items.length === 0) {
+        tbody.innerHTML = '<tr><td colspan="14" class="muted-cell">Sin actividades para el filtro seleccionado.</td></tr>';
+        return;
+    }
+
+    tbody.innerHTML = items.map(i => {
+        const logisticsClass = i.req_pending > 0 ? "pill-red" : (i.req_total > 0 ? "pill-green" : "pill-muted");
+        const reqInfo = i.req_codes && i.req_codes.length ? i.req_codes.slice(0, 3).join(", ") : "-";
+        const poInfo = i.po_codes && i.po_codes.length ? i.po_codes.slice(0, 3).join(", ") : "-";
+        return `
+        <tr>
+            <td><a class="weekly-ot-link" href="/ordenes">${i.code || "-"}</a></td>
+            <td>${i.notice_code || "-"}</td>
+            <td>${i.scheduled_date || "-"}</td>
+            <td>${i.specialty || "-"}</td>
+            <td>${i.maintenance_type || "-"}</td>
+            <td>${i.status || "-"}</td>
+            <td>${i.area || "-"}</td>
+            <td>${i.line || "-"}</td>
+            <td>${i.equipment_tag || "-"}</td>
+            <td>${i.equipment || "-"}</td>
+            <td>${i.priority || "-"}</td>
+            <td><span class="pill ${logisticsClass}">${i.logistics || "-"}</span></td>
+            <td>${reqInfo}</td>
+            <td>${poInfo}</td>
+        </tr>`;
+    }).join("");
+}
+
+async function loadWeeklyPlan() {
+    try {
+        const data = await getJson(`/api/reports/weekly-plan?${qs(currentWeeklyFilters())}`);
+        renderWeeklySummary(data.summary || {}, data.meta || {});
+        drawWeeklyLoad(data.daily || []);
+        drawWeeklySpecialty(data.summary || {});
+        renderWeeklyTable(data.items || []);
+    } catch (e) {
+        alert(`Error cargando plan semanal: ${e.message}`);
+    }
+}
+
+function exportWeeklyPlan() {
+    const url = `/api/reports/weekly-plan/export?${qs(currentWeeklyFilters())}`;
+    window.open(url, "_blank");
+}
+
 async function initReports() {
     const end = new Date();
     const start = new Date();
@@ -224,11 +404,15 @@ async function initReports() {
     document.getElementById("startDate").valueAsDate = start;
     document.getElementById("endDate").valueAsDate = end;
 
+    document.getElementById("weeklyWindow").value = "current_week";
+    setWeeklyWindowDates("current_week");
+
     const [areas, lines, equipments] = await Promise.all([
         getJson("/api/areas"),
         getJson("/api/lines"),
         getJson("/api/equipments")
     ]);
+
     state.areas = areas || [];
     state.lines = lines || [];
     state.equipments = equipments || [];
@@ -236,9 +420,27 @@ async function initReports() {
     fillLines();
     fillEquipments();
 
-    document.getElementById("filterArea").addEventListener("change", () => { fillLines(); document.getElementById("filterLine").value = ""; fillEquipments(); document.getElementById("filterEquipment").value = ""; loadExecutive(); });
-    document.getElementById("filterLine").addEventListener("change", () => { fillEquipments(); document.getElementById("filterEquipment").value = ""; loadExecutive(); });
-    document.getElementById("filterEquipment").addEventListener("change", loadExecutive);
+    const syncHierarchyAndReload = () => {
+        fillLines();
+        document.getElementById("filterLine").value = "";
+        fillEquipments();
+        document.getElementById("filterEquipment").value = "";
+        loadExecutive();
+        loadWeeklyPlan();
+    };
+
+    document.getElementById("filterArea").addEventListener("change", syncHierarchyAndReload);
+    document.getElementById("filterLine").addEventListener("change", () => {
+        fillEquipments();
+        document.getElementById("filterEquipment").value = "";
+        loadExecutive();
+        loadWeeklyPlan();
+    });
+    document.getElementById("filterEquipment").addEventListener("change", () => {
+        loadExecutive();
+        loadWeeklyPlan();
+    });
+
     document.getElementById("groupBySelect").addEventListener("change", loadExecutive);
     document.getElementById("startDate").addEventListener("change", loadExecutive);
     document.getElementById("endDate").addEventListener("change", loadExecutive);
@@ -251,11 +453,40 @@ async function initReports() {
         document.getElementById("filterEquipment").value = "";
         document.getElementById("groupBySelect").value = "areas";
         loadExecutive();
+        loadWeeklyPlan();
     });
+
     document.getElementById("btnRefreshRadar").addEventListener("click", loadRadar);
+
+    document.getElementById("weeklyWindow").addEventListener("change", (e) => {
+        setWeeklyWindowDates(e.target.value);
+        loadWeeklyPlan();
+    });
+    document.getElementById("weeklyStartDate").addEventListener("change", () => {
+        document.getElementById("weeklyWindow").value = "custom";
+        loadWeeklyPlan();
+    });
+    document.getElementById("weeklyEndDate").addEventListener("change", () => {
+        document.getElementById("weeklyWindow").value = "custom";
+        loadWeeklyPlan();
+    });
+    document.getElementById("weeklySpecialty").addEventListener("change", loadWeeklyPlan);
+    document.getElementById("weeklyType").addEventListener("change", loadWeeklyPlan);
+    document.getElementById("weeklyStatus").addEventListener("change", loadWeeklyPlan);
+    document.getElementById("btnWeeklyRefresh").addEventListener("click", loadWeeklyPlan);
+    document.getElementById("btnWeeklyExport").addEventListener("click", exportWeeklyPlan);
+    document.getElementById("btnWeeklyClear").addEventListener("click", () => {
+        document.getElementById("weeklyWindow").value = "current_week";
+        setWeeklyWindowDates("current_week");
+        document.getElementById("weeklySpecialty").value = "";
+        document.getElementById("weeklyType").value = "";
+        document.getElementById("weeklyStatus").value = "";
+        loadWeeklyPlan();
+    });
 
     await loadExecutive();
     await loadRadar();
+    await loadWeeklyPlan();
 }
 
 document.addEventListener("DOMContentLoaded", () => {

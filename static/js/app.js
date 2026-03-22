@@ -66,7 +66,6 @@ const REQUIRED_COLS = {
     'Equipments': 'Name, Tag, LineName, [AreaName], [Description]',
     'Systems': 'Name, EquipmentName, LineName, [AreaName]',
     'Components': 'Name, SystemName, EquipmentName, LineName, [AreaName], [Description]',
-    'SpareParts': 'Name, ComponentName, SystemName, EquipmentName, LineName, [AreaName], [Code], [Brand], [Quantity]'
 };
 
 function updatePasteHint() {
@@ -117,7 +116,8 @@ async function processPaste() {
 // --- GENERIC FORM HANDLERS ---
 
 // 1. Area
-document.getElementById('areaForm').onsubmit = async (e) => {
+const areaFormEl = document.getElementById('areaForm');
+if (areaFormEl) areaFormEl.onsubmit = async (e) => {
     e.preventDefault();
     await postData('/api/areas', { name: document.getElementById('areaName').value });
     document.getElementById('areaName').value = '';
@@ -125,7 +125,8 @@ document.getElementById('areaForm').onsubmit = async (e) => {
 };
 
 // 2. Line
-document.getElementById('lineForm').onsubmit = async (e) => {
+const lineFormEl = document.getElementById('lineForm');
+if (lineFormEl) lineFormEl.onsubmit = async (e) => {
     e.preventDefault();
     if (!state.selectedAreaId) return alert("Selecciona un Área primero");
     await postData('/api/lines', {
@@ -137,7 +138,8 @@ document.getElementById('lineForm').onsubmit = async (e) => {
 };
 
 // 3. Equipment
-document.getElementById('equipForm').onsubmit = async (e) => {
+const equipFormEl = document.getElementById('equipForm');
+if (equipFormEl) equipFormEl.onsubmit = async (e) => {
     e.preventDefault();
     if (!state.selectedLineId) return alert("Selecciona una Línea primero");
     await postData('/api/equipments', {
@@ -151,7 +153,8 @@ document.getElementById('equipForm').onsubmit = async (e) => {
 };
 
 // 4. System
-document.getElementById('sysForm').onsubmit = async (e) => {
+const sysFormEl = document.getElementById('sysForm');
+if (sysFormEl) sysFormEl.onsubmit = async (e) => {
     e.preventDefault();
     if (!state.selectedEquipId) return alert("Selecciona un Equipo primero");
     await postData('/api/systems', {
@@ -163,7 +166,8 @@ document.getElementById('sysForm').onsubmit = async (e) => {
 };
 
 // 5. Component
-document.getElementById('compForm').onsubmit = async (e) => {
+const compFormEl = document.getElementById('compForm');
+if (compFormEl) compFormEl.onsubmit = async (e) => {
     e.preventDefault();
     if (!state.selectedSysId) return alert("Selecciona un Sistema primero");
     await postData('/api/components', {
@@ -174,21 +178,6 @@ document.getElementById('compForm').onsubmit = async (e) => {
     loadComponents(state.selectedSysId);
 };
 
-// 6. Spare Part
-document.getElementById('spareForm').onsubmit = async (e) => {
-    e.preventDefault();
-    if (!state.selectedCompId) return alert("Selecciona un Componente primero");
-    await postData('/api/spare-parts', {
-        name: document.getElementById('spareName').value,
-        code: document.getElementById('spareCode').value,
-        brand: document.getElementById('spareBrand').value,
-        quantity: document.getElementById('spareQty').value,
-        component_id: state.selectedCompId
-    });
-    // Clear form
-    document.getElementById('spareName').value = '';
-    loadSpareParts(state.selectedCompId);
-};
 // End of file
 
 
@@ -258,21 +247,7 @@ async function loadComponents(sysId) {
     const comps = allComps.filter(c => c.system_id === sysId);
     renderList('compList', comps, (id) => {
         state.selectedCompId = id;
-        loadSpareParts(id);
     }, 'Component');
-}
-
-async function loadSpareParts(compId) {
-    const allSpares = await fetchData('/api/spare-parts');
-    const spares = allSpares.filter(s => s.component_id === compId);
-    const list = document.getElementById('spareList');
-    list.innerHTML = '';
-    spares.forEach(item => {
-        const div = document.createElement('div');
-        div.className = 'item-row';
-        div.innerHTML = `<b>${item.name}</b><br><small>${item.brand || ''} | Qty: ${item.quantity}</small>`;
-        list.appendChild(div);
-    });
 }
 
 // --- UTILS ---
@@ -322,7 +297,6 @@ function clearColumnsFrom(stepIdx) {
     if (stepIdx <= 3) document.getElementById('equipList').innerHTML = '';
     if (stepIdx <= 4) document.getElementById('sysList').innerHTML = '';
     if (stepIdx <= 5) document.getElementById('compList').innerHTML = '';
-    if (stepIdx <= 6) document.getElementById('spareList').innerHTML = '';
 }
 
 async function resetDB() {
@@ -375,13 +349,12 @@ async function processHierarchyPaste() {
 
 async function loadGlobalTree() {
     // Simple implementation for fetching full tree
-    const [areas, lines, equips, systems, comps, spares] = await Promise.all([
+    const [areas, lines, equips, systems, comps] = await Promise.all([
         fetchData('/api/areas'),
         fetchData('/api/lines'),
         fetchData('/api/equipments'),
         fetchData('/api/systems'),
-        fetchData('/api/components'),
-        fetchData('/api/spare-parts')
+        fetchData('/api/components')
     ]);
 
     // SORTING HELPERS
@@ -392,7 +365,6 @@ async function loadGlobalTree() {
     equips.sort(sortByName);
     systems.sort(sortByName);
     comps.sort(sortByName);
-    spares.sort(sortByName);
 
     const tree = document.getElementById('globalTree');
     tree.innerHTML = '';
@@ -464,26 +436,7 @@ async function loadGlobalTree() {
                                     sysComps.forEach(comp => {
                                         const liComp = document.createElement('li');
                                         const contentComp = createNode(`🔧 ${comp.name}`, 'Component', comp);
-
-                                        const compSpares = spares.filter(sp => sp.component_id === comp.id);
-
-                                        if (compSpares.length > 0) {
-                                            addCaret(liComp);
-                                            liComp.appendChild(contentComp);
-
-                                            const ulSpares = document.createElement('ul');
-                                            ulSpares.className = 'nested';
-
-                                            compSpares.forEach(sp => {
-                                                const liSpare = document.createElement('li');
-                                                const contentSpare = createNode(`📦 ${sp.name} [${sp.code || 'N/A'}]`, 'SparePart', sp);
-                                                liSpare.appendChild(contentSpare);
-                                                ulSpares.appendChild(liSpare);
-                                            });
-                                            liComp.appendChild(ulSpares);
-                                        } else {
-                                            liComp.appendChild(contentComp);
-                                        }
+                                        liComp.appendChild(contentComp);
                                         ulComps.appendChild(liComp);
                                     });
                                     liSys.appendChild(ulComps);
@@ -546,8 +499,7 @@ async function deleteItem(type, id, name) {
             'Line': '/api/lines',
             'Equipment': '/api/equipments',
             'System': '/api/systems',
-            'Component': '/api/components',
-            'SparePart': '/api/spare-parts'
+            'Component': '/api/components'
         };
 
         const res = await fetch(`${endpointMap[type]}/${id}`, { method: 'DELETE' });
@@ -588,15 +540,6 @@ function openEditModal(type, id, data) {
                 <label>TAG</label>
                 <input type="text" id="editTag" value="${data.tag || ''}" required>
             `;
-    } else if (type === 'SparePart') {
-        extraDiv.innerHTML = `
-                <label>Código</label>
-                <input type="text" id="editCode" value="${data.code || ''}">
-                <label>Marca</label>
-                <input type="text" id="editBrand" value="${data.brand || ''}">
-                <label>Cantidad</label>
-                <input type="number" id="editQty" value="${data.quantity || 0}">
-            `;
     }
 
     modal.showModal();
@@ -617,11 +560,6 @@ document.getElementById('editForm').onsubmit = async (e) => {
 
     if (type === 'Equipment') {
         payload.tag = document.getElementById('editTag').value;
-    } else if (type === 'SparePart') {
-        payload.code = document.getElementById('editCode').value;
-        payload.brand = document.getElementById('editBrand').value;
-        const qtyStr = document.getElementById('editQty').value;
-        payload.quantity = qtyStr ? parseInt(qtyStr) : 0;
     }
 
     try {
@@ -630,8 +568,7 @@ document.getElementById('editForm').onsubmit = async (e) => {
             'Line': '/api/lines',
             'Equipment': '/api/equipments',
             'System': '/api/systems',
-            'Component': '/api/components',
-            'SparePart': '/api/spare-parts'
+            'Component': '/api/components'
         };
 
         const res = await fetch(`${endpointMap[type]}/${id}`, {
@@ -674,8 +611,8 @@ function createNode(text, type, data) {
     actionsDiv.style.marginLeft = "10px";
     actionsDiv.style.opacity = "0.6"; // subtle
 
-    // Create Notice Button (only for non-SparePart items)
-    if (type !== 'SparePart') {
+    // Create Notice Button
+    {
         const btnNotice = document.createElement('span');
         btnNotice.innerHTML = "📋";
         btnNotice.style.cursor = "pointer";

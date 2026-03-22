@@ -1,7 +1,10 @@
 ﻿from collections import defaultdict
 import datetime as dt
 
-from flask import jsonify, request
+from io import BytesIO
+
+import pandas as pd
+from flask import jsonify, request, send_file
 
 
 def register_reports_routes(
@@ -135,8 +138,8 @@ def register_reports_routes(
                 t_total = 720 
                 if start_date and end_date:
                     try:
-                        d1 = datetime.datetime.fromisoformat(start_date)
-                        d2 = datetime.datetime.fromisoformat(end_date)
+                        d1 = dt.datetime.fromisoformat(start_date)
+                        d2 = dt.datetime.fromisoformat(end_date)
                         t_total = (d2 - d1).total_seconds() / 3600
                     except: pass
                 
@@ -542,5 +545,393 @@ def register_reports_routes(
         except Exception as e:
             logger.error(f"Executive report error: {e}")
             return jsonify({"error": str(e)}), 500
+
+    def _resolve_weekly_window(window_key, start_raw, end_raw, reference_raw):
+        reference_date = _parse_date_flexible(reference_raw) or dt.date.today()
+        monday = reference_date - dt.timedelta(days=reference_date.weekday())
+
+        normalized = (window_key or 'current_week').strip().lower()
+        start_date = monday
+        end_date = monday + dt.timedelta(days=6)
+
+        if normalized == 'next_week':
+            start_date = monday + dt.timedelta(days=7)
+            end_date = start_date + dt.timedelta(days=6)
+        elif normalized == 'weekend':
+            start_date = monday + dt.timedelta(days=5)
+            end_date = start_date + dt.timedelta(days=1)
+            if reference_date > end_date:
+                start_date += dt.timedelta(days=7)
+                end_date += dt.timedelta(days=7)
+        elif normalized == 'custom':
+            custom_start = _parse_date_flexible(start_raw)
+            custom_end = _parse_date_flexible(end_raw)
+            if custom_start and custom_end:
+                start_date = min(custom_start, custom_end)
+                end_date = max(custom_start, custom_end)
+            else:
+                normalized = 'current_week'
+        else:
+            normalized = 'current_week'
+
+        return normalized, start_date, end_date
+
+    def _normalize_specialty_label(raw_value):
+        value = (raw_value or '').strip().upper()
+        if not value:
+            return 'SIN ASIGNAR'
+        if 'ELECT' in value:
+            return 'ELECTRICO'
+        if 'MEC' in value:
+            return 'MECANICO'
+        if 'MIX' in value:
+            return 'MIXTO'
+        return value
+
+    def _specialty_for_ot(ot):
+        specialties = []
+        for assignment in getattr(ot, 'assigned_personnel', []) or []:
+            candidate = assignment.specialty
+            if not candidate and assignment.technician:
+                candidate = assignment.technician.specialty
+            normalized = _normalize_specialty_label(candidate)
+            if normalized and normalized != 'SIN ASIGNAR':
+                specialties.append(normalized)
+
+        if not specialties and getattr(ot, 'provider', None) and ot.provider.specialty:
+            provider_specialty = _normalize_specialty_label(ot.provider.specialty)
+            if provider_specialty and provider_specialty != 'SIN ASIGNAR':
+                specialties.append(provider_specialty)
+
+        unique_specialties = sorted(set(specialties))
+        if not unique_specialties:
+            return 'SIN ASIGNAR'
+        if 'MECANICO' in unique_specialties and 'ELECTRICO' in unique_specialties:
+            return 'MIXTO'
+        if 'MECANICO' in unique_specialties:
+            return 'MECANICO'
+        if 'ELECTRICO' in unique_specialties:
+            return 'ELECTRICO'
+        return unique_specialties[0]
+
+    def _collect_weekly_plan_payload():
+        window_key = request.args.get('window', 'current_week')
+        normalized_window, start_date, end_date = _resolve_weekly_window(
+            window_key=window_key,
+            start_raw=request.args.get('start_date'),
+            end_raw=request.args.get('end_date'),
+            reference_raw=request.args.get('reference_date')
+        )
+
+        area_id = request.args.get('area_id', type=int)
+        line_id = request.args.get('line_id', type=int)
+        equipment_id = request.args.get('equipment_id', type=int)
+        wanted_status = (request.args.get('status') or '').strip().lower()
+        wanted_specialty = _normalize_specialty_label(request.args.get('specialty') or '')
+        if wanted_specialty == 'SIN ASIGNAR' and (request.args.get('specialty') or '').strip().lower() in {'', 'all', 'todas'}:
+            wanted_specialty = ''
+        raw_mtto = (request.args.get('maintenance_type') or '').strip()
+        wanted_mtto = _normalize_maintenance_type(raw_mtto) if raw_mtto else ''
+
+        lines = Line.query.all()
+        systems = System.query.all()
+        components = Component.query.all()
+        equipments = Equipment.query.all()
+        areas = Area.query.all()
+
+        line_map = {l.id: l for l in lines}
+        system_map = {s.id: s for s in systems}
+        component_map = {c.id: c for c in components}
+        equipment_map = {e.id: e for e in equipments}
+        area_map = {a.id: a for a in areas}
+
+        def resolve_equipment_id(ot):
+            eq_id = ot.equipment_id
+            if not eq_id and ot.system_id and ot.system_id in system_map:
+                eq_id = system_map[ot.system_id].equipment_id
+            if not eq_id and ot.component_id and ot.component_id in component_map:
+                comp = component_map[ot.component_id]
+                sys = system_map.get(comp.system_id)
+                if sys:
+                    eq_id = sys.equipment_id
+            return eq_id
+
+        def resolve_line_area(eq_id, ot):
+            line_ref = ot.line_id or (equipment_map[eq_id].line_id if eq_id and eq_id in equipment_map else None)
+            area_ref = ot.area_id or (line_map[line_ref].area_id if line_ref and line_ref in line_map else None)
+            return line_ref, area_ref
+
+        items = []
+        ots = WorkOrder.query.all()
+        open_request_statuses = {'PENDIENTE', 'APROBADO', 'EN_ORDEN'}
+
+        for ot in ots:
+            plan_date = (
+                _parse_date_flexible(ot.scheduled_date)
+                or _parse_date_flexible(ot.real_start_date)
+                or _parse_date_flexible(ot.real_end_date)
+            )
+            if not plan_date or not _is_in_window(plan_date, start_date, end_date):
+                continue
+
+            eq_id = resolve_equipment_id(ot)
+            line_ref, area_ref = resolve_line_area(eq_id, ot)
+
+            if equipment_id and eq_id != equipment_id:
+                continue
+            if line_id and line_ref != line_id:
+                continue
+            if area_id and area_ref != area_id:
+                continue
+
+            mtto_norm = _normalize_maintenance_type(ot.maintenance_type)
+            if wanted_mtto and mtto_norm != wanted_mtto:
+                continue
+
+            status_value = (ot.status or '').strip()
+            if wanted_status and status_value.lower() != wanted_status:
+                continue
+
+            specialty_value = _specialty_for_ot(ot)
+            if wanted_specialty and specialty_value != wanted_specialty:
+                continue
+
+            req_total = 0
+            req_pending = 0
+            req_codes = []
+            po_codes = []
+            for req in getattr(ot, 'purchase_requests', []) or []:
+                req_total += 1
+                req_status = (req.status or 'PENDIENTE').strip().upper()
+                if req_status in open_request_statuses:
+                    req_pending += 1
+                if req.req_code:
+                    req_codes.append(req.req_code)
+                if req.purchase_order and req.purchase_order.po_code:
+                    po_codes.append(req.purchase_order.po_code)
+
+            if req_total == 0:
+                logistics = 'Sin solicitud'
+            elif req_pending > 0:
+                logistics = f'Bloqueada ({req_pending})'
+            else:
+                logistics = 'Lista'
+
+            equipment = equipment_map.get(eq_id) if eq_id else None
+            line_obj = line_map.get(line_ref) if line_ref else None
+            area_obj = area_map.get(area_ref) if area_ref else None
+
+            component = component_map.get(ot.component_id) if ot.component_id else None
+            criticality = '-'
+            if component and component.criticality:
+                criticality = component.criticality
+            elif equipment and equipment.criticality:
+                criticality = equipment.criticality
+            elif ot.notice and ot.notice.criticality:
+                criticality = ot.notice.criticality
+
+            priority = ot.notice.priority if ot.notice and ot.notice.priority else '-'
+            shift = ot.notice.shift if ot.notice and ot.notice.shift else '-'
+            reporter_area = ot.notice.reporter_type if ot.notice and ot.notice.reporter_type else '-'
+            mtto_label = (mtto_norm or '').capitalize() if mtto_norm else (ot.maintenance_type or '-')
+
+            items.append({
+                'id': ot.id,
+                'code': ot.code or f'OT-{ot.id}',
+                'notice_code': ot.notice.code if ot.notice and ot.notice.code else '-',
+                'scheduled_date': plan_date.isoformat(),
+                'status': status_value or '-',
+                'maintenance_type': mtto_label or '-',
+                'specialty': specialty_value,
+                'area': area_obj.name if area_obj else '-',
+                'line': line_obj.name if line_obj else '-',
+                'equipment': equipment.name if equipment else '-',
+                'equipment_tag': equipment.tag if equipment and equipment.tag else '-',
+                'system': system_map[ot.system_id].name if ot.system_id and ot.system_id in system_map else '-',
+                'component': component.name if component else '-',
+                'criticality': criticality or '-',
+                'priority': priority or '-',
+                'description': ot.description or '-',
+                'estimated_duration': float(ot.estimated_duration or 0),
+                'tech_count': int(ot.tech_count or 0),
+                'shift': shift,
+                'reporter_area': reporter_area,
+                'req_total': req_total,
+                'req_pending': req_pending,
+                'logistics': logistics,
+                'req_codes': sorted(set(req_codes)),
+                'po_codes': sorted(set(po_codes)),
+            })
+
+        items.sort(key=lambda row: (row['scheduled_date'], row['area'], row['line'], row['equipment'], row['code']))
+
+        total = len(items)
+        preventive_count = len([i for i in items if (i['maintenance_type'] or '').lower() == 'preventivo'])
+        corrective_count = len([i for i in items if (i['maintenance_type'] or '').lower() == 'correctivo'])
+        closed_count = len([i for i in items if (i['status'] or '').strip().lower() == 'cerrada'])
+        blocked_count = len([i for i in items if i.get('req_pending', 0) > 0])
+        completion_percent = round((closed_count / total * 100), 1) if total else 0.0
+
+        specialty_counts = defaultdict(int)
+        status_counts = defaultdict(int)
+        day_rows = []
+        day_cursor = start_date
+        day_seed = {}
+        while day_cursor <= end_date:
+            key = day_cursor.isoformat()
+            day_seed[key] = {
+                'date': key,
+                'total': 0,
+                'preventive': 0,
+                'corrective': 0,
+                'blocked': 0,
+            }
+            day_cursor += dt.timedelta(days=1)
+
+        for item in items:
+            specialty_counts[item['specialty']] += 1
+            status_counts[item['status']] += 1
+            day_key = item['scheduled_date']
+            if day_key not in day_seed:
+                continue
+            day_seed[day_key]['total'] += 1
+            if (item['maintenance_type'] or '').lower() == 'preventivo':
+                day_seed[day_key]['preventive'] += 1
+            if (item['maintenance_type'] or '').lower() == 'correctivo':
+                day_seed[day_key]['corrective'] += 1
+            if item.get('req_pending', 0) > 0:
+                day_seed[day_key]['blocked'] += 1
+
+        for key in sorted(day_seed.keys()):
+            day_rows.append(day_seed[key])
+
+        return {
+            'meta': {
+                'window': normalized_window,
+                'start_date': start_date.isoformat(),
+                'end_date': end_date.isoformat(),
+                'days': max((end_date - start_date).days + 1, 1),
+                'filters': {
+                    'area_id': area_id,
+                    'line_id': line_id,
+                    'equipment_id': equipment_id,
+                    'status': wanted_status or None,
+                    'specialty': wanted_specialty or None,
+                    'maintenance_type': wanted_mtto or None,
+                }
+            },
+            'summary': {
+                'total': total,
+                'preventive': preventive_count,
+                'corrective': corrective_count,
+                'closed': closed_count,
+                'blocked': blocked_count,
+                'completion_percent': completion_percent,
+                'specialty_counts': dict(specialty_counts),
+                'status_counts': dict(status_counts),
+            },
+            'daily': day_rows,
+            'items': items,
+        }
+    @app.route('/api/reports/weekly-plan', methods=['GET'])
+    def get_weekly_plan():
+        try:
+            return jsonify(_collect_weekly_plan_payload())
+        except Exception as e:
+            logger.error(f"Weekly plan report error: {e}")
+            return jsonify({"error": str(e)}), 500
+
+    @app.route('/api/reports/weekly-plan/export', methods=['GET'])
+    def export_weekly_plan_excel():
+        try:
+            payload = _collect_weekly_plan_payload()
+            rows = payload.get('items', [])
+            if rows:
+                export_rows = []
+                for row in rows:
+                    export_rows.append({
+                        'Codigo OT': row.get('code'),
+                        'Aviso': row.get('notice_code'),
+                        'Fecha Plan': row.get('scheduled_date'),
+                        'Especialidad': row.get('specialty'),
+                        'Tipo Mtto': row.get('maintenance_type'),
+                        'Estado': row.get('status'),
+                        'Area': row.get('area'),
+                        'Linea': row.get('line'),
+                        'Equipo': row.get('equipment'),
+                        'TAG': row.get('equipment_tag'),
+                        'Sistema': row.get('system'),
+                        'Componente': row.get('component'),
+                        'Criticidad': row.get('criticality'),
+                        'Prioridad': row.get('priority'),
+                        'Turno': row.get('shift'),
+                        'Horas Est': row.get('estimated_duration'),
+                        'Cant Tecnicos': row.get('tech_count'),
+                        'Logistica': row.get('logistics'),
+                        'Req Pendientes': row.get('req_pending'),
+                        'Req Total': row.get('req_total'),
+                        'REQ': ', '.join(row.get('req_codes', [])),
+                        'OC': ', '.join(row.get('po_codes', [])),
+                        'Descripcion': row.get('description'),
+                    })
+            else:
+                export_rows = [{
+                    'Codigo OT': '-',
+                    'Aviso': '-',
+                    'Fecha Plan': payload['meta']['start_date'],
+                    'Especialidad': '-',
+                    'Tipo Mtto': '-',
+                    'Estado': '-',
+                    'Area': '-',
+                    'Linea': '-',
+                    'Equipo': '-',
+                    'TAG': '-',
+                    'Sistema': '-',
+                    'Componente': '-',
+                    'Criticidad': '-',
+                    'Prioridad': '-',
+                    'Turno': '-',
+                    'Horas Est': 0,
+                    'Cant Tecnicos': 0,
+                    'Logistica': 'Sin datos',
+                    'Req Pendientes': 0,
+                    'Req Total': 0,
+                    'REQ': '-',
+                    'OC': '-',
+                    'Descripcion': 'Sin actividades para el filtro seleccionado',
+                }]
+
+            summary = payload.get('summary', {})
+            meta = payload.get('meta', {})
+            summary_rows = [
+                {'Indicador': 'Ventana', 'Valor': f"{meta.get('start_date', '-')} a {meta.get('end_date', '-')}", 'Detalle': meta.get('window', '-')},
+                {'Indicador': 'Total actividades', 'Valor': summary.get('total', 0), 'Detalle': ''},
+                {'Indicador': 'Preventivos', 'Valor': summary.get('preventive', 0), 'Detalle': ''},
+                {'Indicador': 'Correctivos', 'Valor': summary.get('corrective', 0), 'Detalle': ''},
+                {'Indicador': 'Cerradas', 'Valor': summary.get('closed', 0), 'Detalle': ''},
+                {'Indicador': 'Bloqueadas por logistica', 'Valor': summary.get('blocked', 0), 'Detalle': ''},
+                {'Indicador': 'Cumplimiento %', 'Valor': summary.get('completion_percent', 0), 'Detalle': ''},
+            ]
+
+            output = BytesIO()
+            with pd.ExcelWriter(output, engine='openpyxl') as writer:
+                pd.DataFrame(export_rows).to_excel(writer, index=False, sheet_name='Plan Semanal')
+                pd.DataFrame(summary_rows).to_excel(writer, index=False, sheet_name='Indicadores')
+
+            output.seek(0)
+            filename = f"Plan_Semanal_{meta.get('start_date', 'inicio')}_a_{meta.get('end_date', 'fin')}.xlsx"
+            return send_file(
+                output,
+                as_attachment=True,
+                download_name=filename,
+                mimetype='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
+            )
+        except Exception as e:
+            logger.error(f"Weekly plan export error: {e}")
+            return jsonify({"error": str(e)}), 500
+
+
+
+
 
 

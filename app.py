@@ -1,4 +1,4 @@
-﻿import os
+import os
 import logging
 from flask import Flask
 from flask_sqlalchemy import SQLAlchemy
@@ -177,6 +177,7 @@ register_work_orders_routes(
     OTMaterial=OTMaterial,
     WarehouseItem=WarehouseItem,
     WarehouseMovement=WarehouseMovement,
+    Tool=Tool,
     WorkOrder=WorkOrder,
     MaintenanceNotice=MaintenanceNotice,
     Area=Area,
@@ -186,6 +187,7 @@ register_work_orders_routes(
     Component=Component,
     Provider=Provider,
     Technician=Technician,
+    PurchaseRequest=PurchaseRequest,
     delete_entry=delete_entry,
 )
 
@@ -273,6 +275,7 @@ register_purchasing_routes(
     PurchaseRequest=PurchaseRequest,
     PurchaseOrder=PurchaseOrder,
     WarehouseItem=WarehouseItem,
+    WarehouseMovement=WarehouseMovement,
 )
 
 register_admin_routes(
@@ -296,6 +299,8 @@ if __name__ == '__main__':
         print(f"DEBUG: FINAL URI: {app.config.get('SQLALCHEMY_DATABASE_URI')}")
     app.run(host='0.0.0.0', debug=False, use_reloader=False, port=5009)
     
+
+
 
 
 

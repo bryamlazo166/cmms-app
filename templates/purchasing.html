@@ -52,6 +52,11 @@
             color: white;
         }
 
+        .status-parcial {
+            background: #ffb300;
+            color: #111;
+        }
+
         /* Checkbox custom */
         input[type="checkbox"] {
             width: 20px;
@@ -172,8 +177,38 @@
         </form>
     </dialog>
 
-    <script src="/static/js/purchasing.js"></script>
+    
+    <dialog id="receiveModal" class="modal">
+        <h3 id="receivePoTitle">Recepcion de OC</h3>
+        <p>Selecciona los items que llegaron fisicamente. Puedes hacer recepciones parciales.</p>
+        <div style="margin-bottom:10px; display:flex; gap:8px;">
+            <button type="button" class="btn-secondary" onclick="selectAllReceive()">Seleccionar todo pendiente</button>
+        </div>
+        <div class="table-container" style="max-height: 320px; overflow:auto;">
+            <table class="data-table">
+                <thead>
+                    <tr>
+                        <th></th>
+                        <th>REQ</th>
+                        <th>Item</th>
+                        <th>Cant</th>
+                        <th>Estado</th>
+                        <th>OT</th>
+                    </tr>
+                </thead>
+                <tbody id="receiveItemsBody"></tbody>
+            </table>
+        </div>
+        <div class="modal-actions" style="margin-top:12px;">
+            <button type="button" class="btn-secondary" onclick="document.getElementById('receiveModal').close()">Cancelar</button>
+            <button type="button" class="btn-primary" onclick="confirmReceiveSelection()">Confirmar recepcion</button>
+        </div>
+    </dialog>
+
+    <script src="/static/js/purchasing.js?v=20260324b"></script>
     <script src="/static/js/sidebar.js?v=20260319"></script>
 </body>
 
 </html>
+
+

@@ -1,0 +1,7 @@
+----> APPLICATION STARTING ON PORT 5009 <----
+----> DATABASE MODE: LOCAL <----
+----> DATABASE URI: sqlite:///cmms_v2.db <----
+----> BUILD TAG: cmms-recovered-lubrication-reporting-2026-03-17-01 <----
+DEBUG: FINAL URI: sqlite:///cmms_v2.db
+ * Serving Flask app 'app'
+ * Debug mode: off

@@ -1,4 +1,4 @@
-
+﻿
 // State
 let allWorkOrders = [];
 let allProviders = [];
@@ -83,8 +83,8 @@ let activeFilters = {
 
 function populateMultiSelectFilters() {
     // Extract unique values from allWorkOrders
-    const areas = [...new Set(allWorkOrders.map(ot => ot.area_name || '(Sin Área)').filter(x => x))].sort();
-    const lines = [...new Set(allWorkOrders.map(ot => ot.line_name || '(Sin Línea)').filter(x => x))].sort();
+    const areas = [...new Set(allWorkOrders.map(ot => ot.area_name || '(Sin Ãrea)').filter(x => x))].sort();
+    const lines = [...new Set(allWorkOrders.map(ot => ot.line_name || '(Sin LÃ­nea)').filter(x => x))].sort();
     const equips = [...new Set(allWorkOrders.map(ot => ot.equipment_name || '(Sin Equipo)').filter(x => x))].sort();
     const statuses = [...new Set(allWorkOrders.map(ot => ot.status).filter(x => x))].sort();
 
@@ -237,7 +237,7 @@ window.editProvider = (id) => {
 }
 
 window.deleteProvider = async (id) => {
-    if (!confirm("¿Eliminar este proveedor?")) return;
+    if (!confirm("Â¿Eliminar este proveedor?")) return;
     await fetch(`/api/providers/${id}`, { method: 'DELETE' });
     loadProviders();
 }
@@ -251,7 +251,6 @@ function getCriticalityColor(crit) {
 }
 
 window.applyFilters = () => {
-    // Helper to get selected values
     const getSelected = (type) => {
         const container = document.getElementById(`list-${type}`);
         if (!container) return [];
@@ -265,42 +264,51 @@ window.applyFilters = () => {
     const selectedStatuses = getSelected('status');
     const searchInput = document.getElementById('searchPlanning');
     const search = searchInput ? searchInput.value.toLowerCase().trim() : '';
-
-    // Check "Select All" state to optimize
-    // Actually, if "Select All" is checked, usually all sub-checkboxes are checked too.
-    // If NO checkboxes are checked, typically that means "None", effectively hiding everything.
-    // BUT user expects Excel behavior: if you uncheck all, you see nothing.
+    const logisticsSelect = document.getElementById('planningLogisticsFilter');
+    const logisticsFilter = logisticsSelect ? logisticsSelect.value : 'all';
 
     const filtered = allWorkOrders.filter(ot => {
-        // 1. Multi-select Filters
-        // Match by Name because we populated lists with Names
-        const otArea = ot.area_name || '(Sin Área)';
-        const otLine = ot.line_name || '(Sin Línea)';
+        const otArea = ot.area_name || '(Sin Area)';
+        const otLine = ot.line_name || '(Sin Linea)';
         const otEquip = ot.equipment_name || '(Sin Equipo)';
-        const otStatus = ot.status;
+        const otStatus = ot.status || '';
 
         if (selectedAreas.length > 0 && !selectedAreas.includes(otArea)) return false;
         if (selectedLines.length > 0 && !selectedLines.includes(otLine)) return false;
         if (selectedEquips.length > 0 && !selectedEquips.includes(otEquip)) return false;
         if (selectedStatuses.length > 0 && !selectedStatuses.includes(otStatus)) return false;
 
-        // 2. Search Text
+        const pendingReq = Number(ot.purchase_requests_pending || 0);
+        const totalReq = Number(ot.purchase_requests_total || 0);
+        const hasBlock = !!ot.has_logistics_block || pendingReq > 0;
+        const hasRequest = totalReq > 0 || pendingReq > 0 || !!ot.purchase_tracking;
+
+        if (logisticsFilter === 'blocked' && !hasBlock) return false;
+        if (logisticsFilter === 'released' && (hasBlock || !hasRequest)) return false;
+        if (logisticsFilter === 'none' && hasRequest) return false;
+
         if (search) {
             const code = (ot.code || '').toLowerCase();
             const desc = (ot.description || '').toLowerCase();
             const equip = (ot.equipment_name || '').toLowerCase();
-            const providerMatch = allProviders.find(p => p.id === ot.provider_id);
-            const provider = ((providerMatch && providerMatch.name) || '').toLowerCase();
-            const tech = (ot.technician_id || '').toLowerCase();
+            const area = (ot.area_name || '').toLowerCase();
+            const line = (ot.line_name || '').toLowerCase();
+            const providerMatch = allProviders.find(p => String(p.id) === String(ot.provider_id));
+            const provider = ((providerMatch && providerMatch.name) || ot.provider_name || '').toLowerCase();
+            const techMatch = allTechnicians.find(t => String(t.id) === String(ot.technician_id));
+            const tech = ((techMatch && techMatch.name) || ot.technician_name || String(ot.technician_id || '')).toLowerCase();
 
             if (!code.includes(search) &&
                 !desc.includes(search) &&
                 !equip.includes(search) &&
+                !area.includes(search) &&
+                !line.includes(search) &&
                 !provider.includes(search) &&
                 !tech.includes(search)) {
                 return false;
             }
         }
+
         return true;
     });
 
@@ -308,26 +316,48 @@ window.applyFilters = () => {
 }
 
 function renderPlanningTable(data = null) {
-    // If no data passed, use allWorkOrders (initial load)
-    // BUT we should probably apply filters if they exist.
-    // Better pattern: if data is null, call applyFilters() which calls this with data.
-    // For now, to support direct calls, we'll default to allWorkOrders if null
-
-    // However, calling applyFilters() indiscriminately might cause loops if not careful.
-    // Let's rely on data passed in.
-
     const list = data || allWorkOrders;
     const tbody = document.querySelector('#planningTable tbody');
 
+    if (!tbody) return;
+
     if (list.length === 0) {
-        tbody.innerHTML = '<tr><td colspan="15" style="text-align:center; padding:20px; color:#aaa;">No se encontraron órdenes de trabajo.</td></tr>';
+        tbody.innerHTML = '<tr><td colspan="16" style="text-align:center; padding:20px; color:#9fb6d6;">No se encontraron ordenes de trabajo.</td></tr>';
         return;
     }
 
-    tbody.innerHTML = list.map(ot => {
+    const sortedList = [...list].sort((a, b) => {
+        const na = parseInt(String(a.code || '').replace(/\D/g, ''), 10) || Number(a.id || 0);
+        const nb = parseInt(String(b.code || '').replace(/\D/g, ''), 10) || Number(b.id || 0);
+        return nb - na;
+    });
+
+    tbody.innerHTML = sortedList.map(ot => {
         let statusClass = 'status-open';
         if (ot.status === 'En Progreso') statusClass = 'status-progress';
         if (ot.status === 'Cerrada') statusClass = 'status-closed';
+
+        let priorityClass = 'priority-medium';
+        if (ot.priority === 'Alta' || ot.priority === 'Emergencia') priorityClass = 'priority-high';
+        if (ot.priority === 'Baja') priorityClass = 'priority-low';
+
+        const techMatch = allTechnicians.find(t => String(t.id) === String(ot.technician_id));
+        const providerMatch = allProviders.find(p => String(p.id) === String(ot.provider_id));
+        const assignedTo = (techMatch && techMatch.name)
+            || ot.technician_name
+            || (providerMatch && providerMatch.name)
+            || ot.provider_name
+            || ot.technician_id
+            || ot.provider_id
+            || '-';
+
+        const logisticsClass = ot.has_logistics_block || Number(ot.purchase_requests_pending || 0) > 0
+            ? 'logistics-blocked'
+            : 'logistics-released';
+        const logisticsLabel = ot.has_logistics_block || Number(ot.purchase_requests_pending || 0) > 0
+            ? `Bloqueada (${ot.purchase_requests_pending || 0})`
+            : (Number(ot.purchase_requests_total || 0) > 0 ? 'Liberada' : 'Sin Solicitud');
+        const logisticsTrack = ot.purchase_tracking || '-';
 
         return `
         <tr>
@@ -339,17 +369,37 @@ function renderPlanningTable(data = null) {
             <td>${ot.system_name || '-'}</td>
             <td>${ot.component_name || '-'}</td>
             <td><span class="badge" style="background:${getCriticalityColor(ot.criticality)}; color:white;">${ot.criticality || '-'}</span></td>
-            <td>${ot.description || ''}</td>
+            <td title="${ot.description || ''}">${ot.description || ''}</td>
             <td>${ot.maintenance_type || '-'}</td>
-            <td><span class="badge ${statusClass}">${ot.status}</span></td>
-            <td>${ot.priority || '-'}</td>
+            <td><span class="badge ${statusClass}">${ot.status || '-'}</span></td>
+            <td><span class="badge ${priorityClass}">${ot.priority || '-'}</span></td>
             <td>${ot.scheduled_date || '-'}</td>
-            <td>${ot.technician_id || ot.provider_id || '-'}</td>
+            <td>${assignedTo}</td>
             <td>
-                <button class="btn-icon" onclick="editOT(${ot.id})"><i class="fas fa-edit"></i></button>
+                <span class="logistics-chip ${logisticsClass}">${logisticsLabel}</span>
+                <span class="logistics-track" title="${logisticsTrack}">${logisticsTrack}</span>
+            </td>
+            <td>
+                <div style="display:flex; align-items:center; gap:6px;">
+                    <button class="btn-icon planning-action-btn" onclick="editOT(${ot.id})" title="Editar OT"><i class="fas fa-edit"></i></button>
+                    <button class="btn-icon planning-action-btn" onclick="openOTInExecution(${ot.id})" title="Ir a Ejecucion y Cierre" style="border-color:#2d6a3d; background:#173528; color:#b8ffd0;"><i class="fas fa-play"></i></button>
+                </div>
             </td>
         </tr>
-    `}).join('');
+    `;
+    }).join('');
+}
+
+async function openOTInExecution(id) {
+    const tabLinks = Array.from(document.getElementsByClassName('tab-link'));
+    const execBtn = tabLinks.find(btn => (btn.getAttribute('onclick') || '').includes("tab-execution"));
+    if (execBtn) openTab({ currentTarget: execBtn }, 'tab-execution');
+
+    const selectedOT = allWorkOrders.find(o => Number(o.id) === Number(id));
+    const searchInput = document.getElementById('executionSearch');
+    if (searchInput) searchInput.value = selectedOT && selectedOT.code ? selectedOT.code : String(id);
+
+    await searchForExecution();
 }
 
 /* --- ACTIONS --- */
@@ -424,14 +474,14 @@ async function editOT(id) {
             if (notice) {
                 document.getElementById('otReporterName').value = notice.reporter_name || '';
                 document.getElementById('otSpecialty').value = notice.specialty || '';
-                document.getElementById('otShift').value = notice.shift || 'Día';
+                document.getElementById('otShift').value = notice.shift || 'DÃ­a';
                 document.getElementById('otCriticality').value = notice.criticality || 'Baja';
             }
         } catch (e) { console.error(e); }
     } else {
         document.getElementById('otReporterName').value = '';
         document.getElementById('otSpecialty').value = '';
-        document.getElementById('otShift').value = 'Día';
+        document.getElementById('otShift').value = 'DÃ­a';
         document.getElementById('otCriticality').value = 'Baja';
     }
 
@@ -483,18 +533,18 @@ async function checkSuggestions() {
         const data = await res.json();
 
         if (data.found) {
-            const msg = `✨ Historial Encontrado (OT: ${data.last_ot_code})\n\n` +
+            const msg = `âœ¨ Historial Encontrado (OT: ${data.last_ot_code})\n\n` +
                 `Fecha: ${data.last_date}\n` +
-                `Duración: ${data.duration} hrs\n` +
+                `DuraciÃ³n: ${data.duration} hrs\n` +
                 `Herramientas: ${data.tools.length}\n` +
                 `Repuestos: ${data.parts.length}\n\n` +
-                `¿Desea aplicar estos valores?`;
+                `Â¿Desea aplicar estos valores?`;
 
             if (confirm(msg)) {
                 applySuggestion(data);
             }
         } else {
-            alert("No se encontró historial similar.");
+            alert("No se encontrÃ³ historial similar.");
         }
     } catch (e) {
         console.error(e);
@@ -694,7 +744,7 @@ function renderCalendar() {
                 openEditOTModal(info.event.id);
             },
             eventDrop: function (info) {
-                if (confirm("¿Reprogramar OT para " + info.event.start.toLocaleDateString() + "?")) {
+                if (confirm("Â¿Reprogramar OT para " + info.event.start.toLocaleDateString() + "?")) {
                     updateOTDate(info.event.id, info.event.start);
                 } else {
                     info.revert();
@@ -761,7 +811,7 @@ async function updateOTDate(id, newDate) {
         }
     } catch (error) {
         console.error("Error updating date:", error);
-        alert("Error de conexión");
+        alert("Error de conexiÃ³n");
     }
 }
 
@@ -807,7 +857,7 @@ function renderKanban() {
                 <span>${ot.code}</span>
                 <span style="font-size:0.8em; opacity:0.7;">${ot.scheduled_date || ''}</span>
             </div>
-            <div class="kanban-card-title">${ot.description || 'Sin descripción'}</div>
+            <div class="kanban-card-title">${ot.description || 'Sin descripciÃ³n'}</div>
             <div class="kanban-card-desc" style="font-size: 0.85em; color: #aaa;">
                 ${ot.equipment_name || ot.component_name || 'Sin Equipo'}
             </div>
@@ -881,7 +931,7 @@ async function updateOTStatusKanban(id, status) {
         }
     } catch (e) {
         console.error(e);
-        alert("Error de conexión");
+        alert("Error de conexiÃ³n");
     }
 }
 
@@ -893,126 +943,323 @@ async function searchForExecution() {
     const val = document.getElementById('executionSearch').value.trim().toUpperCase();
     if (!val) return;
 
-    // Try to find by code or ID
     const ot = allWorkOrders.find(o => (o.code && o.code === val) || (String(o.id) === val));
-
     const panel = document.getElementById('execution-details');
-    if (ot) {
-        activeExecutionOT = ot;
-        panel.classList.remove('hidden');
 
-        // Basic info
-        document.getElementById('exec-ot-code').innerText = ot.code || `OT-${ot.id}`;
-        document.getElementById('exec-desc').innerText = ot.description || 'Sin descripción';
-
-        // Status badge
-        const badge = document.getElementById('exec-status');
-        badge.innerText = ot.status;
-        badge.className = 'status-badge ' + (ot.status === 'En Progreso' ? 'status-progress' : ot.status === 'Cerrada' ? 'status-closed' : 'status-open');
-
-        // Populate summary fields
-        document.getElementById('exec-type').innerText = ot.maintenance_type || '-';
-        document.getElementById('exec-priority').innerText = ot.priority || '-';
-        document.getElementById('exec-scheduled').innerText = ot.scheduled_date || '-';
-        document.getElementById('exec-duration').innerText = ot.estimated_duration ? `${ot.estimated_duration} hrs` : '-';
-
-        // Get technician name
-        const tech = allTechnicians.find(t => t.id === parseInt(ot.technician_id));
-        document.getElementById('exec-technician').innerText = tech ? tech.name : (ot.technician_id || '-');
-
-        // Get provider name
-        const provider = allProviders.find(p => p.id === parseInt(ot.provider_id));
-        document.getElementById('exec-provider').innerText = provider ? provider.name : '-';
-
-        // Load materials for this OT
-        try {
-            const materialsRes = await fetch(`/api/work_orders/${ot.id}/materials`);
-            const materials = await materialsRes.json();
-
-            // Separate tools and parts
-            const tools = materials.filter(m => m.item_type === 'tool');
-            const parts = materials.filter(m => m.item_type !== 'tool');
-
-            // Render tools list
-            const toolsContainer = document.getElementById('exec-tools-list');
-            if (tools.length === 0) {
-                toolsContainer.innerHTML = '<p style="color: #888; font-style: italic;">No hay herramientas asignadas</p>';
-            } else {
-                toolsContainer.innerHTML = `
-                    <table style="width: 100%; border-collapse: collapse;">
-                        <thead>
-                            <tr style="border-bottom: 1px solid #444;">
-                                <th style="text-align: left; padding: 5px; color: #aaa;">Código</th>
-                                <th style="text-align: left; padding: 5px; color: #aaa;">Nombre</th>
-                                <th style="text-align: center; padding: 5px; color: #aaa;">Cantidad</th>
-                            </tr>
-                        </thead>
-                        <tbody>
-                            ${tools.map(t => `
-                                <tr style="border-bottom: 1px solid #333;">
-                                    <td style="padding: 8px;"><strong style="color: #2196f3;">${t.item_code || '-'}</strong></td>
-                                    <td style="padding: 8px;">${t.item_name || 'Desconocido'}</td>
-                                    <td style="text-align: center; padding: 8px;">${t.quantity}</td>
-                                </tr>
-                            `).join('')}
-                        </tbody>
-                    </table>
-                `;
-            }
-
-            // Render parts list
-            const partsContainer = document.getElementById('exec-parts-list');
-            if (parts.length === 0) {
-                partsContainer.innerHTML = '<p style="color: #888; font-style: italic;">No hay repuestos asignados</p>';
-            } else {
-                partsContainer.innerHTML = `
-                    <table style="width: 100%; border-collapse: collapse;">
-                        <thead>
-                            <tr style="border-bottom: 1px solid #444;">
-                                <th style="text-align: left; padding: 5px; color: #aaa;">Código</th>
-                                <th style="text-align: left; padding: 5px; color: #aaa;">Nombre</th>
-                                <th style="text-align: center; padding: 5px; color: #aaa;">Cantidad</th>
-                            </tr>
-                        </thead>
-                        <tbody>
-                            ${parts.map(p => `
-                                <tr style="border-bottom: 1px solid #333;">
-                                    <td style="padding: 8px;"><strong style="color: #4caf50;">${p.item_code || '-'}</strong></td>
-                                    <td style="padding: 8px;">${p.item_name || 'Desconocido'}</td>
-                                    <td style="text-align: center; padding: 8px;">${p.quantity}</td>
-                                </tr>
-                            `).join('')}
-                        </tbody>
-                    </table>
-                `;
-            }
-        } catch (e) {
-            console.error('Error loading materials:', e);
-            document.getElementById('exec-tools-list').innerHTML = '<p style="color: #f44336;">Error cargando herramientas</p>';
-            document.getElementById('exec-parts-list').innerHTML = '<p style="color: #f44336;">Error cargando repuestos</p>';
-        }
-
-        // Action buttons
-        const btnStart = document.getElementById('btn-start-job');
-        const btnEnd = document.getElementById('btn-finish-job');
-
-        btnStart.classList.add('hidden');
-        btnEnd.classList.add('hidden');
-
-        if (ot.status === 'Abierta' || ot.status === 'Programada') {
-            btnStart.classList.remove('hidden');
-        } else if (ot.status === 'En Progreso') {
-            btnEnd.classList.remove('hidden');
-        } else {
-            // Closed
-            badge.innerText = "CERRADA";
-            badge.classList.add('status-closed');
-        }
-
-    } else {
+    if (!ot) {
         alert("Orden de Trabajo no encontrada");
         panel.classList.add('hidden');
+        return;
     }
+
+    activeExecutionOT = ot;
+    panel.classList.remove('hidden');
+
+    document.getElementById('exec-ot-code').innerText = ot.code || `OT-${ot.id}`;
+    document.getElementById('exec-desc').innerText = ot.description || 'Sin descripcion';
+
+    const badge = document.getElementById('exec-status');
+    badge.innerText = ot.status;
+    badge.className = 'status-badge ' + (ot.status === 'En Progreso' ? 'status-progress' : ot.status === 'Cerrada' ? 'status-closed' : 'status-open');
+
+    document.getElementById('exec-type').innerText = ot.maintenance_type || '-';
+    document.getElementById('exec-priority').innerText = ot.priority || '-';
+    document.getElementById('exec-scheduled').innerText = ot.scheduled_date || '-';
+    document.getElementById('exec-duration').innerText = ot.estimated_duration ? `${ot.estimated_duration} hrs` : '-';
+
+    const tech = allTechnicians.find(t => t.id === parseInt(ot.technician_id));
+    document.getElementById('exec-technician').innerText = tech ? tech.name : (ot.technician_id || '-');
+
+    const provider = allProviders.find(p => p.id === parseInt(ot.provider_id));
+    document.getElementById('exec-provider').innerText = provider ? provider.name : '-';
+
+    populateExecutionOperationalInfo(ot);
+    loadExecutionSafetyState(ot.id);
+    bindExecutionSafetyState(ot.id);
+
+    let materials = [];
+    let parts = [];
+
+    try {
+        const materialsRes = await fetch(`/api/work_orders/${ot.id}/materials`);
+        materials = await materialsRes.json();
+
+        const tools = materials.filter(m => m.item_type === 'tool');
+        parts = materials.filter(m => m.item_type !== 'tool');
+
+        const toolsContainer = document.getElementById('exec-tools-list');
+        if (tools.length === 0) {
+            toolsContainer.innerHTML = '<p style="color: #888; font-style: italic;">No hay herramientas asignadas</p>';
+        } else {
+            toolsContainer.innerHTML = `
+                <table style="width: 100%; border-collapse: collapse;">
+                    <thead>
+                        <tr style="border-bottom: 1px solid #444;">
+                            <th style="text-align: left; padding: 5px; color: #aaa;">Codigo</th>
+                            <th style="text-align: left; padding: 5px; color: #aaa;">Nombre</th>
+                            <th style="text-align: center; padding: 5px; color: #aaa;">Cantidad</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        ${tools.map(t => `
+                            <tr style="border-bottom: 1px solid #333;">
+                                <td style="padding: 8px;"><strong style="color: #2196f3;">${t.item_code || '-'}</strong></td>
+                                <td style="padding: 8px;">${t.item_name || 'Desconocido'}</td>
+                                <td style="text-align: center; padding: 8px;">${t.quantity}</td>
+                            </tr>
+                        `).join('')}
+                    </tbody>
+                </table>
+            `;
+        }
+
+        const partsContainer = document.getElementById('exec-parts-list');
+        if (parts.length === 0) {
+            partsContainer.innerHTML = '<p style="color: #888; font-style: italic;">No hay repuestos asignados</p>';
+        } else {
+            partsContainer.innerHTML = `
+                <table style="width: 100%; border-collapse: collapse;">
+                    <thead>
+                        <tr style="border-bottom: 1px solid #444;">
+                            <th style="text-align: left; padding: 5px; color: #aaa;">Codigo</th>
+                            <th style="text-align: left; padding: 5px; color: #aaa;">Nombre</th>
+                            <th style="text-align: center; padding: 5px; color: #aaa;">Req</th>
+                            <th style="text-align: center; padding: 5px; color: #aaa;">Disponible</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        ${parts.map(m => {
+                            const avail = (m.item_stock === null || m.item_stock === undefined) ? '-' : Number(m.item_stock);
+                            const blocked = (avail !== '-' && avail < Number(m.quantity || 0));
+                            return `
+                            <tr style="border-bottom: 1px solid #333;">
+                                <td style="padding: 8px;"><strong style="color: #4caf50;">${m.item_code || '-'}</strong></td>
+                                <td style="padding: 8px;">${m.item_name || 'Desconocido'}</td>
+                                <td style="text-align: center; padding: 8px;">${m.quantity || 0}</td>
+                                <td style="text-align: center; padding: 8px; color:${blocked ? '#ff8a80' : '#a5d6a7'};">${avail}</td>
+                            </tr>`;
+                        }).join('')}
+                    </tbody>
+                </table>
+            `;
+        }
+    } catch (e) {
+        console.error('Error loading materials:', e);
+        document.getElementById('exec-tools-list').innerHTML = '<p style="color: #f44336;">Error cargando herramientas</p>';
+        document.getElementById('exec-parts-list').innerHTML = '<p style="color: #f44336;">Error cargando repuestos</p>';
+    }
+
+    let personnel = [];
+    try {
+        const pRes = await fetch(`/api/work_orders/${ot.id}/personnel`);
+        personnel = pRes.ok ? await pRes.json() : [];
+        renderExecutionPersonnel(personnel);
+    } catch (e) {
+        console.error('Error loading personnel:', e);
+        const c = document.getElementById('exec-personnel-list');
+        if (c) c.innerHTML = '<span style="color:#ff8a80;">Error cargando personal</span>';
+    }
+
+    let reqs = [];
+    try {
+        const prRes = await fetch('/api/purchase-requests?all=true');
+        const allReq = prRes.ok ? await prRes.json() : [];
+        reqs = allReq.filter(r => Number(r.work_order_id) === Number(ot.id));
+        renderExecutionPurchaseRequests(reqs);
+    } catch (e) {
+        console.error('Error loading purchase requests:', e);
+        const c = document.getElementById('exec-purchase-requests-list');
+        if (c) c.innerHTML = '<span style="color:#ff8a80;">Error cargando requerimientos de compra</span>';
+    }
+
+    refreshExecutionLogisticsAlert(parts, reqs);
+
+    const btnStart = document.getElementById('btn-start-job');
+    const btnEnd = document.getElementById('btn-finish-job');
+    btnStart.classList.add('hidden');
+    btnEnd.classList.add('hidden');
+
+    if (ot.status === 'Abierta' || ot.status === 'Programada') {
+        btnStart.classList.remove('hidden');
+    } else if (ot.status === 'En Progreso') {
+        btnEnd.classList.remove('hidden');
+    }
+}
+
+function populateExecutionOperationalInfo(ot) {
+    const noticeText = ot.notice_id ? `AV-${String(ot.notice_id).padStart(4, '0')}` : '-';
+    const area = ot.area_name || '-';
+    const line = ot.line_name || '-';
+    const equipment = ot.equipment_name || '-';
+    const system = ot.system_name || '-';
+    const component = ot.component_name || '-';
+    const tag = ot.equipment_tag || ot.tag || equipment;
+    const shift = ot.shift || '-';
+
+    const setText = (id, value) => {
+        const el = document.getElementById(id);
+        if (el) el.innerText = value || '-';
+    };
+
+    setText('exec-notice', noticeText);
+    setText('exec-criticality', ot.criticality || '-');
+    setText('exec-area', area);
+    setText('exec-line', line);
+    setText('exec-equipment', equipment);
+    setText('exec-system', system);
+    setText('exec-component', component);
+    setText('exec-tag', tag);
+    setText('exec-shift', shift);
+}
+
+function renderExecutionPersonnel(personnel) {
+    const container = document.getElementById('exec-personnel-list');
+    if (!container) return;
+
+    if (!Array.isArray(personnel) || personnel.length === 0) {
+        container.innerHTML = '<em style="color:#aaa;">No hay personal asignado</em>';
+        return;
+    }
+
+    container.innerHTML = personnel.map(p => {
+        const name = p.technician_name || p.technician_id || 'Tecnico';
+        const spec = p.specialty || 'GENERAL';
+        const hrs = p.hours_assigned !== undefined ? p.hours_assigned : (p.hours || 0);
+        return `<span style="display:inline-block; margin:3px 6px 3px 0; padding:4px 8px; border-radius:999px; background:#1f3551; color:#d9ecff; border:1px solid #365d85;">${name} | ${spec} | ${hrs} h</span>`;
+    }).join('');
+}
+
+function getPurchaseRequestCode(r) {
+    return r.req_code || r.code || `REQ-${r.id}`;
+}
+
+function getPurchaseRequestItemLabel(r) {
+    const itemType = String(r.item_type || '').toUpperCase();
+    const materialName = r.warehouse_item_name || r.spare_part_name || r.item_name || '';
+    const serviceName = r.description || '';
+
+    if (itemType === 'SERVICIO') {
+        return serviceName || 'Servicio';
+    }
+
+    if (materialName) return materialName;
+    if (serviceName) return serviceName;
+    if (r.warehouse_item_id) return `Material ${r.warehouse_item_id}`;
+    if (r.spare_part_id) return `Repuesto ${r.spare_part_id}`;
+    return 'Item';
+}
+
+function renderExecutionPurchaseRequests(reqs) {
+    const container = document.getElementById('exec-purchase-requests-list');
+    if (!container) return;
+
+    if (!Array.isArray(reqs) || reqs.length === 0) {
+        container.innerHTML = '<em style="color:#aaa;">No hay requerimientos registrados</em>';
+        return;
+    }
+
+    container.innerHTML = reqs.map(r => {
+        const code = getPurchaseRequestCode(r);
+        const status = r.status || 'Pendiente';
+        const qty = Number(r.quantity || 0);
+        const itemLabel = getPurchaseRequestItemLabel(r);
+        const color = /cerrad|atendid|recibid/i.test(status) ? '#7ee08a' : '#ffb3ad';
+        return `<div style="padding:6px 8px; border-bottom:1px solid #2c3f54;"><strong style="color:#6fb3ff;">${code}</strong> - ${itemLabel} (x${qty}) <span style="color:${color};">${status}</span></div>`;
+    }).join('');
+}
+
+function refreshExecutionLogisticsAlert(parts, reqs) {
+    const alertBox = document.getElementById('exec-logistics-alert');
+    if (!alertBox) return;
+
+    const blockedParts = (parts || []).filter(m => {
+        const avail = (m.item_stock === null || m.item_stock === undefined) ? null : Number(m.item_stock);
+        return avail !== null && !Number.isNaN(avail) && avail < Number(m.quantity || 0);
+    });
+
+    const pendingReqs = (reqs || []).filter(r => !/cerrad|atendid|recibid/i.test(String(r.status || '')));
+
+    if (blockedParts.length === 0 && pendingReqs.length === 0) {
+        alertBox.style.background = '#163b23';
+        alertBox.style.color = '#9fe8a7';
+        alertBox.style.border = '1px solid #2d6a3d';
+        alertBox.innerText = 'Sin bloqueos detectados por recursos.';
+        return;
+    }
+
+    const partText = blockedParts.map(m => `${m.item_code || 'REP'}: req ${m.quantity}, disp ${m.item_stock}`).join(' | ');
+    const reqText = pendingReqs.map(r => getPurchaseRequestCode(r)).join(', ');
+
+    alertBox.style.background = '#4a1717';
+    alertBox.style.color = '#ffb3ad';
+    alertBox.style.border = '1px solid #7a2525';
+
+    if (blockedParts.length > 0 && pendingReqs.length > 0) {
+        alertBox.innerText = `Bloqueo por recursos: Repuestos (${partText}) y compras pendientes (${reqText})`;
+    } else if (blockedParts.length > 0) {
+        alertBox.innerText = `Bloqueo por recursos: Repuestos ${partText}`;
+    } else {
+        alertBox.innerText = `Bloqueo por recursos: Compras pendientes ${reqText}`;
+    }
+}
+
+function loadExecutionSafetyState(otId) {
+    const raw = localStorage.getItem(`cmms.exec.safety.${otId}`);
+    const data = raw ? JSON.parse(raw) : {};
+
+    const setChecked = (id, value) => {
+        const el = document.getElementById(id);
+        if (el) el.checked = !!value;
+    };
+
+    setChecked('exec-loto', data.loto);
+    setChecked('exec-hot-work', data.hot_work);
+    setChecked('exec-confined-space', data.confined_space);
+    setChecked('exec-epp-helmet', data.epp_helmet);
+    setChecked('exec-epp-glasses', data.epp_glasses);
+    setChecked('exec-epp-gloves', data.epp_gloves);
+    setChecked('exec-epp-respirator', data.epp_respirator);
+    setChecked('exec-epp-hearing', data.epp_hearing);
+
+    const permit = document.getElementById('exec-permit');
+    if (permit) permit.value = data.permit || '';
+}
+
+function bindExecutionSafetyState(otId) {
+    const ids = [
+        'exec-loto', 'exec-hot-work', 'exec-confined-space',
+        'exec-epp-helmet', 'exec-epp-glasses', 'exec-epp-gloves',
+        'exec-epp-respirator', 'exec-epp-hearing', 'exec-permit'
+    ];
+
+    const save = () => {
+        const getChecked = (id) => {
+            const el = document.getElementById(id);
+            return !!(el && el.checked);
+        };
+        const permitEl = document.getElementById('exec-permit');
+
+        const payload = {
+            loto: getChecked('exec-loto'),
+            hot_work: getChecked('exec-hot-work'),
+            confined_space: getChecked('exec-confined-space'),
+            epp_helmet: getChecked('exec-epp-helmet'),
+            epp_glasses: getChecked('exec-epp-glasses'),
+            epp_gloves: getChecked('exec-epp-gloves'),
+            epp_respirator: getChecked('exec-epp-respirator'),
+            epp_hearing: getChecked('exec-epp-hearing'),
+            permit: permitEl ? permitEl.value : ''
+        };
+
+        localStorage.setItem(`cmms.exec.safety.${otId}`, JSON.stringify(payload));
+    };
+
+    ids.forEach(id => {
+        const el = document.getElementById(id);
+        if (!el) return;
+        el.onchange = save;
+        el.oninput = save;
+    });
 }
 
 
@@ -1026,7 +1273,7 @@ function getLocalISOString() {
 
 async function startJob() {
     if (!activeExecutionOT) return;
-    if (!confirm("¿Iniciar trabajo ahora? Se guardará fecha/hora según sistema.")) return;
+    if (!confirm("Â¿Iniciar trabajo ahora? Se guardarÃ¡ fecha/hora segÃºn sistema.")) return;
 
     const now = getLocalISOString();
     const today = now.slice(0, 10);
@@ -1131,7 +1378,7 @@ async function handleCloseOTSubmit(e) {
     document.getElementById('execution-details').classList.add('hidden');
     document.getElementById('executionSearch').value = '';
 
-    alert(`✅ Orden Cerrada Correctamente.\n\nTiempo Total: ${hours} horas y ${minutes} minutos.`);
+    alert(`âœ… Orden Cerrada Correctamente.\n\nTiempo Total: ${hours} horas y ${minutes} minutos.`);
 }
 
 /* --- TECHNICIAN MANAGEMENT --- */
@@ -1181,7 +1428,7 @@ function openTechnicianModal() {
     document.getElementById('techName').value = '';
     document.getElementById('techSpecialty').value = '';
     document.getElementById('techContact').value = '';
-    document.getElementById('techModalTitle').textContent = 'Nuevo Técnico';
+    document.getElementById('techModalTitle').textContent = 'Nuevo TÃ©cnico';
     document.getElementById('technicianModal').showModal();
 }
 
@@ -1193,14 +1440,14 @@ window.editTechnician = (id) => {
     document.getElementById('techName').value = t.name;
     document.getElementById('techSpecialty').value = t.specialty || '';
     document.getElementById('techContact').value = t.contact_info || '';
-    document.getElementById('techModalTitle').textContent = 'Editar Técnico';
+    document.getElementById('techModalTitle').textContent = 'Editar TÃ©cnico';
     document.getElementById('technicianModal').showModal();
 }
 
 window.toggleTechnician = async (id) => {
     const t = allTechnicians.find(x => x.id === id);
     const action = (t && t.is_active) ? 'dar de baja' : 'dar de alta';
-    if (!confirm(`¿Desea ${action} a este técnico?`)) return;
+    if (!confirm(`Â¿Desea ${action} a este tÃ©cnico?`)) return;
 
     await fetch(`/api/technicians/${id}`, { method: 'DELETE' });
     loadTechnicians();
@@ -1341,7 +1588,7 @@ window.viewNoticeDetails = async function (id) {
         document.getElementById('detail-description').textContent = n.description || '-';
 
         // Hierarchy
-        let hText = `Area: ${getNameFromList(allAreas, n.area_id)} | Línea: ${getNameFromList(allLines, n.line_id)} | Equipo: ${getNameFromList(allEquips, n.equipment_id)}`;
+        let hText = `Area: ${getNameFromList(allAreas, n.area_id)} | LÃ­nea: ${getNameFromList(allLines, n.line_id)} | Equipo: ${getNameFromList(allEquips, n.equipment_id)}`;
         document.getElementById('detail-hierarchy').textContent = hText;
 
         // Reset & Actions
@@ -1366,12 +1613,12 @@ window.viewNoticeDetails = async function (id) {
 
                 // Add Notices
                 data.notices.forEach(d => {
-                    list.innerHTML += `<li>⚠️ Aviso <strong>${d.code || d.id}</strong> (${d.status}): "${d.description}"</li>`;
+                    list.innerHTML += `<li>âš ï¸ Aviso <strong>${d.code || d.id}</strong> (${d.status}): "${d.description}"</li>`;
                 });
 
                 // Add Work Orders
                 data.work_orders.forEach(ot => {
-                    list.innerHTML += `<li>⚠️ OT Activa <strong>${ot.code || ot.id}</strong> (${ot.status}): "${ot.description}"</li>`;
+                    list.innerHTML += `<li>âš ï¸ OT Activa <strong>${ot.code || ot.id}</strong> (${ot.status}): "${ot.description}"</li>`;
                 });
             }
         }
@@ -1383,7 +1630,7 @@ window.viewNoticeDetails = async function (id) {
 
 // Convert Notice to OT
 async function convertNoticeToOT(noticeId) {
-    if (!confirm('¿Desea crear una Orden de Trabajo a partir de este aviso?')) return;
+    if (!confirm('Â¿Desea crear una Orden de Trabajo a partir de este aviso?')) return;
 
     try {
         // Get the notice data
@@ -1515,7 +1762,7 @@ window.openAddPersonnelModal = function () {
     // Filter active technicians
     const techSelect = allTechnicians.filter(t => t.is_active);
     if (techSelect.length === 0) {
-        alert('No hay técnicos disponibles. Agregue técnicos primero.');
+        alert('No hay tÃ©cnicos disponibles. Agregue tÃ©cnicos primero.');
         return;
     }
 
@@ -1569,7 +1816,7 @@ async function checkFeedback(equipmentId) {
                 <div style="border-bottom: 1px solid #666; padding: 5px 0; margin-bottom: 5px;">
                     <div style="font-weight: bold; color: #ffd700;">${item.date.split('T')[0]} - ${item.ot_code} (${item.maintenance_type})</div>
                     <div style="color: #eee;">"${item.comments}"</div>
-                    <div style="font-size: 0.8em; color: #aaa;">Téc: ${item.tech_name}</div>
+                    <div style="font-size: 0.8em; color: #aaa;">TÃ©c: ${item.tech_name}</div>
                 </div>
             `).join('');
             container.style.display = 'block';
@@ -1585,6 +1832,54 @@ async function checkFeedback(equipmentId) {
 // ... existing code ...
 
 // Open Add Material Modal
+let modalMaterialCatalog = [];
+
+function renderMaterialOptions(filterText = '') {
+    const select = document.getElementById('materialItemSelect');
+    if (!select) return;
+
+    const query = String(filterText || '').trim().toLowerCase();
+    const filtered = modalMaterialCatalog.filter(item => {
+        if (!query) return true;
+        const haystack = `${item.code || ''} ${item.name || ''} ${item.category || ''}`.toLowerCase();
+        return haystack.includes(query);
+    });
+
+    if (filtered.length === 0) {
+        select.innerHTML = '<option value="">Sin resultados</option>';
+        return;
+    }
+
+    select.innerHTML = filtered.map(i => {
+        if (currentMaterialType === 'tool') {
+            const status = i.status || 'Disponible';
+            return `<option value="${i.id}">${i.code} - ${i.name} (${status})</option>`;
+        }
+        const stock = (i.stock !== undefined && i.stock !== null) ? i.stock : 'N/A';
+        return `<option value="${i.id}">${i.code} - ${i.name} (Stock: ${stock})</option>`;
+    }).join('');
+}
+
+async function loadItemsForMaterialSelect(type) {
+    const select = document.getElementById('materialItemSelect');
+    if (!select) return;
+
+    select.innerHTML = '<option value="">Cargando...</option>';
+
+    try {
+        const endpoint = type === 'tool' ? '/api/tools' : '/api/warehouse';
+        const res = await fetch(endpoint);
+        const items = await res.json();
+
+        modalMaterialCatalog = Array.isArray(items) ? items : [];
+        renderMaterialOptions('');
+    } catch (e) {
+        select.innerHTML = '<option value="">Error cargando items</option>';
+        modalMaterialCatalog = [];
+        console.error(e);
+    }
+}
+
 window.openAddMaterialModal = async function (type) {
     const otId = document.getElementById('otId').value;
     if (!otId) {
@@ -1596,33 +1891,23 @@ window.openAddMaterialModal = async function (type) {
     currentMaterialType = type;
     document.getElementById('materialQuantity').value = 1;
 
-    // Update Title
-    const title = type === 'tool' ? 'Agregar Herramienta (Catálogo)' : 'Agregar Repuesto / Material';
+    const title = type === 'tool' ? 'Agregar Herramienta (Catalogo)' : 'Agregar Repuesto / Material';
     const icon = type === 'tool' ? 'wrench' : 'box';
     document.getElementById('addMaterialTitle').innerHTML = `<i class="fas fa-${icon}"></i> ${title}`;
 
-    // Load Items
-    await loadWarehouseItemsForSelect();
-
-    document.getElementById('addMaterialModal').showModal();
-}
-
-async function loadWarehouseItemsForSelect() {
-    const select = document.getElementById('materialItemSelect');
-    select.innerHTML = '<option>Cargando...</option>';
-
-    try {
-        const res = await fetch('/api/warehouse');
-        const items = await res.json();
-
-        select.innerHTML = items.map(i => {
-            const stock = (i.stock !== undefined) ? i.stock : 'N/A';
-            return `<option value="${i.id}" data-stock="${stock}">${i.code} - ${i.name} (Stock: ${stock})</option>`;
-        }).join('');
-    } catch (e) {
-        select.innerHTML = '<option>Error cargando items</option>';
-        console.error(e);
+    const searchInput = document.getElementById('materialSearchInput');
+    if (searchInput) {
+        searchInput.value = '';
+        searchInput.placeholder = type === 'tool' ? 'Buscar herramienta por codigo o nombre...' : 'Buscar repuesto por codigo o nombre...';
+        searchInput.oninput = function () {
+            renderMaterialOptions(searchInput.value);
+        };
     }
+
+    await loadItemsForMaterialSelect(type);
+    document.getElementById('addMaterialModal').showModal();
+
+    if (searchInput) searchInput.focus();
 }
 
 async function confirmAddMaterial() {
@@ -1631,11 +1916,11 @@ async function confirmAddMaterial() {
     const quantity = document.getElementById('materialQuantity').value;
 
     if (!itemId) {
-        alert("Por favor seleccione un ítem.");
+        alert('Por favor seleccione un item.');
         return;
     }
-    if (!quantity || parseInt(quantity) <= 0) {
-        alert("Por favor ingrese una cantidad válida mayor a 0.");
+    if (!quantity || parseInt(quantity, 10) <= 0) {
+        alert('Por favor ingrese una cantidad valida mayor a 0.');
         return;
     }
 
@@ -1644,9 +1929,9 @@ async function confirmAddMaterial() {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({
-                item_type: currentMaterialType, // 'warehouse' or 'tool'
-                item_id: parseInt(itemId),
-                quantity: parseInt(quantity)
+                item_type: currentMaterialType,
+                item_id: parseInt(itemId, 10),
+                quantity: parseInt(quantity, 10)
             })
         });
 
@@ -1655,14 +1940,16 @@ async function confirmAddMaterial() {
             loadOTMaterials(otId);
         } else {
             const err = await res.json();
-            alert("Error: " + (err.error || "Error desconocido"));
+            alert('Error: ' + (err.error || 'Error desconocido'));
         }
-    } catch (e) { console.error(e); }
+    } catch (e) {
+        console.error(e);
+    }
 }
 
 // Remove Material
 window.removeMaterial = async function (id) {
-    if (!confirm('¿Eliminar este material de la OT?')) return;
+    if (!confirm('Â¿Eliminar este material de la OT?')) return;
 
     const otId = document.getElementById('otId').value;
     try {
@@ -1729,7 +2016,7 @@ window.addPersonnelRow = function () {
     const select = document.getElementById('personnelTechSelect');
     if (!select) return alert('Modal de personal no encontrado');
 
-    select.innerHTML = '<option value="">- Seleccione Técnico -</option>';
+    select.innerHTML = '<option value="">- Seleccione TÃ©cnico -</option>';
     allTechnicians.forEach(tech => {
         const opt = document.createElement('option');
         opt.value = tech.id;
@@ -1760,7 +2047,7 @@ window.confirmAddPersonnel = function () {
     const techName = selectedOption ? selectedOption.text : '';
 
     if (!techId) {
-        return alert('Seleccione un técnico');
+        return alert('Seleccione un tÃ©cnico');
     }
 
     const specialty = document.getElementById('personnelSpecialty').value;
@@ -1768,7 +2055,7 @@ window.confirmAddPersonnel = function () {
 
     // Check if already added
     if (currentOTPersonnel.find(p => p.technician_id == techId)) {
-        return alert('Este técnico ya está asignado a la OT');
+        return alert('Este tÃ©cnico ya estÃ¡ asignado a la OT');
     }
 
     currentOTPersonnel.push({
@@ -1789,7 +2076,7 @@ window.confirmAddPersonnel = function () {
 }
 
 window.removePersonnel = function (idx) {
-    if (!confirm('¿Eliminar este personal de la OT?')) return;
+    if (!confirm('Â¿Eliminar este personal de la OT?')) return;
 
     currentOTPersonnel.splice(idx, 1);
     renderPersonnelTable();
@@ -1864,7 +2151,7 @@ function renderMaterialsTable() {
 }
 
 window.removeMaterial = async function (id) {
-    if (!confirm('¿Eliminar este material de la OT?')) return;
+    if (!confirm('Â¿Eliminar este material de la OT?')) return;
     const otId = document.getElementById('otId').value;
     try {
         await fetch(`/api/work_orders/${otId}/materials/${id}`, { method: 'DELETE' });
@@ -1923,7 +2210,7 @@ function renderPersonnelTable() {
 window.addPersonnelRow = function () {
     const select = document.getElementById('personnelTechSelect');
     if (!select) return alert('Modal de personal no encontrado');
-    select.innerHTML = '<option value="">- Seleccione Técnico -</option>';
+    select.innerHTML = '<option value="">- Seleccione TÃ©cnico -</option>';
 
     if (typeof allTechnicians !== 'undefined') {
         allTechnicians.forEach(tech => {
@@ -1950,13 +2237,13 @@ window.confirmAddPersonnel = function () {
     const techId = techSelect.value;
     const selectedOption = techSelect.options[techSelect.selectedIndex];
     const techName = selectedOption ? selectedOption.text : '';
-    if (!techId) return alert('Seleccione un técnico');
+    if (!techId) return alert('Seleccione un tÃ©cnico');
 
     const specialty = document.getElementById('personnelSpecialty').value;
     const hours = parseFloat(document.getElementById('personnelHours').value) || 8;
 
     if (currentOTPersonnel.find(p => p.technician_id == techId)) {
-        return alert('Este técnico ya está asignado a la OT');
+        return alert('Este tÃ©cnico ya estÃ¡ asignado a la OT');
     }
 
     currentOTPersonnel.push({
@@ -1974,7 +2261,7 @@ window.confirmAddPersonnel = function () {
 }
 
 window.removePersonnel = function (idx) {
-    if (!confirm('¿Eliminar este personal de la OT?')) return;
+    if (!confirm('Â¿Eliminar este personal de la OT?')) return;
     currentOTPersonnel.splice(idx, 1);
     renderPersonnelTable();
     const otId = document.getElementById('otId').value;
@@ -2000,7 +2287,7 @@ window.openPurchaseModal = function () {
 
     // Validar si la OT existe (tiene ID)
     if (!otId) {
-        alert("⚠️ ATENCIÓN: Para solicitar una compra, primero debe GUARDAR la Orden de Trabajo.\n\nPor favor, guarde los cambios y vuelva a intentar.");
+        alert("âš ï¸ ATENCIÃ“N: Para solicitar una compra, primero debe GUARDAR la Orden de Trabajo.\n\nPor favor, guarde los cambios y vuelva a intentar.");
         return;
     }
 
@@ -2035,7 +2322,7 @@ async function loadSparesForReq(force = false) {
     // Visual feedback for refresh
     const searchInput = document.getElementById('reqSpareSearch');
     if (force && searchInput) {
-        searchInput.placeholder = "🔄 Cargando catálogo...";
+        searchInput.placeholder = "ðŸ”„ Cargando catÃ¡logo...";
         searchInput.disabled = true;
     }
 
@@ -2044,14 +2331,14 @@ async function loadSparesForReq(force = false) {
         if (res.ok) {
             allSparesList = await res.json();
             console.log("Spares loaded:", allSparesList.length);
-            if (force) alert("Catálogo actualizado: " + allSparesList.length + " items.");
+            if (force) alert("CatÃ¡logo actualizado: " + allSparesList.length + " items.");
         }
     } catch (e) {
         console.error("Error loading spares:", e);
-        if (force) alert("Error al actualizar catálogo");
+        if (force) alert("Error al actualizar catÃ¡logo");
     } finally {
         if (force && searchInput) {
-            searchInput.placeholder = "🔍 Escriba para buscar repuesto...";
+            searchInput.placeholder = "ðŸ” Escriba para buscar repuesto...";
             searchInput.disabled = false;
             searchInput.focus();
         }
@@ -2149,7 +2436,7 @@ window.addToPurchaseCart = function () {
     const type = document.getElementById('reqType').value;
     const qty = parseFloat(document.getElementById('reqQty').value);
 
-    if (!qty || qty <= 0) return alert("Cantidad inválida");
+    if (!qty || qty <= 0) return alert("Cantidad invÃ¡lida");
 
     let item = {
         item_type: type,
@@ -2166,7 +2453,7 @@ window.addToPurchaseCart = function () {
         item.detail = spareText; // For display
     } else {
         const desc = document.getElementById('reqDesc').value;
-        if (!desc.trim()) return alert("Ingrese descripción del servicio");
+        if (!desc.trim()) return alert("Ingrese descripciÃ³n del servicio");
         item.description = desc;
         item.detail = desc;
     }
@@ -2188,7 +2475,7 @@ window.renderPurchaseCart = function () {
     const btn = document.getElementById('btnSubmitPurchase');
 
     if (purchaseCart.length === 0) {
-        tbody.innerHTML = '<tr><td colspan="4" style="text-align:center; padding:10px; color:#666;">Lista vacía</td></tr>';
+        tbody.innerHTML = '<tr><td colspan="4" style="text-align:center; padding:10px; color:#666;">Lista vacÃ­a</td></tr>';
         if (btn) btn.disabled = true;
         return;
     }
@@ -2223,7 +2510,7 @@ if (pForm) {
     pForm.onsubmit = async (e) => {
         e.preventDefault();
 
-        if (purchaseCart.length === 0) return alert("La lista está vacía");
+        if (purchaseCart.length === 0) return alert("La lista estÃ¡ vacÃ­a");
 
         const otId = document.getElementById('reqOtId').value;
         const btn = e.submitter;
@@ -2240,7 +2527,7 @@ if (pForm) {
                 item_type: item.item_type,
                 quantity: item.quantity,
                 warehouse_item_id: item.spare_part_id, // ID from dropdown (now WarehouseItem)
-                description: item.description
+                description: item.description || item.detail
             };
 
             try {
@@ -2267,4 +2554,94 @@ if (pForm) {
         }
     };
 }
+
+// Dynamic filter for personnel modal
+let modalPersonnelCatalog = [];
+
+function renderPersonnelOptions(filterText = '') {
+    const select = document.getElementById('personnelTechSelect');
+    if (!select) return;
+
+    const query = String(filterText || '').trim().toLowerCase();
+    const filtered = modalPersonnelCatalog.filter(tech => {
+        if (!query) return true;
+        const haystack = `${tech.name || ''} ${tech.specialty || ''} ${tech.contact_info || ''}`.toLowerCase();
+        return haystack.includes(query);
+    });
+
+    select.innerHTML = '<option value="">- Seleccione Tecnico -</option>';
+    filtered.forEach(tech => {
+        const opt = document.createElement('option');
+        opt.value = tech.id;
+        opt.textContent = `${tech.name}${tech.specialty ? ` (${tech.specialty})` : ''}`;
+        opt.dataset.specialty = tech.specialty || 'GENERAL';
+        opt.dataset.fullname = tech.name || '';
+        select.appendChild(opt);
+    });
+}
+
+window.addPersonnelRow = function () {
+    const select = document.getElementById('personnelTechSelect');
+    if (!select) return alert('Modal de personal no encontrado');
+
+    modalPersonnelCatalog = Array.isArray(allTechnicians) ? allTechnicians.slice() : [];
+
+    const searchInput = document.getElementById('personnelSearchInput');
+    if (searchInput) {
+        searchInput.value = '';
+        searchInput.oninput = function () {
+            renderPersonnelOptions(searchInput.value);
+        };
+    }
+
+    renderPersonnelOptions('');
+
+    select.onchange = function () {
+        const selectedOpt = select.options[select.selectedIndex];
+        if (selectedOpt && selectedOpt.dataset.specialty) {
+            document.getElementById('personnelSpecialty').value = selectedOpt.dataset.specialty;
+        }
+    };
+
+    document.getElementById('personnelHours').value = 8;
+    document.getElementById('addPersonnelModal').showModal();
+
+    if (searchInput) searchInput.focus();
+};
+
+window.confirmAddPersonnel = function () {
+    const techSelect = document.getElementById('personnelTechSelect');
+    const techId = techSelect.value;
+    const selectedOption = techSelect.options[techSelect.selectedIndex];
+
+    if (!techId || !selectedOption) {
+        return alert('Seleccione un tecnico');
+    }
+
+    const techName = selectedOption.dataset.fullname || selectedOption.textContent || '';
+    const specialty = document.getElementById('personnelSpecialty').value;
+    const hours = parseFloat(document.getElementById('personnelHours').value) || 8;
+
+    if (currentOTPersonnel.find(p => Number(p.technician_id) === Number(techId))) {
+        return alert('Este tecnico ya esta asignado a la OT');
+    }
+
+    currentOTPersonnel.push({
+        technician_id: parseInt(techId, 10),
+        technician_name: techName,
+        specialty: specialty,
+        hours: hours
+    });
+
+    renderPersonnelTable();
+    document.getElementById('addPersonnelModal').close();
+
+    const otId = document.getElementById('otId').value;
+    if (otId) saveOTPersonnel(otId);
+};
+
+
+
+
+
 

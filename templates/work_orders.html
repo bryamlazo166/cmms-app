@@ -1,10 +1,10 @@
-<!DOCTYPE html>
+﻿<!DOCTYPE html>
 <html lang="es">
 
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Gestión de Órdenes de Trabajo - CMMS</title>
+    <title>Gestion de Ordenes de Trabajo - CMMS</title>
     <link rel="stylesheet" href="/static/css/style.css">
     <link rel="stylesheet" href="/static/css/kanban.css">
     <link rel="stylesheet" href="/static/css/sidebar.css?v=20260319">
@@ -12,42 +12,287 @@
     <link href="https://fonts.googleapis.com/css2?family=Roboto:wght@300;400;500;700&display=swap" rel="stylesheet">
     <!-- FontAwesome for Icons -->
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css">
-    <style>
-        /* Multi-select Filter Styles */
+        <style>
+        .main-container {
+            max-width: 1680px;
+            margin: 0 auto;
+            padding: 0 14px 22px 14px;
+        }
+
+        .top-bar {
+            background: linear-gradient(120deg, #1d2430, #121923);
+            border: 1px solid #2c4057;
+            border-radius: 12px;
+            padding: 16px 20px;
+            margin: 12px 0;
+        }
+
+        .top-bar h1 {
+            margin: 0;
+            color: #8ec5ff;
+            font-size: 2.2rem;
+            letter-spacing: 0.01em;
+        }
+
+        .container-fluid {
+            background: rgba(17, 24, 36, 0.85);
+            border: 1px solid #263447;
+            border-radius: 12px;
+            padding: 12px;
+        }
+
+        .tabs {
+            border-bottom-color: #2d3f56;
+            margin-bottom: 14px;
+            padding: 8px 8px 0 8px;
+        }
+
+        .tab-link {
+            background: #162134;
+            border-color: #2a4260;
+            color: #9ab8d8;
+            font-weight: 600;
+        }
+
+        .tab-link:hover {
+            background: #1e2d44;
+            color: #d9ebff;
+        }
+
+        .tab-link.active {
+            background: #1ccfc1;
+            color: #07252f;
+        }
+
+        .tab-content {
+            border-color: #2d3f56;
+            background: #101826;
+            border-radius: 0 0 12px 12px;
+            padding: 14px;
+        }
+
+        #tab-planning .toolbar.planning-toolbar {
+            display: grid;
+            grid-template-columns: auto auto 1fr minmax(240px, 340px) auto;
+            gap: 10px;
+            align-items: center;
+            margin-bottom: 10px;
+        }
+
+        #tab-planning .toolbar .planning-filter-row {
+            display: flex;
+            gap: 8px;
+            flex-wrap: wrap;
+            align-items: center;
+        }
+
+        #tab-planning .search-bar input {
+            width: 100%;
+            background: #0f1725;
+            color: #d8e8ff;
+            border: 1px solid #2f435d;
+            border-radius: 8px;
+            height: 38px;
+            padding: 0 10px;
+        }
+
+        #tab-planning .view-toggle {
+            margin-left: 0;
+            display: flex;
+            background: #121d2b;
+            border: 1px solid #2f4563;
+            border-radius: 8px;
+            padding: 2px;
+            gap: 2px;
+        }
+
+        #tab-planning .view-toggle button {
+            border-radius: 6px;
+            border: none;
+            padding: 8px 12px;
+            background: transparent;
+            color: #9fb2cc;
+            cursor: pointer;
+        }
+
+        #tab-planning .view-toggle button.active {
+            background: #1f3551;
+            color: #dff1ff;
+        }
+
+        #tab-planning .table-container {
+            border: 1px solid #2b4058;
+            border-radius: 12px;
+            background: #121b29;
+            overflow: auto;
+            max-height: calc(100vh - 330px);
+        }
+
+        #planningTable.data-table {
+            width: 100%;
+            border-collapse: separate;
+            border-spacing: 0;
+            min-width: 1680px;
+        }
+
+        #planningTable.data-table thead th {
+            position: sticky;
+            top: 0;
+            z-index: 1;
+            background: #233247;
+            color: #9be8ff;
+            text-transform: uppercase;
+            letter-spacing: 0.03em;
+            font-size: 0.79rem;
+            border-bottom: 1px solid #3a5068;
+            padding: 10px 8px;
+        }
+
+        #planningTable.data-table tbody td {
+            border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+            color: #d8e6fa;
+            font-size: 0.86rem;
+            padding: 8px;
+            vertical-align: middle;
+        }
+
+        #planningTable.data-table tbody tr:nth-child(even) td {
+            background: rgba(255, 255, 255, 0.02);
+        }
+
+        #planningTable.data-table td:nth-child(9) {
+            max-width: 380px;
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
+        }
+
+        .badge {
+            border-radius: 999px;
+            padding: 2px 10px;
+            font-size: 0.78rem;
+            font-weight: 700;
+            border: 1px solid transparent;
+            display: inline-block;
+        }
+
+        .status-open {
+            background: rgba(255, 152, 0, 0.18);
+            color: #ffcf87;
+            border-color: rgba(255, 152, 0, 0.4);
+        }
+
+        .status-progress {
+            background: rgba(33, 150, 243, 0.2);
+            color: #9fd2ff;
+            border-color: rgba(33, 150, 243, 0.45);
+        }
+
+        .status-closed {
+            background: rgba(76, 175, 80, 0.2);
+            color: #9de5a6;
+            border-color: rgba(76, 175, 80, 0.45);
+        }
+
+        .priority-high {
+            background: rgba(244, 67, 54, 0.18);
+            color: #ff9f97;
+            border-color: rgba(244, 67, 54, 0.42);
+        }
+
+        .priority-medium {
+            background: rgba(255, 193, 7, 0.18);
+            color: #ffd86a;
+            border-color: rgba(255, 193, 7, 0.42);
+        }
+
+        .priority-low {
+            background: rgba(76, 175, 80, 0.18);
+            color: #95e39f;
+            border-color: rgba(76, 175, 80, 0.42);
+        }
+
+        .logistics-chip {
+            display: inline-block;
+            padding: 3px 10px;
+            border-radius: 999px;
+            font-size: 0.75rem;
+            font-weight: 700;
+            border: 1px solid transparent;
+            margin-bottom: 3px;
+        }
+
+        .logistics-blocked {
+            background: rgba(244, 67, 54, 0.18);
+            color: #ffb3ad;
+            border-color: rgba(244, 67, 54, 0.45);
+        }
+
+        .logistics-released {
+            background: rgba(76, 175, 80, 0.2);
+            color: #9fe8a7;
+            border-color: rgba(76, 175, 80, 0.45);
+        }
+
+        .logistics-track {
+            display: block;
+            font-size: 0.72rem;
+            color: #9fb6d6;
+            max-width: 230px;
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
+        }
+
+        .planning-action-btn {
+            width: 30px;
+            height: 30px;
+            border-radius: 8px;
+            border: 1px solid #32577a;
+            background: #17293f;
+            color: #d5e7ff;
+            cursor: pointer;
+        }
+
+        .planning-action-btn:hover {
+            filter: brightness(1.08);
+        }
+
         .filter-wrapper {
             position: relative;
             display: inline-block;
         }
 
         .filter-btn {
-            background: #333;
-            color: white;
-            border: 1px solid #555;
+            background: #162134;
+            color: #d8e8ff;
+            border: 1px solid #2f435d;
             padding: 8px 12px;
-            border-radius: 4px;
+            border-radius: 8px;
             cursor: pointer;
             font-size: 14px;
             display: flex;
             align-items: center;
             gap: 5px;
+            height: 38px;
         }
 
         .filter-btn:hover {
-            background: #444;
+            background: #1c2a40;
         }
 
         .filter-content {
             display: none;
             position: absolute;
-            background-color: #252526;
-            min-width: 200px;
-            max-height: 300px;
+            background-color: #1f2c3f;
+            min-width: 220px;
+            max-height: 320px;
             overflow-y: auto;
-            box-shadow: 0px 8px 16px 0px rgba(0, 0, 0, 0.5);
+            box-shadow: 0 10px 28px rgba(0, 0, 0, 0.55);
             z-index: 1000;
-            border: 1px solid #444;
-            border-radius: 4px;
-            padding: 5px;
+            border: 1px solid #2e4a69;
+            border-radius: 8px;
+            padding: 6px;
         }
 
         .filter-content.show {
@@ -57,18 +302,28 @@
         .filter-content label {
             display: block;
             padding: 5px 10px;
-            color: #ccc;
+            color: #cfe4ff;
             cursor: pointer;
             font-size: 13px;
         }
 
         .filter-content label:hover {
-            background-color: #333;
+            background-color: #2a3d58;
             color: white;
         }
 
         .filter-content input[type="checkbox"] {
             margin-right: 8px;
+        }
+
+        @media (max-width: 1280px) {
+            #tab-planning .toolbar.planning-toolbar {
+                grid-template-columns: 1fr;
+            }
+
+            #tab-planning .view-toggle {
+                justify-self: start;
+            }
         }
     </style>
 </head>
@@ -99,9 +354,9 @@
             <li>
                 <a href="/ordenes">
                     <i class="fas fa-tools"></i>
-                    <span class="links_name">Órdenes</span>
+                    <span class="links_name">Ordenes</span>
                 </a>
-                <span class="tooltip">Órdenes</span>
+                <span class="tooltip">Ordenes</span>
             </li>
             <li>
                 <a href="/compras">
@@ -113,9 +368,9 @@
             <li>
                 <a href="/almacen">
                     <i class="fas fa-boxes"></i>
-                    <span class="links_name">Almacén</span>
+                    <span class="links_name">Almacen</span>
                 </a>
-                <span class="tooltip">Almacén</span>
+                <span class="tooltip">Almacen</span>
             </li>
             <li>
                 <a href="/configuracion">
@@ -135,7 +390,7 @@
     </nav>
     <section class="home-section">
         <div class="top-bar">
-            <h1><i class="fas fa-tools"></i> Gestión de Órdenes de Trabajo (OT)</h1>
+            <h1><i class="fas fa-tools"></i> Gestion de Ordenes de Trabajo (OT)</h1>
         </div>
         <div class="main-container">
 
@@ -145,15 +400,15 @@
                 <div class="tabs">
                     <button class="tab-link active" onclick="openTab(event, 'tab-planning')"><i
                             class="fas fa-calendar-alt"></i>
-                        Planificación</button>
+                        Planificacion</button>
                     <button class="tab-link" onclick="openTab(event, 'tab-execution')"><i class="fas fa-hard-hat"></i>
-                        Ejecución
+                        Ejecucion
                         y Cierre</button>
                     <button class="tab-link" onclick="openTab(event, 'tab-providers')"><i class="fas fa-users-cog"></i>
                         Proveedores</button>
                     <button class="tab-link" onclick="openTab(event, 'tab-technicians')"><i
                             class="fas fa-user-hard-hat"></i>
-                        Técnicos</button>
+                        Tecnicos</button>
                     <button class="tab-link" onclick="openTab(event, 'tab-notices')"><i
                             class="fas fa-clipboard-list"></i>
                         Avisos Pendientes</button>
@@ -161,7 +416,7 @@
 
                 <!-- TAB: PLANIFICACION -->
                 <div id="tab-planning" class="tab-content active">
-                    <div class="toolbar">
+                    <div class="toolbar planning-toolbar">
                         <button class="btn-primary" onclick="openCreateOTModal()"><i class="fas fa-plus"></i> Nueva OT
                             (Manual)</button>
                         <a href="/api/export-ots" target="_blank" style="text-decoration:none;">
@@ -170,10 +425,10 @@
                                 <i class="fas fa-file-excel"></i> Exportar
                             </button>
                         </a>
-                        <div style="display: flex; gap: 10px; flex-wrap: wrap; align-items: center;">
+                        <div class="planning-filter-row">
                             <!-- Area Filter -->
                             <div class="filter-wrapper">
-                                <button class="filter-btn" onclick="toggleFilter('area')">Área <i
+                                <button class="filter-btn" onclick="toggleFilter('area')">Area <i
                                         class="fas fa-chevron-down"></i></button>
                                 <div id="dropdown-area" class="filter-content">
                                     <label><input type="checkbox" value="ALL" checked
@@ -184,7 +439,7 @@
 
                             <!-- Line Filter -->
                             <div class="filter-wrapper">
-                                <button class="filter-btn" onclick="toggleFilter('line')">Línea <i
+                                <button class="filter-btn" onclick="toggleFilter('line')">Linea <i
                                         class="fas fa-chevron-down"></i></button>
                                 <div id="dropdown-line" class="filter-content">
                                     <label><input type="checkbox" value="ALL" checked
@@ -216,12 +471,18 @@
                             </div>
                         </div>
 
+                        <select id="planningLogisticsFilter" class="filter-btn" onchange="applyFilters()">
+                            <option value="all">Logistica: Todas</option>
+                            <option value="blocked">Solo bloqueadas</option>
+                            <option value="released">Solo liberadas</option>
+                            <option value="none">Sin solicitudes</option>
+                        </select>
+
                         <div class="search-bar">
                             <input type="text" id="searchPlanning" placeholder="Buscar OT..." onkeyup="applyFilters()">
                         </div>
 
-                        <div class="view-toggle"
-                            style="margin-left: 10px; display: flex; background: #333; border-radius: 4px; padding: 2px;">
+                        <div class="view-toggle">
                             <button id="viewListBtn" class="btn-icon active" onclick="switchView('list')"
                                 style="padding: 8px 12px; background: #555; border:none; color:white;"><i
                                     class="fas fa-list"></i></button>
@@ -238,20 +499,21 @@
                         <table class="data-table" id="planningTable">
                             <thead>
                                 <tr>
-                                    <th>Código</th>
+                                    <th>Codigo</th>
                                     <th>Aviso Rel.</th>
-                                    <th>Área</th>
-                                    <th>Línea</th>
+                                    <th>Area</th>
+                                    <th>Linea</th>
                                     <th>Equipo</th>
                                     <th>Sistema</th>
                                     <th>Componente</th>
                                     <th>Criticidad</th>
-                                    <th>Descripción</th>
+                                    <th>Descripcion</th>
                                     <th>Tipo</th>
                                     <th>Estado</th>
                                     <th>Prioridad</th>
                                     <th>Fecha Prog.</th>
-                                    <th>Técnico/Prov.</th>
+                                    <th>Tecnico/Prov.</th>
+                                    <th>Logistica</th>
                                     <th>Acciones</th>
                                 </tr>
                             </thead>
@@ -330,9 +592,9 @@
             <div id="tab-execution" class="tab-content">
                 <div class="execution-panel">
                     <div class="tech-lookup">
-                        <h3>Panel del Técnico</h3>
+                        <h3>Panel del Tecnico</h3>
                         <input type="text" id="executionSearch"
-                            placeholder="Escanear o buscar Código OT (ej. OT-001)...">
+                            placeholder="Escanear o buscar Codigo OT (ej. OT-001)...">
                         <button class="btn-primary" onclick="searchForExecution()">Buscar</button>
                     </div>
 
@@ -349,7 +611,7 @@
                             <h4 style="margin: 0 0 10px 0; color: #ff9800;"><i class="fas fa-clipboard-list"></i>
                                 Resumen de
                                 la Tarea</h4>
-                            <p id="exec-desc" style="margin: 0 0 10px 0; font-size: 1.1em;">Descripción...</p>
+                            <p id="exec-desc" style="margin: 0 0 10px 0; font-size: 1.1em;">Descripcion...</p>
                             <div
                                 style="display: grid; grid-template-columns: repeat(auto-fill, minmax(180px, 1fr)); gap: 10px;">
                                 <div><strong style="color: #aaa;">Tipo Mtto:</strong> <span id="exec-type">-</span>
@@ -359,13 +621,66 @@
                                 <div><strong style="color: #aaa;">Fecha Prog:</strong> <span
                                         id="exec-scheduled">-</span>
                                 </div>
-                                <div><strong style="color: #aaa;">Duración Est:</strong> <span
+                                <div><strong style="color: #aaa;">Duracion Est:</strong> <span
                                         id="exec-duration">-</span>
                                 </div>
-                                <div><strong style="color: #aaa;">Técnico:</strong> <span id="exec-technician">-</span>
+                                <div><strong style="color: #aaa;">Tecnico:</strong> <span id="exec-technician">-</span>
                                 </div>
                                 <div><strong style="color: #aaa;">Proveedor:</strong> <span id="exec-provider">-</span>
                                 </div>
+                            </div>
+                        </div>
+
+                        <!-- Identificacion Operativa -->
+                        <div style="background: #1e1e1e; border-radius: 8px; padding: 15px; margin-bottom: 15px; border: 1px solid #244a7a;">
+                            <h4 style="margin: 0 0 10px 0; color: #6fb3ff;"><i class="fas fa-id-card"></i> Identificacion Operativa</h4>
+                            <div style="display:grid; grid-template-columns:repeat(auto-fill,minmax(180px,1fr)); gap:10px;">
+                                <div><strong style="color:#aaa;">Aviso Origen:</strong> <span id="exec-notice">-</span></div>
+                                <div><strong style="color:#aaa;">Criticidad:</strong> <span id="exec-criticality">-</span></div>
+                                <div><strong style="color:#aaa;">Area:</strong> <span id="exec-area">-</span></div>
+                                <div><strong style="color:#aaa;">Linea:</strong> <span id="exec-line">-</span></div>
+                                <div><strong style="color:#aaa;">Equipo:</strong> <span id="exec-equipment">-</span></div>
+                                <div><strong style="color:#aaa;">TAG:</strong> <span id="exec-tag">-</span></div>
+                                <div><strong style="color:#aaa;">Sistema:</strong> <span id="exec-system">-</span></div>
+                                <div><strong style="color:#aaa;">Componente:</strong> <span id="exec-component">-</span></div>
+                                <div><strong style="color:#aaa;">Turno:</strong> <span id="exec-shift">-</span></div>
+                            </div>
+                        </div>
+
+                        <!-- Seguridad y Permisos -->
+                        <div style="background: #1e1e1e; border-radius: 8px; padding: 15px; margin-bottom: 15px; border: 1px solid #7a5a22;">
+                            <h4 style="margin: 0 0 10px 0; color: #ffd166;"><i class="fas fa-shield-alt"></i> Seguridad y Permisos</h4>
+                            <div style="display:grid; grid-template-columns:repeat(auto-fill,minmax(220px,1fr)); gap:10px; margin-bottom: 10px;">
+                                <label><input type="checkbox" id="exec-loto"> Checklist LOTO completado</label>
+                                <label><input type="checkbox" id="exec-hot-work"> Trabajo en caliente</label>
+                                <label><input type="checkbox" id="exec-confined-space"> Espacio confinado</label>
+                                <div>
+                                    <label style="display:block; margin-bottom:4px;">Permiso asociado</label>
+                                    <input type="text" id="exec-permit" placeholder="Ej: PT-2026-014">
+                                </div>
+                            </div>
+                            <div style="display:flex; flex-wrap:wrap; gap:12px;">
+                                <label><input type="checkbox" id="exec-epp-helmet"> Casco</label>
+                                <label><input type="checkbox" id="exec-epp-glasses"> Lentes</label>
+                                <label><input type="checkbox" id="exec-epp-gloves"> Guantes</label>
+                                <label><input type="checkbox" id="exec-epp-respirator"> Respirador</label>
+                                <label><input type="checkbox" id="exec-epp-hearing"> Proteccion auditiva</label>
+                            </div>
+                        </div>
+
+                        <!-- Recursos y Logistica -->
+                        <div style="background: #1e1e1e; border-radius: 8px; padding: 15px; margin-bottom: 15px; border: 1px solid #2d6a3d;">
+                            <h4 style="margin: 0 0 10px 0; color: #7ee08a;"><i class="fas fa-dolly"></i> Recursos y Logistica</h4>
+                            <div id="exec-logistics-alert" style="padding: 8px 10px; border-radius: 6px; background:#163b23; color:#9fe8a7; margin-bottom:10px;">
+                                Sin bloqueos detectados por recursos.
+                            </div>
+                            <div style="margin-bottom:10px;">
+                                <strong style="color:#aaa;">Personal asignado:</strong>
+                                <div id="exec-personnel-list" style="margin-top:6px; color:#ddd;">No hay personal asignado</div>
+                            </div>
+                            <div>
+                                <strong style="color:#aaa;">Requerimientos de compra para esta OT:</strong>
+                                <div id="exec-purchase-requests-list" style="margin-top:6px; color:#ddd;">No hay requerimientos registrados</div>
                             </div>
                         </div>
 
@@ -388,7 +703,7 @@
                             </div>
                         </div>
 
-                        <!-- Botones de Acción -->
+                        <!-- Botones de Accion -->
                         <div class="actions-execution"
                             style="display: flex; gap: 10px; justify-content: center; padding-top: 10px; border-top: 1px solid #444;">
                             <button id="btn-start-job" class="btn-success hidden" onclick="startJob()"
@@ -417,9 +732,9 @@
                         <thead>
                             <tr>
                                 <th>ID</th>
-                                <th>Área Reporta</th>
+                                <th>Area Reporta</th>
                                 <th>Equipo</th>
-                                <th>Descripción</th>
+                                <th>Descripcion</th>
                                 <th>Criticidad</th>
                                 <th>Prioridad</th>
                                 <th>F. Solicitud</th>
@@ -451,7 +766,7 @@
             <div id="tab-technicians" class="tab-content">
                 <div class="toolbar">
                     <button class="btn-primary" onclick="openTechnicianModal()"><i class="fas fa-plus"></i> Nuevo
-                        Técnico</button>
+                        Tecnico</button>
                     <label style="margin-left: 15px;">
                         <input type="checkbox" id="showInactiveTechs" onchange="loadTechnicians()"> Mostrar inactivos
                     </label>
@@ -466,7 +781,7 @@
         <!-- MODAL: CREATE/EDIT OT -->
         <dialog id="otModal" style="max-width: 950px; width:95%; max-height: 90vh; overflow-y: auto;">
             <form id="otForm" method="dialog">
-                <h2>Gestión de Orden de Trabajo</h2>
+                <h2>Gestion de Orden de Trabajo</h2>
                 <input type="hidden" id="otId">
                 <input type="hidden" id="otNoticeId">
 
@@ -494,7 +809,7 @@
                         <legend>Datos del Aviso</legend>
                         <div class="form-row">
                             <div class="form-group">
-                                <label>Quién Reporta</label>
+                                <label>Quien Reporta</label>
                                 <input type="text" id="otReporterName">
                             </div>
                             <div class="form-group">
@@ -508,7 +823,7 @@
                             <div class="form-group">
                                 <label>Turno</label>
                                 <select id="otShift">
-                                    <option value="Día">Día</option>
+                                    <option value="Dia">Dia</option>
                                     <option value="Noche">Noche</option>
                                 </select>
                             </div>
@@ -524,7 +839,7 @@
                         </div>
 
                         <div class="form-group">
-                            <label>Descripción del Aviso</label>
+                            <label>Descripcion del Aviso</label>
                             <textarea id="otDescription" required></textarea>
                         </div>
                         <div class="form-row">
@@ -561,7 +876,7 @@
                                 </select>
                             </div>
                             <div class="form-group">
-                                <label>Modo de Falla / Diagnóstico</label>
+                                <label>Modo de Falla / Diagnostico</label>
                                 <input type="text" id="otFailureMode" placeholder="Ej: Desgaste de rodamiento">
                             </div>
                             <div class="form-group">
@@ -577,7 +892,7 @@
                     </fieldset>
 
                     <fieldset>
-                        <legend>Asignación</legend>
+                        <legend>Asignacion</legend>
                         <div class="form-row">
                             <div class="form-group">
                                 <label>Proveedor (Opcional)</label>
@@ -586,7 +901,7 @@
                                 </select>
                             </div>
                             <div class="form-group">
-                                <label>Técnico / Responsable</label>
+                                <label>Tecnico / Responsable</label>
                                 <select id="otTechnician">
                                     <option value="">- Seleccione -</option>
                                     <!-- Populated by JS -->
@@ -599,7 +914,7 @@
                                 <input type="date" id="otScheduledDate">
                             </div>
                             <div class="form-group">
-                                <label>Duración Est. (Hrs)</label>
+                                <label>Duracion Est. (Hrs)</label>
                                 <div style="display: flex; gap: 5px;">
                                     <input type="number" id="otEstDuration" step="0.5">
                                     <button type="button" class="btn-success" onclick="checkSuggestions()"
@@ -626,7 +941,7 @@
                     <table class="data-table" id="otPersonnelTable" style="width: 100%;">
                         <thead>
                             <tr>
-                                <th>Técnico</th>
+                                <th>Tecnico</th>
                                 <th>Especialidad</th>
                                 <th>Horas Asignadas</th>
                                 <th>Acciones</th>
@@ -666,7 +981,7 @@
                         <thead>
                             <tr>
                                 <th>Tipo</th>
-                                <th>Código</th>
+                                <th>Codigo</th>
                                 <th>Nombre</th>
                                 <th>Cantidad</th>
                                 <th>Acciones</th>
@@ -707,7 +1022,7 @@
                     <div style="position: relative; display: flex; gap: 5px;">
                         <!-- Search Input -->
                         <div style="position: relative; flex-grow: 1;">
-                            <input type="text" id="reqSpareSearch" placeholder="🔍 Escriba para buscar repuesto..."
+                            <input type="text" id="reqSpareSearch" placeholder=" Escriba para buscar repuesto..."
                                 onkeyup="filterSpares()" onfocus="filterSpares()" autocomplete="off"
                                 style="width:100%; padding:8px; background:#333; color:white; border:1px solid #555; border-radius:4px;">
 
@@ -721,7 +1036,7 @@
                             </div>
                         </div>
 
-                        <button type="button" onclick="loadSparesForReq(true)" title="Actualizar Catálogo"
+                        <button type="button" onclick="loadSparesForReq(true)" title="Actualizar Catalogo"
                             style="background:#444; border:1px solid #555; color:white; border-radius:4px; padding:0 10px; cursor:pointer;">
                             <i class="fas fa-sync-alt"></i>
                         </button>
@@ -733,14 +1048,14 @@
                         <i class="fas fa-check-circle"></i> <span id="selectedSpareName"></span>
                         <button type="button" onclick="clearSpareSelection()"
                             style="background:none; border:none; color:#f44336; cursor:pointer; margin-left:10px;"
-                            title="Quitar selección"><i class="fas fa-times"></i></button>
+                            title="Quitar seleccion"><i class="fas fa-times"></i></button>
                     </div>
 
-                    <small style="color:#aaa;">* Solo repuestos registrados en Almacén</small>
+                    <small style="color:#aaa;">* Solo repuestos registrados en Almacen</small>
                 </div>
 
                 <div id="fieldService" style="display:none;">
-                    <label>Descripción del Servicio</label>
+                    <label>Descripcion del Servicio</label>
                     <textarea id="reqDesc" placeholder="Detalle del trabajo a contratar..."
                         style="width:100%; height:80px;"></textarea>
                 </div>
@@ -772,7 +1087,7 @@
                         <tbody id="purchaseCartBody">
                             <!-- Filled by JS -->
                             <tr>
-                                <td colspan="4" style="text-align:center; padding:10px; color:#666;">Lista vacía</td>
+                                <td colspan="4" style="text-align:center; padding:10px; color:#666;">Lista vacia</td>
                             </tr>
                         </tbody>
                     </table>
@@ -794,6 +1109,10 @@
             <h3 id="addMaterialTitle"><i class="fas fa-box"></i> Agregar Material</h3>
             <input type="hidden" id="materialType">
             <div class="form-group">
+                <label>Buscar Item</label>
+                <input type="text" id="materialSearchInput" placeholder="Escriba para filtrar..."
+                    style="width: 100%;" autocomplete="off">
+            </div>            <div class="form-group">
                 <label>Seleccionar Item</label>
                 <select id="materialItemSelect" style="width: 100%;"></select>
             </div>
@@ -813,14 +1132,18 @@
             style="background: #252526; color: white; border: 1px solid #444; padding: 20px; border-radius: 8px; max-width: 400px;">
             <h3><i class="fas fa-user-plus"></i> Agregar Personal</h3>
             <div class="form-group">
-                <label>Técnico</label>
+                <label>Buscar Tecnico</label>
+                <input type="text" id="personnelSearchInput" placeholder="Escriba nombre o especialidad..."
+                    style="width: 100%;" autocomplete="off">
+            </div>            <div class="form-group">
+                <label>Tecnico</label>
                 <select id="personnelTechSelect" style="width: 100%;"></select>
             </div>
             <div class="form-group">
                 <label>Especialidad</label>
                 <select id="personnelSpecialty" style="width: 100%;">
-                    <option value="MECANICO">MECÁNICO</option>
-                    <option value="ELECTRICO">ELÉCTRICO</option>
+                    <option value="MECANICO">MECANICO</option>
+                    <option value="ELECTRICO">ELECTRICO</option>
                     <option value="INSTRUMENTISTA">INSTRUMENTISTA</option>
                     <option value="MULTIDISCIPLINARIO">MULTIDISCIPLINARIO</option>
                     <option value="SOLDADOR">SOLDADOR</option>
@@ -865,7 +1188,7 @@
         <!-- MODAL: TECHNICIAN -->
         <dialog id="technicianModal">
             <form id="technicianForm" method="dialog">
-                <h2 id="techModalTitle">Nuevo Técnico</h2>
+                <h2 id="techModalTitle">Nuevo Tecnico</h2>
                 <input type="hidden" id="techId">
                 <div class="form-group">
                     <label>Nombre Completo</label>
@@ -896,11 +1219,11 @@
         <!-- MODAL: CLOSE OT -->
         <dialog id="closeOTModal">
             <form id="closeOTForm" method="dialog">
-                <h2>Cierre Técnico de OT</h2>
+                <h2>Cierre Tecnico de OT</h2>
                 <input type="hidden" id="closeOtId">
 
                 <div class="form-group">
-                    <label>Comentarios de Ejecución</label>
+                    <label>Comentarios de Ejecucion</label>
                     <textarea id="closeComments" required placeholder="Describa el trabajo realizado..."></textarea>
                 </div>
 
@@ -929,18 +1252,18 @@
                 <div class="modal-header">
                     <h3 id="detailNoticeTitle">Detalle del Aviso</h3>
                     <button class="close-modal"
-                        onclick="document.getElementById('noticeDetailModal').close()">✖</button>
+                        onclick="document.getElementById('noticeDetailModal').close()"></button>
                 </div>
                 <div class="modal-body">
                     <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 15px;">
                         <div>
-                            <strong style="color: #03dac6;">Código:</strong> <span id="detail-code">-</span>
+                            <strong style="color: #03dac6;">Codigo:</strong> <span id="detail-code">-</span>
                         </div>
                         <div>
                             <strong style="color: #03dac6;">Estado:</strong> <span id="detail-status">-</span>
                         </div>
                         <div>
-                            <strong style="color: #03dac6;">Área Reporta:</strong> <span
+                            <strong style="color: #03dac6;">Area Reporta:</strong> <span
                                 id="detail-reporter-type">-</span>
                         </div>
                         <div>
@@ -957,7 +1280,7 @@
                     </div>
 
                     <div style="margin-top: 15px; border-top: 1px solid #444; padding-top: 10px;">
-                        <strong style="color: #03dac6;">Ubicación Técnica:</strong>
+                        <strong style="color: #03dac6;">Ubicacion Tecnica:</strong>
                         <div id="detail-hierarchy"
                             style="background: #222; padding: 5px; border-radius: 4px; margin-top: 5px; font-size: 0.9em;">
                             -
@@ -965,7 +1288,7 @@
                     </div>
 
                     <div style="margin-top: 15px;">
-                        <strong style="color: #03dac6;">Descripción:</strong>
+                        <strong style="color: #03dac6;">Descripcion:</strong>
                         <p id="detail-description"
                             style="background: #222; padding: 10px; border-radius: 5px; margin-top: 5px;">-</p>
                     </div>
@@ -989,10 +1312,15 @@
             </div>
         </dialog>
 
-        <script src="/static/js/work_orders.js"></script>
+        <script src="/static/js/work_orders.js?v=20260321m"></script>
         </div>
     </section>
     <script src="/static/js/sidebar.js?v=20260319"></script>
 </body>
 
 </html>
+
+
+
+
+

@@ -1,4 +1,4 @@
-﻿from datetime import datetime
+from datetime import datetime
 from io import BytesIO
 
 import pandas as pd
@@ -13,6 +13,7 @@ def register_work_orders_routes(
     OTMaterial,
     WarehouseItem,
     WarehouseMovement,
+    Tool,
     WorkOrder,
     MaintenanceNotice,
     Area,
@@ -22,6 +23,7 @@ def register_work_orders_routes(
     Component,
     Provider,
     Technician,
+    PurchaseRequest,
     delete_entry,
 ):
     # --- OT PERSONNEL ENDPOINTS ---
@@ -158,11 +160,10 @@ def register_work_orders_routes(
                     db.session.add(move)
 
                 elif data['item_type'] == 'tool':
-                    # Validate it exists in Warehouse but DO NOT deduct stock
-                    item = WarehouseItem.query.get(data['item_id'])
-                    if not item:
-                        return jsonify({"error": "Herramienta no encontrada en AlmacÃ©n"}), 404
-                    # No stock deduction for tools
+                    # Validate tool from Tool catalog (no stock deduction)
+                    item = Tool.query.get(data['item_id'])
+                    if not item or not item.is_active:
+                        return jsonify({"error": "Herramienta no encontrada o inactiva"}), 404
 
                 material = OTMaterial(**data)
                 db.session.add(material)
@@ -179,8 +180,16 @@ def register_work_orders_routes(
         result = []
         for m in materials:
             data = m.to_dict()
-            # Always fetch from WarehouseItem now (Unified Catalog)
-            item = WarehouseItem.query.get(m.item_id)
+
+            if m.item_type == 'tool':
+                item = Tool.query.get(m.item_id)
+                data['item_status'] = item.status if item else None
+                data['item_stock'] = None
+            else:
+                item = WarehouseItem.query.get(m.item_id)
+                data['item_status'] = None
+                data['item_stock'] = item.stock if item else None
+
             data['item_name'] = item.name if item else 'Unknown'
             data['item_code'] = item.code if item else ''
             data['item_category'] = item.category if item else ''
@@ -215,7 +224,7 @@ def register_work_orders_routes(
                     movement_type='RETURN',
                     date=datetime.now().strftime('%Y-%m-%d %H:%M:%S'),
                     reference_id=ot_id,
-                    reason=f"DevoluciÃ³n de OT-{ot_id}",
+                    reason=f"Devolución de OT-{ot_id}",
                 )
                 db.session.add(move)
 
@@ -237,6 +246,10 @@ def register_work_orders_routes(
                 for k, v in clean_data.items():
                     if isinstance(v, str) and v.strip() == "":
                         clean_data[k] = None
+
+                # Guard required field
+                if not clean_data.get('status'):
+                    clean_data['status'] = 'Abierta'
 
                 # Generate Code
                 last = WorkOrder.query.order_by(WorkOrder.id.desc()).first()
@@ -267,6 +280,12 @@ def register_work_orders_routes(
                 return jsonify({"error": str(e)}), 500
 
         entries = WorkOrder.query.all()
+        purchase_by_ot = {}
+        if entries:
+            ot_ids = [wo.id for wo in entries]
+            reqs = PurchaseRequest.query.filter(PurchaseRequest.work_order_id.in_(ot_ids)).all()
+            for req in reqs:
+                purchase_by_ot.setdefault(req.work_order_id, []).append(req)
         # Enrich with hierarchy names
         results = []
         for wo in entries:
@@ -286,6 +305,7 @@ def register_work_orders_routes(
             data['area_name'] = get_name(area)
             data['line_name'] = get_name(line)
             data['equipment_name'] = get_name(equip)
+            data['equipment_tag'] = equip.tag if equip else '-'
             data['system_name'] = get_name(system)
             data['component_name'] = get_name(component)
 
@@ -300,6 +320,43 @@ def register_work_orders_routes(
                 crit = wo.notice.criticality
 
             data['criticality'] = crit
+
+            reqs_for_ot = purchase_by_ot.get(wo.id, [])
+            status_count = {
+                'PENDIENTE': 0,
+                'APROBADO': 0,
+                'EN_ORDEN': 0,
+                'RECIBIDO': 0,
+                'CANCELADO': 0,
+            }
+            blocking_count = 0
+            req_codes = []
+            po_codes = []
+
+            for req in reqs_for_ot:
+                req_status = (req.status or 'PENDIENTE').strip().upper()
+                if req_status in status_count:
+                    status_count[req_status] += 1
+                if req_status not in {'RECIBIDO', 'CANCELADO', 'ANULADO'}:
+                    blocking_count += 1
+                if req.req_code:
+                    req_codes.append(req.req_code)
+                if req.purchase_order and req.purchase_order.po_code:
+                    po_codes.append(req.purchase_order.po_code)
+
+            req_codes = sorted(set(req_codes), reverse=True)
+            po_codes = sorted(set(po_codes), reverse=True)
+            tracking_parts = []
+            if req_codes:
+                tracking_parts.append(f"REQ: {', '.join(req_codes[:2])}")
+            if po_codes:
+                tracking_parts.append(f"OC: {', '.join(po_codes[:2])}")
+
+            data['purchase_requests_total'] = len(reqs_for_ot)
+            data['purchase_requests_pending'] = blocking_count
+            data['purchase_status_count'] = status_count
+            data['has_logistics_block'] = blocking_count > 0
+            data['purchase_tracking'] = ' | '.join(tracking_parts) if tracking_parts else ''
             results.append(data)
 
         return jsonify(results)
@@ -337,28 +394,28 @@ def register_work_orders_routes(
 
                 data.append(
                     {
-                        'CÃ³digo': wo.code,
+                        'Código': wo.code,
                         'Aviso Relacionado': notice_code,
-                        'Ãrea': get_name(area),
-                        'LÃ­nea': get_name(line),
+                        'Área': get_name(area),
+                        'Línea': get_name(line),
                         'Equipo': get_name(equip),
                         'TAG Equipo': equip.tag if equip else '-',
                         'Sistema': get_name(sys),
                         'Componente': get_name(comp),
                         'Criticidad': comp.criticality if comp and comp.criticality else (equip.criticality if equip else '-'),
-                        'DescripciÃ³n OT': wo.description,
+                        'Descripción OT': wo.description,
                         'Modo de Falla': wo.failure_mode,
                         'Tipo Mtto': wo.maintenance_type,
                         'Estado': wo.status,
-                        'TÃ©cnico Principal': wo.technician_id,
-                        'Cant. TÃ©cnicos': wo.tech_count,
+                        'Técnico Principal': wo.technician_id,
+                        'Cant. Técnicos': wo.tech_count,
                         'Proveedor': provider_name,
                         'Fecha Programada': wo.scheduled_date,
-                        'DuraciÃ³n Est. (Hr)': wo.estimated_duration,
+                        'Duración Est. (Hr)': wo.estimated_duration,
                         'Fecha Inicio Real': wo.real_start_date,
                         'Fecha Fin Real': wo.real_end_date,
-                        'DuraciÃ³n Real (Hr)': wo.real_duration,
-                        'Comentarios EjecuciÃ³n': wo.execution_comments,
+                        'Duración Real (Hr)': wo.real_duration,
+                        'Comentarios Ejecución': wo.execution_comments,
                     }
                 )
 
@@ -392,11 +449,23 @@ def register_work_orders_routes(
                 if not wo:
                     return jsonify({"error": "Work Order not found"}), 404
 
+                # Hard guard for required field before applying updates
+                # If status comes null/empty from frontend, ignore incoming value and keep current/default.
+                if ('status' in data) and (data.get('status') is None or (isinstance(data.get('status'), str) and data.get('status').strip() == "")):
+                    data.pop('status', None)
+
                 for key, value in data.items():
                     if hasattr(wo, key):
                         if isinstance(value, str) and value.strip() == "":
                             value = None
+                        # Keep non-null DB constraint safe
+                        if key == 'status' and value is None:
+                            value = wo.status or 'Abierta'
                         setattr(wo, key, value)
+
+                # Final safeguard: OT status must never be null
+                if not wo.status:
+                    wo.status = 'Abierta'
 
                 # If WO is being closed, sync to associated notice
                 if data.get('status') == 'Cerrada' and wo.notice_id:
@@ -464,3 +533,7 @@ def register_work_orders_routes(
         except Exception as e:
             logger.error(f"Error fetching feedback: {e}")
             return jsonify({"error": str(e)}), 500
+
+
+
+

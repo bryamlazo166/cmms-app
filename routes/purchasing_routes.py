@@ -1,4 +1,6 @@
-﻿from flask import jsonify, request
+from datetime import datetime
+
+from flask import jsonify, request
 
 
 def register_purchasing_routes(
@@ -7,6 +9,7 @@ def register_purchasing_routes(
     PurchaseRequest,
     PurchaseOrder,
     WarehouseItem,
+    WarehouseMovement,
 ):
     @app.route('/api/purchase-requests', methods=['GET', 'POST'])
     def handle_requests():
@@ -15,12 +18,12 @@ def register_purchasing_routes(
                 data = request.json
                 count = PurchaseRequest.query.count()
                 req_code = f"REQ-2026-{count+1:04d}"
-                
+
                 if data['item_type'] == 'SERVICIO' and not data.get('description'):
-                     return jsonify({"error": "DescripciÃ³n obligatoria para Servicios"}), 400
-                
+                    return jsonify({"error": "Descripcion obligatoria para Servicios"}), 400
+
                 if data['item_type'] == 'MATERIAL' and not data.get('spare_part_id') and not data.get('warehouse_item_id'):
-                     return jsonify({"error": "Debe seleccionar un item del almacÃ©n."}), 400
+                    return jsonify({"error": "Debe seleccionar un item del almacen."}), 400
 
                 req = PurchaseRequest(
                     req_code=req_code,
@@ -43,7 +46,7 @@ def register_purchasing_routes(
             reqs = PurchaseRequest.query.order_by(PurchaseRequest.id.desc()).all()
         else:
             reqs = PurchaseRequest.query.filter(PurchaseRequest.status != 'RECIBIDO').order_by(PurchaseRequest.id.desc()).all()
-            
+
         return jsonify([r.to_dict() for r in reqs])
 
     @app.route('/api/purchase-orders', methods=['GET', 'POST'])
@@ -53,27 +56,27 @@ def register_purchasing_routes(
                 data = request.json
                 provider = data.get('provider_name')
                 req_ids = data.get('request_ids', [])
-                
+
                 if not req_ids:
                     return jsonify({"error": "No requests selected"}), 400
-                
+
                 count = PurchaseOrder.query.count()
                 po_code = f"OC-2026-{count+1:03d}"
-                
+
                 po = PurchaseOrder(
                     po_code=po_code,
                     provider_name=provider,
                     status='EMITIDA'
                 )
                 db.session.add(po)
-                db.session.flush() 
-                
+                db.session.flush()
+
                 for rid in req_ids:
                     req = PurchaseRequest.query.get(rid)
                     if req:
                         req.purchase_order_id = po.id
                         req.status = 'EN_ORDEN'
-                
+
                 db.session.commit()
                 return jsonify(po.to_dict()), 201
             except Exception as e:
@@ -83,13 +86,64 @@ def register_purchasing_routes(
         orders = PurchaseOrder.query.order_by(PurchaseOrder.id.desc()).all()
         return jsonify([o.to_dict() for o in orders])
 
+    def _receive_po_items(po, request_ids=None):
+        selected_ids = set(request_ids or [])
+
+        to_receive = []
+        for req in po.requests:
+            req_status = (req.status or '').upper()
+            if req_status in {'RECIBIDO', 'CANCELADO', 'ANULADO'}:
+                continue
+            if selected_ids and req.id not in selected_ids:
+                continue
+            to_receive.append(req)
+
+        for req in to_receive:
+            if req.item_type == 'MATERIAL' and req.warehouse_item_id:
+                item = WarehouseItem.query.get(req.warehouse_item_id)
+                if item:
+                    qty = int(float(req.quantity or 0))
+                    if qty > 0:
+                        item.stock = int(item.stock or 0) + qty
+                        move = WarehouseMovement(
+                            item_id=item.id,
+                            quantity=qty,
+                            movement_type='IN',
+                            date=datetime.now().strftime('%Y-%m-%d %H:%M:%S'),
+                            reference_id=po.id,
+                            reason=f"Recepcion OC {po.po_code} / {req.req_code}",
+                        )
+                        db.session.add(move)
+            req.status = 'RECIBIDO'
+
+        pending_after = [
+            r for r in po.requests
+            if (r.status or '').upper() not in {'RECIBIDO', 'CANCELADO', 'ANULADO'}
+        ]
+        po.status = 'PARCIAL' if pending_after else 'CERRADA'
+
+    @app.route('/api/purchase-orders/<int:id>/receive', methods=['POST'])
+    def receive_po_items(id):
+        try:
+            po = PurchaseOrder.query.get(id)
+            if not po:
+                return jsonify({'error': 'Orden de compra no encontrada'}), 404
+            data = request.json or {}
+            req_ids = data.get('request_ids') or []
+            _receive_po_items(po, req_ids)
+            db.session.commit()
+            return jsonify(po.to_dict())
+        except Exception as e:
+            db.session.rollback()
+            return jsonify({"error": str(e)}), 500
+
     @app.route('/api/purchase-orders/<int:id>/close', methods=['POST'])
     def close_po(id):
         try:
-            po = PurchaseOrder.query.get_or_404(id)
-            po.status = 'CERRADA'
-            for req in po.requests:
-                req.status = 'RECIBIDO'
+            po = PurchaseOrder.query.get(id)
+            if not po:
+                return jsonify({'error': 'Orden de compra no encontrada'}), 404
+            _receive_po_items(po)
             db.session.commit()
             return jsonify(po.to_dict())
         except Exception as e:
@@ -99,7 +153,6 @@ def register_purchasing_routes(
     @app.route('/api/list-spare-parts', methods=['GET'])
     def list_warehouse_items_for_purchasing():
         try:
-            # Return WarehouseItems instead of SpareParts as user migrated to Warehouse Module
             items = WarehouseItem.query.filter_by(is_active=True).all()
             return jsonify([{
                 'id': i.id,
@@ -110,7 +163,4 @@ def register_purchasing_routes(
             } for i in items])
         except Exception as e:
             return jsonify({"error": str(e)}), 500
-
-
-
 

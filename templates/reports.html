@@ -1,4 +1,4 @@
-<!DOCTYPE html>
+﻿<!DOCTYPE html>
 <html lang="es">
 <head>
     <meta charset="UTF-8">
@@ -26,6 +26,14 @@
         .panel,.table-panel{background:#181d24;border:1px solid #2f4257;border-radius:12px;padding:10px;margin-bottom:14px}
         .panel h3,.table-panel h3{margin:0 0 10px;color:#b9d8ff;font-size:1rem}
         .panel canvas{width:100%!important;height:290px!important}
+        .weekly-chart-grid{grid-template-columns:repeat(2,minmax(300px,1fr));margin:8px 0}
+        .weekly-chart-grid .panel{margin-bottom:0}
+        .weekly-chart-grid .panel canvas{height:240px!important}
+        .weekly-toolbar{display:grid;grid-template-columns:repeat(7,minmax(140px,1fr));gap:10px;margin-bottom:10px;align-items:end}
+        .weekly-kpi-grid{display:grid;grid-template-columns:repeat(6,minmax(120px,1fr));gap:8px;margin:8px 0 12px}
+        .weekly-kpi{background:linear-gradient(155deg,#1f2834,#161d27);border:1px solid #334a63;border-radius:10px;padding:10px}
+        .weekly-kpi .label{font-size:.72rem;color:#9bb1cc;text-transform:uppercase;letter-spacing:.4px}
+        .weekly-kpi .value{font-size:1.35rem;color:#e8f2ff;font-weight:700;margin-top:5px}
         .table-wrap{max-height:320px;overflow:auto;border-radius:8px}
         .table-wrap table{width:100%;border-collapse:collapse}.table-wrap th{position:sticky;top:0;z-index:1;background:#243047;color:#9fe5ff;text-align:left;padding:8px;border-bottom:1px solid #3a4f68;font-size:.78rem}
         .table-wrap td{color:#dbe8fb;padding:8px;border-bottom:1px solid rgba(255,255,255,.08);font-size:.82rem;vertical-align:top}
@@ -38,8 +46,10 @@
         .pill-muted{background:rgba(255,255,255,.08);color:#bdc7d8;border-color:rgba(255,255,255,.2)}
         .radar-toolbar{display:grid;grid-template-columns:repeat(4,minmax(160px,1fr));gap:10px;margin-bottom:10px;align-items:end}
         .radar-footer{color:#9db1cb;font-size:.85rem;margin:6px 2px 0}
-        @media(max-width:1400px){.reports-toolbar{grid-template-columns:repeat(4,minmax(140px,1fr))}.chart-grid{grid-template-columns:1fr}.kpi-grid{grid-template-columns:repeat(2,minmax(150px,1fr))}.radar-toolbar{grid-template-columns:repeat(2,minmax(150px,1fr))}}
-        @media(max-width:820px){.reports-toolbar{grid-template-columns:1fr 1fr}.toolbar-actions{grid-column:span 2}.kpi-grid{grid-template-columns:1fr}.radar-toolbar{grid-template-columns:1fr}}
+        .weekly-ot-link{color:#66b9ff;font-weight:700;text-decoration:none}
+        .weekly-ot-link:hover{text-decoration:underline}
+        @media(max-width:1400px){.reports-toolbar{grid-template-columns:repeat(4,minmax(140px,1fr))}.chart-grid{grid-template-columns:1fr}.weekly-toolbar{grid-template-columns:repeat(4,minmax(140px,1fr))}.weekly-kpi-grid{grid-template-columns:repeat(3,minmax(120px,1fr))}.radar-toolbar{grid-template-columns:repeat(2,minmax(150px,1fr))}}
+        @media(max-width:820px){.reports-toolbar{grid-template-columns:1fr 1fr}.toolbar-actions{grid-column:span 2}.kpi-grid{grid-template-columns:1fr}.weekly-toolbar{grid-template-columns:1fr 1fr}.weekly-kpi-grid{grid-template-columns:repeat(2,minmax(120px,1fr))}.weekly-chart-grid{grid-template-columns:1fr}.radar-toolbar{grid-template-columns:1fr}}
     </style>
 </head>
 <body>
@@ -59,6 +69,7 @@
 </nav>
 <section class="home-section"><div class="reports-wrapper">
     <header class="reports-header"><h1><i class="fas fa-chart-bar"></i> Reporte Ejecutivo de Mantenimiento</h1><p>Panel gerencial por area, linea y equipo. Incluye disponibilidad, cumplimiento y causas de indisponibilidad.</p></header>
+
     <section class="reports-toolbar">
         <div class="filter-block"><label>Fecha inicio</label><input type="date" id="startDate"></div>
         <div class="filter-block"><label>Fecha fin</label><input type="date" id="endDate"></div>
@@ -68,7 +79,9 @@
         <div class="filter-block"><label>Grafico principal</label><select id="groupBySelect"><option value="areas">Por Area</option><option value="lines">Por Linea</option><option value="equipments">Por Equipo</option></select></div>
         <div class="toolbar-actions"><button id="btnRefresh" class="rpt-btn"><i class="fas fa-sync"></i> Actualizar</button><button id="btnClear" class="rpt-btn secondary"><i class="fas fa-eraser"></i> Limpiar</button></div>
     </section>
+
     <div class="period-chip" id="reportPeriod">-</div>
+
     <section class="kpi-grid">
         <article class="kpi-card"><div class="kpi-label">Cumplimiento Programado</div><div class="kpi-value" id="kpiCompliance">-</div></article>
         <article class="kpi-card"><div class="kpi-label">Preventivos</div><div class="kpi-value" id="kpiPreventive">-</div></article>
@@ -79,13 +92,54 @@
         <article class="kpi-card"><div class="kpi-label">MTBF</div><div class="kpi-value" id="kpiMtbf">-</div></article>
         <article class="kpi-card"><div class="kpi-label">MTTR</div><div class="kpi-value" id="kpiMttr">-</div></article>
     </section>
+
     <section class="chart-grid">
         <article class="panel"><h3>Distribucion de OTs</h3><canvas id="chartBreakdown"></canvas></article>
         <article class="panel"><h3>Tendencia de gestion</h3><canvas id="chartTrend"></canvas></article>
         <article class="panel"><h3>Pareto de indisponibilidad</h3><canvas id="chartCauses"></canvas></article>
     </section>
-    <section class="table-panel"><h3 id="breakdownTitle">Desglose</h3><div class="table-wrap"><table><thead><tr><th>Nivel</th><th>Prog.</th><th>Cerr.</th><th>% Cumpl</th><th>Prev.</th><th>Corr.</th><th>Disp.</th><th>Paro h</th><th>MTBF</th><th>MTTR</th><th>Costo</th></tr></thead><tbody id="tableBreakdownBody"><tr><td colspan="11" class="muted-cell">Cargando...</td></tr></tbody></table></div></section>
-    <section class="table-panel"><h3>Eventos que impactaron disponibilidad</h3><div class="table-wrap" style="max-height:380px;"><table><thead><tr><th>OT</th><th>Fecha</th><th>Area</th><th>Linea</th><th>Equipo</th><th>Modo Falla</th><th>Causa Raiz</th><th>Duracion h</th><th>Costo</th><th>Descripcion</th></tr></thead><tbody id="tableDowntimeBody"><tr><td colspan="10" class="muted-cell">Cargando...</td></tr></tbody></table></div></section>
+
+    <section class="table-panel">
+        <h3 id="breakdownTitle">Desglose</h3>
+        <div class="table-wrap"><table><thead><tr><th>Nivel</th><th>Prog.</th><th>Cerr.</th><th>% Cumpl</th><th>Prev.</th><th>Corr.</th><th>Disp.</th><th>Paro h</th><th>MTBF</th><th>MTTR</th><th>Costo</th></tr></thead><tbody id="tableBreakdownBody"><tr><td colspan="11" class="muted-cell">Cargando...</td></tr></tbody></table></div>
+    </section>
+
+    <section class="table-panel">
+        <h3>Eventos que impactaron disponibilidad</h3>
+        <div class="table-wrap" style="max-height:380px;"><table><thead><tr><th>OT</th><th>Fecha</th><th>Area</th><th>Linea</th><th>Equipo</th><th>Modo Falla</th><th>Causa Raiz</th><th>Duracion h</th><th>Costo</th><th>Descripcion</th></tr></thead><tbody id="tableDowntimeBody"><tr><td colspan="10" class="muted-cell">Cargando...</td></tr></tbody></table></div>
+    </section>
+
+    <section class="table-panel">
+        <h3>Plan Semanal de Actividades</h3>
+        <div class="weekly-toolbar">
+            <div class="filter-block"><label>Ventana</label><select id="weeklyWindow"><option value="current_week">Semana actual</option><option value="next_week">Semana siguiente</option><option value="weekend">Fin de semana</option><option value="custom">Personalizado</option></select></div>
+            <div class="filter-block"><label>Inicio</label><input type="date" id="weeklyStartDate"></div>
+            <div class="filter-block"><label>Fin</label><input type="date" id="weeklyEndDate"></div>
+            <div class="filter-block"><label>Especialidad</label><select id="weeklySpecialty"><option value="">Todas</option><option value="MECANICO">Mecanico</option><option value="ELECTRICO">Electrico</option><option value="MIXTO">Mixto</option><option value="SIN ASIGNAR">Sin asignar</option></select></div>
+            <div class="filter-block"><label>Tipo</label><select id="weeklyType"><option value="">Todos</option><option value="Preventivo">Preventivo</option><option value="Correctivo">Correctivo</option></select></div>
+            <div class="filter-block"><label>Estado</label><select id="weeklyStatus"><option value="">Todos</option><option value="Abierta">Abierta</option><option value="Programada">Programada</option><option value="En Progreso">En Progreso</option><option value="Cerrada">Cerrada</option></select></div>
+            <div class="toolbar-actions"><button id="btnWeeklyRefresh" class="rpt-btn"><i class="fas fa-calendar-check"></i> Actualizar</button><button id="btnWeeklyExport" class="rpt-btn"><i class="fas fa-file-excel"></i> Exportar</button><button id="btnWeeklyClear" class="rpt-btn secondary"><i class="fas fa-broom"></i> Limpiar</button></div>
+        </div>
+
+        <div class="period-chip" id="weeklyPeriod">-</div>
+
+        <div class="weekly-kpi-grid">
+            <article class="weekly-kpi"><div class="label">Total</div><div class="value" id="wkTotal">-</div></article>
+            <article class="weekly-kpi"><div class="label">Preventivo</div><div class="value" id="wkPreventive">-</div></article>
+            <article class="weekly-kpi"><div class="label">Correctivo</div><div class="value" id="wkCorrective">-</div></article>
+            <article class="weekly-kpi"><div class="label">Cerradas</div><div class="value" id="wkClosed">-</div></article>
+            <article class="weekly-kpi"><div class="label">Bloqueadas</div><div class="value" id="wkBlocked">-</div></article>
+            <article class="weekly-kpi"><div class="label">Cumplimiento</div><div class="value" id="wkCompliance">-</div></article>
+        </div>
+
+        <section class="chart-grid weekly-chart-grid">
+            <article class="panel"><h3>Carga diaria semanal</h3><canvas id="chartWeeklyLoad"></canvas></article>
+            <article class="panel"><h3>Distribucion por especialidad</h3><canvas id="chartWeeklySpecialty"></canvas></article>
+        </section>
+
+        <div class="table-wrap" style="max-height:420px;"><table><thead><tr><th>OT</th><th>Aviso</th><th>Fecha Plan</th><th>Especialidad</th><th>Tipo</th><th>Estado</th><th>Area</th><th>Linea</th><th>TAG</th><th>Equipo</th><th>Prioridad</th><th>Logistica</th><th>REQ</th><th>OC</th></tr></thead><tbody id="tableWeeklyBody"><tr><td colspan="14" class="muted-cell">Cargando plan semanal...</td></tr></tbody></table></div>
+    </section>
+
     <section class="table-panel">
         <h3>E. Analisis de Fallas Recurrentes (Radar)</h3>
         <div class="radar-toolbar">
@@ -99,7 +153,6 @@
     </section>
 </div></section>
 <script src="/static/js/sidebar.js?v=20260319"></script>
-<script src="/static/js/reports.js"></script>
+<script src="/static/js/reports.js?v=20260321a"></script>
 </body>
 </html>
-

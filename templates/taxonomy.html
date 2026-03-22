@@ -216,7 +216,7 @@
 
                         <!-- MODE: FILE -->
                         <div id="modeFile">
-                            <p>El Excel debe tener hojas: Areas, Lines, Equipments, Systems, Components, SpareParts.</p>
+                            <p>El Excel debe tener hojas: Areas, Lines, Equipments, Systems, Components.</p>
                             <div style="margin-bottom: 15px;">
                                 <a href="/api/download-template" target="_blank"
                                     style="color: #03dac6; text-decoration: none; border: 1px solid #03dac6; padding: 5px 10px; border-radius: 4px;">📥
@@ -238,8 +238,7 @@
                                 <option value="Equipments">3. Equipments</option>
                                 <option value="Systems">4. Systems</option>
                                 <option value="Components">5. Components</option>
-                                <option value="SpareParts">6. SpareParts</option>
-                            </select>
+                                                            </select>
 
                             <div id="pasteHint" style="font-size: 0.85em; color: #888; margin-bottom: 10px;">
                                 Columnas requeridas: Name, [Description]
@@ -336,28 +335,6 @@ RECEPCION DE MATERIA PRIMA	HIDROLAVADORA	HIDROLAVADORA 1	BOMBA	BOMBA (ALTA PRESI
                                 <button type="submit">Crear</button>
                             </form>
                             <div id="compList" class="item-list"></div>
-                        </div>
-
-                        <!-- 6. SPARE PART -->
-                        <div class="pipeline-step" style="min-width: 300px; border-color: #bb86fc;">
-                            <h3>6. Repuesto</h3>
-                            <small>Selecciona un Componente</small>
-                            <form id="spareForm">
-                                <label>Nombre del Repuesto</label>
-                                <input type="text" id="spareName" placeholder="Ej. Sello Mecánico" required>
-
-                                <label>Código (SKU/Ref)</label>
-                                <input type="text" id="spareCode" placeholder="Ej. SM-1234">
-
-                                <label>Marca / Fabricante</label>
-                                <input type="text" id="spareBrand" placeholder="Ej. John Crane">
-
-                                <label>Cantidad en Stock</label>
-                                <input type="number" id="spareQty" placeholder="Ej. 5">
-
-                                <button type="submit">Asociar Repuesto</button>
-                            </form>
-                            <div id="spareList" class="item-list"></div>
                         </div>
 
                     </div>
