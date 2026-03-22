@@ -46,7 +46,7 @@ logging.basicConfig(level=logging.DEBUG)
 logger = logging.getLogger(__name__)
 
 app = Flask(__name__)
-APP_BUILD_TAG = "cmms-recovered-lubrication-reporting-2026-03-17-01"
+APP_BUILD_TAG = "cmms-lubrication-fix-2026-03-22-01"
 
 
 def _normalize_db_url(raw_url):
@@ -72,12 +72,15 @@ def _mask_db_url(raw_url):
 
 
 def _resolve_database_url():
-    db_mode = (os.getenv("DB_MODE", "auto") or "auto").strip().lower()
+    db_mode = (os.getenv("DB_MODE", "supabase") or "supabase").strip().lower()
     if db_mode not in {"auto", "local", "supabase"}:
-        db_mode = "auto"
+        db_mode = "supabase"
 
     local_db_url = (os.getenv("LOCAL_DATABASE_URL") or "sqlite:///cmms_v2.db").strip()
     supabase_url = _normalize_db_url(os.getenv("DATABASE_URL"))
+    allow_local_fallback = (os.getenv("ALLOW_LOCAL_FALLBACK", "0") or "0").strip().lower() in {
+        "1", "true", "yes", "on"
+    }
     try:
         probe_timeout = int(os.getenv("SUPABASE_PROBE_TIMEOUT_SEC", "3"))
     except Exception:
@@ -107,9 +110,20 @@ def _resolve_database_url():
             probe_supabase(supabase_url)
             return supabase_url, "supabase"
         except Exception as probe_error:
-            logger.warning(f"DATABASE_URL unreachable in auto mode, fallback to local SQLite: {probe_error}")
+            if allow_local_fallback:
+                logger.warning(f"DATABASE_URL unreachable in auto mode, fallback to local SQLite: {probe_error}")
+                return local_db_url, "local"
+            raise RuntimeError(
+                f"DATABASE_URL unreachable and ALLOW_LOCAL_FALLBACK=0: {probe_error}"
+            )
 
-    return local_db_url, "local"
+    if allow_local_fallback:
+        return local_db_url, "local"
+
+    raise RuntimeError(
+        "DATABASE_URL no configurada y ALLOW_LOCAL_FALLBACK=0. "
+        "Configura DATABASE_URL o usa DB_MODE=local explicitamente."
+    )
 
 
 final_db_url, resolved_db_mode = _resolve_database_url()
@@ -226,6 +240,7 @@ register_reports_routes(
 register_lubrication_routes(
     app=app,
     db=db,
+    logger=logger,
     LubricationPoint=LubricationPoint,
     LubricationExecution=LubricationExecution,
     MaintenanceNotice=MaintenanceNotice,
@@ -299,6 +314,8 @@ if __name__ == '__main__':
         print(f"DEBUG: FINAL URI: {app.config.get('SQLALCHEMY_DATABASE_URI')}")
     app.run(host='0.0.0.0', debug=False, use_reloader=False, port=5009)
     
+
+
 
 
 
