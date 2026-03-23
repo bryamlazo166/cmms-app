@@ -1,4 +1,4 @@
-﻿from datetime import datetime
+from datetime import datetime
 from io import BytesIO
 
 import pandas as pd
@@ -71,26 +71,26 @@ def register_warehouse_routes(app, db, logger, WarehouseItem, WarehouseMovement)
                 data.append(
                     {
                         'ID': i.id,
-                        'CÃ³digo': i.code,
+                        'Código': i.code,
                         'Nombre': i.name,
-                        'DescripciÃ³n': i.description,
+                        'Descripción': i.description,
                         'Familia': i.family,
                         'Marca': i.brand,
-                        'CategorÃ­a': i.category,
+                        'Categoría': i.category,
                         'Stock Actual': i.stock,
                         'Unidad': i.unit,
-                        'UbicaciÃ³n': i.location,
+                        'Ubicación': i.location,
                         'Criticidad': i.criticality,
                         'Costo Promedio': i.average_cost,
                         'Costo Unitario': i.unit_cost,
                         'ABC': i.abc_class,
                         'XYZ': i.xyz_class,
-                        'Lead Time (DÃ­as)': i.lead_time,
+                        'Lead Time (Días)': i.lead_time,
                         'Stock Seguridad': i.safety_stock,
                         'Punto Reorden (ROP)': i.rop,
-                        'Stock MÃ¡ximo': i.max_stock,
-                        'Lote MÃ­nimo': i.min_order_qty,
-                        'Activo': 'SÃ­' if i.is_active else 'No',
+                        'Stock Máximo': i.max_stock,
+                        'Lote Mínimo': i.min_order_qty,
+                        'Activo': 'Sí' if i.is_active else 'No',
                     }
                 )
 
@@ -128,7 +128,7 @@ def register_warehouse_routes(app, db, logger, WarehouseItem, WarehouseMovement)
                         'Tipo': m.movement_type,
                         'Item': f"{item_code} - {item_name}",
                         'Cantidad': m.quantity,
-                        'RazÃ³n': m.reason,
+                        'Razón': m.reason,
                         'Referencia': m.reference_id,
                     }
                 )
@@ -151,6 +151,218 @@ def register_warehouse_routes(app, db, logger, WarehouseItem, WarehouseMovement)
             logger.error(f"Kardex Export Failed: {e}")
             return jsonify({"error": str(e)}), 500
 
+    @app.route('/api/warehouse/template', methods=['GET'])
+    def download_warehouse_template():
+        try:
+            template_rows = [
+                {
+                    'Codigo': 'REP-1001',
+                    'Nombre': 'RODAMIENTO 6205 ZZ',
+                    'Categoria': 'Repuesto',
+                    'Descripcion': 'Rodamiento de uso general',
+                    'Stock': 10,
+                    'StockMinimo': 2,
+                    'Unidad': 'pza',
+                    'Ubicacion': 'Estante A-2',
+                    'CostoUnitario': 12.5,
+                    'Familia': 'Rodamientos',
+                    'Marca': 'SKF',
+                    'CodigoFabricante': '6205ZZ',
+                    'Criticidad': 'Media',
+                    'CostoPromedio': 12.2,
+                    'LeadTimeDias': 7,
+                    'StockSeguridad': 2,
+                    'ROP': 4,
+                    'StockMaximo': 20,
+                    'LoteMinimo': 1,
+                },
+                {
+                    'Codigo': '',
+                    'Nombre': 'GRASA EP2',
+                    'Categoria': 'Lubricante',
+                    'Descripcion': 'Cartucho 400g',
+                    'Stock': 15,
+                    'StockMinimo': 5,
+                    'Unidad': 'und',
+                    'Ubicacion': 'Estante L-1',
+                    'CostoUnitario': 8.0,
+                    'Familia': 'Lubricantes',
+                    'Marca': 'Mobil',
+                    'CodigoFabricante': '',
+                    'Criticidad': 'Alta',
+                    'CostoPromedio': 7.8,
+                    'LeadTimeDias': 5,
+                    'StockSeguridad': 3,
+                    'ROP': 6,
+                    'StockMaximo': 30,
+                    'LoteMinimo': 1,
+                },
+            ]
+
+            df = pd.DataFrame(template_rows)
+            output = BytesIO()
+            with pd.ExcelWriter(output, engine='openpyxl') as writer:
+                df.to_excel(writer, index=False, sheet_name='Plantilla_Almacen')
+            output.seek(0)
+
+            return send_file(
+                output,
+                download_name='Plantilla_Almacen_CMMS.xlsx',
+                as_attachment=True,
+                mimetype='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+            )
+        except Exception as e:
+            logger.error(f"Warehouse Template Failed: {e}")
+            return jsonify({"error": str(e)}), 500
+
+    @app.route('/api/warehouse/import', methods=['POST'])
+    def import_warehouse_excel():
+        try:
+            if 'file' not in request.files:
+                return jsonify({'error': 'Archivo no recibido'}), 400
+
+            file = request.files['file']
+            if not file or not file.filename:
+                return jsonify({'error': 'Archivo invalido'}), 400
+
+            df = pd.read_excel(file)
+            df.columns = [str(c).strip() for c in df.columns]
+
+            if 'Nombre' not in set(df.columns):
+                return jsonify({'error': 'La plantilla debe contener al menos la columna Nombre'}), 400
+
+            existing_items = WarehouseItem.query.all()
+            existing_by_code = {str(i.code).strip().upper(): i for i in existing_items if i.code}
+            existing_key = {
+                (
+                    str(i.name or '').strip().upper(),
+                    str(i.family or '').strip().upper(),
+                    str(i.brand or '').strip().upper(),
+                    str(i.manufacturer_code or '').strip().upper(),
+                ): i
+                for i in existing_items
+            }
+
+            inserted = 0
+            skipped = 0
+            notes = []
+            seen_codes = set()
+            seen_keys = set()
+
+            def norm_text(v):
+                if pd.isna(v):
+                    return None
+                txt = str(v).strip()
+                return txt if txt else None
+
+            def norm_int(v, default=0):
+                if pd.isna(v) or v is None or str(v).strip() == '':
+                    return default
+                try:
+                    return int(float(v))
+                except Exception:
+                    return default
+
+            def norm_float(v, default=None):
+                if pd.isna(v) or v is None or str(v).strip() == '':
+                    return default
+                try:
+                    return float(v)
+                except Exception:
+                    return default
+
+            last = WarehouseItem.query.order_by(WarehouseItem.id.desc()).first()
+            next_id = (last.id if last else 0) + 1
+
+            for idx, row in df.iterrows():
+                row_number = idx + 2
+                name = norm_text(row.get('Nombre'))
+                if not name:
+                    skipped += 1
+                    notes.append(f'Fila {row_number}: sin nombre, omitida')
+                    continue
+
+                code = norm_text(row.get('Codigo'))
+                category = norm_text(row.get('Categoria'))
+                description = norm_text(row.get('Descripcion'))
+                stock = norm_int(row.get('Stock'), 0)
+                min_stock = norm_int(row.get('StockMinimo'), 0)
+                unit = norm_text(row.get('Unidad')) or 'pza'
+                location = norm_text(row.get('Ubicacion'))
+                unit_cost = norm_float(row.get('CostoUnitario'), None)
+                family = norm_text(row.get('Familia'))
+                brand = norm_text(row.get('Marca'))
+                manufacturer_code = norm_text(row.get('CodigoFabricante'))
+                criticality = norm_text(row.get('Criticidad')) or 'Media'
+                average_cost = norm_float(row.get('CostoPromedio'), None)
+                lead_time = norm_int(row.get('LeadTimeDias'), 0)
+                safety_stock = norm_int(row.get('StockSeguridad'), 0)
+                rop = norm_int(row.get('ROP'), 0)
+                max_stock = norm_int(row.get('StockMaximo'), 0)
+                min_order_qty = norm_int(row.get('LoteMinimo'), 1)
+
+                code_norm = code.upper() if code else None
+                key = (
+                    name.upper(),
+                    (family or '').upper(),
+                    (brand or '').upper(),
+                    (manufacturer_code or '').upper(),
+                )
+
+                if code_norm:
+                    if code_norm in seen_codes or code_norm in existing_by_code:
+                        skipped += 1
+                        continue
+                if key in seen_keys or key in existing_key:
+                    skipped += 1
+                    continue
+
+                if not code_norm:
+                    code_norm = f"REP-{next_id:04d}"
+                    while code_norm in existing_by_code or code_norm in seen_codes:
+                        next_id += 1
+                        code_norm = f"REP-{next_id:04d}"
+
+                item = WarehouseItem(
+                    code=code_norm,
+                    name=name,
+                    category=category,
+                    description=description,
+                    stock=stock,
+                    min_stock=min_stock,
+                    unit=unit,
+                    location=location,
+                    unit_cost=unit_cost,
+                    family=family,
+                    brand=brand,
+                    manufacturer_code=manufacturer_code,
+                    criticality=criticality,
+                    average_cost=average_cost,
+                    lead_time=lead_time,
+                    safety_stock=safety_stock,
+                    rop=rop,
+                    max_stock=max_stock,
+                    min_order_qty=min_order_qty,
+                    is_active=True,
+                )
+                db.session.add(item)
+                inserted += 1
+                seen_codes.add(code_norm)
+                seen_keys.add(key)
+                next_id += 1
+
+            db.session.commit()
+            return jsonify(
+                {
+                    'inserted': inserted,
+                    'skipped_duplicates': skipped,
+                    'notes': notes[:30],
+                }
+            )
+        except Exception as e:
+            db.session.rollback()
+            logger.error(f"Warehouse Import Failed: {e}")
+            return jsonify({'error': str(e)}), 500
     @app.route('/api/warehouse/calculate', methods=['POST'])
     def calculate_inventory_params():
         """
@@ -317,3 +529,4 @@ def register_warehouse_routes(app, db, logger, WarehouseItem, WarehouseMovement)
     def handle_item_movements(id):
         moves = WarehouseMovement.query.filter_by(item_id=id).order_by(WarehouseMovement.id.desc()).all()
         return jsonify([m.to_dict() for m in moves])
+

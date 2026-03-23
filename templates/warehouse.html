@@ -5,7 +5,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Almacén - CMMS</title>
-    <link rel="stylesheet" href="/static/css/style.css">
+    <link rel="stylesheet" href="/static/css/style.css?v=20260322m">
     <link rel="stylesheet" href="/static/css/sidebar.css?v=20260319">
     <link href="https://fonts.googleapis.com/css2?family=Roboto:wght@300;400;500;700&display=swap" rel="stylesheet">
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css">
@@ -133,7 +133,7 @@
                         <button class="btn-primary" onclick="openItemModal()">
                             <i class="fas fa-plus"></i> Nuevo Item
                         </button>
-                        <div style="display:flex; gap:10px;">
+                        <div style="display:flex; gap:10px; flex-wrap: wrap;">
                             <a href="/api/warehouse/export" target="_blank" style="text-decoration:none;">
                                 <button class="btn-secondary"
                                     style="background:#28a745; color:white; border:none; padding: 8px 15px;">
@@ -146,6 +146,16 @@
                                     <i class="fas fa-history"></i> Exportar Kardex
                                 </button>
                             </a>
+                            <button class="btn-secondary" onclick="downloadWarehouseTemplate()"
+                                style="background:#6f42c1; color:white; border:none; padding: 8px 15px;">
+                                <i class="fas fa-download"></i> Descargar Plantilla
+                            </button>
+                            <button class="btn-secondary" onclick="triggerWarehouseImport()"
+                                style="background:#0d6efd; color:white; border:none; padding: 8px 15px;">
+                                <i class="fas fa-file-import"></i> Carga Masiva
+                            </button>
+                            <input type="file" id="warehouseImportFile" accept=".xlsx,.xls" style="display:none"
+                                onchange="importWarehouseFile(this)">
                         </div>
                         <div class="search-bar">
                             <input type="text" id="searchWarehouse" placeholder="Buscar repuesto..."
@@ -744,11 +754,50 @@
                         }
                     } catch (e) { console.error(e); alert("Error de red"); }
                 }
+                function downloadWarehouseTemplate() {
+                    window.open('/api/warehouse/template', '_blank');
+                }
+
+                function triggerWarehouseImport() {
+                    document.getElementById('warehouseImportFile').click();
+                }
+
+                async function importWarehouseFile(input) {
+                    const file = input.files && input.files[0];
+                    if (!file) return;
+
+                    const formData = new FormData();
+                    formData.append('file', file);
+
+                    try {
+                        const res = await fetch('/api/warehouse/import', {
+                            method: 'POST',
+                            body: formData
+                        });
+
+                        const data = await res.json();
+                        if (!res.ok) {
+                            alert('Error en importacion: ' + (data.error || 'desconocido'));
+                            return;
+                        }
+
+                        alert('Importacion completada. Nuevos: ' + (data.inserted || 0) + ' | Duplicados omitidos: ' + (data.skipped_duplicates || 0));
+                        loadWarehouse();
+                    } catch (e) {
+                        alert('Error de red al importar: ' + e);
+                    } finally {
+                        input.value = '';
+                    }
+                }
             </script>
         </div>
     </section>
-    <script src="/static/js/sidebar.js?v=20260319"></script>
+    <script src="/static/js/sidebar.js?v=20260322m"></script>
 </body>
 
 </html>
+
+
+
+
 
