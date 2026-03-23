@@ -1,6 +1,8 @@
 import datetime as dt
+import re
 
 from flask import jsonify, request
+from sqlalchemy import inspect, text
 
 
 def register_lubrication_routes(
@@ -12,6 +14,8 @@ def register_lubrication_routes(
     MaintenanceNotice,
     _calculate_lubrication_schedule,
 ):
+    _schema_compat_checked = {"done": False}
+
     def _parse_date_flexible(raw):
         if not raw:
             return None
@@ -24,8 +28,17 @@ def register_lubrication_routes(
 
     def _friendly_error_message(exc, context):
         raw = str(exc or "")
-        if "UndefinedColumn" in raw or "does not exist" in raw:
+        lower = raw.lower()
+        if "undefinedcolumn" in lower or "does not exist" in lower:
             return f"Error de esquema de base de datos en {context}. Ejecuta la migracion de lubricacion."
+        if "null value in column" in lower and "violates not-null constraint" in lower:
+            m = re.search(r'column "([^"]+)"', raw, flags=re.IGNORECASE)
+            col = m.group(1) if m else "campo requerido"
+            return f"No se pudo guardar {context}: falta valor obligatorio en '{col}'."
+        if "violates foreign key constraint" in lower:
+            return f"No se pudo guardar {context}: el equipo/sistema/componente seleccionado no es valido."
+        if "unique constraint" in lower or "duplicate key value" in lower:
+            return f"No se pudo guardar {context}: ya existe un registro con ese codigo."
         return f"Error procesando {context}. Intenta nuevamente."
 
     def _generate_lubrication_code():
@@ -33,31 +46,162 @@ def register_lubrication_routes(
         next_id = (last.id if last else 0) + 1
         return f"LUB-{next_id:04d}"
 
+    def _safe_int(raw):
+        if raw in (None, ""):
+            return None
+        try:
+            return int(raw)
+        except Exception:
+            return None
+
+    def _safe_float(raw):
+        if raw in (None, ""):
+            return None
+        try:
+            return float(raw)
+        except Exception:
+            return None
+
+    def _safe_date_iso(raw):
+        d = _parse_date_flexible(raw)
+        return d.isoformat() if d else None
+
+    def _resolve_hierarchy_ids(area_id, line_id, equipment_id, system_id, component_id):
+        area_id = _safe_int(area_id)
+        line_id = _safe_int(line_id)
+        equipment_id = _safe_int(equipment_id)
+        system_id = _safe_int(system_id)
+        component_id = _safe_int(component_id)
+
+        if component_id and not system_id:
+            system_id = db.session.execute(
+                text("SELECT system_id FROM components WHERE id = :id"),
+                {"id": component_id},
+            ).scalar()
+            system_id = _safe_int(system_id)
+
+        if system_id and not equipment_id:
+            equipment_id = db.session.execute(
+                text("SELECT equipment_id FROM systems WHERE id = :id"),
+                {"id": system_id},
+            ).scalar()
+            equipment_id = _safe_int(equipment_id)
+
+        if equipment_id and not line_id:
+            line_id = db.session.execute(
+                text("SELECT line_id FROM equipments WHERE id = :id"),
+                {"id": equipment_id},
+            ).scalar()
+            line_id = _safe_int(line_id)
+
+        if line_id and not area_id:
+            area_id = db.session.execute(
+                text("SELECT area_id FROM lines WHERE id = :id"),
+                {"id": line_id},
+            ).scalar()
+            area_id = _safe_int(area_id)
+
+        return area_id, line_id, equipment_id, system_id, component_id
+
+    def _ensure_lubrication_schema_compat():
+        if _schema_compat_checked["done"]:
+            return
+
+        try:
+            with db.engine.begin() as conn:
+                inspector = inspect(conn)
+                if not inspector.has_table("lubrication_points"):
+                    _schema_compat_checked["done"] = True
+                    return
+
+                cols_lp = {c["name"]: c for c in inspector.get_columns("lubrication_points")}
+
+                if "name" not in cols_lp:
+                    conn.execute(text("ALTER TABLE lubrication_points ADD COLUMN name VARCHAR(120)"))
+                    cols_lp["name"] = {"name": "name", "nullable": True}
+
+                if "description" not in cols_lp:
+                    conn.execute(text("ALTER TABLE lubrication_points ADD COLUMN description TEXT"))
+                    cols_lp["description"] = {"name": "description", "nullable": True}
+
+                if "task_name" in cols_lp and "name" in cols_lp:
+                    conn.execute(text("""
+                        UPDATE lubrication_points
+                        SET name = task_name
+                        WHERE (name IS NULL OR btrim(name) = '')
+                          AND task_name IS NOT NULL
+                    """))
+
+                if "notes" in cols_lp and "description" in cols_lp:
+                    conn.execute(text("""
+                        UPDATE lubrication_points
+                        SET description = notes
+                        WHERE description IS NULL
+                          AND notes IS NOT NULL
+                    """))
+
+                cols_le = {}
+                if inspector.has_table("lubrication_executions"):
+                    cols_le = {c["name"]: c for c in inspector.get_columns("lubrication_executions")}
+                    if "execution_date" not in cols_le:
+                        conn.execute(text("ALTER TABLE lubrication_executions ADD COLUMN execution_date VARCHAR(20)"))
+                        cols_le["execution_date"] = {"name": "execution_date", "nullable": True}
+                    if "executed_date" in cols_le and "execution_date" in cols_le:
+                        conn.execute(text("""
+                            UPDATE lubrication_executions
+                            SET execution_date = executed_date
+                            WHERE execution_date IS NULL
+                              AND executed_date IS NOT NULL
+                        """))
+
+                backend = (conn.engine.url.get_backend_name() or "").lower()
+                if "postgres" in backend:
+                    if "task_name" in cols_lp and cols_lp["task_name"].get("nullable") is False:
+                        conn.execute(text("ALTER TABLE lubrication_points ALTER COLUMN task_name DROP NOT NULL"))
+                    if "notes" in cols_lp and cols_lp["notes"].get("nullable") is False:
+                        conn.execute(text("ALTER TABLE lubrication_points ALTER COLUMN notes DROP NOT NULL"))
+                    if "executed_date" in cols_le and cols_le["executed_date"].get("nullable") is False:
+                        conn.execute(text("ALTER TABLE lubrication_executions ALTER COLUMN executed_date DROP NOT NULL"))
+
+            _schema_compat_checked["done"] = True
+        except Exception:
+            logger.exception("Lubrication schema compat check warning")
+            # No bloquea el flujo; se sigue con la operacion normal.
+
     @app.route('/api/lubrication/points', methods=['GET', 'POST'])
     def handle_lubrication_points():
         if request.method == 'POST':
             try:
+                _ensure_lubrication_schema_compat()
                 data = request.json or {}
                 if not (data.get('name') or '').strip():
                     return jsonify({"error": "name es obligatorio"}), 400
 
                 code = data.get('code') or _generate_lubrication_code()
-                last_service = data.get('last_service_date')
+                last_service = _safe_date_iso(data.get('last_service_date'))
                 frequency_days = int(data.get('frequency_days') or 30)
                 warning_days = int(data.get('warning_days') or 3)
                 next_due, semaphore = _calculate_lubrication_schedule(last_service, frequency_days, warning_days)
+
+                area_id, line_id, equipment_id, system_id, component_id = _resolve_hierarchy_ids(
+                    data.get('area_id'),
+                    data.get('line_id'),
+                    data.get('equipment_id'),
+                    data.get('system_id'),
+                    data.get('component_id'),
+                )
 
                 point = LubricationPoint(
                     code=code,
                     name=data.get('name').strip(),
                     description=data.get('description'),
-                    area_id=data.get('area_id'),
-                    line_id=data.get('line_id'),
-                    equipment_id=data.get('equipment_id'),
-                    system_id=data.get('system_id'),
-                    component_id=data.get('component_id'),
+                    area_id=area_id,
+                    line_id=line_id,
+                    equipment_id=equipment_id,
+                    system_id=system_id,
+                    component_id=component_id,
                     lubricant_name=data.get('lubricant_name'),
-                    quantity_nominal=data.get('quantity_nominal'),
+                    quantity_nominal=_safe_float(data.get('quantity_nominal')),
                     quantity_unit=data.get('quantity_unit') or 'L',
                     frequency_days=frequency_days,
                     warning_days=warning_days,
@@ -74,6 +218,7 @@ def register_lubrication_routes(
                 logger.exception('Lubrication points POST error')
                 return jsonify({"error": _friendly_error_message(e, 'puntos de lubricacion')}), 500
 
+        _ensure_lubrication_schema_compat()
         show_all = request.args.get('all', 'false').lower() == 'true'
         query = LubricationPoint.query
         if not show_all:
@@ -101,6 +246,7 @@ def register_lubrication_routes(
             return jsonify({"message": "Punto de lubricacion desactivado"})
 
         try:
+            _ensure_lubrication_schema_compat()
             data = request.json or {}
             for field in [
                 'code', 'name', 'description', 'area_id', 'line_id', 'equipment_id',
@@ -109,6 +255,16 @@ def register_lubrication_routes(
             ]:
                 if field in data:
                     setattr(point, field, data[field])
+
+            point.area_id, point.line_id, point.equipment_id, point.system_id, point.component_id = _resolve_hierarchy_ids(
+                point.area_id,
+                point.line_id,
+                point.equipment_id,
+                point.system_id,
+                point.component_id,
+            )
+            point.quantity_nominal = _safe_float(point.quantity_nominal)
+            point.last_service_date = _safe_date_iso(point.last_service_date)
 
             point.frequency_days = int(point.frequency_days or 30)
             point.warning_days = int(point.warning_days or 3)
@@ -130,6 +286,7 @@ def register_lubrication_routes(
     def handle_lubrication_executions():
         if request.method == 'POST':
             try:
+                _ensure_lubrication_schema_compat()
                 data = request.json or {}
                 point_id = data.get('point_id')
                 if not point_id:
@@ -138,7 +295,7 @@ def register_lubrication_routes(
                 if not point:
                     return jsonify({"error": "Punto no encontrado"}), 404
 
-                execution_date = data.get('execution_date') or dt.date.today().isoformat()
+                execution_date = _safe_date_iso(data.get('execution_date')) or dt.date.today().isoformat()
                 execution = LubricationExecution(
                     point_id=point.id,
                     execution_date=execution_date,
@@ -190,6 +347,7 @@ def register_lubrication_routes(
                 logger.exception('Lubrication execution POST error')
                 return jsonify({"error": _friendly_error_message(e, 'registro de ejecucion')}), 500
 
+        _ensure_lubrication_schema_compat()
         point_id = request.args.get('point_id', type=int)
         query = LubricationExecution.query
         if point_id:
@@ -200,6 +358,7 @@ def register_lubrication_routes(
     @app.route('/api/lubrication/dashboard', methods=['GET'])
     def get_lubrication_dashboard():
         try:
+            _ensure_lubrication_schema_compat()
             points = LubricationPoint.query.filter_by(is_active=True).all()
             kpi = {
                 'total': len(points),
