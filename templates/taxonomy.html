@@ -161,9 +161,8 @@
                         <button id="importBtn" class="btn-primary" style="background:#03dac6; color:black;">📥 Importar
                             / Carga
                             Masiva</button>
-                        <a href="/api/export-data" target="_blank" style="text-decoration:none;">
-                            <button class="btn-secondary" style="background:#bb86fc; color:black;">📤 Descargar
-                                Excel</button>
+                        <a href="/api/export-hierarchy-complete" target="_blank" style="text-decoration:none;">
+                            <button class="btn-secondary" style="background:#bb86fc; color:black;">📤 Descargar Arbol Completo</button>
                         </a>
                         <button id="resetDbBtn" class="btn-danger" style="background:#cf6679;">Reiniciar DB</button>
                     </div>
@@ -216,7 +215,7 @@
 
                         <!-- MODE: FILE -->
                         <div id="modeFile">
-                            <p>El Excel debe tener hojas: Areas, Lines, Equipments, Systems, Components.</p>
+                            <p>Usa una sola hoja con formato de Jerarquia Completa.</p>
                             <div style="margin-bottom: 15px;">
                                 <a href="/api/download-template" target="_blank"
                                     style="color: #03dac6; text-decoration: none; border: 1px solid #03dac6; padding: 5px 10px; border-radius: 4px;">📥
@@ -253,16 +252,13 @@
 
                         <!-- MODE: HIERARCHY -->
                         <div id="modeHierarchy" style="display: none;">
-                            <p>Pega las columnas desde Excel en orden: <b>Area | Linea | Equipo | Sistema |
-                                    Componente</b></p>
+                            <p>Pega las columnas desde Excel en orden: <b>Area | Linea | Equipo | TAG(opcional) | Sistema | Componente</b></p>
                             <small style="color: #bb86fc; display:block; margin-bottom:5px;">* Copia las filas
                                 directamente
                                 desde
                                 Excel (Ctrl+C) y pégalas aquí (Ctrl+V). NO incluir encabezados.</small>
 
-                            <textarea id="hierarchyContent" rows="12" placeholder="RECEPCION DE MATERIA PRIMA	HIDROLAVADORA	HIDROLAVADORA 1	MOTOR ELECTRICO	RODAMIENTO
-RECEPCION DE MATERIA PRIMA	HIDROLAVADORA	HIDROLAVADORA 1	MOTOR ELECTRICO	EJE SALIDA
-RECEPCION DE MATERIA PRIMA	HIDROLAVADORA	HIDROLAVADORA 1	BOMBA	BOMBA (ALTA PRESION)"
+                            <textarea id="hierarchyContent" rows="12" placeholder="COCCION\tL. Digestor #1\tDIGESTOR #1\tTH1\tSISTEMA DE TRANSMISION\tCADENA\nCOCCION\tL. Digestor #1\tDIGESTOR #1\tTH1\tSISTEMA DE TRANSMISION\tFAJA"
                                 style="width: 100%; background: #1e1e1e; color: white; border: 1px solid #444; font-family: monospace; white-space: pre; overflow: auto; margin-bottom: 10px;"></textarea>
 
                             <button id="btnProcessHierarchy" onclick="processHierarchyPaste()"
@@ -353,4 +349,6 @@ RECEPCION DE MATERIA PRIMA	HIDROLAVADORA	HIDROLAVADORA 1	BOMBA	BOMBA (ALTA PRESI
 </body>
 
 </html>
+
+
 
