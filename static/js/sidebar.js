@@ -112,10 +112,61 @@
         });
     }
 
+    function enhanceMobileTables() {
+        const isMobile = window.matchMedia('(max-width: 768px)').matches;
+        document.body.classList.toggle('is-mobile', isMobile);
+        if (!isMobile) return;
+
+        const skipIds = new Set([
+            'planningTable',
+            'noticesTable'
+        ]);
+
+        const tables = document.querySelectorAll('table.data-table, table.table-sm, table.tools-table');
+        tables.forEach((table) => {
+            if (table.dataset.mobileProcessed === '1') return;
+            if (table.id && skipIds.has(table.id)) return;
+
+            const ths = table.querySelectorAll('thead th');
+            if (!ths.length) return;
+
+            const headers = Array.from(ths).map((th) => (th.textContent || '').trim() || 'Campo');
+            const tbody = table.tBodies && table.tBodies[0] ? table.tBodies[0] : null;
+            if (!tbody) return;
+
+            const labelRowCells = () => {
+                Array.from(tbody.rows || []).forEach((row) => {
+                    Array.from(row.cells || []).forEach((cell, idx) => {
+                        cell.setAttribute('data-label', headers[idx] || `Campo ${idx + 1}`);
+                    });
+                });
+            };
+
+            labelRowCells();
+
+            const observer = new MutationObserver(() => labelRowCells());
+            observer.observe(tbody, { childList: true, subtree: true });
+
+            table.dataset.mobileProcessed = '1';
+            table.classList.add('mobile-pro-table');
+        });
+    }
+
+    function initMobileProLayer() {
+        enhanceMobileTables();
+        window.addEventListener('resize', enhanceMobileTables);
+        setTimeout(enhanceMobileTables, 500);
+        setInterval(enhanceMobileTables, 2500);
+    }
+
     if (document.readyState === 'loading') {
-        document.addEventListener('DOMContentLoaded', initSidebar);
+        document.addEventListener('DOMContentLoaded', () => {
+            initSidebar();
+            initMobileProLayer();
+        });
     } else {
         initSidebar();
+        initMobileProLayer();
     }
 })();
 

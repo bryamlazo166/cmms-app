@@ -4,7 +4,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Activos Rotativos - CMMS</title>
-    <link rel="stylesheet" href="/static/css/style.css">
+    <link rel="stylesheet" href="/static/css/style.css?v=20260322m">
     <link rel="stylesheet" href="/static/css/sidebar.css?v=20260319">
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css">
     <style>
@@ -142,8 +142,44 @@
         </form>
     </dialog>
 
-    <script src="/static/js/sidebar.js?v=20260319"></script>
-    <script src="/static/js/rotative_assets.js"></script>
+    
+    <dialog id="specModal" class="modal" style="max-width: 720px; border-radius:12px;">
+        <h3><i class="fas fa-clipboard-list"></i> Ficha Tecnica - <span id="specAssetLabel"></span></h3>
+        <form id="specForm" style="margin-bottom:10px;">
+            <input id="specAssetId" type="hidden">
+            <input id="specId" type="hidden">
+            <div style="display:grid; grid-template-columns: 1.2fr 1fr .7fr auto; gap:8px; align-items:end;">
+                <div class="form-group"><label>Caracteristica</label><input id="specKey" placeholder="Potencia" required></div>
+                <div class="form-group"><label>Valor</label><input id="specValue" placeholder="40" required></div>
+                <div class="form-group"><label>Unidad</label><input id="specUnit" placeholder="HP"></div>
+                <button type="submit" class="btn-success" style="height:40px;">Agregar</button>
+            </div>
+        </form>
+
+        <div class="table-wrap" style="max-height:320px; overflow:auto;">
+            <table class="table-sm">
+                <thead>
+                    <tr>
+                        <th>Caracteristica</th>
+                        <th>Valor</th>
+                        <th>Unidad</th>
+                        <th>Accion</th>
+                    </tr>
+                </thead>
+                <tbody id="specBody">
+                    <tr><td colspan="4">Sin datos.</td></tr>
+                </tbody>
+            </table>
+        </div>
+
+        <div style="display:flex; justify-content:flex-end; margin-top:12px;">
+            <button type="button" class="btn-secondary" onclick="closeDialog('specModal')">Cerrar</button>
+        </div>
+    </dialog>
+    <script src="/static/js/sidebar.js?v=20260322m"></script>
+    <script src="/static/js/rotative_assets.js?v=20260322r"></script>
 </body>
 </html>
+
+
 

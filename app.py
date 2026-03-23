@@ -13,7 +13,7 @@ from models import (
     WorkOrder, Provider, Technician, Tool, WarehouseItem, OTPersonnel, 
     OTMaterial, WarehouseMovement, PurchaseOrder, PurchaseRequest,
     LubricationPoint, LubricationExecution, MonitoringPoint, MonitoringReading,
-    RotativeAsset, RotativeAssetHistory
+    RotativeAsset, RotativeAssetHistory, RotativeAssetSpec
 )
 from utils.crud_helpers import create_entry, get_entries, update_entry, delete_entry
 from utils.reporting_helpers import (
@@ -46,7 +46,7 @@ logging.basicConfig(level=logging.DEBUG)
 logger = logging.getLogger(__name__)
 
 app = Flask(__name__)
-APP_BUILD_TAG = "cmms-lubrication-fix-2026-03-22-01"
+APP_BUILD_TAG = "cmms-rotative-fix-specs-2026-03-22-01"
 
 
 def _normalize_db_url(raw_url):
@@ -264,6 +264,7 @@ register_rotative_assets_routes(
     db=db,
     RotativeAsset=RotativeAsset,
     RotativeAssetHistory=RotativeAssetHistory,
+    RotativeAssetSpec=RotativeAssetSpec,
 )
 
 register_tools_routes(
@@ -299,21 +300,35 @@ register_admin_routes(
     logger=logger,
 )
 
+
+def _init_schema_on_startup():
+    auto_create = (os.getenv('CMMS_AUTO_CREATE_TABLES', 'true') or 'true').strip().lower() in {
+        '1', 'true', 'yes', 'on'
+    }
+    if not auto_create:
+        logger.info("CMMS_AUTO_CREATE_TABLES disabled; skipping db.create_all() on startup.")
+        return
+    try:
+        with app.app_context():
+            db.create_all()
+        logger.info("Database schema checked/created on startup.")
+    except Exception as e:
+        logger.error(f"DB startup schema check error: {e}")
+
+
+_init_schema_on_startup()
+
 # @app.route('/')
 # def index():
 #     return render_template('index.html')
 
 if __name__ == '__main__':
-
-    with app.app_context():
-        try:
-            db.create_all()
-            logger.info("Database ready")
-        except Exception as e:
-            logger.error(f"DB init error (continuing anyway): {e}")
-        print(f"DEBUG: FINAL URI: {app.config.get('SQLALCHEMY_DATABASE_URI')}")
+    print(f"DEBUG: FINAL URI: {app.config.get('SQLALCHEMY_DATABASE_URI')}")
     app.run(host='0.0.0.0', debug=False, use_reloader=False, port=5009)
     
+
+
+
 
 
 

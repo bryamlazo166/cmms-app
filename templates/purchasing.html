@@ -5,7 +5,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Gestión de Compras - CMMS</title>
-    <link rel="stylesheet" href="/static/css/style.css">
+    <link rel="stylesheet" href="/static/css/style.css?v=20260322m">
     <link rel="stylesheet" href="/static/css/sidebar.css?v=20260319">
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css">
     <style>
@@ -62,6 +62,59 @@
             width: 20px;
             height: 20px;
             accent-color: #03dac6;
+        }
+    
+        /* RESPONSIVE MOBILE - PURCHASING */
+        @media (max-width: 768px) {
+            .main-container {
+                padding: 0 6px 14px 6px;
+            }
+
+            .top-bar {
+                margin: 8px 0 12px 50px;
+                padding: 12px;
+            }
+
+            .top-bar h1 {
+                font-size: 1.35rem;
+                line-height: 1.2;
+            }
+
+            .tabs {
+                display: flex;
+                flex-wrap: nowrap;
+                overflow-x: auto;
+                -webkit-overflow-scrolling: touch;
+                gap: 6px;
+                padding-bottom: 6px;
+            }
+
+            .tab-link {
+                flex: 0 0 auto;
+                white-space: nowrap;
+                font-size: 0.92rem;
+                padding: 9px 12px;
+            }
+
+            .toolbar {
+                display: flex;
+                flex-wrap: wrap;
+                gap: 8px;
+            }
+
+            .toolbar > * {
+                width: 100%;
+            }
+
+            .purchase-card {
+                flex-direction: column;
+                align-items: flex-start;
+                gap: 8px;
+            }
+
+            #ordersTable.mobile-pro-table {
+                margin-top: 6px;
+            }
         }
     </style>
 </head>
@@ -206,9 +259,11 @@
     </dialog>
 
     <script src="/static/js/purchasing.js?v=20260324b"></script>
-    <script src="/static/js/sidebar.js?v=20260319"></script>
+    <script src="/static/js/sidebar.js?v=20260322m"></script>
 </body>
 
 </html>
+
+
 
 

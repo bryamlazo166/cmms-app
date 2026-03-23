@@ -1,6 +1,7 @@
-﻿import datetime as dt
+import datetime as dt
 
 from flask import jsonify, request
+from sqlalchemy import text
 
 
 def register_rotative_assets_routes(
@@ -8,12 +9,50 @@ def register_rotative_assets_routes(
     db,
     RotativeAsset,
     RotativeAssetHistory,
+    RotativeAssetSpec,
 ):
     def _generate_rotative_code():
         last = RotativeAsset.query.order_by(RotativeAsset.id.desc()).first()
         next_id = (last.id if last else 0) + 1
         return f"MR-{next_id:04d}"
 
+    def _is_postgres():
+        try:
+            bind = db.session.get_bind()
+            return bool(bind and bind.dialect and bind.dialect.name == 'postgresql')
+        except Exception:
+            return False
+
+    def _repair_history_sequence_if_needed():
+        if not _is_postgres():
+            return
+        db.session.execute(
+            text(
+                """
+                SELECT setval(
+                    pg_get_serial_sequence('rotative_asset_history','id'),
+                    COALESCE((SELECT MAX(id) FROM rotative_asset_history), 0) + 1,
+                    false
+                )
+                """
+            )
+        )
+
+    def _record_history(asset, event_type, event_date=None, comments=None):
+        _repair_history_sequence_if_needed()
+        db.session.add(
+            RotativeAssetHistory(
+                asset_id=asset.id,
+                event_type=event_type,
+                event_date=event_date or dt.date.today().isoformat(),
+                comments=comments,
+                area_id=asset.area_id,
+                line_id=asset.line_id,
+                equipment_id=asset.equipment_id,
+                system_id=asset.system_id,
+                component_id=asset.component_id,
+            )
+        )
 
     @app.route('/api/rotative-assets', methods=['GET', 'POST'])
     def handle_rotative_assets():
@@ -38,21 +77,12 @@ def register_rotative_assets_routes(
                     line_id=data.get('line_id'),
                     equipment_id=data.get('equipment_id'),
                     system_id=data.get('system_id'),
-                    component_id=data.get('component_id')
+                    component_id=data.get('component_id'),
                 )
                 db.session.add(asset)
                 db.session.flush()
-                db.session.add(RotativeAssetHistory(
-                    asset_id=asset.id,
-                    event_type='CREACION',
-                    event_date=dt.date.today().isoformat(),
-                    comments='Activo rotativo creado',
-                    area_id=asset.area_id,
-                    line_id=asset.line_id,
-                    equipment_id=asset.equipment_id,
-                    system_id=asset.system_id,
-                    component_id=asset.component_id
-                ))
+
+                _record_history(asset, 'CREACION', comments='Activo rotativo creado')
                 db.session.commit()
                 return jsonify(asset.to_dict()), 201
             except Exception as e:
@@ -83,7 +113,6 @@ def register_rotative_assets_routes(
         rows = query.order_by(RotativeAsset.id.desc()).all()
         return jsonify([r.to_dict() for r in rows])
 
-
     @app.route('/api/rotative-assets/<int:asset_id>', methods=['GET', 'PUT', 'DELETE'])
     def handle_rotative_asset_id(asset_id):
         asset = RotativeAsset.query.get_or_404(asset_id)
@@ -91,20 +120,14 @@ def register_rotative_assets_routes(
             return jsonify(asset.to_dict())
 
         if request.method == 'DELETE':
-            asset.is_active = not asset.is_active
-            db.session.add(RotativeAssetHistory(
-                asset_id=asset.id,
-                event_type='CAMBIO_ACTIVO',
-                event_date=dt.date.today().isoformat(),
-                comments='Toggle activo/inactivo',
-                area_id=asset.area_id,
-                line_id=asset.line_id,
-                equipment_id=asset.equipment_id,
-                system_id=asset.system_id,
-                component_id=asset.component_id
-            ))
-            db.session.commit()
-            return jsonify({"message": "Estado actualizado"})
+            try:
+                asset.is_active = not asset.is_active
+                _record_history(asset, 'CAMBIO_ACTIVO', comments='Toggle activo/inactivo')
+                db.session.commit()
+                return jsonify({"message": "Estado actualizado"})
+            except Exception as e:
+                db.session.rollback()
+                return jsonify({"error": str(e)}), 500
 
         try:
             data = request.json or {}
@@ -113,29 +136,18 @@ def register_rotative_assets_routes(
             for field in [
                 'code', 'name', 'category', 'brand', 'model', 'serial_number',
                 'status', 'install_date', 'notes', 'is_active',
-                'area_id', 'line_id', 'equipment_id', 'system_id', 'component_id'
+                'area_id', 'line_id', 'equipment_id', 'system_id', 'component_id',
             ]:
                 if field in data:
                     setattr(asset, field, data[field])
             location_after = (asset.area_id, asset.line_id, asset.equipment_id, asset.system_id, asset.component_id)
             if location_before != location_after or status_before != asset.status:
-                db.session.add(RotativeAssetHistory(
-                    asset_id=asset.id,
-                    event_type='ACTUALIZACION',
-                    event_date=dt.date.today().isoformat(),
-                    comments='Actualizacion de datos/ubicacion',
-                    area_id=asset.area_id,
-                    line_id=asset.line_id,
-                    equipment_id=asset.equipment_id,
-                    system_id=asset.system_id,
-                    component_id=asset.component_id
-                ))
+                _record_history(asset, 'ACTUALIZACION', comments='Actualizacion de datos/ubicacion')
             db.session.commit()
             return jsonify(asset.to_dict())
         except Exception as e:
             db.session.rollback()
             return jsonify({"error": str(e)}), 500
-
 
     @app.route('/api/rotative-assets/<int:asset_id>/install', methods=['POST'])
     def install_rotative_asset(asset_id):
@@ -151,23 +163,12 @@ def register_rotative_assets_routes(
             asset.system_id = data.get('system_id')
             asset.component_id = data.get('component_id')
 
-            db.session.add(RotativeAssetHistory(
-                asset_id=asset.id,
-                event_type='INSTALACION',
-                event_date=event_date,
-                comments=data.get('comments'),
-                area_id=asset.area_id,
-                line_id=asset.line_id,
-                equipment_id=asset.equipment_id,
-                system_id=asset.system_id,
-                component_id=asset.component_id
-            ))
+            _record_history(asset, 'INSTALACION', event_date=event_date, comments=data.get('comments'))
             db.session.commit()
             return jsonify(asset.to_dict())
         except Exception as e:
             db.session.rollback()
             return jsonify({"error": str(e)}), 500
-
 
     @app.route('/api/rotative-assets/<int:asset_id>/remove', methods=['POST'])
     def remove_rotative_asset(asset_id):
@@ -175,17 +176,8 @@ def register_rotative_assets_routes(
         try:
             data = request.json or {}
             event_date = data.get('event_date') or dt.date.today().isoformat()
-            db.session.add(RotativeAssetHistory(
-                asset_id=asset.id,
-                event_type='RETIRO',
-                event_date=event_date,
-                comments=data.get('comments'),
-                area_id=asset.area_id,
-                line_id=asset.line_id,
-                equipment_id=asset.equipment_id,
-                system_id=asset.system_id,
-                component_id=asset.component_id
-            ))
+            _record_history(asset, 'RETIRO', event_date=event_date, comments=data.get('comments'))
+
             asset.status = data.get('new_status') or 'Disponible'
             asset.area_id = None
             asset.line_id = None
@@ -198,14 +190,76 @@ def register_rotative_assets_routes(
             db.session.rollback()
             return jsonify({"error": str(e)}), 500
 
-
     @app.route('/api/rotative-assets/<int:asset_id>/history', methods=['GET'])
     def get_rotative_asset_history(asset_id):
         RotativeAsset.query.get_or_404(asset_id)
-        rows = RotativeAssetHistory.query.filter_by(asset_id=asset_id)\
-            .order_by(RotativeAssetHistory.id.desc()).all()
+        rows = RotativeAssetHistory.query.filter_by(asset_id=asset_id).order_by(RotativeAssetHistory.id.desc()).all()
         return jsonify([r.to_dict() for r in rows])
 
+    @app.route('/api/rotative-assets/<int:asset_id>/specs', methods=['GET', 'POST'])
+    def handle_rotative_specs(asset_id):
+        asset = RotativeAsset.query.get_or_404(asset_id)
 
+        if request.method == 'GET':
+            rows = RotativeAssetSpec.query.filter_by(asset_id=asset_id, is_active=True).order_by(RotativeAssetSpec.order_index.asc(), RotativeAssetSpec.id.asc()).all()
+            return jsonify([r.to_dict() for r in rows])
 
+        try:
+            data = request.json or {}
+            key_name = (data.get('key_name') or '').strip()
+            value_text = (data.get('value_text') or '').strip()
+            unit = (data.get('unit') or '').strip() or None
+            order_index = data.get('order_index')
+            try:
+                order_index = int(order_index) if order_index is not None else 0
+            except Exception:
+                order_index = 0
 
+            if not key_name or not value_text:
+                return jsonify({"error": "key_name y value_text son obligatorios"}), 400
+
+            spec = None
+            spec_id = data.get('id')
+            if spec_id:
+                spec = RotativeAssetSpec.query.filter_by(id=spec_id, asset_id=asset_id).first()
+
+            if spec is None:
+                spec = RotativeAssetSpec.query.filter_by(asset_id=asset_id, key_name=key_name, unit=unit, is_active=True).first()
+
+            if spec:
+                spec.value_text = value_text
+                spec.order_index = order_index
+                spec.is_active = True
+                event_label = 'FICHA_ACTUALIZADA'
+            else:
+                spec = RotativeAssetSpec(
+                    asset_id=asset_id,
+                    key_name=key_name,
+                    value_text=value_text,
+                    unit=unit,
+                    order_index=order_index,
+                    is_active=True,
+                )
+                db.session.add(spec)
+                event_label = 'FICHA_AGREGADA'
+
+            _record_history(asset, event_label, comments=f'{key_name}={value_text}{(" " + unit) if unit else ""}')
+            db.session.commit()
+            return jsonify(spec.to_dict())
+        except Exception as e:
+            db.session.rollback()
+            return jsonify({"error": str(e)}), 500
+
+    @app.route('/api/rotative-assets/specs/<int:spec_id>', methods=['DELETE'])
+    def delete_rotative_spec(spec_id):
+        spec = RotativeAssetSpec.query.get_or_404(spec_id)
+        try:
+            spec.is_active = False
+            asset = RotativeAsset.query.get(spec.asset_id)
+            if asset:
+                _record_history(asset, 'FICHA_ELIMINADA', comments=f'{spec.key_name} eliminado')
+            db.session.commit()
+            return jsonify({"message": "Caracteristica eliminada"})
+        except Exception as e:
+            db.session.rollback()
+            return jsonify({"error": str(e)}), 500

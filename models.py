@@ -634,6 +634,7 @@ class RotativeAsset(db.Model):
     system = relationship("System")
     component = relationship("Component")
     history = relationship("RotativeAssetHistory", back_populates="asset", cascade="all, delete-orphan")
+    specs = relationship("RotativeAssetSpec", back_populates="asset", cascade="all, delete-orphan")
 
     def to_dict(self):
         return {
@@ -661,6 +662,32 @@ class RotativeAsset(db.Model):
         }
 
 
+
+class RotativeAssetSpec(db.Model):
+    __tablename__ = 'rotative_asset_specs'
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    asset_id: Mapped[int] = mapped_column(ForeignKey('rotative_assets.id'), nullable=False)
+    key_name: Mapped[str] = mapped_column(String(120), nullable=False)
+    value_text: Mapped[str] = mapped_column(String(250), nullable=False)
+    unit: Mapped[str | None] = mapped_column(String(30), nullable=True)
+    order_index: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    is_active: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
+    updated_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+    asset = relationship("RotativeAsset", back_populates="specs")
+
+    def to_dict(self):
+        return {
+            "id": self.id,
+            "asset_id": self.asset_id,
+            "key_name": self.key_name,
+            "value_text": self.value_text,
+            "unit": self.unit,
+            "order_index": self.order_index,
+            "is_active": self.is_active,
+            "updated_at": self.updated_at.isoformat() if self.updated_at else None,
+        }
 class RotativeAssetHistory(db.Model):
     __tablename__ = 'rotative_asset_history'
 
@@ -706,3 +733,5 @@ class RotativeAssetHistory(db.Model):
             "component_name": self.component.name if self.component else None,
             "created_at": self.created_at.isoformat() if self.created_at else None
         }
+
+

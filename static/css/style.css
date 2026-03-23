@@ -222,3 +222,162 @@ ul,
 .active {
     display: block;
 }
+/* -------------------------------------------------- */
+/* GLOBAL MOBILE LAYER                                */
+/* -------------------------------------------------- */
+@media (max-width: 768px) {
+    body {
+        padding: 0;
+        font-size: 14px;
+    }
+
+    .home-section {
+        padding: 10px !important;
+    }
+
+    .main-container {
+        padding: 0 6px 14px 6px !important;
+    }
+
+    .top-bar {
+        margin: 8px 0 12px 52px !important;
+        padding: 10px 12px !important;
+        border-radius: 10px;
+    }
+
+    .top-bar h1 {
+        font-size: 1.35rem !important;
+        line-height: 1.2;
+        word-break: break-word;
+    }
+
+    .container-fluid,
+    .card,
+    .tab-content {
+        padding: 10px !important;
+        border-radius: 10px;
+    }
+
+    .tabs {
+        display: flex;
+        flex-wrap: nowrap;
+        overflow-x: auto;
+        overflow-y: hidden;
+        -webkit-overflow-scrolling: touch;
+        gap: 6px;
+        padding-bottom: 6px;
+    }
+
+    .tab-link {
+        flex: 0 0 auto;
+        font-size: 0.9rem;
+        padding: 9px 12px;
+        margin-right: 0;
+    }
+
+    .toolbar {
+        display: flex !important;
+        flex-wrap: wrap;
+        gap: 8px;
+    }
+
+    .toolbar > * {
+        flex: 1 1 100%;
+        min-width: 0;
+    }
+
+    .search-bar input,
+    input,
+    select,
+    button {
+        min-height: 40px;
+    }
+
+    .table-container {
+        max-height: none !important;
+        overflow: auto;
+        -webkit-overflow-scrolling: touch;
+    }
+
+    .data-table {
+        min-width: 980px;
+    }
+
+    dialog {
+        width: min(96vw, 960px);
+        max-width: 96vw;
+        max-height: 90vh;
+        overflow: auto;
+        padding: 14px;
+    }
+
+    .modal-content {
+        width: 100% !important;
+        max-width: 100% !important;
+    }
+}
+/* -------------------------------------------------- */
+/* MOBILE PRO TABLE CARDS                             */
+/* -------------------------------------------------- */
+@media (max-width: 768px) {
+    table.mobile-pro-table {
+        min-width: 0 !important;
+        width: 100% !important;
+        border-collapse: separate;
+        border-spacing: 0 8px;
+        background: transparent;
+    }
+
+    table.mobile-pro-table thead {
+        display: none;
+    }
+
+    table.mobile-pro-table tbody {
+        display: block;
+        width: 100%;
+    }
+
+    table.mobile-pro-table tbody tr {
+        display: block;
+        width: 100%;
+        border: 1px solid #2f435d;
+        border-radius: 10px;
+        background: linear-gradient(145deg, #152032, #111a28);
+        padding: 6px;
+        margin-bottom: 8px;
+        box-shadow: 0 4px 14px rgba(0, 0, 0, 0.3);
+    }
+
+    table.mobile-pro-table tbody td {
+        display: grid;
+        grid-template-columns: minmax(120px, 42%) 1fr;
+        align-items: start;
+        gap: 8px;
+        border: none !important;
+        border-bottom: 1px dashed rgba(255, 255, 255, 0.12) !important;
+        padding: 7px 8px;
+        width: 100%;
+        text-align: left !important;
+        white-space: normal !important;
+        word-break: break-word;
+    }
+
+    table.mobile-pro-table tbody td:last-child {
+        border-bottom: none !important;
+    }
+
+    table.mobile-pro-table tbody td::before {
+        content: attr(data-label);
+        color: #8fb3da;
+        font-size: 0.72rem;
+        line-height: 1.25;
+        letter-spacing: 0.03em;
+        text-transform: uppercase;
+        font-weight: 700;
+    }
+
+    table.mobile-pro-table tbody td:empty::after {
+        content: '-';
+        color: #768ca8;
+    }
+}

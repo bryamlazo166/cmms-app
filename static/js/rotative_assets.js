@@ -75,6 +75,7 @@ function renderAssets(rows) {
         const actions = `
             <div class="actions-row">
                 <button class="btn-micro" onclick="openAssetModal(${a.id})">Editar</button>
+                <button class="btn-micro" onclick="openSpecModal(${a.id})">Ficha</button>
                 <button class="btn-micro" onclick="openInstallModal(${a.id})">Instalar</button>
                 <button class="btn-micro" onclick="removeAssetFromSite(${a.id})">Retirar</button>
                 <button class="btn-micro" onclick="showAssetHistory(${a.id})">Historial</button>
@@ -103,16 +104,35 @@ function gatherFilters() {
     return p;
 }
 
-function syncFilterHierarchy() {
-    const areaId = rQ('fArea').value;
-    const lineId = rQ('fLine').value;
+function syncAreaLineEquip(areaIdEl, lineIdEl, equipIdEl, linePlaceholder, equipPlaceholder) {
+    const areaEl = rQ(areaIdEl);
+    const lineEl = rQ(lineIdEl);
+    const equipEl = rQ(equipIdEl);
+
+    const areaId = areaEl.value;
+    const keepLine = lineEl.value;
+    const keepEquip = equipEl.value;
 
     const lines = rotState.lines.filter(l => !areaId || String(l.area_id) === String(areaId));
-    fillSelect('fLine', lines, 'Linea: Todas');
-    rQ('fLine').value = lines.some(l => String(l.id) === String(lineId)) ? lineId : '';
+    fillSelect(lineIdEl, lines, linePlaceholder);
+    lineEl.value = lines.some(l => String(l.id) === String(keepLine)) ? String(keepLine) : '';
 
-    const equips = rotState.equips.filter(e => !rQ('fLine').value || String(e.line_id) === String(rQ('fLine').value));
-    fillSelect('fEquip', equips, 'Equipo: Todos');
+    const equips = rotState.equips.filter(e => !lineEl.value || String(e.line_id) === String(lineEl.value));
+    fillSelect(equipIdEl, equips, equipPlaceholder);
+    equipEl.value = equips.some(e => String(e.id) === String(keepEquip)) ? String(keepEquip) : '';
+}
+
+function setAreaLineEquip(areaIdEl, lineIdEl, equipIdEl, areaValue, lineValue, equipValue, linePlaceholder, equipPlaceholder) {
+    rQ(areaIdEl).value = areaValue || '';
+    syncAreaLineEquip(areaIdEl, lineIdEl, equipIdEl, linePlaceholder, equipPlaceholder);
+
+    if (lineValue) {
+        rQ(lineIdEl).value = String(lineValue);
+        syncAreaLineEquip(areaIdEl, lineIdEl, equipIdEl, linePlaceholder, equipPlaceholder);
+    }
+    if (equipValue) {
+        rQ(equipIdEl).value = String(equipValue);
+    }
 }
 
 async function loadHierarchy() {
@@ -157,6 +177,9 @@ function openAssetModal(id) {
     rQ('assetForm').reset();
     rQ('assetId').value = '';
     rQ('assetModalTitle').innerHTML = '<i class="fas fa-plus"></i> Nuevo Activo Rotativo';
+    rQ('aStatus').value = 'Disponible';
+
+    setAreaLineEquip('aArea', 'aLine', 'aEquip', '', '', '', 'Selecciona linea', 'Selecciona equipo');
 
     if (!id) {
         rQ('assetModal').showModal();
@@ -174,9 +197,9 @@ function openAssetModal(id) {
     rQ('aModel').value = a.model || '';
     rQ('aSerial').value = a.serial_number || '';
     rQ('aStatus').value = a.status || 'Disponible';
-    rQ('aArea').value = a.area_id || '';
-    rQ('aLine').value = a.line_id || '';
-    rQ('aEquip').value = a.equipment_id || '';
+
+    setAreaLineEquip('aArea', 'aLine', 'aEquip', a.area_id, a.line_id, a.equipment_id, 'Selecciona linea', 'Selecciona equipo');
+
     rQ('aSystemId').value = a.system_id || '';
     rQ('aComponentId').value = a.component_id || '';
     rQ('aInstallDate').value = a.install_date || '';
@@ -191,9 +214,9 @@ function openInstallModal(id) {
     rQ('installForm').reset();
     rQ('installAssetId').value = id;
     rQ('insDate').value = todayISO();
-    rQ('insArea').value = a.area_id || '';
-    rQ('insLine').value = a.line_id || '';
-    rQ('insEquip').value = a.equipment_id || '';
+
+    setAreaLineEquip('insArea', 'insLine', 'insEquip', a.area_id, a.line_id, a.equipment_id, 'Selecciona linea', 'Selecciona equipo');
+
     rQ('insSystem').value = a.system_id || '';
     rQ('insComp').value = a.component_id || '';
     rQ('installModal').showModal();
@@ -278,8 +301,80 @@ async function showAssetHistory(id) {
         alert('Sin historial.');
         return;
     }
-    const txt = rows.slice(0, 12).map(h => `${h.event_date} | ${h.event_type} | ${h.area_name || '-'} / ${h.line_name || '-'} / ${h.equipment_name || '-'}${h.comments ? ' | ' + h.comments : ''}`).join('\n');
+    const txt = rows.slice(0, 20).map(h => `${h.event_date} | ${h.event_type} | ${h.area_name || '-'} / ${h.line_name || '-'} / ${h.equipment_name || '-'}${h.comments ? ' | ' + h.comments : ''}`).join('\n');
     alert(txt);
+}
+
+async function openSpecModal(id) {
+    const a = rotState.assets.find(x => x.id === id);
+    if (!a) return;
+
+    rQ('specForm').reset();
+    rQ('specAssetId').value = id;
+    rQ('specId').value = '';
+    rQ('specAssetLabel').textContent = `${a.code || ''} ${a.name || ''}`.trim();
+
+    await loadSpecs(id);
+    rQ('specModal').showModal();
+}
+
+async function loadSpecs(assetId) {
+    const rows = await rFetch(`/api/rotative-assets/${assetId}/specs`);
+    const tbody = rQ('specBody');
+
+    if (!rows.length) {
+        tbody.innerHTML = '<tr><td colspan="4">Sin datos de ficha tecnica.</td></tr>';
+        return;
+    }
+
+    tbody.innerHTML = rows.map(s => `
+        <tr>
+            <td>${s.key_name || '-'}</td>
+            <td>${s.value_text || '-'}</td>
+            <td>${s.unit || '-'}</td>
+            <td>
+                <button class="btn-micro" onclick="editSpec(${s.id}, '${String(s.key_name || '').replace(/'/g, "\\'")}', '${String(s.value_text || '').replace(/'/g, "\\'")}', '${String(s.unit || '').replace(/'/g, "\\'")}')">Editar</button>
+                <button class="btn-micro" onclick="deleteSpec(${s.id})">Eliminar</button>
+            </td>
+        </tr>
+    `).join('');
+}
+
+function editSpec(id, keyName, valueText, unit) {
+    rQ('specId').value = id;
+    rQ('specKey').value = keyName || '';
+    rQ('specValue').value = valueText || '';
+    rQ('specUnit').value = unit || '';
+}
+
+async function deleteSpec(specId) {
+    if (!confirm('Deseas eliminar esta caracteristica?')) return;
+    await rFetch(`/api/rotative-assets/specs/${specId}`, { method: 'DELETE' });
+    await loadSpecs(rQ('specAssetId').value);
+}
+
+async function saveSpec(e) {
+    e.preventDefault();
+
+    const assetId = rQ('specAssetId').value;
+    const payload = {
+        id: rNum(rQ('specId').value),
+        key_name: (rQ('specKey').value || '').trim(),
+        value_text: (rQ('specValue').value || '').trim(),
+        unit: (rQ('specUnit').value || '').trim() || null,
+    };
+
+    await rFetch(`/api/rotative-assets/${assetId}/specs`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload)
+    });
+
+    rQ('specId').value = '';
+    rQ('specKey').value = '';
+    rQ('specValue').value = '';
+    rQ('specUnit').value = '';
+    await loadSpecs(assetId);
 }
 
 async function initRotative() {
@@ -288,15 +383,25 @@ async function initRotative() {
 
     rQ('assetForm').addEventListener('submit', saveAsset);
     rQ('installForm').addEventListener('submit', saveInstall);
+    rQ('specForm').addEventListener('submit', saveSpec);
 
     rQ('fArea').addEventListener('change', () => {
-        syncFilterHierarchy();
+        syncAreaLineEquip('fArea', 'fLine', 'fEquip', 'Linea: Todas', 'Equipo: Todos');
         reloadRotative();
     });
-    rQ('fLine').addEventListener('change', reloadRotative);
+    rQ('fLine').addEventListener('change', () => {
+        syncAreaLineEquip('fArea', 'fLine', 'fEquip', 'Linea: Todas', 'Equipo: Todos');
+        reloadRotative();
+    });
     rQ('fEquip').addEventListener('change', reloadRotative);
     rQ('fStatus').addEventListener('change', reloadRotative);
     rQ('fSearch').addEventListener('input', () => renderAssets(rotState.assets));
+
+    rQ('aArea').addEventListener('change', () => syncAreaLineEquip('aArea', 'aLine', 'aEquip', 'Selecciona linea', 'Selecciona equipo'));
+    rQ('aLine').addEventListener('change', () => syncAreaLineEquip('aArea', 'aLine', 'aEquip', 'Selecciona linea', 'Selecciona equipo'));
+
+    rQ('insArea').addEventListener('change', () => syncAreaLineEquip('insArea', 'insLine', 'insEquip', 'Selecciona linea', 'Selecciona equipo'));
+    rQ('insLine').addEventListener('change', () => syncAreaLineEquip('insArea', 'insLine', 'insEquip', 'Selecciona linea', 'Selecciona equipo'));
 }
 
 document.addEventListener('DOMContentLoaded', () => {

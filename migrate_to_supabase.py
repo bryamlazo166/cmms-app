@@ -11,6 +11,26 @@ load_dotenv()
 
 # Default Local Supabase URL
 LOCAL_SUPABASE_URL = "postgresql://postgres:postgres@localhost:54322/postgres"
+DEFAULT_SQLITE_CANDIDATES = [
+    "cmms_v2.db",
+    os.path.join("instance", "cmms_v2.db"),
+]
+
+
+def resolve_sqlite_source(explicit_source=None):
+    """Resolve source SQLite path using CLI > env > common defaults."""
+    if explicit_source:
+        return explicit_source
+
+    env_source = (os.getenv("SQLITE_SOURCE_DB") or "").strip()
+    if env_source:
+        return env_source
+
+    for candidate in DEFAULT_SQLITE_CANDIDATES:
+        if os.path.exists(candidate):
+            return candidate
+
+    return DEFAULT_SQLITE_CANDIDATES[0]
 
 def create_tables(db_url):
     """
@@ -36,12 +56,13 @@ def create_tables(db_url):
         traceback.print_exc()
         sys.exit(1)
 
-def migrate(target_url, verify_ssl=True):
-    sqlite_db = 'cmms_v2.db'
+def migrate(target_url, verify_ssl=True, sqlite_db=None):
+    sqlite_db = sqlite_db or resolve_sqlite_source()
     print(f"--- Starting Migration: SQLite ({sqlite_db}) -> Postgres ---")
     
     if not os.path.exists(sqlite_db):
         print(f"Error: {sqlite_db} not found.")
+        print("Hint: use --source <path> or set SQLITE_SOURCE_DB in .env")
         return
 
     # Connect to SQLite
@@ -87,9 +108,34 @@ def migrate(target_url, verify_ssl=True):
             # Get columns to build INSERT query
             col_names = [description[0] for description in sqlite_cursor.description]
             cols_str = ', '.join(col_names)
-            placeholders = ', '.join(['%s'] * len(col_names))
             
-            insert_query = f"INSERT INTO {table} ({cols_str}) VALUES ({placeholders}) ON CONFLICT DO NOTHING"
+            # Detect boolean columns in Postgres and convert SQLite 0/1 values.
+            pg_cursor.execute(
+                """
+                SELECT column_name, data_type
+                FROM information_schema.columns
+                WHERE table_schema='public' AND table_name=%s
+                """,
+                (table,),
+            )
+            pg_columns = {r[0]: r[1] for r in pg_cursor.fetchall()}
+            bool_indexes = [
+                idx for idx, col in enumerate(col_names)
+                if pg_columns.get(col) == "boolean"
+            ]
+            if bool_indexes:
+                converted_rows = []
+                for row in rows:
+                    mutable = list(row)
+                    for idx in bool_indexes:
+                        val = mutable[idx]
+                        if val in (0, 1):
+                            mutable[idx] = bool(val)
+                    converted_rows.append(tuple(mutable))
+                rows = converted_rows
+
+            # execute_values requires a single VALUES %s placeholder.
+            insert_query = f"INSERT INTO {table} ({cols_str}) VALUES %s ON CONFLICT DO NOTHING"
             
             print(f"  - Migrating {len(rows)} rows...")
             
@@ -111,6 +157,7 @@ if __name__ == "__main__":
     parser.add_argument("--local", action="store_true", help="Use default local Supabase URL")
     parser.add_argument("--create-tables", action="store_true", help="Create tables in target DB before migrating")
     parser.add_argument("--url", type=str, help="Target Database URL (overrides .env)")
+    parser.add_argument("--source", type=str, help="Source SQLite file path")
     parser.add_argument("--yes", "-y", action="store_true", help="Skip confirmation")
     
     args = parser.parse_args()
@@ -134,11 +181,14 @@ if __name__ == "__main__":
     if args.create_tables:
         create_tables(target_url)
         
+    source_db = resolve_sqlite_source(args.source)
+    print(f"SQLite source: {source_db}")
+
     if args.yes:
-        migrate(target_url, verify_ssl=not args.local)
+        migrate(target_url, verify_ssl=not args.local, sqlite_db=source_db)
     else:
         confirm = input("Proceed with migration? (y/n): ")
         if confirm.lower() == 'y':
-            migrate(target_url, verify_ssl=not args.local)
+            migrate(target_url, verify_ssl=not args.local, sqlite_db=source_db)
         else:
             print("Cancelled.")

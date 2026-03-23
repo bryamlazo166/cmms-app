@@ -1,11 +1,11 @@
-﻿<!DOCTYPE html>
+<!DOCTYPE html>
 <html lang="es">
 
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Gestion de Ordenes de Trabajo - CMMS</title>
-    <link rel="stylesheet" href="/static/css/style.css">
+    <link rel="stylesheet" href="/static/css/style.css?v=20260322m">
     <link rel="stylesheet" href="/static/css/kanban.css">
     <link rel="stylesheet" href="/static/css/sidebar.css?v=20260319">
     <script src='https://cdn.jsdelivr.net/npm/fullcalendar@6.1.10/index.global.min.js'></script>
@@ -323,6 +323,72 @@
 
             #tab-planning .view-toggle {
                 justify-self: start;
+            }
+        }
+    
+        /* RESPONSIVE MOBILE - WORK ORDERS */
+        @media (max-width: 768px) {
+            .main-container {
+                padding: 0 6px 14px 6px;
+            }
+
+            .top-bar {
+                margin: 8px 0 12px 50px;
+                padding: 12px;
+            }
+
+            .top-bar h1 {
+                font-size: 1.35rem;
+                line-height: 1.2;
+            }
+
+            .container-fluid {
+                padding: 10px;
+            }
+
+            .tabs {
+                display: flex;
+                flex-wrap: nowrap;
+                overflow-x: auto;
+                -webkit-overflow-scrolling: touch;
+                gap: 6px;
+                padding: 6px 4px 0 4px;
+            }
+
+            .tab-link {
+                flex: 0 0 auto;
+                padding: 10px 12px;
+                font-size: 0.92rem;
+                white-space: nowrap;
+            }
+
+            #tab-planning .toolbar.planning-toolbar {
+                display: grid;
+                grid-template-columns: 1fr;
+                gap: 8px;
+            }
+
+            #tab-planning .toolbar .planning-filter-row {
+                display: grid;
+                grid-template-columns: 1fr 1fr;
+                gap: 8px;
+            }
+
+            #tab-planning .search-bar input,
+            #tab-planning .filter-btn,
+            #tab-planning select.filter-btn,
+            #tab-planning .btn-primary,
+            #tab-planning .btn-secondary {
+                width: 100%;
+                height: 40px;
+            }
+
+            #tab-planning .table-container {
+                max-height: none;
+            }
+
+            #planningTable.data-table {
+                min-width: 1200px;
             }
         }
     </style>
@@ -1315,10 +1381,12 @@
         <script src="/static/js/work_orders.js?v=20260321m"></script>
         </div>
     </section>
-    <script src="/static/js/sidebar.js?v=20260319"></script>
+    <script src="/static/js/sidebar.js?v=20260322m"></script>
 </body>
 
 </html>
+
+
 
 
 

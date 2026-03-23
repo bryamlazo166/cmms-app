@@ -1,6 +1,6 @@
 ﻿param(
     [ValidateSet("auto", "local", "supabase")]
-    [string]$Mode = "auto"
+    [string]$Mode = "supabase"
 )
 
 $ErrorActionPreference = "SilentlyContinue"
