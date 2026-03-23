@@ -160,6 +160,11 @@ def register_lubrication_routes(
                         conn.execute(text("ALTER TABLE lubrication_points ALTER COLUMN task_name DROP NOT NULL"))
                     if "notes" in cols_lp and cols_lp["notes"].get("nullable") is False:
                         conn.execute(text("ALTER TABLE lubrication_points ALTER COLUMN notes DROP NOT NULL"))
+                    if "task_group" in cols_lp:
+                        conn.execute(text("UPDATE lubrication_points SET task_group = COALESCE(task_group, 'GENERAL')"))
+                        if cols_lp["task_group"].get("nullable") is False:
+                            conn.execute(text("ALTER TABLE lubrication_points ALTER COLUMN task_group DROP NOT NULL"))
+                        conn.execute(text("ALTER TABLE lubrication_points ALTER COLUMN task_group SET DEFAULT 'GENERAL'"))
                     if "executed_date" in cols_le and cols_le["executed_date"].get("nullable") is False:
                         conn.execute(text("ALTER TABLE lubrication_executions ALTER COLUMN executed_date DROP NOT NULL"))
 
