@@ -5,7 +5,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Gestor de Avisos - CMMS</title>
-    <link rel="stylesheet" href="/static/css/style.css">
+    <link rel="stylesheet" href="/static/css/style.css?v=20260322m">
     <link rel="stylesheet" href="/static/css/sidebar.css?v=20260319">
     <style>
         .grid-container {
@@ -57,36 +57,163 @@
             gap: 10px;
         }
 
-        /* Tree Modal Styles */
+        /* Tree Modal Styles - high contrast */
+        #treeModal {
+            background: linear-gradient(180deg, #1a222f 0%, #151b26 100%);
+            border: 1px solid #355178;
+            color: #e6f0ff;
+            box-shadow: 0 18px 60px rgba(0, 0, 0, 0.55);
+        }
+
+        #treeModal::backdrop {
+            background: rgba(7, 11, 18, 0.74);
+            backdrop-filter: blur(2px);
+        }
+
+        #treeModal h3 {
+            margin: 0 0 8px 0;
+            color: #9ed1ff;
+            font-weight: 700;
+        }
+
+        #treeModal .tree-help {
+            margin: 0 0 12px 0;
+            color: #b0c7e6;
+            font-size: 0.92em;
+        }
+
         #selectionTree {
-            max-height: 400px;
+            max-height: 430px;
             overflow-y: auto;
-            background: #111;
-            padding: 10px;
-            border: 1px solid #555;
+            background: #0d1320;
+            color: #e6f0ff;
+            padding: 12px 14px;
+            border: 1px solid #2f4563;
+            border-radius: 10px;
             list-style-type: none;
         }
 
         #selectionTree li {
-            margin: 5px 0;
+            margin: 4px 0;
             padding-left: 10px;
             position: relative;
+            color: inherit;
         }
 
         #selectionTree span.node-label {
             cursor: pointer;
-            padding: 2px 5px;
-            border-radius: 4px;
+            padding: 4px 8px;
+            border-radius: 6px;
+            display: inline-block;
+            color: #e6f0ff;
+            font-weight: 500;
+            line-height: 1.45;
         }
 
         #selectionTree span.node-label:hover {
-            background-color: #03dac6;
-            color: black;
+            background: rgba(99, 179, 255, 0.18);
+            color: #ffffff;
+        }
+
+        #selectionTree span.node-label:focus-visible {
+            outline: 2px solid #63b3ff;
+            outline-offset: 2px;
+        }
+
+        #selectionTree .node-area {
+            color: #86d9ff;
+        }
+
+        #selectionTree .node-line {
+            color: #d3ddff;
+        }
+
+        #selectionTree .node-equipment {
+            color: #ffe09a;
+        }
+
+        #selectionTree .node-system {
+            color: #9cf1be;
+        }
+
+        #selectionTree .node-component {
+            color: #ffc4c4;
+        }
+
+        #selectionTree .caret {
+            color: #7bd2ff;
+            margin-right: 8px;
+        }
+
+        #selectionTree .caret:hover {
+            color: #bfe8ff;
         }
 
         .nested {
-            margin-left: 20px;
-            border-left: 1px solid #444;
+            margin-left: 18px;
+            border-left: 1px dashed #3a5576;
+        }
+    
+        /* RESPONSIVE MOBILE - NOTICES */
+        @media (max-width: 768px) {
+            .home-section {
+                padding: 10px;
+            }
+
+            .main-container {
+                padding: 0 6px 14px 6px;
+            }
+
+            .top-bar {
+                margin: 8px 0 12px 50px;
+                padding: 12px;
+            }
+
+            .top-bar h1 {
+                font-size: 1.35rem;
+                line-height: 1.2;
+            }
+
+            #kpiSection {
+                gap: 10px !important;
+            }
+
+            #kpiSection .kpi-card {
+                min-width: 100% !important;
+                flex: 1 1 100% !important;
+                padding: 14px !important;
+            }
+
+            .toolbar {
+                display: flex;
+                flex-wrap: wrap;
+                gap: 8px;
+            }
+
+            .toolbar button {
+                width: 100%;
+            }
+
+            .grid-container {
+                padding: 8px;
+                border-radius: 10px;
+            }
+
+            #noticesTable {
+                min-width: 1450px;
+                font-size: 0.8rem;
+            }
+
+            .modal {
+                width: 96vw;
+                max-width: 96vw;
+                max-height: 90vh;
+                overflow: auto;
+            }
+
+            .form-grid {
+                grid-template-columns: 1fr;
+            }
         }
     </style>
 </head>
@@ -378,9 +505,9 @@
             </dialog>
 
             <!-- TREE SELECTION MODAL -->
-            <dialog id="treeModal" class="modal" style="background: #1e1e1e; border: 1px solid #555;">
+            <dialog id="treeModal" class="modal">
                 <h3>Seleccionar Ubicación Técnica</h3>
-                <p style="font-size: 0.9em; color: #aaa;">Navega por el árbol y haz clic en el elemento que deseas
+                <p class="tree-help">Navega por el árbol y haz clic en el elemento que deseas
                     asignar al
                     aviso.</p>
                 <ul id="selectionTree">
@@ -392,10 +519,11 @@
                 </div>
             </dialog>
 
-            <script src="/static/js/notices.js"></script>
+            <script src="/static/js/notices.js?v=20260322n"></script>
     </div>
     </section>
-    <script src="/static/js/sidebar.js?v=20260319"></script>
+    <script src="/static/js/sidebar.js?v=20260322m"></script>
 </body>
 
 </html>
+

@@ -463,13 +463,23 @@ window.openTreeSelection = () => {
 function createTreeNode(item, type, parents = {}) {
     const li = document.createElement('li');
     const span = document.createElement('span');
-    span.className = 'node-label';
-    span.textContent = `${type}: ${item.name} ${item.tag ? '[' + item.tag + ']' : ''}`;
+    const typeClass = `node-${String(type || '').toLowerCase()}`;
 
-    span.onclick = (e) => {
+    span.className = `node-label ${typeClass}`;
+    span.textContent = `${type}: ${item.name} ${item.tag ? '[' + item.tag + ']' : ''}`;
+    span.setAttribute('tabindex', '0');
+
+    const selectNode = (e) => {
         e.stopPropagation();
         selectHierarchy(item, type, parents);
         document.getElementById('treeModal').close();
+    };
+
+    span.onclick = selectNode;
+    span.onkeydown = (e) => {
+        if (e.key === 'Enter' || e.key === ' ') {
+            selectNode(e);
+        }
     };
 
     li.appendChild(span);
