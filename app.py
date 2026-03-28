@@ -301,6 +301,28 @@ register_admin_routes(
 )
 
 
+_ENSURE_INDEXES_SQL = [
+    "CREATE INDEX IF NOT EXISTS ix_notices_status        ON maintenance_notices(status)",
+    "CREATE INDEX IF NOT EXISTS ix_notices_equipment_id  ON maintenance_notices(equipment_id)",
+    "CREATE INDEX IF NOT EXISTS ix_notices_area_id       ON maintenance_notices(area_id)",
+    "CREATE INDEX IF NOT EXISTS ix_wo_status             ON work_orders(status)",
+    "CREATE INDEX IF NOT EXISTS ix_wo_equipment_id       ON work_orders(equipment_id)",
+    "CREATE INDEX IF NOT EXISTS ix_wo_notice_id          ON work_orders(notice_id)",
+    "CREATE INDEX IF NOT EXISTS ix_otp_work_order_id     ON ot_personnel(work_order_id)",
+    "CREATE INDEX IF NOT EXISTS ix_otm_work_order_id     ON ot_materials(work_order_id)",
+    "CREATE INDEX IF NOT EXISTS ix_otm_item_type_id      ON ot_materials(item_type, item_id)",
+    "CREATE INDEX IF NOT EXISTS ix_wm_item_id            ON warehouse_movements(item_id)",
+    "CREATE INDEX IF NOT EXISTS ix_wm_reference_id       ON warehouse_movements(reference_id)",
+    "CREATE INDEX IF NOT EXISTS ix_pr_work_order_id      ON purchase_requests(work_order_id)",
+    "CREATE INDEX IF NOT EXISTS ix_pr_purchase_order_id  ON purchase_requests(purchase_order_id)",
+    "CREATE INDEX IF NOT EXISTS ix_pr_status             ON purchase_requests(status)",
+    "CREATE INDEX IF NOT EXISTS ix_lp_equipment_id       ON lubrication_points(equipment_id)",
+    "CREATE INDEX IF NOT EXISTS ix_lp_is_active          ON lubrication_points(is_active)",
+    "CREATE INDEX IF NOT EXISTS ix_mp_equipment_id       ON monitoring_points(equipment_id)",
+    "CREATE INDEX IF NOT EXISTS ix_mp_is_active          ON monitoring_points(is_active)",
+]
+
+
 def _init_schema_on_startup():
     auto_create = (os.getenv('CMMS_AUTO_CREATE_TABLES', 'true') or 'true').strip().lower() in {
         '1', 'true', 'yes', 'on'
@@ -311,7 +333,13 @@ def _init_schema_on_startup():
     try:
         with app.app_context():
             db.create_all()
-        logger.info("Database schema checked/created on startup.")
+            for stmt in _ENSURE_INDEXES_SQL:
+                try:
+                    db.session.execute(text(stmt))
+                except Exception as idx_err:
+                    logger.warning(f"Index creation skipped: {idx_err}")
+            db.session.commit()
+        logger.info("Database schema and indexes checked/created on startup.")
     except Exception as e:
         logger.error(f"DB startup schema check error: {e}")
 

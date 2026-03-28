@@ -62,71 +62,75 @@ def register_reports_routes(
 
             # Calculate KPIs for each group
             results = []
-            
+
+            # Pre-load once — shared across all group iterations
+            _all_closed_ots = WorkOrder.query.filter_by(status='Cerrada').all()
+            _systems_map    = {s.id: s for s in System.query.all()}
+            _components_map = {c.id: c for c in Component.query.all()}
+
+            # Pre-build OT equipment_id for fast lookup
+            def _resolve_ot_equip_id(ot):
+                if ot.equipment_id:
+                    return ot.equipment_id
+                if ot.system_id:
+                    s = _systems_map.get(ot.system_id)
+                    if s:
+                        return s.equipment_id
+                if ot.component_id:
+                    c = _components_map.get(ot.component_id)
+                    if c:
+                        s = _systems_map.get(c.system_id)
+                        if s:
+                            return s.equipment_id
+                return None
+
+            _ot_equip_cache = {ot.id: _resolve_ot_equip_id(ot) for ot in _all_closed_ots}
+
             # Helper to get all OTs for a hierarchy node
             def get_ots_for_node(node, level):
-                # Traverse down to find IDs
-                equip_ids = []
-                
+                equip_ids = set()
+
                 if level == 'equipment':
-                    equip_ids = [node.id]
+                    equip_ids = {node.id}
                 elif level == 'line':
-                    equip_ids = [e.id for e in Equipment.query.filter_by(line_id=node.id).all()]
+                    equip_ids = {e.id for e in Equipment.query.filter_by(line_id=node.id).all()}
                 elif level == 'area':
                     lines = Line.query.filter_by(area_id=node.id).all()
                     for l in lines:
-                        equip_ids.extend([e.id for e in Equipment.query.filter_by(line_id=l.id).all()])
-                
-                if not equip_ids: return []
+                        for e in Equipment.query.filter_by(line_id=l.id).all():
+                            equip_ids.add(e.id)
 
-                # Find OTs linked to these equipments (or their components/systems)
-                # Simplest approach: Query OTs directly linked to Equipment OR System OR Component that belongs to these equipments
-                # But DB model links OT directly to Equipment/System/Component.
-                # We need to aggregating.
-                
-                # Let's trust the OT's direct links for now. 
-                # Ideally, we should join tables. But iterative python filtering is safer for now if dataset is small.
-                
-                # Optimized: Query OTs where equipment_id IN list OR system.equipment_id IN list OR component.system.equipment_id IN list
-                # This is complex in ORM without joins.
-                # Let's fetch all closed OTs and filter in python (Performance caveat: Bad for large DB, okay for prototype)
-                
-                all_ots = WorkOrder.query.filter_by(status='Cerrada').all()
+                if not equip_ids:
+                    return []
+
                 relevant_ots = []
-                
-                for ot in all_ots:
-                    # Check date range
-                    if start_date and ot.real_end_date and ot.real_end_date < start_date: continue
-                    if end_date and ot.real_end_date and ot.real_end_date > end_date: continue
-                    
-                    # Check hierarchy
-                    e_id = -1
-                    if ot.equipment_id: e_id = ot.equipment_id
-                    elif ot.system_id: 
-                        s = System.query.get(ot.system_id)
-                        if s: e_id = s.equipment_id
-                    elif ot.component_id:
-                        c = Component.query.get(ot.component_id)
-                        if c: 
-                            s = System.query.get(c.system_id)
-                            if s: e_id = s.equipment_id
-                    
-                    if e_id in equip_ids:
+                for ot in _all_closed_ots:
+                    if start_date and ot.real_end_date and ot.real_end_date < start_date:
+                        continue
+                    if end_date and ot.real_end_date and ot.real_end_date > end_date:
+                        continue
+                    if _ot_equip_cache.get(ot.id) in equip_ids:
                         relevant_ots.append(ot)
-                        
+
                 return relevant_ots
+
+            # Pre-load warehouse unit costs for fast lookup
+            _wh_cost_map = {w.id: float(w.unit_cost or 0) for w in WarehouseItem.query.with_entities(
+                WarehouseItem.id, WarehouseItem.unit_cost).all()}
 
             for g in groups:
                 ots = get_ots_for_node(g['object'], level)
-                
-                # 1. Cost Calculation
+
+                # 1. Cost Calculation — batch load materials for all OTs in this group
                 total_cost = 0
-                for ot in ots:
-                    for m in ot.assigned_materials:
-                        if m.item_type == 'warehouse':
-                            item = WarehouseItem.query.get(m.item_id)
-                            cost = (item.unit_cost or 0) * m.quantity
-                            total_cost += cost
+                if ots:
+                    _ot_ids = [ot.id for ot in ots]
+                    _mats = OTMaterial.query.filter(
+                        OTMaterial.work_order_id.in_(_ot_ids),
+                        OTMaterial.item_type == 'warehouse'
+                    ).all()
+                    for m in _mats:
+                        total_cost += _wh_cost_map.get(m.item_id, 0) * (m.quantity or 0)
                 
                 # 2. Reliability Calculation
                 failures = [ot for ot in ots if ot.maintenance_type == 'Correctivo']
@@ -283,8 +287,10 @@ def register_reports_routes(
             systems = System.query.all()
             components = Component.query.all()
             equipments = Equipment.query.all()
-            warehouse_items = WarehouseItem.query.all()
+            areas = Area.query.all()
+            warehouse_items = WarehouseItem.query.with_entities(WarehouseItem.id, WarehouseItem.unit_cost).all()
 
+            area_map = {a.id: a for a in areas}
             line_map = {l.id: l for l in lines}
             system_map = {s.id: s for s in systems}
             component_map = {c.id: c for c in components}
@@ -377,7 +383,7 @@ def register_reports_routes(
                     eq_id, line_ref, area_ref = eq_line_area_cache.get(ot.id, (None, None, None))
                     if level == "areas":
                         key = area_ref or "NA"
-                        name = Area.query.get(area_ref).name if area_ref else "Sin area"
+                        name = area_map[area_ref].name if area_ref and area_ref in area_map else "Sin area"
                     elif level == "lines":
                         key = line_ref or "NA"
                         name = line_map[line_ref].name if line_ref and line_ref in line_map else "Sin linea"

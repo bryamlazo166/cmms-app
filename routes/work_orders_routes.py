@@ -176,24 +176,27 @@ def register_work_orders_routes(
         # GET - return materials for this OT
         materials = OTMaterial.query.filter_by(work_order_id=ot_id).all()
 
-        # Enrich with item names
+        # Pre-load tools and warehouse items in bulk
+        tool_ids      = {m.item_id for m in materials if m.item_type == 'tool'}
+        wh_ids        = {m.item_id for m in materials if m.item_type != 'tool'}
+        tools_map     = {t.id: t for t in Tool.query.filter(Tool.id.in_(tool_ids)).all()}         if tool_ids else {}
+        wh_items_map  = {w.id: w for w in WarehouseItem.query.filter(WarehouseItem.id.in_(wh_ids)).all()} if wh_ids   else {}
+
         result = []
         for m in materials:
             data = m.to_dict()
-
             if m.item_type == 'tool':
-                item = Tool.query.get(m.item_id)
+                item = tools_map.get(m.item_id)
                 data['item_status'] = item.status if item else None
                 data['item_stock'] = None
             else:
-                item = WarehouseItem.query.get(m.item_id)
+                item = wh_items_map.get(m.item_id)
                 data['item_status'] = None
                 data['item_stock'] = item.stock if item else None
 
-            data['item_name'] = item.name if item else 'Unknown'
-            data['item_code'] = item.code if item else ''
+            data['item_name']     = item.name     if item else 'Unknown'
+            data['item_code']     = item.code     if item else ''
             data['item_category'] = item.category if item else ''
-
             result.append(data)
 
         return jsonify(result)
@@ -286,21 +289,33 @@ def register_work_orders_routes(
             reqs = PurchaseRequest.query.filter(PurchaseRequest.work_order_id.in_(ot_ids)).all()
             for req in reqs:
                 purchase_by_ot.setdefault(req.work_order_id, []).append(req)
+
+        # Pre-load taxonomy in bulk (eliminates N*5 queries)
+        _area_ids  = {wo.area_id      for wo in entries if wo.area_id}
+        _line_ids  = {wo.line_id      for wo in entries if wo.line_id}
+        _equip_ids = {wo.equipment_id for wo in entries if wo.equipment_id}
+        _sys_ids   = {wo.system_id    for wo in entries if wo.system_id}
+        _comp_ids  = {wo.component_id for wo in entries if wo.component_id}
+        areas_map  = {a.id: a for a in Area.query.filter(Area.id.in_(_area_ids)).all()}           if _area_ids  else {}
+        lines_map  = {l.id: l for l in Line.query.filter(Line.id.in_(_line_ids)).all()}           if _line_ids  else {}
+        equips_map = {e.id: e for e in Equipment.query.filter(Equipment.id.in_(_equip_ids)).all()} if _equip_ids else {}
+        syss_map   = {s.id: s for s in System.query.filter(System.id.in_(_sys_ids)).all()}        if _sys_ids   else {}
+        comps_map  = {c.id: c for c in Component.query.filter(Component.id.in_(_comp_ids)).all()} if _comp_ids  else {}
+
         # Enrich with hierarchy names
         results = []
+        def get_name(obj):
+            return obj.name if obj else '-'
+
         for wo in entries:
             data = wo.to_dict()
 
-            # Helper to safely get name
-            def get_name(obj):
-                return obj.name if obj else '-'
-
-            # Resolve relations
-            area = Area.query.get(wo.area_id) if wo.area_id else None
-            line = Line.query.get(wo.line_id) if wo.line_id else None
-            equip = Equipment.query.get(wo.equipment_id) if wo.equipment_id else None
-            system = System.query.get(wo.system_id) if wo.system_id else None
-            component = Component.query.get(wo.component_id) if wo.component_id else None
+            # Resolve relations from pre-loaded maps
+            area      = areas_map.get(wo.area_id)       if wo.area_id      else None
+            line      = lines_map.get(wo.line_id)       if wo.line_id      else None
+            equip     = equips_map.get(wo.equipment_id) if wo.equipment_id else None
+            system    = syss_map.get(wo.system_id)      if wo.system_id    else None
+            component = comps_map.get(wo.component_id)  if wo.component_id else None
 
             data['area_name'] = get_name(area)
             data['line_name'] = get_name(line)
@@ -367,30 +382,34 @@ def register_work_orders_routes(
             entries = WorkOrder.query.all()
             data = []
 
+            # Pre-load all taxonomy and related objects in bulk
+            _area_ids     = {wo.area_id      for wo in entries if wo.area_id}
+            _line_ids     = {wo.line_id      for wo in entries if wo.line_id}
+            _equip_ids    = {wo.equipment_id for wo in entries if wo.equipment_id}
+            _sys_ids      = {wo.system_id    for wo in entries if wo.system_id}
+            _comp_ids     = {wo.component_id for wo in entries if wo.component_id}
+            _provider_ids = {wo.provider_id  for wo in entries if wo.provider_id}
+            _notice_ids   = {wo.notice_id    for wo in entries if wo.notice_id}
+            _areas_m  = {a.id: a for a in Area.query.filter(Area.id.in_(_area_ids)).all()}              if _area_ids     else {}
+            _lines_m  = {l.id: l for l in Line.query.filter(Line.id.in_(_line_ids)).all()}              if _line_ids     else {}
+            _equips_m = {e.id: e for e in Equipment.query.filter(Equipment.id.in_(_equip_ids)).all()}   if _equip_ids    else {}
+            _syss_m   = {s.id: s for s in System.query.filter(System.id.in_(_sys_ids)).all()}           if _sys_ids      else {}
+            _comps_m  = {c.id: c for c in Component.query.filter(Component.id.in_(_comp_ids)).all()}    if _comp_ids     else {}
+            _provs_m  = {p.id: p for p in Provider.query.filter(Provider.id.in_(_provider_ids)).all()}  if _provider_ids else {}
+            _nots_m   = {n.id: n for n in MaintenanceNotice.query.filter(MaintenanceNotice.id.in_(_notice_ids)).all()} if _notice_ids else {}
+
+            def get_name(obj):
+                return obj.name if obj else '-'
+
             for wo in entries:
-                # Helper for names
-                def get_name(obj):
-                    return obj.name if obj else '-'
+                area  = _areas_m.get(wo.area_id)       if wo.area_id      else None
+                line  = _lines_m.get(wo.line_id)       if wo.line_id      else None
+                equip = _equips_m.get(wo.equipment_id) if wo.equipment_id else None
+                sys   = _syss_m.get(wo.system_id)      if wo.system_id    else None
+                comp  = _comps_m.get(wo.component_id)  if wo.component_id else None
 
-                area = Area.query.get(wo.area_id) if wo.area_id else None
-                line = Line.query.get(wo.line_id) if wo.line_id else None
-                equip = Equipment.query.get(wo.equipment_id) if wo.equipment_id else None
-                sys = System.query.get(wo.system_id) if wo.system_id else None
-                comp = Component.query.get(wo.component_id) if wo.component_id else None
-
-                # Provider
-                provider_name = '-'
-                if wo.provider_id:
-                    p = Provider.query.get(wo.provider_id)
-                    if p:
-                        provider_name = p.name
-
-                # Notice Code
-                notice_code = '-'
-                if wo.notice_id:
-                    n = MaintenanceNotice.query.get(wo.notice_id)
-                    if n:
-                        notice_code = n.code
+                provider_name = _provs_m[wo.provider_id].name if wo.provider_id and wo.provider_id in _provs_m else '-'
+                notice_code   = _nots_m[wo.notice_id].code    if wo.notice_id   and wo.notice_id   in _nots_m  else '-'
 
                 data.append(
                     {

@@ -1,4 +1,4 @@
-from sqlalchemy import String, Integer, ForeignKey, Text, Boolean, Float, Date, DateTime
+from sqlalchemy import String, Integer, ForeignKey, Text, Boolean, Float, Date, DateTime, Index
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 from database import db
 from datetime import datetime, date
@@ -119,6 +119,11 @@ class Technician(db.Model):
 
 class MaintenanceNotice(db.Model):
     __tablename__ = 'maintenance_notices'
+    __table_args__ = (
+        Index('ix_notices_status', 'status'),
+        Index('ix_notices_equipment_id', 'equipment_id'),
+        Index('ix_notices_area_id', 'area_id'),
+    )
     id: Mapped[int] = mapped_column(primary_key=True)
     code: Mapped[str | None] = mapped_column(String(20), unique=True, nullable=True) # AV-XXXX
     
@@ -159,6 +164,11 @@ class MaintenanceNotice(db.Model):
 
 class WorkOrder(db.Model):
     __tablename__ = 'work_orders'
+    __table_args__ = (
+        Index('ix_wo_status', 'status'),
+        Index('ix_wo_equipment_id', 'equipment_id'),
+        Index('ix_wo_notice_id', 'notice_id'),
+    )
     id: Mapped[int] = mapped_column(primary_key=True)
     code: Mapped[str | None] = mapped_column(String(20), unique=True, nullable=True) # OT-XXXX
     
@@ -255,6 +265,10 @@ class WarehouseItem(db.Model):
 class WarehouseMovement(db.Model):
     """History of stock movements (Kardex)"""
     __tablename__ = 'warehouse_movements'
+    __table_args__ = (
+        Index('ix_wm_item_id', 'item_id'),
+        Index('ix_wm_reference_id', 'reference_id'),
+    )
     id: Mapped[int] = mapped_column(primary_key=True)
     item_id: Mapped[int] = mapped_column(ForeignKey('warehouse_items.id'), nullable=False)
     quantity: Mapped[int] = mapped_column(Integer, nullable=False) # + for IN, - for OUT
@@ -273,6 +287,9 @@ class WarehouseMovement(db.Model):
 class OTPersonnel(db.Model):
     """Personnel assigned to a work order with hours"""
     __tablename__ = 'ot_personnel'
+    __table_args__ = (
+        Index('ix_otp_work_order_id', 'work_order_id'),
+    )
     id: Mapped[int] = mapped_column(primary_key=True)
     work_order_id: Mapped[int] = mapped_column(ForeignKey('work_orders.id'), nullable=False)
     technician_id: Mapped[int | None] = mapped_column(ForeignKey('technicians.id'), nullable=True)
@@ -299,6 +316,10 @@ class OTPersonnel(db.Model):
 class OTMaterial(db.Model):
     """Materials (spare parts or tools) assigned to a work order"""
     __tablename__ = 'ot_materials'
+    __table_args__ = (
+        Index('ix_otm_work_order_id', 'work_order_id'),
+        Index('ix_otm_item_type_id', 'item_type', 'item_id'),
+    )
     id: Mapped[int] = mapped_column(primary_key=True)
     work_order_id: Mapped[int] = mapped_column(ForeignKey('work_orders.id'), nullable=False)
     item_type: Mapped[str] = mapped_column(String(20), nullable=False)  # 'tool' or 'warehouse'
@@ -358,6 +379,11 @@ class PurchaseOrder(db.Model):
 
 class PurchaseRequest(db.Model):
     __tablename__ = 'purchase_requests'
+    __table_args__ = (
+        Index('ix_pr_work_order_id', 'work_order_id'),
+        Index('ix_pr_purchase_order_id', 'purchase_order_id'),
+        Index('ix_pr_status', 'status'),
+    )
     id: Mapped[int] = mapped_column(primary_key=True)
     req_code: Mapped[str] = mapped_column(String(20), unique=True, nullable=False)
     
@@ -404,7 +430,10 @@ class PurchaseRequest(db.Model):
 
 class LubricationPoint(db.Model):
     __tablename__ = 'lubrication_points'
-
+    __table_args__ = (
+        Index('ix_lp_equipment_id', 'equipment_id'),
+        Index('ix_lp_is_active', 'is_active'),
+    )
     id: Mapped[int] = mapped_column(primary_key=True)
     code: Mapped[str | None] = mapped_column(String(30), unique=True, nullable=True)
     name: Mapped[str] = mapped_column(String(120), nullable=False)
@@ -504,7 +533,10 @@ class LubricationExecution(db.Model):
 
 class MonitoringPoint(db.Model):
     __tablename__ = 'monitoring_points'
-
+    __table_args__ = (
+        Index('ix_mp_equipment_id', 'equipment_id'),
+        Index('ix_mp_is_active', 'is_active'),
+    )
     id: Mapped[int] = mapped_column(primary_key=True)
     code: Mapped[str | None] = mapped_column(String(30), unique=True, nullable=True)
     name: Mapped[str] = mapped_column(String(120), nullable=False)
