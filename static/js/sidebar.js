@@ -13,6 +13,20 @@
         { href: '/reportes', icon: 'fas fa-file-contract', label: 'Reportes', tip: 'Reportes' }
     ];
 
+    const ROLE_LABELS = { admin: 'Administrador', supervisor: 'Supervisor', tecnico: 'Técnico' };
+    const AVATAR_COLORS = ['#0A84FF', '#30D158', '#FF9F0A', '#BF5AF2', '#5AC8FA', '#FF375F', '#FF9F0A'];
+
+    function avatarColor(name) {
+        let h = 0;
+        for (let c of (name || 'U')) h = (h * 31 + c.charCodeAt(0)) & 0xffff;
+        return AVATAR_COLORS[h % AVATAR_COLORS.length];
+    }
+
+    function initials(name) {
+        if (!name) return '?';
+        return name.trim().split(/\s+/).slice(0, 2).map(w => w[0].toUpperCase()).join('');
+    }
+
     function currentPath() {
         return (window.location.pathname || '/').toLowerCase();
     }
@@ -35,6 +49,43 @@
                 <span class="tooltip">${item.tip}</span>
             </li>`;
         }).join('');
+    }
+
+    function renderProfile(sidebar, user) {
+        // Remove existing profile section if any
+        const existing = sidebar.querySelector('.sidebar-profile');
+        if (existing) existing.remove();
+
+        const displayName = user.full_name || user.username;
+        const color = avatarColor(user.username);
+        const role = ROLE_LABELS[user.role] || user.role;
+
+        const profileEl = document.createElement('div');
+        profileEl.className = 'sidebar-profile';
+        profileEl.innerHTML = `
+            <div class="profile-info">
+                <div class="profile-avatar" style="background:${color}">${initials(displayName)}</div>
+                <div class="profile-text">
+                    <div class="profile-name">${displayName}</div>
+                    <div class="profile-role">${role}</div>
+                </div>
+            </div>
+            <a href="/logout" class="btn-logout" title="Cerrar sesión">
+                <i class="fas fa-right-from-bracket"></i>
+            </a>
+        `;
+        sidebar.appendChild(profileEl);
+    }
+
+    async function loadCurrentUser(sidebar) {
+        try {
+            const res = await fetch('/api/auth/me');
+            if (!res.ok) return;
+            const user = await res.json();
+            renderProfile(sidebar, user);
+        } catch (_) {
+            // silently skip — user display is non-critical
+        }
     }
 
     function ensureOverlay(sidebar) {
@@ -74,6 +125,7 @@
 
         const navList = sidebar.querySelector('.nav-list');
         renderNav(navList);
+        loadCurrentUser(sidebar);
 
         const btn = document.getElementById('btn_toggle');
         const overlay = ensureOverlay(sidebar);
@@ -169,4 +221,3 @@
         initMobileProLayer();
     }
 })();
-

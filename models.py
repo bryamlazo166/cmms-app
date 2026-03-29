@@ -2,6 +2,54 @@ from sqlalchemy import String, Integer, ForeignKey, Text, Boolean, Float, Date, 
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 from database import db
 from datetime import datetime, date
+from werkzeug.security import generate_password_hash, check_password_hash
+
+
+# ── Authentication ─────────────────────────────────────────────────────────────
+
+class User(db.Model):
+    __tablename__ = 'users'
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    username: Mapped[str] = mapped_column(String(80), unique=True, nullable=False)
+    password_hash: Mapped[str] = mapped_column(String(256), nullable=False)
+    role: Mapped[str] = mapped_column(String(20), nullable=False, default='tecnico')
+    # roles: admin | supervisor | tecnico
+    full_name: Mapped[str] = mapped_column(String(120), nullable=True)
+    active: Mapped[bool] = mapped_column(Boolean, default=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+
+    def set_password(self, password: str) -> None:
+        self.password_hash = generate_password_hash(password)
+
+    def check_password(self, password: str) -> bool:
+        return check_password_hash(self.password_hash, password)
+
+    # Flask-Login interface (manual — avoids UserMixin.is_active conflict)
+    @property
+    def is_authenticated(self) -> bool:
+        return True
+
+    @property
+    def is_active(self) -> bool:
+        return bool(self.active)
+
+    @property
+    def is_anonymous(self) -> bool:
+        return False
+
+    def get_id(self) -> str:
+        return str(self.id)
+
+    def to_dict(self):
+        return {
+            "id": self.id,
+            "username": self.username,
+            "role": self.role,
+            "full_name": self.full_name,
+            "active": self.active,
+        }
+
 
 # Taxonomy: Area -> Line -> Equipment -> System -> Component -> SparePart
 

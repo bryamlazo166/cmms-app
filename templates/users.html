@@ -1,0 +1,346 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Usuarios - CMMS Pro</title>
+    <link rel="stylesheet" href="/static/css/style.css?v=20260328">
+    <link rel="stylesheet" href="/static/css/sidebar.css?v=20260328">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css">
+    <style>
+        .wrap { max-width: 960px; margin: 0 auto; padding: 20px 16px; }
+        .page-header {
+            display: flex; align-items: center; justify-content: space-between;
+            margin-bottom: 20px;
+        }
+        .page-header h1 { font-size: 1.5rem; font-weight: 700; color: rgba(255,255,255,0.92); }
+        .page-header p { font-size: 0.83rem; color: rgba(255,255,255,0.45); margin-top: 3px; }
+
+        .btn { height: 36px; border: none; border-radius: 10px; padding: 0 16px;
+               font-size: 0.87rem; font-weight: 600; cursor: pointer;
+               display: inline-flex; align-items: center; gap: 7px; transition: opacity 150ms; }
+        .btn:hover { opacity: 0.88; }
+        .btn-primary { background: #0A84FF; color: #fff; }
+        .btn-secondary { background: rgba(255,255,255,0.10); color: rgba(255,255,255,0.80); border: 1px solid rgba(255,255,255,0.10); }
+        .btn-danger { background: rgba(255,69,58,0.18); color: #FF6B61; border: 1px solid rgba(255,69,58,0.25); }
+
+        .panel {
+            background: #1C1C1E;
+            border: 1px solid rgba(255,255,255,0.08);
+            border-radius: 14px;
+            overflow: hidden;
+        }
+
+        table { width: 100%; border-collapse: collapse; }
+        thead th {
+            background: #2C2C2E;
+            padding: 11px 14px;
+            font-size: 0.75rem;
+            font-weight: 600;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+            color: rgba(255,255,255,0.50);
+            text-align: left;
+        }
+        tbody tr { border-bottom: 1px solid rgba(255,255,255,0.05); }
+        tbody tr:last-child { border-bottom: none; }
+        tbody tr:hover { background: rgba(255,255,255,0.03); }
+        td { padding: 13px 14px; font-size: 0.87rem; color: rgba(255,255,255,0.85); }
+
+        .avatar {
+            width: 32px; height: 32px; border-radius: 50%;
+            display: inline-flex; align-items: center; justify-content: center;
+            font-size: 0.78rem; font-weight: 700; color: #fff;
+            flex-shrink: 0; vertical-align: middle; margin-right: 9px;
+        }
+        .role-badge {
+            display: inline-block; padding: 2px 9px; border-radius: 999px;
+            font-size: 0.72rem; font-weight: 700; text-transform: uppercase;
+        }
+        .role-admin    { background: rgba(191,90,242,0.18); color: #D77AF5; }
+        .role-supervisor { background: rgba(10,132,255,0.18); color: #5AC8FA; }
+        .role-tecnico  { background: rgba(48,209,88,0.18); color: #5CD870; }
+
+        .status-badge {
+            display: inline-block; width: 8px; height: 8px; border-radius: 50%; margin-right: 6px;
+        }
+        .status-on { background: #30D158; }
+        .status-off { background: rgba(255,255,255,0.25); }
+
+        .actions { display: flex; gap: 6px; }
+        .btn-icon { width: 30px; height: 30px; border-radius: 8px; border: none;
+                    display: flex; align-items: center; justify-content: center;
+                    font-size: 0.78rem; cursor: pointer; transition: background 150ms; }
+        .btn-edit-ic { background: rgba(10,132,255,0.16); color: #5AC8FA; }
+        .btn-edit-ic:hover { background: rgba(10,132,255,0.32); }
+        .btn-del-ic  { background: rgba(255,69,58,0.14); color: #FF6B61; }
+        .btn-del-ic:hover  { background: rgba(255,69,58,0.28); }
+
+        /* Modal */
+        .modal-overlay { display: none; position: fixed; inset: 0; z-index: 9999;
+                         background: rgba(0,0,0,0.72); backdrop-filter: blur(6px);
+                         align-items: center; justify-content: center; }
+        .modal-overlay.open { display: flex; }
+        .modal-box {
+            background: #1C1C1E; border: 1px solid rgba(255,255,255,0.10);
+            border-radius: 16px; padding: 28px; width: min(480px, 94vw);
+            box-shadow: 0 32px 80px rgba(0,0,0,0.80);
+        }
+        .modal-box h2 { font-size: 1.1rem; font-weight: 700;
+                         color: rgba(255,255,255,0.92); margin-bottom: 20px; }
+        .mfield { margin-bottom: 14px; }
+        .mfield label { display: block; font-size: 0.71rem; font-weight: 600;
+                         text-transform: uppercase; letter-spacing: 0.5px;
+                         color: rgba(255,255,255,0.45); margin-bottom: 5px; }
+        .mfield input, .mfield select {
+            width: 100%; height: 40px; background: rgba(255,255,255,0.06);
+            border: 1px solid rgba(255,255,255,0.10); border-radius: 10px;
+            color: rgba(255,255,255,0.90); font-size: 0.88rem; padding: 0 12px;
+            outline: none; transition: border-color 150ms, background 150ms;
+        }
+        .mfield input:focus, .mfield select:focus {
+            border-color: rgba(10,132,255,0.60);
+            background: rgba(10,132,255,0.07);
+        }
+        .mfield input::placeholder { color: rgba(255,255,255,0.22); }
+        .modal-actions { display: flex; gap: 8px; justify-content: flex-end; margin-top: 20px; }
+        .hint { font-size: 0.72rem; color: rgba(255,255,255,0.30); margin-top: 4px; }
+
+        .empty-state { text-align: center; padding: 48px 20px;
+                       color: rgba(255,255,255,0.30); font-size: 0.9rem; }
+    </style>
+</head>
+<body>
+<nav class="sidebar">
+    <div class="logo-details">
+        <i class="fas fa-industry icon"></i>
+        <div class="logo_name">CMMS Pro</div>
+        <i class="fas fa-bars" id="btn_toggle"></i>
+    </div>
+    <ul class="nav-list"></ul>
+</nav>
+<section class="home-section">
+<div class="wrap">
+    <div class="page-header">
+        <div>
+            <h1><i class="fas fa-users" style="color:#BF5AF2;margin-right:8px"></i>Gestión de Usuarios</h1>
+            <p>Administra cuentas de acceso al sistema</p>
+        </div>
+        <button class="btn btn-primary" onclick="openCreateModal()">
+            <i class="fas fa-plus"></i> Nuevo Usuario
+        </button>
+    </div>
+
+    <div class="panel">
+        <table id="usersTable">
+            <thead>
+                <tr>
+                    <th>Usuario</th>
+                    <th>Nombre Completo</th>
+                    <th>Rol</th>
+                    <th>Estado</th>
+                    <th>Acciones</th>
+                </tr>
+            </thead>
+            <tbody id="tbodyUsers">
+                <tr><td colspan="5" class="empty-state">Cargando...</td></tr>
+            </tbody>
+        </table>
+    </div>
+</div>
+</section>
+
+<!-- Create/Edit Modal -->
+<div class="modal-overlay" id="userModal">
+    <div class="modal-box">
+        <h2 id="modalTitle"><i class="fas fa-user-plus"></i> Nuevo Usuario</h2>
+        <input type="hidden" id="uId">
+        <div class="mfield">
+            <label>Usuario (login)</label>
+            <input type="text" id="uUsername" placeholder="ej: juan.perez" autocomplete="off">
+        </div>
+        <div class="mfield">
+            <label>Nombre Completo</label>
+            <input type="text" id="uFullName" placeholder="Juan Pérez">
+        </div>
+        <div class="mfield">
+            <label>Rol</label>
+            <select id="uRole">
+                <option value="tecnico">Técnico</option>
+                <option value="supervisor">Supervisor</option>
+                <option value="admin">Administrador</option>
+            </select>
+        </div>
+        <div class="mfield" id="pwdField">
+            <label id="pwdLabel">Contraseña</label>
+            <input type="password" id="uPassword" placeholder="Mínimo 6 caracteres" autocomplete="new-password">
+            <p class="hint" id="pwdHint">Mínimo 6 caracteres</p>
+        </div>
+        <div class="mfield" id="activeField" style="display:none">
+            <label>Estado</label>
+            <select id="uActive">
+                <option value="1">Activo</option>
+                <option value="0">Inactivo</option>
+            </select>
+        </div>
+        <div class="modal-actions">
+            <button class="btn btn-secondary" onclick="closeModal()">Cancelar</button>
+            <button class="btn btn-primary" onclick="saveUser()">
+                <i class="fas fa-save"></i> Guardar
+            </button>
+        </div>
+    </div>
+</div>
+
+<script src="/static/js/sidebar.js?v=20260328"></script>
+<script>
+let editingId = null;
+
+const ROLE_LABELS = { admin: 'Administrador', supervisor: 'Supervisor', tecnico: 'Técnico' };
+const AVATAR_COLORS = ['#0A84FF','#30D158','#FF9F0A','#BF5AF2','#FF453A','#5AC8FA','#FF375F'];
+
+function avatarColor(name) {
+    let h = 0;
+    for (let c of (name || 'U')) h = (h * 31 + c.charCodeAt(0)) & 0xffff;
+    return AVATAR_COLORS[h % AVATAR_COLORS.length];
+}
+
+function initials(name) {
+    if (!name) return '?';
+    return name.trim().split(/\s+/).slice(0, 2).map(w => w[0].toUpperCase()).join('');
+}
+
+async function loadUsers() {
+    try {
+        const res = await fetch('/api/auth/users');
+        if (!res.ok) throw new Error(await res.text());
+        const users = await res.json();
+        renderUsers(users);
+    } catch (e) {
+        document.getElementById('tbodyUsers').innerHTML =
+            `<tr><td colspan="5" class="empty-state" style="color:#FF6B61">Error: ${e.message}</td></tr>`;
+    }
+}
+
+function renderUsers(users) {
+    const tbody = document.getElementById('tbodyUsers');
+    if (!users.length) {
+        tbody.innerHTML = '<tr><td colspan="5" class="empty-state">Sin usuarios registrados.</td></tr>';
+        return;
+    }
+    tbody.innerHTML = users.map(u => `
+        <tr>
+            <td>
+                <span class="avatar" style="background:${avatarColor(u.username)}">${initials(u.full_name || u.username)}</span>
+                <strong>${u.username}</strong>
+            </td>
+            <td>${u.full_name || '<span style="color:rgba(255,255,255,0.30)">—</span>'}</td>
+            <td><span class="role-badge role-${u.role}">${ROLE_LABELS[u.role] || u.role}</span></td>
+            <td>
+                <span class="status-badge ${u.active ? 'status-on' : 'status-off'}"></span>
+                ${u.active ? 'Activo' : 'Inactivo'}
+            </td>
+            <td>
+                <div class="actions">
+                    <button class="btn-icon btn-edit-ic" title="Editar" onclick="openEditModal(${JSON.stringify(u)})">
+                        <i class="fas fa-pen"></i>
+                    </button>
+                    <button class="btn-icon btn-del-ic" title="Desactivar" onclick="deactivateUser(${u.id}, '${u.username}')">
+                        <i class="fas fa-ban"></i>
+                    </button>
+                </div>
+            </td>
+        </tr>
+    `).join('');
+}
+
+function openCreateModal() {
+    editingId = null;
+    document.getElementById('modalTitle').innerHTML = '<i class="fas fa-user-plus"></i> Nuevo Usuario';
+    document.getElementById('uId').value = '';
+    document.getElementById('uUsername').value = '';
+    document.getElementById('uUsername').disabled = false;
+    document.getElementById('uFullName').value = '';
+    document.getElementById('uRole').value = 'tecnico';
+    document.getElementById('uPassword').value = '';
+    document.getElementById('uPassword').placeholder = 'Mínimo 6 caracteres';
+    document.getElementById('pwdLabel').textContent = 'Contraseña';
+    document.getElementById('pwdHint').textContent = 'Mínimo 6 caracteres';
+    document.getElementById('pwdField').style.display = '';
+    document.getElementById('activeField').style.display = 'none';
+    document.getElementById('userModal').classList.add('open');
+}
+
+function openEditModal(u) {
+    editingId = u.id;
+    document.getElementById('modalTitle').innerHTML = '<i class="fas fa-user-pen"></i> Editar Usuario';
+    document.getElementById('uId').value = u.id;
+    document.getElementById('uUsername').value = u.username;
+    document.getElementById('uUsername').disabled = true;
+    document.getElementById('uFullName').value = u.full_name || '';
+    document.getElementById('uRole').value = u.role;
+    document.getElementById('uPassword').value = '';
+    document.getElementById('uPassword').placeholder = 'Dejar vacío para no cambiar';
+    document.getElementById('pwdLabel').textContent = 'Nueva Contraseña';
+    document.getElementById('pwdHint').textContent = 'Dejar vacío para mantener la actual';
+    document.getElementById('pwdField').style.display = '';
+    document.getElementById('activeField').style.display = '';
+    document.getElementById('uActive').value = u.active ? '1' : '0';
+    document.getElementById('userModal').classList.add('open');
+}
+
+function closeModal() {
+    document.getElementById('userModal').classList.remove('open');
+}
+
+async function saveUser() {
+    try {
+        const isNew = !editingId;
+        const payload = {
+            full_name: document.getElementById('uFullName').value.trim() || null,
+            role: document.getElementById('uRole').value,
+        };
+        const pwd = document.getElementById('uPassword').value.trim();
+
+        if (isNew) {
+            payload.username = document.getElementById('uUsername').value.trim().toLowerCase();
+            if (!payload.username) { alert('El usuario es obligatorio.'); return; }
+            if (!pwd) { alert('La contraseña es obligatoria para usuarios nuevos.'); return; }
+            payload.password = pwd;
+        } else {
+            payload.active = document.getElementById('uActive').value === '1';
+            if (pwd) payload.password = pwd;
+        }
+
+        const url = isNew ? '/api/auth/users' : `/api/auth/users/${editingId}`;
+        const method = isNew ? 'POST' : 'PUT';
+        const res = await fetch(url, {
+            method,
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(payload)
+        });
+        const data = await res.json();
+        if (!res.ok) { alert(data.error || 'Error al guardar.'); return; }
+        closeModal();
+        loadUsers();
+    } catch (e) {
+        alert(`Error: ${e.message}`);
+    }
+}
+
+async function deactivateUser(id, username) {
+    if (!confirm(`¿Desactivar al usuario "${username}"?`)) return;
+    try {
+        const res = await fetch(`/api/auth/users/${id}`, { method: 'DELETE' });
+        const data = await res.json();
+        if (!res.ok) { alert(data.error || 'Error.'); return; }
+        loadUsers();
+    } catch (e) {
+        alert(`Error: ${e.message}`);
+    }
+}
+
+document.addEventListener('DOMContentLoaded', loadUsers);
+</script>
+</body>
+</html>
