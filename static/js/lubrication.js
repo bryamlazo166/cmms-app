@@ -72,7 +72,10 @@ function renderPoints(points) {
             <td>${p.last_service_date || '-'}</td>
             <td>${p.next_due_date || '-'}</td>
             <td><span class="pill ${p.semaphore_status}">${p.semaphore_status || 'PENDIENTE'}</span></td>
-            <td><button class="btn secondary" onclick="deactivatePoint(${p.id})">Desactivar</button></td>
+            <td>
+                <button class="btn-icon btn-edit" title="Editar" onclick="openEditModal(${p.id})"><i class="fas fa-pen"></i></button>
+                <button class="btn-icon btn-del" title="Desactivar" onclick="deactivatePoint(${p.id})"><i class="fas fa-ban"></i></button>
+            </td>
         </tr>
     `).join('');
 
@@ -164,6 +167,77 @@ async function deactivatePoint(id) {
     await refreshAll();
 }
 window.deactivatePoint = deactivatePoint;
+
+function openEditModal(id) {
+    const p = lubState.points.find(x => x.id === id);
+    if (!p) return;
+
+    q('eId').value = p.id;
+    q('eName').value = p.name || '';
+    q('eLub').value = p.lubricant_name || '';
+    q('eFreq').value = p.frequency_days || 30;
+    q('eWarn').value = p.warning_days || 3;
+    q('eLastDate').value = p.last_service_date || '';
+    q('eActive').value = p.is_active ? '1' : '0';
+
+    // Populate equipment select
+    fillSelect(q('eEquipment'), lubState.equipments, 'id', e => `${e.tag ? e.tag + ' - ' : ''}${e.name}`);
+    q('eEquipment').value = p.equipment_id || '';
+
+    const systems = lubState.systems.filter(s => Number(s.equipment_id) === Number(p.equipment_id || 0));
+    fillSelect(q('eSystem'), systems, 'id', s => s.name);
+    q('eSystem').value = p.system_id || '';
+
+    const comps = lubState.components.filter(c => Number(c.system_id) === Number(p.system_id || 0));
+    fillSelect(q('eComponent'), comps, 'id', c => c.name);
+    q('eComponent').value = p.component_id || '';
+
+    q('eEquipment').onchange = () => {
+        const eqId = Number(q('eEquipment').value || 0);
+        fillSelect(q('eSystem'), lubState.systems.filter(s => Number(s.equipment_id) === eqId), 'id', s => s.name);
+        fillSelect(q('eComponent'), [], 'id', c => c.name);
+    };
+    q('eSystem').onchange = () => {
+        const sysId = Number(q('eSystem').value || 0);
+        fillSelect(q('eComponent'), lubState.components.filter(c => Number(c.system_id) === sysId), 'id', c => c.name);
+    };
+
+    q('editModal').classList.add('open');
+}
+window.openEditModal = openEditModal;
+
+function closeEditModal() {
+    q('editModal').classList.remove('open');
+}
+window.closeEditModal = closeEditModal;
+
+async function saveEdit() {
+    const id = q('eId').value;
+    const payload = {
+        name: q('eName').value.trim(),
+        equipment_id: q('eEquipment').value || null,
+        system_id: q('eSystem').value || null,
+        component_id: q('eComponent').value || null,
+        lubricant_name: q('eLub').value.trim() || null,
+        frequency_days: Number(q('eFreq').value || 30),
+        warning_days: Number(q('eWarn').value || 3),
+        last_service_date: q('eLastDate').value || null,
+        is_active: q('eActive').value === '1'
+    };
+    if (!payload.name) { alert('El nombre es obligatorio.'); return; }
+    try {
+        await jget(`/api/lubrication/points/${id}`, {
+            method: 'PUT',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(payload)
+        });
+        closeEditModal();
+        await refreshAll();
+    } catch (e) {
+        alert(`Error al guardar: ${e.message}`);
+    }
+}
+window.saveEdit = saveEdit;
 
 async function refreshAll() {
     await loadDashboard();

@@ -165,6 +165,23 @@ def register_lubrication_routes(
                         if cols_lp["task_group"].get("nullable") is False:
                             conn.execute(text("ALTER TABLE lubrication_points ALTER COLUMN task_group DROP NOT NULL"))
                         conn.execute(text("ALTER TABLE lubrication_points ALTER COLUMN task_group SET DEFAULT 'GENERAL'"))
+                    # task_type: legacy NOT NULL column no longer used by current model
+                    if "task_type" in cols_lp and cols_lp["task_type"].get("nullable") is False:
+                        conn.execute(text("ALTER TABLE lubrication_points ALTER COLUMN task_type DROP NOT NULL"))
+                        conn.execute(text("ALTER TABLE lubrication_points ALTER COLUMN task_type SET DEFAULT 'Lubricacion'"))
+                        conn.execute(text("UPDATE lubrication_points SET task_type = 'Lubricacion' WHERE task_type IS NULL"))
+                    # code: allow null so auto-generation works
+                    if "code" in cols_lp and cols_lp["code"].get("nullable") is False:
+                        conn.execute(text("ALTER TABLE lubrication_points ALTER COLUMN code DROP NOT NULL"))
+                    # reset_cycle_on_topup: legacy boolean NOT NULL with no default
+                    if "reset_cycle_on_topup" in cols_lp and cols_lp["reset_cycle_on_topup"].get("nullable") is False:
+                        conn.execute(text("ALTER TABLE lubrication_points ALTER COLUMN reset_cycle_on_topup SET DEFAULT false"))
+                        conn.execute(text("UPDATE lubrication_points SET reset_cycle_on_topup = false WHERE reset_cycle_on_topup IS NULL"))
+                    # timestamps
+                    for ts_col in ("created_at", "updated_at"):
+                        if ts_col in cols_lp and cols_lp[ts_col].get("nullable") is False:
+                            conn.execute(text(f"ALTER TABLE lubrication_points ALTER COLUMN {ts_col} SET DEFAULT NOW()"))
+                            conn.execute(text(f"UPDATE lubrication_points SET {ts_col} = NOW() WHERE {ts_col} IS NULL"))
                     if "executed_date" in cols_le and cols_le["executed_date"].get("nullable") is False:
                         conn.execute(text("ALTER TABLE lubrication_executions ALTER COLUMN executed_date DROP NOT NULL"))
 

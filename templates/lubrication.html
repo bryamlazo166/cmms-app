@@ -24,6 +24,19 @@
         td{padding:8px;color:#dbe8fb;font-size:.82rem;border-bottom:1px solid rgba(255,255,255,.08)}
         .pill{display:inline-block;padding:2px 8px;border-radius:999px;font-size:.78rem;font-weight:700}
         .VERDE{background:rgba(67,160,71,.22);color:#8df39d}.AMARILLO{background:rgba(255,193,7,.22);color:#ffd966}.ROJO{background:rgba(244,67,54,.24);color:#ff9690}.PENDIENTE{background:rgba(255,255,255,.1);color:#bdc7d8}
+        .btn-icon{height:28px;width:28px;border:none;border-radius:6px;cursor:pointer;font-size:.8rem;display:inline-flex;align-items:center;justify-content:center}
+        .btn-edit{background:rgba(10,132,255,.18);color:#5ac8fa}.btn-edit:hover{background:rgba(10,132,255,.35)}
+        .btn-del{background:rgba(255,69,58,.16);color:#ff6b61;margin-left:4px}.btn-del:hover{background:rgba(255,69,58,.32)}
+        /* Edit modal */
+        #editModal{display:none;position:fixed;inset:0;z-index:9999;background:rgba(0,0,0,.72);backdrop-filter:blur(4px);align-items:center;justify-content:center}
+        #editModal.open{display:flex}
+        .modal-box{background:#1c1c1e;border:1px solid rgba(255,255,255,.11);border-radius:14px;padding:24px;width:min(560px,96vw);max-height:90vh;overflow-y:auto}
+        .modal-box h2{margin:0 0 16px;font-size:1.1rem;color:#eff6ff}
+        .mrow{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:10px}
+        .mrow label{display:block;font-size:.72rem;color:#9ab0cb;margin-bottom:3px;text-transform:uppercase}
+        .mrow input,.mrow select{width:100%;height:34px;background:#0f1319;color:#d5e2f5;border:1px solid #344964;border-radius:8px;padding:4px 8px}
+        .mrow.single{grid-template-columns:1fr}
+        .modal-actions{display:flex;gap:8px;justify-content:flex-end;margin-top:16px}
         @media(max-width:1200px){.kpis{grid-template-columns:repeat(3,minmax(140px,1fr))}.toolbar{grid-template-columns:repeat(4,minmax(120px,1fr))}}
     </style>
 </head>
@@ -81,6 +94,37 @@
                     <thead><tr><th>Codigo</th><th>Punto</th><th>Equipo</th><th>Sistema</th><th>Componente</th><th>Lubricante</th><th>Frecuencia</th><th>Ultimo</th><th>Proximo</th><th>Semaforo</th><th>Accion</th></tr></thead>
                     <tbody id="tbodyPoints"><tr><td colspan="11">Cargando...</td></tr></tbody>
                 </table>
+            </div>
+        </div>
+
+        <!-- Edit Point Modal -->
+        <div id="editModal">
+            <div class="modal-box">
+                <h2><i class="fas fa-edit"></i> Editar Punto de Lubricacion</h2>
+                <input type="hidden" id="eId">
+                <div class="mrow single"><div><label>Nombre</label><input id="eName" type="text"></div></div>
+                <div class="mrow">
+                    <div><label>Equipo</label><select id="eEquipment"></select></div>
+                    <div><label>Sistema</label><select id="eSystem"></select></div>
+                </div>
+                <div class="mrow">
+                    <div><label>Componente</label><select id="eComponent"></select></div>
+                    <div><label>Lubricante</label><input id="eLub" type="text"></div>
+                </div>
+                <div class="mrow">
+                    <div><label>Frecuencia (dias)</label><input id="eFreq" type="number" min="1"></div>
+                    <div><label>Alerta (dias)</label><input id="eWarn" type="number" min="0"></div>
+                </div>
+                <div class="mrow">
+                    <div><label>Ultimo servicio</label><input id="eLastDate" type="date"></div>
+                    <div><label>Estado</label>
+                        <select id="eActive"><option value="1">Activo</option><option value="0">Inactivo</option></select>
+                    </div>
+                </div>
+                <div class="modal-actions">
+                    <button class="btn secondary" onclick="closeEditModal()">Cancelar</button>
+                    <button class="btn" onclick="saveEdit()"><i class="fas fa-save"></i> Guardar</button>
+                </div>
             </div>
         </div>
 
