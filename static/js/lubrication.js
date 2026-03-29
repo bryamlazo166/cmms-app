@@ -221,8 +221,7 @@ async function saveEdit() {
         lubricant_name: q('eLub').value.trim() || null,
         frequency_days: Number(q('eFreq').value || 30),
         warning_days: Number(q('eWarn').value || 3),
-        last_service_date: q('eLastDate').value || null,
-        is_active: q('eActive').value === '1'
+        last_service_date: q('eLastDate').value || null
     };
     if (!payload.name) { alert('El nombre es obligatorio.'); return; }
     try {
