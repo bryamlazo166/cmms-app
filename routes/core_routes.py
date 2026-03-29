@@ -71,7 +71,7 @@ def register_core_routes(app, db, logger, app_build_tag, WorkOrder, MaintenanceN
 
     @app.route('/')
     def index():
-        return redirect(url_for('notices_page'))
+        return render_template('index.html')
 
     @app.route('/avisos')
     def notices_page():
