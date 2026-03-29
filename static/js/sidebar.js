@@ -13,6 +13,10 @@
         { href: '/reportes', icon: 'fas fa-file-contract', label: 'Reportes', tip: 'Reportes' }
     ];
 
+    const ADMIN_MENU_ITEMS = [
+        { href: '/usuarios', icon: 'fas fa-users-cog', label: 'Usuarios', tip: 'Usuarios' }
+    ];
+
     const ROLE_LABELS = { admin: 'Administrador', supervisor: 'Supervisor', tecnico: 'Técnico' };
     const AVATAR_COLORS = ['#0A84FF', '#30D158', '#FF9F0A', '#BF5AF2', '#5AC8FA', '#FF375F', '#FF9F0A'];
 
@@ -37,9 +41,10 @@
         return path.startsWith(href.toLowerCase());
     }
 
-    function renderNav(navList) {
+    function renderNav(navList, extraItems) {
         if (!navList) return;
-        navList.innerHTML = MENU_ITEMS.map((item) => {
+        const items = [...MENU_ITEMS, ...(extraItems || [])];
+        navList.innerHTML = items.map((item) => {
             const active = isActive(item.href) ? 'active' : '';
             return `<li>
                 <a href="${item.href}" class="${active}">
@@ -83,6 +88,11 @@
             if (!res.ok) return;
             const user = await res.json();
             renderProfile(sidebar, user);
+            // Add admin-only menu items
+            if (user.role === 'admin') {
+                const navList = sidebar.querySelector('.nav-list');
+                renderNav(navList, ADMIN_MENU_ITEMS);
+            }
         } catch (_) {
             // silently skip — user display is non-critical
         }
