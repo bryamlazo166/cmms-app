@@ -183,8 +183,14 @@ function updateKPIIndicators(notices) {
     }
 }
 
+let _savingNotice = false;
 async function saveNotice(e) {
     e.preventDefault();
+    if (_savingNotice) return;
+    _savingNotice = true;
+    const btn = e.submitter || e.target.querySelector('button[type="submit"]');
+    const origBtn = btn ? btn.innerHTML : '';
+    if (btn) { btn.disabled = true; btn.innerHTML = '<i class="fas fa-circle-notch fa-spin"></i> Guardando...'; }
     const id = document.getElementById('noticeId').value;
     const method = id ? 'PUT' : 'POST';
     const url = id ? `/api/notices/${id}` : '/api/notices';
@@ -231,6 +237,9 @@ async function saveNotice(e) {
         }
     } catch (err) {
         alert("Error de red: " + err);
+    } finally {
+        _savingNotice = false;
+        if (btn) { btn.disabled = false; btn.innerHTML = origBtn; }
     }
 }
 

@@ -231,3 +231,21 @@
         initMobileProLayer();
     }
 })();
+
+/**
+ * Wrap an async handler to disable a button during execution.
+ * Usage: onclick="withLoading(this, saveMyForm)"
+ *        or in JS: withLoading(buttonEl, async () => { ... })
+ */
+async function withLoading(btn, fn) {
+    if (!btn || btn.disabled) return;
+    const original = btn.innerHTML;
+    btn.disabled = true;
+    btn.innerHTML = '<i class="fas fa-circle-notch fa-spin"></i> Procesando...';
+    try {
+        await fn();
+    } finally {
+        btn.disabled = false;
+        btn.innerHTML = original;
+    }
+}

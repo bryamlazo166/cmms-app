@@ -41,10 +41,7 @@ def register_lubrication_routes(
             return f"No se pudo guardar {context}: ya existe un registro con ese codigo."
         return f"Error procesando {context}. Intenta nuevamente."
 
-    def _generate_lubrication_code():
-        last = LubricationPoint.query.order_by(LubricationPoint.id.desc()).first()
-        next_id = (last.id if last else 0) + 1
-        return f"LUB-{next_id:04d}"
+    # _generate_lubrication_code removed — code assigned after flush
 
     def _safe_int(raw):
         if raw in (None, ""):
@@ -199,7 +196,6 @@ def register_lubrication_routes(
                 if not (data.get('name') or '').strip():
                     return jsonify({"error": "name es obligatorio"}), 400
 
-                code = data.get('code') or _generate_lubrication_code()
                 last_service = _safe_date_iso(data.get('last_service_date'))
                 frequency_days = int(data.get('frequency_days') or 30)
                 warning_days = int(data.get('warning_days') or 3)
@@ -214,7 +210,7 @@ def register_lubrication_routes(
                 )
 
                 point = LubricationPoint(
-                    code=code,
+                    code=data.get('code') or 'LUB-TEMP',
                     name=data.get('name').strip(),
                     description=data.get('description'),
                     area_id=area_id,
@@ -233,6 +229,9 @@ def register_lubrication_routes(
                     is_active=bool(data.get('is_active', True))
                 )
                 db.session.add(point)
+                db.session.flush()
+                if point.code == 'LUB-TEMP':
+                    point.code = f"LUB-{point.id:04d}"
                 db.session.commit()
                 return jsonify(point.to_dict()), 201
             except Exception as e:
@@ -341,9 +340,7 @@ def register_lubrication_routes(
 
                 create_notice = bool(data.get('create_notice', True))
                 if create_notice and (execution.leak_detected or execution.anomaly_detected):
-                    notice_count = MaintenanceNotice.query.count() + 1
                     notice = MaintenanceNotice(
-                        code=f"AV-{notice_count:04d}",
                         reporter_name=execution.executed_by or 'Tecnico Lubricacion',
                         reporter_type='MANTENIMIENTO',
                         area_id=point.area_id,
@@ -359,6 +356,7 @@ def register_lubrication_routes(
                     )
                     db.session.add(notice)
                     db.session.flush()
+                    notice.code = f"AV-{notice.id:04d}"
                     execution.created_notice_id = notice.id
 
                 db.session.add(execution)

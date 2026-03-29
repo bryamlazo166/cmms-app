@@ -11,10 +11,7 @@ def register_rotative_assets_routes(
     RotativeAssetHistory,
     RotativeAssetSpec,
 ):
-    def _generate_rotative_code():
-        last = RotativeAsset.query.order_by(RotativeAsset.id.desc()).first()
-        next_id = (last.id if last else 0) + 1
-        return f"MR-{next_id:04d}"
+    # _generate_rotative_code removed — code assigned after flush
 
     def _is_postgres():
         try:
@@ -63,7 +60,7 @@ def register_rotative_assets_routes(
                     return jsonify({"error": "name es obligatorio"}), 400
 
                 asset = RotativeAsset(
-                    code=data.get('code') or _generate_rotative_code(),
+                    code=data.get('code') or 'MR-TEMP',
                     name=data.get('name').strip(),
                     category=data.get('category'),
                     brand=data.get('brand'),
@@ -81,6 +78,8 @@ def register_rotative_assets_routes(
                 )
                 db.session.add(asset)
                 db.session.flush()
+                if asset.code == 'MR-TEMP':
+                    asset.code = f"MR-{asset.id:04d}"
 
                 _record_history(asset, 'CREACION', comments='Activo rotativo creado')
                 db.session.commit()

@@ -32,10 +32,7 @@ def register_notices_routes(
 
                 logger.info(f"Cleaned notice data: {clean_data}")
 
-                # Generate Code
-                last = MaintenanceNotice.query.order_by(MaintenanceNotice.id.desc()).first()
-                next_id = (last.id if last else 0) + 1
-                clean_data['code'] = f"AV-{next_id:04d}"
+                # Code will be assigned after flush (uses real DB id)
 
                 # --- DUPLICATE DETECTION LOGIC ---
                 is_duplicate = False
@@ -72,6 +69,8 @@ def register_notices_routes(
 
                 new_entry = MaintenanceNotice(**clean_data)
                 db.session.add(new_entry)
+                db.session.flush()
+                new_entry.code = f"AV-{new_entry.id:04d}"
                 db.session.commit()
 
                 resp_data = new_entry.to_dict()

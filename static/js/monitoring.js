@@ -290,8 +290,15 @@ function openReadingModal(pointId) {
     q('readingModal').showModal();
 }
 
+let _savingPoint = false;
 async function savePoint(e) {
     e.preventDefault();
+    if (_savingPoint) return;
+    _savingPoint = true;
+    const btn = e.submitter || e.target.querySelector('button[type="submit"]');
+    const origBtn = btn ? btn.innerHTML : '';
+    if (btn) { btn.disabled = true; btn.innerHTML = '<i class="fas fa-circle-notch fa-spin"></i> Guardando...'; }
+    try {
     const id = q('pointId').value;
     const payload = {
         name: q('pName').value,
@@ -322,11 +329,18 @@ async function savePoint(e) {
 
     closeModal('pointModal');
     await reloadMonitoring();
+    } finally { _savingPoint = false; if (btn) { btn.disabled = false; btn.innerHTML = origBtn; } }
 }
 
+let _savingReading = false;
 async function saveReading(e) {
     e.preventDefault();
-
+    if (_savingReading) return;
+    _savingReading = true;
+    const btnR = e.submitter || e.target.querySelector('button[type="submit"]');
+    const origBtnR = btnR ? btnR.innerHTML : '';
+    if (btnR) { btnR.disabled = true; btnR.innerHTML = '<i class="fas fa-circle-notch fa-spin"></i> Guardando...'; }
+    try {
     const payload = {
         point_id: asNum(q('rPoint').value),
         reading_date: q('rDate').value,
@@ -354,6 +368,7 @@ async function saveReading(e) {
         alert('Lectura guardada. Se genero aviso: ' + (res.created_notice_code || res.created_notice_id));
     }
     await reloadMonitoring();
+    } finally { _savingReading = false; if (btnR) { btnR.disabled = false; btnR.innerHTML = origBtnR; } }
 }
 
 async function disablePoint(id) {

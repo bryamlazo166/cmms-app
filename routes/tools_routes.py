@@ -10,13 +10,12 @@ def register_tools_routes(app, db, Tool):
         if request.method == 'POST':
             try:
                 data = request.json
-                # Generate code
-                last = Tool.query.order_by(Tool.id.desc()).first()
-                next_id = (last.id if last else 0) + 1
-                data['code'] = f"HRR-{next_id:03d}"
+                data['code'] = 'HRR-TEMP'
 
                 tool = Tool(**data)
                 db.session.add(tool)
+                db.session.flush()
+                tool.code = f"HRR-{tool.id:03d}"
                 db.session.commit()
                 return jsonify(tool.to_dict()), 201
             except Exception as e:

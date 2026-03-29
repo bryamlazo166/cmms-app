@@ -12,10 +12,7 @@ def register_warehouse_routes(app, db, logger, WarehouseItem, WarehouseMovement)
         if request.method == 'POST':
             try:
                 data = request.json
-                # Generate code
-                last = WarehouseItem.query.order_by(WarehouseItem.id.desc()).first()
-                next_id = (last.id if last else 0) + 1
-                data['code'] = f"REP-{next_id:04d}"
+                data['code'] = 'REP-TEMP'
 
                 # Sanitization for models
                 valid_keys = {c.name for c in WarehouseItem.__table__.columns}
@@ -23,6 +20,8 @@ def register_warehouse_routes(app, db, logger, WarehouseItem, WarehouseMovement)
 
                 item = WarehouseItem(**clean_data)
                 db.session.add(item)
+                db.session.flush()
+                item.code = f"REP-{item.id:04d}"
                 db.session.commit()
                 return jsonify(item.to_dict()), 201
             except Exception as e:

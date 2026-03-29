@@ -254,15 +254,11 @@ def register_work_orders_routes(
                 if not clean_data.get('status'):
                     clean_data['status'] = 'Abierta'
 
-                # Generate Code
-                last = WorkOrder.query.order_by(WorkOrder.id.desc()).first()
-                next_id = (last.id if last else 0) + 1
-                clean_data['code'] = f"OT-{next_id:04d}"
-
-                # Create work order
+                # Create work order — code assigned after flush (uses real DB id)
                 wo = WorkOrder(**clean_data)
                 db.session.add(wo)
-                db.session.flush()  # Get the ID
+                db.session.flush()
+                wo.code = f"OT-{wo.id:04d}"
 
                 # If created from notice, update notice status
                 if clean_data.get('notice_id'):

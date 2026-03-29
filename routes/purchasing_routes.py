@@ -16,8 +16,6 @@ def register_purchasing_routes(
         if request.method == 'POST':
             try:
                 data = request.json
-                count = PurchaseRequest.query.count()
-                req_code = f"REQ-2026-{count+1:04d}"
 
                 if data['item_type'] == 'SERVICIO' and not data.get('description'):
                     return jsonify({"error": "Descripcion obligatoria para Servicios"}), 400
@@ -26,7 +24,7 @@ def register_purchasing_routes(
                     return jsonify({"error": "Debe seleccionar un item del almacen."}), 400
 
                 req = PurchaseRequest(
-                    req_code=req_code,
+                    req_code='REQ-TEMP',
                     work_order_id=data['work_order_id'],
                     item_type=data['item_type'],
                     spare_part_id=data.get('spare_part_id'),
@@ -35,6 +33,8 @@ def register_purchasing_routes(
                     quantity=data['quantity']
                 )
                 db.session.add(req)
+                db.session.flush()
+                req.req_code = f"REQ-2026-{req.id:04d}"
                 db.session.commit()
                 return jsonify(req.to_dict()), 201
             except Exception as e:
@@ -60,16 +60,14 @@ def register_purchasing_routes(
                 if not req_ids:
                     return jsonify({"error": "No requests selected"}), 400
 
-                count = PurchaseOrder.query.count()
-                po_code = f"OC-2026-{count+1:03d}"
-
                 po = PurchaseOrder(
-                    po_code=po_code,
+                    po_code='OC-TEMP',
                     provider_name=provider,
                     status='EMITIDA'
                 )
                 db.session.add(po)
                 db.session.flush()
+                po.po_code = f"OC-2026-{po.id:03d}"
 
                 for rid in req_ids:
                     req = PurchaseRequest.query.get(rid)

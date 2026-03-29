@@ -83,8 +83,8 @@ let activeFilters = {
 
 function populateMultiSelectFilters() {
     // Extract unique values from allWorkOrders
-    const areas = [...new Set(allWorkOrders.map(ot => ot.area_name || '(Sin Ãrea)').filter(x => x))].sort();
-    const lines = [...new Set(allWorkOrders.map(ot => ot.line_name || '(Sin LÃ­nea)').filter(x => x))].sort();
+    const areas = [...new Set(allWorkOrders.map(ot => ot.area_name || '(Sin Area)').filter(x => x))].sort();
+    const lines = [...new Set(allWorkOrders.map(ot => ot.line_name || '(Sin Linea)').filter(x => x))].sort();
     const equips = [...new Set(allWorkOrders.map(ot => ot.equipment_name || '(Sin Equipo)').filter(x => x))].sort();
     const statuses = [...new Set(allWorkOrders.map(ot => ot.status).filter(x => x))].sort();
 
@@ -595,8 +595,14 @@ async function addMaterialToOT(otId, type, itemId, quantity) {
 }
 
 
+let _savingOT = false;
 async function handleOTSubmit(e) {
     e.preventDefault();
+    if (_savingOT) return;
+    _savingOT = true;
+    const btn = e.submitter || e.target.querySelector('button[type="submit"]');
+    const origBtn = btn ? btn.innerHTML : '';
+    if (btn) { btn.disabled = true; btn.innerHTML = '<i class="fas fa-circle-notch fa-spin"></i> Guardando...'; }
     try {
         const id = document.getElementById('otId').value;
         const noticeId = document.getElementById('otNoticeId').value;
@@ -674,6 +680,9 @@ async function handleOTSubmit(e) {
     } catch (error) {
         console.error("Error en handleOTSubmit:", error);
         alert("Error de red o de proceso: " + error.message);
+    } finally {
+        _savingOT = false;
+        if (btn) { btn.disabled = false; btn.innerHTML = origBtn; }
     }
 }
 

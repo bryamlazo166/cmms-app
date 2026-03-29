@@ -14,10 +14,7 @@ def register_monitoring_routes(
     _nice_axis_step,
     _parse_date_flexible,
 ):
-    def _generate_monitoring_code():
-        last = MonitoringPoint.query.order_by(MonitoringPoint.id.desc()).first()
-        next_id = (last.id if last else 0) + 1
-        return f"MON-{next_id:04d}"
+    # _generate_monitoring_code removed — code assigned after flush
 
 
     @app.route('/api/monitoring/points', methods=['GET', 'POST'])
@@ -34,7 +31,7 @@ def register_monitoring_routes(
                 next_due, semaphore = _calculate_monitoring_schedule(last_measurement, frequency_days, warning_days)
 
                 point = MonitoringPoint(
-                    code=data.get('code') or _generate_monitoring_code(),
+                    code=data.get('code') or 'MON-TEMP',
                     name=data.get('name').strip(),
                     measurement_type=(data.get('measurement_type') or 'VIBRACION').upper(),
                     axis=(data.get('axis') or None),
@@ -57,6 +54,9 @@ def register_monitoring_routes(
                     is_active=bool(data.get('is_active', True))
                 )
                 db.session.add(point)
+                db.session.flush()
+                if point.code == 'MON-TEMP':
+                    point.code = f"MON-{point.id:04d}"
                 db.session.commit()
                 return jsonify(point.to_dict()), 201
             except Exception as e:
@@ -185,9 +185,7 @@ def register_monitoring_routes(
 
                 create_notice = bool(data.get('create_notice', True))
                 if create_notice and value_status == 'ROJO':
-                    notice_count = MaintenanceNotice.query.count() + 1
                     notice = MaintenanceNotice(
-                        code=f"AV-{notice_count:04d}",
                         reporter_name=reading.executed_by or "Tecnico Monitoreo",
                         reporter_type="MONITOREO",
                         area_id=point.area_id,
@@ -203,6 +201,7 @@ def register_monitoring_routes(
                     )
                     db.session.add(notice)
                     db.session.flush()
+                    notice.code = f"AV-{notice.id:04d}"
                     reading.created_notice_id = notice.id
 
                 db.session.add(reading)
