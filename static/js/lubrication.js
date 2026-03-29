@@ -1,4 +1,4 @@
-const lubState = { points: [], systems: [], components: [], equipments: [] };
+const lubState = { points: [], systems: [], components: [], equipments: [], showInactive: false };
 
 function q(id) { return document.getElementById(id); }
 function fnum(v, d = 0) { return Number(v || 0).toLocaleString("es-PE", { minimumFractionDigits: d, maximumFractionDigits: d }); }
@@ -60,8 +60,15 @@ function renderPoints(points) {
     }
 
     lubState.points = points;
-    tbody.innerHTML = points.map(p => `
-        <tr>
+    tbody.innerHTML = points.map(p => {
+        const inactive = p.is_active === false;
+        const rowStyle = inactive ? 'opacity:0.45;' : '';
+        const semaphore = inactive ? 'INACTIVO' : (p.semaphore_status || 'PENDIENTE');
+        const pillClass = inactive ? 'INACTIVO' : (p.semaphore_status || '');
+        const toggleIcon = inactive ? 'fa-rotate-left' : 'fa-ban';
+        const toggleTitle = inactive ? 'Reactivar' : 'Desactivar';
+        const toggleClass = inactive ? 'btn-reactivate' : 'btn-del';
+        return `<tr style="${rowStyle}">
             <td>${p.code || '-'}</td>
             <td>${p.name || '-'}</td>
             <td>${p.equipment_name || '-'}</td>
@@ -71,13 +78,13 @@ function renderPoints(points) {
             <td>${p.frequency_days || '-'} d</td>
             <td>${p.last_service_date || '-'}</td>
             <td>${p.next_due_date || '-'}</td>
-            <td><span class="pill ${p.semaphore_status}">${p.semaphore_status || 'PENDIENTE'}</span></td>
+            <td><span class="pill ${pillClass}">${semaphore}</span></td>
             <td>
-                <button class="btn-icon btn-edit" title="Editar" onclick="openEditModal(${p.id})"><i class="fas fa-pen"></i></button>
-                <button class="btn-icon btn-del" title="Desactivar" onclick="deactivatePoint(${p.id})"><i class="fas fa-ban"></i></button>
+                ${inactive ? '' : `<button class="btn-icon btn-edit" title="Editar" onclick="openEditModal(${p.id})"><i class="fas fa-pen"></i></button>`}
+                <button class="btn-icon ${toggleClass}" title="${toggleTitle}" onclick="togglePoint(${p.id}, ${inactive})"><i class="fas ${toggleIcon}"></i></button>
             </td>
-        </tr>
-    `).join('');
+        </tr>`;
+    }).join('');
 
     q('fPoint').innerHTML = '<option value="">Seleccione punto</option>' + points.map(p => `<option value="${p.id}">${p.code || ''} ${p.name}</option>`).join('');
 }
@@ -103,7 +110,10 @@ function renderExecutions(rows) {
 }
 
 async function loadDashboard() {
-    const data = await jget('/api/lubrication/dashboard');
+    const url = lubState.showInactive
+        ? '/api/lubrication/dashboard?show_inactive=true'
+        : '/api/lubrication/dashboard';
+    const data = await jget(url);
     updateKPIs(data.kpi || {});
     renderPoints(data.items || []);
 }
@@ -161,12 +171,26 @@ async function registerExecution() {
     await refreshAll();
 }
 
-async function deactivatePoint(id) {
-    if (!confirm('Desactivar este punto?')) return;
+async function togglePoint(id, isCurrentlyInactive) {
+    const action = isCurrentlyInactive ? 'Reactivar' : 'Desactivar';
+    if (!confirm(`${action} este punto?`)) return;
     await jget(`/api/lubrication/points/${id}`, { method: 'DELETE' });
     await refreshAll();
 }
-window.deactivatePoint = deactivatePoint;
+window.togglePoint = togglePoint;
+
+function toggleInactiveFilter() {
+    lubState.showInactive = !lubState.showInactive;
+    const btn = q('btnToggleInactive');
+    if (btn) {
+        btn.classList.toggle('active', lubState.showInactive);
+        btn.innerHTML = lubState.showInactive
+            ? '<i class="fas fa-eye-slash"></i> Ocultar Inactivos'
+            : '<i class="fas fa-eye"></i> Mostrar Inactivos';
+    }
+    refreshAll();
+}
+window.toggleInactiveFilter = toggleInactiveFilter;
 
 function openEditModal(id) {
     const p = lubState.points.find(x => x.id === id);

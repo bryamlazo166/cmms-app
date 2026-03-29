@@ -262,9 +262,10 @@ def register_lubrication_routes(
     def handle_lubrication_point_id(point_id):
         point = LubricationPoint.query.get_or_404(point_id)
         if request.method == 'DELETE':
-            point.is_active = False
+            point.is_active = not point.is_active
             db.session.commit()
-            return jsonify({"message": "Punto de lubricacion desactivado"})
+            state = "activado" if point.is_active else "desactivado"
+            return jsonify({"message": f"Punto de lubricacion {state}", "is_active": point.is_active})
 
         try:
             _ensure_lubrication_schema_compat()
@@ -379,7 +380,11 @@ def register_lubrication_routes(
     def get_lubrication_dashboard():
         try:
             _ensure_lubrication_schema_compat()
-            points = LubricationPoint.query.filter_by(is_active=True).all()
+            show_inactive = request.args.get('show_inactive', 'false').lower() == 'true'
+            if show_inactive:
+                points = LubricationPoint.query.all()
+            else:
+                points = LubricationPoint.query.filter_by(is_active=True).all()
             kpi = {
                 'total': len(points),
                 'green': 0,
@@ -390,6 +395,7 @@ def register_lubrication_routes(
                 'compliance_percent': 100.0
             }
             today = dt.date.today()
+            active_count = 0
             items = []
             for p in points:
                 next_due, semaphore = _calculate_lubrication_schedule(
@@ -399,23 +405,30 @@ def register_lubrication_routes(
                 )
                 due_date = _parse_date_flexible(next_due)
 
-                if semaphore == 'VERDE':
-                    kpi['green'] += 1
-                elif semaphore == 'AMARILLO':
-                    kpi['yellow'] += 1
-                elif semaphore == 'ROJO':
-                    kpi['red'] += 1
-                else:
-                    kpi['pending'] += 1
+                # KPIs only count active points
+                if p.is_active:
+                    active_count += 1
+                    if semaphore == 'VERDE':
+                        kpi['green'] += 1
+                    elif semaphore == 'AMARILLO':
+                        kpi['yellow'] += 1
+                    elif semaphore == 'ROJO':
+                        kpi['red'] += 1
+                    else:
+                        kpi['pending'] += 1
 
-                if due_date and due_date <= today:
-                    kpi['due_now'] += 1
+                    if due_date and due_date <= today:
+                        kpi['due_now'] += 1
 
                 items.append({
                     'id': p.id,
                     'code': p.code,
                     'name': p.name,
+                    'is_active': p.is_active,
+                    'equipment_id': p.equipment_id,
                     'equipment_name': p.equipment.name if p.equipment else None,
+                    'system_name': p.system.name if p.system else None,
+                    'component_name': p.component.name if p.component else None,
                     'line_name': p.line.name if p.line else None,
                     'area_name': p.area.name if p.area else None,
                     'lubricant_name': p.lubricant_name,
@@ -423,9 +436,12 @@ def register_lubrication_routes(
                     'next_due_date': next_due,
                     'semaphore_status': semaphore,
                     'frequency_days': p.frequency_days,
-                    'warning_days': p.warning_days
+                    'warning_days': p.warning_days,
+                    'system_id': p.system_id,
+                    'component_id': p.component_id,
                 })
 
+            kpi['total'] = active_count
             if kpi['total'] > 0:
                 kpi['compliance_percent'] = round(((kpi['total'] - kpi['red']) / kpi['total']) * 100, 1)
             items.sort(key=lambda r: (r.get('next_due_date') or '9999-12-31'))

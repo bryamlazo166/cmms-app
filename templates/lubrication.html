@@ -27,6 +27,11 @@
         .btn-icon{height:28px;width:28px;border:none;border-radius:6px;cursor:pointer;font-size:.8rem;display:inline-flex;align-items:center;justify-content:center}
         .btn-edit{background:rgba(10,132,255,.18);color:#5ac8fa}.btn-edit:hover{background:rgba(10,132,255,.35)}
         .btn-del{background:rgba(255,69,58,.16);color:#ff6b61;margin-left:4px}.btn-del:hover{background:rgba(255,69,58,.32)}
+        .btn-reactivate{background:rgba(48,209,88,.16);color:#5cd870;margin-left:4px}.btn-reactivate:hover{background:rgba(48,209,88,.32)}
+        .INACTIVO{background:rgba(255,255,255,.08);color:rgba(255,255,255,.35)}
+        .btn-toggle-inactive{background:rgba(255,255,255,.08);border:1px solid rgba(255,255,255,.10);color:rgba(255,255,255,.55);padding:5px 12px;border-radius:8px;font-size:.78rem;cursor:pointer;transition:all 150ms;display:inline-flex;align-items:center;gap:6px}
+        .btn-toggle-inactive:hover{background:rgba(255,255,255,.14);color:rgba(255,255,255,.80)}
+        .btn-toggle-inactive.active{background:rgba(10,132,255,.16);border-color:rgba(10,132,255,.30);color:#5ac8fa}
         /* Edit modal */
         #editModal{display:none;position:fixed;inset:0;z-index:9999;background:rgba(0,0,0,.72);backdrop-filter:blur(4px);align-items:center;justify-content:center}
         #editModal.open{display:flex}
@@ -88,7 +93,12 @@
         </div>
 
         <div class="panel">
-            <h3>Puntos de Lubricacion</h3>
+            <div style="display:flex; align-items:center; justify-content:space-between; padding-right:14px;">
+                <h3>Puntos de Lubricacion</h3>
+                <button id="btnToggleInactive" class="btn-toggle-inactive" onclick="toggleInactiveFilter()">
+                    <i class="fas fa-eye"></i> Mostrar Inactivos
+                </button>
+            </div>
             <div class="table-wrap">
                 <table>
                     <thead><tr><th>Codigo</th><th>Punto</th><th>Equipo</th><th>Sistema</th><th>Componente</th><th>Lubricante</th><th>Frecuencia</th><th>Ultimo</th><th>Proximo</th><th>Semaforo</th><th>Accion</th></tr></thead>
