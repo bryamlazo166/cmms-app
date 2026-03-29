@@ -110,13 +110,8 @@ async function loadNotices() {
                 <td>${n.planning_date || '-'}</td>
                 <td>${n.failure_mode || '-'}</td>
                 <td>${n.maintenance_type || '-'}</td>
-                <td>-</td>
                 <td>${n.ot_number || '-'}</td>
-                <td>-</td>
-                <td>-</td>
                 <td>${statusBadge}</td>
-                <td>-</td>
-                <td>-</td>
                 <td>
                     ${convertBtn}
                     ${editBtn}
@@ -239,9 +234,9 @@ async function saveNotice(e) {
     }
 }
 
-document.addEventListener('DOMContentLoaded', () => {
+document.addEventListener('DOMContentLoaded', async () => {
+    await loadDropdowns();
     loadNotices();
-    loadDropdowns();
 
     document.getElementById('newNoticeBtn').onclick = () => {
         document.getElementById('noticeForm').reset();
