@@ -925,6 +925,20 @@
                     </div>
                 </div>
 
+                <div class="form-row">
+                    <div class="form-group">
+                        <label>Causo parada de produccion?</label>
+                        <select id="closeCausedDowntime" style="width:100%;padding:8px;border-radius:6px;background:rgba(255,255,255,.06);border:1px solid rgba(255,255,255,.12);color:rgba(255,255,255,.85)">
+                            <option value="0">No</option>
+                            <option value="1">Si</option>
+                        </select>
+                    </div>
+                    <div class="form-group" id="downtimeHoursGroup" style="display:none">
+                        <label>Horas de parada</label>
+                        <input type="number" id="closeDowntimeHours" step="0.5" min="0" placeholder="Horas reales de parada" style="width:100%;padding:8px;border-radius:6px;background:rgba(255,255,255,.06);border:1px solid rgba(255,255,255,.12);color:rgba(255,255,255,.85)">
+                    </div>
+                </div>
+
                 <div class="modal-actions">
                     <button type="button" class="btn-secondary"
                         onclick="document.getElementById('closeOTModal').close()">Cancelar</button>

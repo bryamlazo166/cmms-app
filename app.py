@@ -206,6 +206,12 @@ register_core_routes(
     WorkOrder=WorkOrder,
     MaintenanceNotice=MaintenanceNotice,
     Technician=Technician,
+    Area=Area,
+    Line=Line,
+    Equipment=Equipment,
+    OTPersonnel=OTPersonnel,
+    _parse_date_flexible=_parse_date_flexible,
+    _safe_duration_hours=_safe_duration_hours,
 )
 
 register_master_data_routes(
@@ -404,6 +410,12 @@ def _create_default_admin():
         logger.error(f"Error creating default admin: {e}")
 
 
+_ENSURE_COLUMNS = [
+    ("work_orders", "caused_downtime", "BOOLEAN DEFAULT false"),
+    ("work_orders", "downtime_hours", "FLOAT"),
+]
+
+
 def _init_schema_on_startup():
     auto_create = (os.getenv('CMMS_AUTO_CREATE_TABLES', 'true') or 'true').strip().lower() in {
         '1', 'true', 'yes', 'on'
@@ -419,6 +431,13 @@ def _init_schema_on_startup():
                     db.session.execute(text(stmt))
                 except Exception as idx_err:
                     logger.warning(f"Index creation skipped: {idx_err}")
+            # Auto-add missing columns to existing tables
+            for table, col, col_type in _ENSURE_COLUMNS:
+                try:
+                    db.session.execute(text(f"ALTER TABLE {table} ADD COLUMN {col} {col_type}"))
+                    logger.info(f"Column {table}.{col} added.")
+                except Exception:
+                    pass  # Column already exists
             db.session.commit()
         logger.info("Database schema and indexes checked/created on startup.")
     except Exception as e:

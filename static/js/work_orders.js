@@ -55,6 +55,15 @@ document.addEventListener('DOMContentLoaded', () => {
     // Form Listeners
     document.getElementById('otForm').addEventListener('submit', handleOTSubmit);
     document.getElementById('closeOTForm').addEventListener('submit', handleCloseOTSubmit);
+
+    // Toggle downtime hours field visibility
+    const downtimeSelect = document.getElementById('closeCausedDowntime');
+    if (downtimeSelect) {
+        downtimeSelect.addEventListener('change', function() {
+            document.getElementById('downtimeHoursGroup').style.display =
+                this.value === '1' ? '' : 'none';
+        });
+    }
 });
 
 async function loadHierarchyData() {
@@ -1366,12 +1375,19 @@ async function handleCloseOTSubmit(e) {
     const hours = Math.floor(diffMs / (1000 * 60 * 60));
     const minutes = Math.floor((diffMs % (1000 * 60 * 60)) / (1000 * 60));
 
+    const causedDowntime = document.getElementById('closeCausedDowntime').value === '1';
+    const downtimeHours = causedDowntime
+        ? parseFloat(document.getElementById('closeDowntimeHours').value || diffHrs.toFixed(2))
+        : 0;
+
     const data = {
         status: 'Cerrada',
         execution_comments: document.getElementById('closeComments').value,
         real_start_date: startVal,
         real_end_date: endVal,
-        real_duration: parseFloat(diffHrs.toFixed(2))
+        real_duration: parseFloat(diffHrs.toFixed(2)),
+        caused_downtime: causedDowntime,
+        downtime_hours: downtimeHours || null,
     };
 
     await fetch(`/api/work-orders/${id}`, {

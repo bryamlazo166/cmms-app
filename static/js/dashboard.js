@@ -157,5 +157,134 @@ function getStatusClass(status) {
     if (status === 'Abierta') return 'status-open';
     if (status === 'En Progreso') return 'status-progress';
     if (status === 'Cerrada') return 'status-closed';
-    return ''; // Default
+    return '';
 }
+
+// ── Industrial KPIs (MTBF, MTTR, Availability) ──────────────────────────────
+
+let kpiData = null;
+
+async function loadKPIs() {
+    const days = document.getElementById('kpiDays').value;
+    const level = document.getElementById('kpiLevel').value;
+    const areaId = document.getElementById('kpiArea').value;
+    const lineId = document.getElementById('kpiLine').value;
+
+    let url = `/api/dashboard-kpis?days=${days}&level=${level}`;
+    if (areaId) url += `&area_id=${areaId}`;
+    if (lineId) url += `&line_id=${lineId}`;
+
+    try {
+        const res = await fetch(url);
+        kpiData = await res.json();
+        if (kpiData.error) throw new Error(kpiData.error);
+        renderGlobalKPIs(kpiData.kpis);
+        renderKPITable(kpiData.items, level);
+        populateAreaFilter(kpiData.areas, kpiData.lines);
+    } catch (e) {
+        console.error('KPI load error:', e);
+    }
+}
+
+function renderGlobalKPIs(k) {
+    document.getElementById('gMtbf').textContent = k.global_mtbf != null ? k.global_mtbf : '-';
+    document.getElementById('gMttr').textContent = k.global_mttr != null ? k.global_mttr : '-';
+    document.getElementById('gAvail').textContent = k.global_availability != null ? k.global_availability + '%' : '-';
+    document.getElementById('gRatio').textContent = k.ratio_preventive != null ? k.ratio_preventive + '%' : '-';
+    document.getElementById('gDown').textContent = k.global_downtime_h != null ? k.global_downtime_h : '-';
+    document.getElementById('gFails').textContent = k.total_failures || 0;
+}
+
+function availColor(v) {
+    if (v == null) return 'rgba(255,255,255,.40)';
+    if (v >= 95) return '#30D158';
+    if (v >= 85) return '#FFD60A';
+    return '#FF453A';
+}
+
+function renderKPITable(items, level) {
+    const labels = { equipment: 'Equipo', line: 'Linea', area: 'Area' };
+    document.getElementById('levelLabel').textContent = labels[level] || 'Equipo';
+
+    const tbody = document.getElementById('kpiTableBody');
+    if (!items.length) {
+        tbody.innerHTML = '<tr><td colspan="9" style="text-align:center;color:rgba(255,255,255,.30);padding:24px">Sin datos para el periodo seleccionado.</td></tr>';
+        return;
+    }
+
+    tbody.innerHTML = items.map(it => {
+        const ac = availColor(it.availability);
+        return `<tr style="border-bottom:1px solid rgba(255,255,255,.06);cursor:pointer" onclick="showDrilldown(${JSON.stringify(it.id)}, '${it.label.replace(/'/g, "\\'")}')">
+            <td style="padding:9px 10px;color:rgba(255,255,255,.85);font-size:.84rem">${it.label}</td>
+            <td style="padding:9px 10px;color:rgba(255,255,255,.65);font-size:.84rem;text-align:right">${it.total_ots}</td>
+            <td style="padding:9px 10px;color:#FF453A;font-size:.84rem;text-align:right;font-weight:600">${it.failures}</td>
+            <td style="padding:9px 10px;color:#5AC8FA;font-size:.84rem;text-align:right">${it.mtbf != null ? it.mtbf : '-'}</td>
+            <td style="padding:9px 10px;color:#FF9F0A;font-size:.84rem;text-align:right">${it.mttr != null ? it.mttr : '-'}</td>
+            <td style="padding:9px 10px;color:${ac};font-size:.84rem;text-align:right;font-weight:700">${it.availability != null ? it.availability + '%' : '-'}</td>
+            <td style="padding:9px 10px;color:rgba(255,255,255,.65);font-size:.84rem;text-align:right">${it.reliability != null ? it.reliability + '%' : '-'}</td>
+            <td style="padding:9px 10px;color:rgba(255,255,255,.65);font-size:.84rem;text-align:right">${it.downtime_hours}</td>
+            <td style="padding:9px 10px;color:#BF5AF2;font-size:.84rem;text-align:right">${it.ratio_preventive != null ? it.ratio_preventive + '%' : '-'}</td>
+        </tr>`;
+    }).join('');
+}
+
+function showDrilldown(id, label) {
+    if (!kpiData) return;
+    const item = kpiData.items.find(it => it.id === id);
+    if (!item || !item.ots.length) return;
+
+    document.getElementById('drilldownLabel').textContent = label;
+    const tbody = document.getElementById('drilldownBody');
+    tbody.innerHTML = item.ots.map(ot => `<tr style="border-bottom:1px solid rgba(255,255,255,.06)">
+        <td style="padding:7px 10px;color:#0A84FF;font-size:.82rem;font-weight:600">${ot.code || '-'}</td>
+        <td style="padding:7px 10px;color:rgba(255,255,255,.70);font-size:.82rem">${ot.date || '-'}</td>
+        <td style="padding:7px 10px;color:rgba(255,255,255,.85);font-size:.82rem">${ot.equipment || '-'}</td>
+        <td style="padding:7px 10px;color:rgba(255,255,255,.65);font-size:.82rem">${ot.type || '-'}</td>
+        <td style="padding:7px 10px;color:rgba(255,255,255,.65);font-size:.82rem">${ot.failure_mode || '-'}</td>
+        <td style="padding:7px 10px;color:#FF9F0A;font-size:.82rem;text-align:right">${ot.repair_h || '-'}</td>
+        <td style="padding:7px 10px;color:rgba(255,255,255,.55);font-size:.80rem">${ot.description || '-'}</td>
+    </tr>`).join('');
+
+    document.getElementById('drilldownPanel').style.display = '';
+    document.getElementById('drilldownPanel').scrollIntoView({ behavior: 'smooth' });
+}
+
+function populateAreaFilter(areas, lines) {
+    const areaEl = document.getElementById('kpiArea');
+    const currentVal = areaEl.value;
+    // Only populate if empty (first load)
+    if (areaEl.options.length <= 1) {
+        (areas || []).forEach(a => {
+            const opt = document.createElement('option');
+            opt.value = a.id;
+            opt.textContent = a.name;
+            areaEl.appendChild(opt);
+        });
+    }
+    if (currentVal) areaEl.value = currentVal;
+
+    // Store lines for line filter
+    window._kpiLines = lines || [];
+}
+
+// Area filter change → populate line filter
+document.addEventListener('DOMContentLoaded', () => {
+    document.getElementById('kpiArea').addEventListener('change', function() {
+        const lineEl = document.getElementById('kpiLine');
+        const areaId = this.value;
+        if (!areaId) {
+            lineEl.style.display = 'none';
+            lineEl.value = '';
+            return;
+        }
+        const filtered = (window._kpiLines || []).filter(l => String(l.area_id) === String(areaId));
+        lineEl.innerHTML = '<option value="">Todas las lineas</option>' +
+            filtered.map(l => `<option value="${l.id}">${l.name}</option>`).join('');
+        lineEl.style.display = '';
+    });
+
+    document.getElementById('kpiLevel').addEventListener('change', loadKPIs);
+
+    // Auto-load KPIs after dashboard data
+    setTimeout(loadKPIs, 500);
+});

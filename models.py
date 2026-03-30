@@ -249,6 +249,10 @@ class WorkOrder(db.Model):
     real_end_date: Mapped[str | None] = mapped_column(String(20), nullable=True)
     execution_comments: Mapped[str | None] = mapped_column(Text, nullable=True)
     real_duration: Mapped[float | None] = mapped_column(nullable=True)
+
+    # Downtime tracking — for availability KPIs
+    caused_downtime: Mapped[bool] = mapped_column(Boolean, default=False)  # Did this OT stop production?
+    downtime_hours: Mapped[float | None] = mapped_column(Float, nullable=True)  # Hours of production lost
     
     def to_dict(self):
         return {c.name: getattr(self, c.name) for c in self.__table__.columns}

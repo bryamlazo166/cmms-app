@@ -295,10 +295,91 @@
 
             </div>
 
-            <script src="/static/js/dashboard.js"></script>
+            <!-- ══ INDUSTRIAL KPIs ══════════════════════════════════════════ -->
+            <div style="margin-top:20px">
+                <div style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:10px;margin-bottom:14px">
+                    <h2 style="color:rgba(255,255,255,.92);font-size:1.2rem;margin:0"><i class="fas fa-industry" style="color:var(--sys-teal,#5AC8FA);margin-right:8px"></i>Indicadores Industriales</h2>
+                    <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">
+                        <select id="kpiDays" style="height:34px;background:rgba(255,255,255,.06);border:1px solid rgba(255,255,255,.10);border-radius:8px;color:rgba(255,255,255,.80);padding:0 10px;font-size:.82rem">
+                            <option value="30">30 dias</option>
+                            <option value="60">60 dias</option>
+                            <option value="90" selected>90 dias</option>
+                            <option value="180">180 dias</option>
+                            <option value="365">1 año</option>
+                        </select>
+                        <select id="kpiLevel" style="height:34px;background:rgba(255,255,255,.06);border:1px solid rgba(255,255,255,.10);border-radius:8px;color:rgba(255,255,255,.80);padding:0 10px;font-size:.82rem">
+                            <option value="equipment">Por Equipo</option>
+                            <option value="line">Por Linea</option>
+                            <option value="area">Por Area</option>
+                        </select>
+                        <select id="kpiArea" style="height:34px;background:rgba(255,255,255,.06);border:1px solid rgba(255,255,255,.10);border-radius:8px;color:rgba(255,255,255,.80);padding:0 10px;font-size:.82rem">
+                            <option value="">Todas las areas</option>
+                        </select>
+                        <select id="kpiLine" style="height:34px;background:rgba(255,255,255,.06);border:1px solid rgba(255,255,255,.10);border-radius:8px;color:rgba(255,255,255,.80);padding:0 10px;font-size:.82rem;display:none">
+                            <option value="">Todas las lineas</option>
+                        </select>
+                        <button onclick="loadKPIs()" style="height:34px;background:var(--sys-blue,#0A84FF);border:none;border-radius:8px;color:#fff;padding:0 14px;font-size:.82rem;font-weight:600;cursor:pointer"><i class="fas fa-sync"></i></button>
+                    </div>
+                </div>
+
+                <!-- Global KPI cards -->
+                <div class="dashboard-grid" id="globalKpiGrid" style="grid-template-columns:repeat(auto-fit,minmax(150px,1fr))">
+                    <div class="kpi-card-dash" style="border-left:3px solid #5AC8FA"><div class="kpi-info"><h3 id="gMtbf">-</h3><p>MTBF (h)</p></div><i class="fas fa-clock kpi-icon" style="color:#5AC8FA"></i></div>
+                    <div class="kpi-card-dash" style="border-left:3px solid #FF9F0A"><div class="kpi-info"><h3 id="gMttr">-</h3><p>MTTR (h)</p></div><i class="fas fa-wrench kpi-icon" style="color:#FF9F0A"></i></div>
+                    <div class="kpi-card-dash" style="border-left:3px solid #30D158"><div class="kpi-info"><h3 id="gAvail">-</h3><p>Disponibilidad</p></div><i class="fas fa-signal kpi-icon" style="color:#30D158"></i></div>
+                    <div class="kpi-card-dash" style="border-left:3px solid #BF5AF2"><div class="kpi-info"><h3 id="gRatio">-</h3><p>Ratio P/C</p></div><i class="fas fa-balance-scale kpi-icon" style="color:#BF5AF2"></i></div>
+                    <div class="kpi-card-dash" style="border-left:3px solid #FF453A"><div class="kpi-info"><h3 id="gDown">-</h3><p>Parada (h)</p></div><i class="fas fa-power-off kpi-icon" style="color:#FF453A"></i></div>
+                    <div class="kpi-card-dash" style="border-left:3px solid #FFD60A"><div class="kpi-info"><h3 id="gFails">-</h3><p>Fallas</p></div><i class="fas fa-bolt kpi-icon" style="color:#FFD60A"></i></div>
+                </div>
+
+                <!-- Detail table -->
+                <div style="background:var(--bg-primary,#1C1C1E);border:1px solid rgba(255,255,255,.08);border-radius:14px;padding:12px;margin-top:14px">
+                    <h3 style="color:rgba(255,255,255,.88);font-size:.95rem;margin:0 0 10px">Detalle por <span id="levelLabel">Equipo</span></h3>
+                    <div style="overflow-x:auto;max-height:420px;border-radius:8px">
+                        <table style="width:100%;border-collapse:collapse;min-width:900px">
+                            <thead><tr style="background:#2C2C2E">
+                                <th style="padding:9px 10px;font-size:.73rem;font-weight:600;text-transform:uppercase;letter-spacing:.4px;color:rgba(255,255,255,.50);text-align:left;position:sticky;top:0;z-index:1;background:#2C2C2E">Nombre</th>
+                                <th style="padding:9px 10px;font-size:.73rem;font-weight:600;text-transform:uppercase;letter-spacing:.4px;color:rgba(255,255,255,.50);text-align:right;position:sticky;top:0;z-index:1;background:#2C2C2E">OTs</th>
+                                <th style="padding:9px 10px;font-size:.73rem;font-weight:600;text-transform:uppercase;letter-spacing:.4px;color:rgba(255,255,255,.50);text-align:right;position:sticky;top:0;z-index:1;background:#2C2C2E">Fallas</th>
+                                <th style="padding:9px 10px;font-size:.73rem;font-weight:600;text-transform:uppercase;letter-spacing:.4px;color:rgba(255,255,255,.50);text-align:right;position:sticky;top:0;z-index:1;background:#2C2C2E">MTBF (h)</th>
+                                <th style="padding:9px 10px;font-size:.73rem;font-weight:600;text-transform:uppercase;letter-spacing:.4px;color:rgba(255,255,255,.50);text-align:right;position:sticky;top:0;z-index:1;background:#2C2C2E">MTTR (h)</th>
+                                <th style="padding:9px 10px;font-size:.73rem;font-weight:600;text-transform:uppercase;letter-spacing:.4px;color:rgba(255,255,255,.50);text-align:right;position:sticky;top:0;z-index:1;background:#2C2C2E">Disp %</th>
+                                <th style="padding:9px 10px;font-size:.73rem;font-weight:600;text-transform:uppercase;letter-spacing:.4px;color:rgba(255,255,255,.50);text-align:right;position:sticky;top:0;z-index:1;background:#2C2C2E">Conf %</th>
+                                <th style="padding:9px 10px;font-size:.73rem;font-weight:600;text-transform:uppercase;letter-spacing:.4px;color:rgba(255,255,255,.50);text-align:right;position:sticky;top:0;z-index:1;background:#2C2C2E">Parada h</th>
+                                <th style="padding:9px 10px;font-size:.73rem;font-weight:600;text-transform:uppercase;letter-spacing:.4px;color:rgba(255,255,255,.50);text-align:right;position:sticky;top:0;z-index:1;background:#2C2C2E">P/C %</th>
+                            </tr></thead>
+                            <tbody id="kpiTableBody"><tr><td colspan="9" style="text-align:center;color:rgba(255,255,255,.30);padding:24px">Cargando indicadores...</td></tr></tbody>
+                        </table>
+                    </div>
+                </div>
+
+                <!-- Drill-down events -->
+                <div id="drilldownPanel" style="display:none;background:var(--bg-primary,#1C1C1E);border:1px solid rgba(255,255,255,.08);border-radius:14px;padding:12px;margin-top:14px">
+                    <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:10px">
+                        <h3 style="color:rgba(255,255,255,.88);font-size:.95rem;margin:0"><i class="fas fa-search" style="color:var(--sys-blue);margin-right:6px"></i>Eventos — <span id="drilldownLabel"></span></h3>
+                        <button onclick="document.getElementById('drilldownPanel').style.display='none'" style="background:none;border:none;color:rgba(255,255,255,.40);cursor:pointer;font-size:1rem"><i class="fas fa-times"></i></button>
+                    </div>
+                    <div style="overflow-x:auto;max-height:300px;border-radius:8px">
+                        <table style="width:100%;border-collapse:collapse;min-width:800px">
+                            <thead><tr style="background:#2C2C2E">
+                                <th style="padding:8px 10px;font-size:.73rem;font-weight:600;text-transform:uppercase;color:rgba(255,255,255,.50);text-align:left;position:sticky;top:0;background:#2C2C2E">OT</th>
+                                <th style="padding:8px 10px;font-size:.73rem;font-weight:600;text-transform:uppercase;color:rgba(255,255,255,.50);text-align:left;position:sticky;top:0;background:#2C2C2E">Fecha</th>
+                                <th style="padding:8px 10px;font-size:.73rem;font-weight:600;text-transform:uppercase;color:rgba(255,255,255,.50);text-align:left;position:sticky;top:0;background:#2C2C2E">Equipo</th>
+                                <th style="padding:8px 10px;font-size:.73rem;font-weight:600;text-transform:uppercase;color:rgba(255,255,255,.50);text-align:left;position:sticky;top:0;background:#2C2C2E">Tipo</th>
+                                <th style="padding:8px 10px;font-size:.73rem;font-weight:600;text-transform:uppercase;color:rgba(255,255,255,.50);text-align:left;position:sticky;top:0;background:#2C2C2E">Modo Falla</th>
+                                <th style="padding:8px 10px;font-size:.73rem;font-weight:600;text-transform:uppercase;color:rgba(255,255,255,.50);text-align:right;position:sticky;top:0;background:#2C2C2E">Reparacion h</th>
+                                <th style="padding:8px 10px;font-size:.73rem;font-weight:600;text-transform:uppercase;color:rgba(255,255,255,.50);text-align:left;position:sticky;top:0;background:#2C2C2E">Descripcion</th>
+                            </tr></thead>
+                            <tbody id="drilldownBody"></tbody>
+                        </table>
+                    </div>
+                </div>
+            </div>
+
+            <script src="/static/js/dashboard.js?v=20260330"></script>
         </div>
     </section>
-    <script src="/static/js/sidebar.js?v=20260329"></script>
+    <script src="/static/js/sidebar.js?v=20260330"></script>
 </body>
 
 </html>

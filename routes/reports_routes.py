@@ -1030,6 +1030,8 @@ def register_reports_routes(
                     'Cant_Tecnicos': o.tech_count,
                     'A_Tiempo': on_time,
                     'Comentarios_Ejecucion': o.execution_comments,
+                    'Causo_Parada': 'Si' if getattr(o, 'caused_downtime', False) else 'No',
+                    'Horas_Parada': getattr(o, 'downtime_hours', None),
                 })
             df_ots = pd.DataFrame(ot_rows)
 
