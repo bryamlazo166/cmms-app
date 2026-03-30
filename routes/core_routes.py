@@ -97,6 +97,10 @@ def register_core_routes(app, db, logger, app_build_tag, WorkOrder, MaintenanceN
     def monitoring_page():
         return render_template('monitoring.html')
 
+    @app.route('/inspecciones')
+    def inspections_page():
+        return render_template('inspections.html')
+
     @app.route('/activos-rotativos')
     def rotative_assets_page():
         return render_template('rotative_assets.html')

@@ -10,6 +10,7 @@
         { href: '/configuracion', icon: 'fas fa-sitemap', label: 'Activos', tip: 'Activos' },
         { href: '/monitoreo', icon: 'fas fa-wave-square', label: 'Monitoreo', tip: 'Monitoreo' },
         { href: '/lubricacion', icon: 'fas fa-oil-can', label: 'Lubricacion', tip: 'Lubricacion' },
+        { href: '/inspecciones', icon: 'fas fa-clipboard-check', label: 'Inspecciones', tip: 'Inspecciones' },
         { href: '/reportes', icon: 'fas fa-file-contract', label: 'Reportes', tip: 'Reportes' }
     ];
 

@@ -27,6 +27,10 @@ def register_reports_routes(
     LubricationExecution,
     MonitoringPoint,
     MonitoringReading,
+    InspectionRoute,
+    InspectionItem,
+    InspectionExecution,
+    InspectionResult,
     _parse_date_flexible,
     _is_in_window,
     _normalize_maintenance_type,
@@ -1224,6 +1228,70 @@ def register_reports_routes(
                 df_mon_points.to_excel(writer, index=False, sheet_name='Mon_Puntos')
                 df_mon_readings.to_excel(writer, index=False, sheet_name='Mon_Lecturas')
                 df_equipos.to_excel(writer, index=False, sheet_name='Equipos')
+
+                # ── 10. INSPECCIÓN — Rutas ─────────────────────────────────
+                insp_routes = InspectionRoute.query.order_by(InspectionRoute.id).all()
+                insp_route_rows = []
+                for r in insp_routes:
+                    insp_route_rows.append({
+                        'Codigo': r.code,
+                        'Nombre': r.name,
+                        'Activo': 'Si' if r.is_active else 'No',
+                        'Area': area(r.area_id),
+                        'Linea': line(r.line_id),
+                        'Equipo': equip(r.equipment_id),
+                        'TAG': tag(r.equipment_id),
+                        'Frecuencia_Dias': r.frequency_days,
+                        'Ultima_Ejecucion': r.last_execution_date,
+                        'Proximo_Vencimiento': r.next_due_date,
+                        'Semaforo': r.semaphore_status,
+                    })
+                pd.DataFrame(insp_route_rows).to_excel(writer, index=False, sheet_name='Insp_Rutas')
+
+                # ── 11. INSPECCIÓN — Ejecuciones + Resultados ──────────────
+                insp_execs = InspectionExecution.query.order_by(InspectionExecution.id).all()
+                insp_route_map = {r.id: (r.code, r.name) for r in insp_routes}
+                insp_exec_rows = []
+                for e in insp_execs:
+                    rcode, rname = insp_route_map.get(e.route_id, (None, None))
+                    # Get results for this execution
+                    results = InspectionResult.query.filter_by(execution_id=e.id).all()
+                    if results:
+                        for res in results:
+                            insp_exec_rows.append({
+                                'Codigo_Ruta': rcode,
+                                'Nombre_Ruta': rname,
+                                'Fecha_Ejecucion': e.execution_date,
+                                'Inspector': e.executed_by,
+                                'Resultado_General': e.overall_result,
+                                'Hallazgos': e.findings_count,
+                                'Item': res.item.description if res.item else None,
+                                'Tipo_Item': res.item.item_type if res.item else None,
+                                'Resultado_Item': res.result,
+                                'Valor': res.value,
+                                'Texto': res.text_value,
+                                'Observacion': res.observation,
+                                'Aviso_Generado': e.created_notice_id,
+                                'Comentario': e.comments,
+                            })
+                    else:
+                        insp_exec_rows.append({
+                            'Codigo_Ruta': rcode,
+                            'Nombre_Ruta': rname,
+                            'Fecha_Ejecucion': e.execution_date,
+                            'Inspector': e.executed_by,
+                            'Resultado_General': e.overall_result,
+                            'Hallazgos': e.findings_count,
+                            'Item': None,
+                            'Tipo_Item': None,
+                            'Resultado_Item': None,
+                            'Valor': None,
+                            'Texto': None,
+                            'Observacion': None,
+                            'Aviso_Generado': e.created_notice_id,
+                            'Comentario': e.comments,
+                        })
+                pd.DataFrame(insp_exec_rows).to_excel(writer, index=False, sheet_name='Insp_Ejecuciones')
 
             output.seek(0)
             today = dt.date.today().isoformat()

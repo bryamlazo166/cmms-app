@@ -768,6 +768,148 @@ class RotativeAssetSpec(db.Model):
             "is_active": self.is_active,
             "updated_at": self.updated_at.isoformat() if self.updated_at else None,
         }
+# ── Inspection Routes / Rondas de Inspección ──────────────────────────────────
+
+class InspectionRoute(db.Model):
+    __tablename__ = 'inspection_routes'
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    code: Mapped[str | None] = mapped_column(String(30), unique=True, nullable=True)
+    name: Mapped[str] = mapped_column(String(200), nullable=False)
+    description: Mapped[str | None] = mapped_column(Text, nullable=True)
+    area_id: Mapped[int | None] = mapped_column(ForeignKey('areas.id'), nullable=True)
+    line_id: Mapped[int | None] = mapped_column(ForeignKey('lines.id'), nullable=True)
+    equipment_id: Mapped[int | None] = mapped_column(ForeignKey('equipments.id'), nullable=True)
+    frequency_days: Mapped[int] = mapped_column(Integer, nullable=False, default=7)
+    warning_days: Mapped[int] = mapped_column(Integer, nullable=False, default=1)
+    last_execution_date: Mapped[str | None] = mapped_column(String(20), nullable=True)
+    next_due_date: Mapped[str | None] = mapped_column(String(20), nullable=True)
+    semaphore_status: Mapped[str | None] = mapped_column(String(10), nullable=True)
+    is_active: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+
+    area = relationship("Area")
+    line = relationship("Line")
+    equipment = relationship("Equipment")
+    items = relationship("InspectionItem", back_populates="route", cascade="all, delete-orphan",
+                         order_by="InspectionItem.order_index")
+
+    def to_dict(self):
+        return {
+            "id": self.id,
+            "code": self.code,
+            "name": self.name,
+            "description": self.description,
+            "area_id": self.area_id,
+            "line_id": self.line_id,
+            "equipment_id": self.equipment_id,
+            "area_name": self.area.name if self.area else None,
+            "line_name": self.line.name if self.line else None,
+            "equipment_name": self.equipment.name if self.equipment else None,
+            "frequency_days": self.frequency_days,
+            "warning_days": self.warning_days,
+            "last_execution_date": self.last_execution_date,
+            "next_due_date": self.next_due_date,
+            "semaphore_status": self.semaphore_status,
+            "is_active": self.is_active,
+            "item_count": len(self.items) if self.items else 0,
+        }
+
+
+class InspectionItem(db.Model):
+    __tablename__ = 'inspection_items'
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    route_id: Mapped[int] = mapped_column(ForeignKey('inspection_routes.id'), nullable=False)
+    description: Mapped[str] = mapped_column(String(300), nullable=False)
+    item_type: Mapped[str] = mapped_column(String(20), nullable=False, default='CHECK')
+    # item_type: CHECK (OK/NO OK) | MEDICION (numeric value) | TEXTO (free text)
+    unit: Mapped[str | None] = mapped_column(String(20), nullable=True)       # for MEDICION
+    alarm_min: Mapped[float | None] = mapped_column(Float, nullable=True)     # for MEDICION
+    alarm_max: Mapped[float | None] = mapped_column(Float, nullable=True)     # for MEDICION
+    criteria: Mapped[str | None] = mapped_column(String(300), nullable=True)  # acceptance criteria
+    order_index: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    is_active: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
+
+    route = relationship("InspectionRoute", back_populates="items")
+
+    def to_dict(self):
+        return {
+            "id": self.id,
+            "route_id": self.route_id,
+            "description": self.description,
+            "item_type": self.item_type,
+            "unit": self.unit,
+            "alarm_min": self.alarm_min,
+            "alarm_max": self.alarm_max,
+            "criteria": self.criteria,
+            "order_index": self.order_index,
+            "is_active": self.is_active,
+        }
+
+
+class InspectionExecution(db.Model):
+    __tablename__ = 'inspection_executions'
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    route_id: Mapped[int] = mapped_column(ForeignKey('inspection_routes.id'), nullable=False)
+    execution_date: Mapped[str] = mapped_column(String(20), nullable=False)
+    executed_by: Mapped[str | None] = mapped_column(String(100), nullable=True)
+    overall_result: Mapped[str] = mapped_column(String(20), nullable=False, default='OK')
+    # overall_result: OK | CON_HALLAZGOS | NO_EJECUTADA
+    findings_count: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    comments: Mapped[str | None] = mapped_column(Text, nullable=True)
+    created_notice_id: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+
+    route = relationship("InspectionRoute")
+
+    def to_dict(self):
+        route = self.route
+        return {
+            "id": self.id,
+            "route_id": self.route_id,
+            "route_code": route.code if route else None,
+            "route_name": route.name if route else None,
+            "execution_date": self.execution_date,
+            "executed_by": self.executed_by,
+            "overall_result": self.overall_result,
+            "findings_count": self.findings_count,
+            "comments": self.comments,
+            "created_notice_id": self.created_notice_id,
+        }
+
+
+class InspectionResult(db.Model):
+    __tablename__ = 'inspection_results'
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    execution_id: Mapped[int] = mapped_column(ForeignKey('inspection_executions.id'), nullable=False)
+    item_id: Mapped[int] = mapped_column(ForeignKey('inspection_items.id'), nullable=False)
+    result: Mapped[str] = mapped_column(String(20), nullable=False)
+    # For CHECK: OK | NO_OK
+    # For MEDICION: OK | ALARMA
+    value: Mapped[float | None] = mapped_column(Float, nullable=True)         # numeric for MEDICION
+    text_value: Mapped[str | None] = mapped_column(String(300), nullable=True)  # for TEXTO
+    observation: Mapped[str | None] = mapped_column(Text, nullable=True)
+
+    execution = relationship("InspectionExecution")
+    item = relationship("InspectionItem")
+
+    def to_dict(self):
+        return {
+            "id": self.id,
+            "execution_id": self.execution_id,
+            "item_id": self.item_id,
+            "item_description": self.item.description if self.item else None,
+            "item_type": self.item.item_type if self.item else None,
+            "result": self.result,
+            "value": self.value,
+            "text_value": self.text_value,
+            "observation": self.observation,
+        }
+
+
 class RotativeAssetHistory(db.Model):
     __tablename__ = 'rotative_asset_history'
 

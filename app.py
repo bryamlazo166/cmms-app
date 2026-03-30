@@ -15,7 +15,8 @@ from models import (
     WorkOrder, Provider, Technician, Tool, WarehouseItem, OTPersonnel,
     OTMaterial, WarehouseMovement, PurchaseOrder, PurchaseRequest,
     LubricationPoint, LubricationExecution, MonitoringPoint, MonitoringReading,
-    RotativeAsset, RotativeAssetHistory, RotativeAssetSpec
+    RotativeAsset, RotativeAssetHistory, RotativeAssetSpec,
+    InspectionRoute, InspectionItem, InspectionExecution, InspectionResult
 )
 from utils.crud_helpers import create_entry, get_entries, update_entry, delete_entry
 from utils.reporting_helpers import (
@@ -31,6 +32,7 @@ from utils.schedule_helpers import (
     _nice_axis_step,
 )
 from routes.auth_routes import register_auth_routes
+from routes.inspection_routes import register_inspection_routes
 from routes.core_routes import register_core_routes
 from routes.admin_routes import register_admin_routes
 from routes.data_import_routes import register_data_import_routes
@@ -183,6 +185,19 @@ def add_build_header(response):
 # ── Register all route modules ────────────────────────────────────────────────
 register_auth_routes(app=app, db=db, logger=logger, User=User)
 
+register_inspection_routes(
+    app=app,
+    db=db,
+    logger=logger,
+    InspectionRoute=InspectionRoute,
+    InspectionItem=InspectionItem,
+    InspectionExecution=InspectionExecution,
+    InspectionResult=InspectionResult,
+    MaintenanceNotice=MaintenanceNotice,
+    _calculate_lubrication_schedule=_calculate_lubrication_schedule,
+    _parse_date_flexible=_parse_date_flexible,
+)
+
 register_core_routes(
     app=app,
     db=db,
@@ -274,6 +289,10 @@ register_reports_routes(
     LubricationExecution=LubricationExecution,
     MonitoringPoint=MonitoringPoint,
     MonitoringReading=MonitoringReading,
+    InspectionRoute=InspectionRoute,
+    InspectionItem=InspectionItem,
+    InspectionExecution=InspectionExecution,
+    InspectionResult=InspectionResult,
     _parse_date_flexible=_parse_date_flexible,
     _is_in_window=_is_in_window,
     _normalize_maintenance_type=_normalize_maintenance_type,

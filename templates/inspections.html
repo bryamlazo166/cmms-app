@@ -1,0 +1,188 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Inspecciones - CMMS Pro</title>
+    <link rel="stylesheet" href="/static/css/style.css?v=20260330">
+    <link rel="stylesheet" href="/static/css/sidebar.css?v=20260330">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css">
+    <style>
+        .wrap{max-width:1500px;margin:0 auto;padding:12px 16px}
+        h2{color:rgba(255,255,255,.92);margin:0 0 6px;font-size:1.4rem}
+        h2 i{margin-right:8px;color:var(--sys-teal,#5AC8FA)}
+        .subtitle{color:rgba(255,255,255,.45);font-size:.84rem;margin-bottom:16px}
+        .kpi-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(140px,1fr));gap:10px;margin-bottom:16px}
+        .kpi{background:#1C1C1E;border:1px solid rgba(255,255,255,.08);border-radius:12px;padding:12px 16px}
+        .kpi .lbl{font-size:.72rem;color:rgba(255,255,255,.45);text-transform:uppercase;letter-spacing:.5px}
+        .kpi .val{font-size:1.6rem;font-weight:700;color:rgba(255,255,255,.92);margin-top:3px}
+        .panel{background:#1C1C1E;border:1px solid rgba(255,255,255,.08);border-radius:14px;padding:14px;margin-bottom:16px}
+        .panel-header{display:flex;align-items:center;justify-content:space-between;margin-bottom:10px;flex-wrap:wrap;gap:8px}
+        .panel h3{margin:0;color:rgba(255,255,255,.88);font-size:1rem}
+        .form-row{display:grid;grid-template-columns:repeat(auto-fit,minmax(160px,1fr));gap:10px;margin-bottom:12px;align-items:end}
+        .form-row label{display:block;font-size:.72rem;color:rgba(255,255,255,.45);text-transform:uppercase;letter-spacing:.5px;margin-bottom:4px}
+        .form-row input,.form-row select{width:100%;height:36px;background:rgba(255,255,255,.06);border:1px solid rgba(255,255,255,.10);border-radius:8px;color:rgba(255,255,255,.88);padding:0 10px;font-size:.84rem}
+        .form-row input::placeholder{color:rgba(255,255,255,.22)}
+        .table-wrap{overflow-x:auto;border-radius:8px}
+        table{width:100%;border-collapse:collapse;min-width:900px}
+        th{background:#2C2C2E;padding:9px 12px;font-size:.73rem;font-weight:600;text-transform:uppercase;letter-spacing:.4px;color:rgba(255,255,255,.50);text-align:left;position:sticky;top:0;z-index:1}
+        td{padding:8px 12px;color:rgba(255,255,255,.82);font-size:.82rem;border-bottom:1px solid rgba(255,255,255,.06)}
+        .pill{display:inline-block;padding:2px 8px;border-radius:999px;font-size:.75rem;font-weight:700}
+        .VERDE{background:rgba(67,160,71,.22);color:#8df39d}.AMARILLO{background:rgba(255,193,7,.22);color:#ffd966}.ROJO{background:rgba(244,67,54,.24);color:#ff9690}.PENDIENTE,.INACTIVO{background:rgba(255,255,255,.08);color:rgba(255,255,255,.35)}
+        .btn{height:34px;border:none;border-radius:8px;padding:0 14px;font-size:.84rem;font-weight:600;cursor:pointer;display:inline-flex;align-items:center;gap:6px;transition:opacity 150ms}
+        .btn:hover{opacity:.85}
+        .btn-primary{background:#0A84FF;color:#fff}
+        .btn-success{background:rgba(48,209,88,.18);color:#5cd870;border:1px solid rgba(48,209,88,.25)}
+        .btn-secondary{background:rgba(255,255,255,.10);color:rgba(255,255,255,.70)}
+        .btn-icon{width:28px;height:28px;border:none;border-radius:6px;cursor:pointer;font-size:.78rem;display:inline-flex;align-items:center;justify-content:center}
+        .btn-edit{background:rgba(10,132,255,.18);color:#5ac8fa}.btn-edit:hover{background:rgba(10,132,255,.35)}
+        .btn-del{background:rgba(255,69,58,.16);color:#ff6b61;margin-left:3px}.btn-del:hover{background:rgba(255,69,58,.32)}
+        .btn-reactivate{background:rgba(48,209,88,.16);color:#5cd870;margin-left:3px}.btn-reactivate:hover{background:rgba(48,209,88,.32)}
+        .btn-toggle-inactive{background:rgba(255,255,255,.08);border:1px solid rgba(255,255,255,.10);color:rgba(255,255,255,.55);padding:5px 12px;border-radius:8px;font-size:.78rem;cursor:pointer;display:inline-flex;align-items:center;gap:6px;transition:all 150ms}
+        .btn-toggle-inactive:hover{background:rgba(255,255,255,.14);color:rgba(255,255,255,.80)}
+        .btn-toggle-inactive.active{background:rgba(10,132,255,.16);border-color:rgba(10,132,255,.30);color:#5ac8fa}
+        /* Modal */
+        .modal-overlay{display:none;position:fixed;inset:0;z-index:9999;background:rgba(0,0,0,.72);backdrop-filter:blur(6px);align-items:center;justify-content:center}
+        .modal-overlay.open{display:flex}
+        .modal-box{background:#1C1C1E;border:1px solid rgba(255,255,255,.10);border-radius:16px;padding:24px;width:min(580px,94vw);max-height:90vh;overflow-y:auto;box-shadow:0 32px 80px rgba(0,0,0,.8)}
+        .modal-box h3{font-size:1.05rem;font-weight:700;color:rgba(255,255,255,.92);margin:0 0 16px}
+        .mfield{margin-bottom:12px}
+        .mfield label{display:block;font-size:.72rem;font-weight:600;text-transform:uppercase;letter-spacing:.5px;color:rgba(255,255,255,.45);margin-bottom:4px}
+        .mfield input,.mfield select,.mfield textarea{width:100%;background:rgba(255,255,255,.06);border:1px solid rgba(255,255,255,.10);border-radius:8px;color:rgba(255,255,255,.88);font-size:.85rem;padding:8px 10px;outline:none}
+        .mfield textarea{height:60px;resize:vertical}
+        .mfield input::placeholder,.mfield textarea::placeholder{color:rgba(255,255,255,.22)}
+        .modal-actions{display:flex;gap:8px;justify-content:flex-end;margin-top:16px}
+        /* Checklist in execution */
+        .checklist{list-style:none;padding:0;margin:0}
+        .checklist li{display:grid;grid-template-columns:1fr 120px 1fr;gap:8px;align-items:center;padding:8px 0;border-bottom:1px solid rgba(255,255,255,.06)}
+        .checklist li:last-child{border:none}
+        .cl-desc{font-size:.85rem;color:rgba(255,255,255,.85)}
+        .cl-criteria{font-size:.72rem;color:rgba(255,255,255,.35);margin-top:2px}
+        .cl-input select,.cl-input input{width:100%;height:32px;background:rgba(255,255,255,.06);border:1px solid rgba(255,255,255,.10);border-radius:6px;color:rgba(255,255,255,.85);padding:0 8px;font-size:.82rem}
+        .cl-obs input{width:100%;height:32px;background:rgba(255,255,255,.04);border:1px solid rgba(255,255,255,.06);border-radius:6px;color:rgba(255,255,255,.65);padding:0 8px;font-size:.80rem}
+        .cl-obs input::placeholder{color:rgba(255,255,255,.20)}
+        .result-ok{color:#5cd870}.result-nok{color:#ff6b61}
+    </style>
+</head>
+<body>
+<nav class="sidebar">
+    <div class="logo-details"><i class="fas fa-industry icon"></i><div class="logo_name">CMMS Pro</div><i class="fas fa-bars" id="btn_toggle"></i></div>
+    <ul class="nav-list"></ul>
+</nav>
+<section class="home-section">
+<div class="wrap">
+    <h2><i class="fas fa-clipboard-check"></i>Rutas de Inspeccion</h2>
+    <p class="subtitle">Rondas de inspeccion preventiva: checklist de campo, mediciones y hallazgos.</p>
+
+    <!-- KPIs -->
+    <div class="kpi-grid">
+        <div class="kpi"><div class="lbl">Total Rutas</div><div class="val" id="kTotal">-</div></div>
+        <div class="kpi"><div class="lbl">Verde</div><div class="val" id="kGreen">-</div></div>
+        <div class="kpi"><div class="lbl">Amarillo</div><div class="val" id="kYellow">-</div></div>
+        <div class="kpi"><div class="lbl">Rojo</div><div class="val" id="kRed">-</div></div>
+        <div class="kpi"><div class="lbl">Pendiente</div><div class="val" id="kPending">-</div></div>
+        <div class="kpi"><div class="lbl">Cumplimiento</div><div class="val" id="kCompliance">-</div></div>
+    </div>
+
+    <!-- Create Route Form -->
+    <div class="panel">
+        <h3>Nueva Ruta de Inspeccion</h3>
+        <div class="form-row">
+            <div><label>Nombre</label><input id="fName" placeholder="Ej: Ronda transportadores helicoidales"></div>
+            <div><label>Equipo</label><select id="fEquipment"></select></div>
+            <div><label>Frecuencia (dias)</label><input id="fFreq" type="number" min="1" value="7"></div>
+            <div><label>Alerta (dias)</label><input id="fWarn" type="number" min="0" value="1"></div>
+            <div style="display:flex;align-items:flex-end"><button class="btn btn-primary" onclick="withLoading(this, createRoute)"><i class="fas fa-plus"></i> Crear Ruta</button></div>
+        </div>
+    </div>
+
+    <!-- Routes Table -->
+    <div class="panel">
+        <div class="panel-header">
+            <h3>Rutas Registradas</h3>
+            <div style="display:flex;gap:8px">
+                <button id="btnToggleInactive" class="btn-toggle-inactive" onclick="toggleInactive()"><i class="fas fa-eye"></i> Mostrar Inactivas</button>
+            </div>
+        </div>
+        <div class="table-wrap">
+            <table>
+                <thead><tr><th>Codigo</th><th>Ruta</th><th>Equipo</th><th>Items</th><th>Frecuencia</th><th>Ultima</th><th>Proxima</th><th>Semaforo</th><th>Acciones</th></tr></thead>
+                <tbody id="tbodyRoutes"><tr><td colspan="9" style="text-align:center;color:rgba(255,255,255,.30);padding:20px">Cargando...</td></tr></tbody>
+            </table>
+        </div>
+    </div>
+
+    <!-- Execute Inspection Button -->
+    <div class="panel">
+        <h3>Ejecutar Inspeccion</h3>
+        <div class="form-row">
+            <div><label>Selecciona Ruta</label><select id="fExecRoute"></select></div>
+            <div><label>Fecha</label><input id="fExecDate" type="date"></div>
+            <div><label>Inspector</label><input id="fExecBy" placeholder="Nombre del inspector"></div>
+            <div style="display:flex;align-items:flex-end"><button class="btn btn-success" onclick="openExecutionModal()"><i class="fas fa-clipboard-list"></i> Abrir Checklist</button></div>
+        </div>
+    </div>
+
+    <!-- Execution History -->
+    <div class="panel">
+        <h3>Historial de Ejecuciones</h3>
+        <div class="table-wrap" style="max-height:350px">
+            <table>
+                <thead><tr><th>Fecha</th><th>Ruta</th><th>Inspector</th><th>Resultado</th><th>Hallazgos</th><th>Aviso</th><th>Comentario</th></tr></thead>
+                <tbody id="tbodyExec"><tr><td colspan="7" style="text-align:center;color:rgba(255,255,255,.30);padding:20px">Sin historial.</td></tr></tbody>
+            </table>
+        </div>
+    </div>
+</div>
+</section>
+
+<!-- Items Modal (configure checklist for a route) -->
+<div class="modal-overlay" id="itemsModal">
+    <div class="modal-box">
+        <h3><i class="fas fa-list-check"></i> Items de Inspeccion — <span id="imRouteName"></span></h3>
+        <input type="hidden" id="imRouteId">
+
+        <div id="itemsList"></div>
+
+        <div style="border-top:1px solid rgba(255,255,255,.08);padding-top:14px;margin-top:14px">
+            <h3 style="font-size:.88rem">Agregar item</h3>
+            <div class="mfield"><label>Descripcion</label><input id="imDesc" placeholder="Ej: Alineacion de pinones"></div>
+            <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:8px">
+                <div class="mfield"><label>Tipo</label>
+                    <select id="imType" onchange="toggleMedFields()">
+                        <option value="CHECK">Check (OK/NO OK)</option>
+                        <option value="MEDICION">Medicion (valor)</option>
+                        <option value="TEXTO">Texto libre</option>
+                    </select>
+                </div>
+                <div class="mfield" id="imUnitWrap" style="display:none"><label>Unidad</label><input id="imUnit" placeholder="mm, C, etc"></div>
+                <div class="mfield" id="imAlarmWrap" style="display:none"><label>Alarma Min / Max</label>
+                    <div style="display:flex;gap:4px"><input id="imAlarmMin" type="number" placeholder="Min" style="width:50%"><input id="imAlarmMax" type="number" placeholder="Max" style="width:50%"></div>
+                </div>
+            </div>
+            <div class="mfield"><label>Criterio de aceptacion</label><input id="imCriteria" placeholder="Ej: Sin desplazamiento axial visible"></div>
+            <button class="btn btn-primary" onclick="withLoading(this, addItem)"><i class="fas fa-plus"></i> Agregar</button>
+        </div>
+
+        <div class="modal-actions"><button class="btn btn-secondary" onclick="closeModal('itemsModal')">Cerrar</button></div>
+    </div>
+</div>
+
+<!-- Execution Modal (checklist) -->
+<div class="modal-overlay" id="execModal">
+    <div class="modal-box" style="width:min(700px,96vw)">
+        <h3><i class="fas fa-clipboard-check"></i> Checklist — <span id="emRouteName"></span></h3>
+        <input type="hidden" id="emRouteId">
+        <ul class="checklist" id="emChecklist"></ul>
+        <div class="mfield" style="margin-top:14px"><label>Comentario general</label><textarea id="emComments" placeholder="Observaciones generales de la ronda..."></textarea></div>
+        <div class="modal-actions">
+            <button class="btn btn-secondary" onclick="closeModal('execModal')">Cancelar</button>
+            <button class="btn btn-primary" onclick="withLoading(this, submitExecution)"><i class="fas fa-save"></i> Guardar Inspeccion</button>
+        </div>
+    </div>
+</div>
+
+<script src="/static/js/sidebar.js?v=20260330"></script>
+<script src="/static/js/inspections.js?v=20260330"></script>
+</body>
+</html>
