@@ -7,7 +7,10 @@ from flask import jsonify, redirect, render_template, request, url_for
 def register_core_routes(app, db, logger, app_build_tag,
                          WorkOrder, MaintenanceNotice, Technician,
                          Area, Line, Equipment, OTPersonnel,
-                         _parse_date_flexible, _safe_duration_hours):
+                         _parse_date_flexible, _safe_duration_hours,
+                         LubricationPoint=None, LubricationExecution=None,
+                         InspectionRoute=None, InspectionExecution=None,
+                         MonitoringPoint=None, MonitoringReading=None):
     @app.route('/configuracion')
     def taxonomy_page():
         return render_template('taxonomy.html')
@@ -140,6 +143,146 @@ def register_core_routes(app, db, logger, app_build_tag,
     @app.route('/seguimiento')
     def activities_page():
         return render_template('activities.html')
+
+    @app.route('/equipo-historial')
+    def equipment_history_page():
+        return render_template('equipment_history.html')
+
+    # ── Equipment consolidated history ─────────────────────────────────────
+
+    @app.route('/api/equipment/<int:equip_id>/history', methods=['GET'])
+    def get_equipment_history(equip_id):
+        try:
+            eq = Equipment.query.get(equip_id)
+            if not eq:
+                return jsonify({"error": "Equipo no encontrado"}), 404
+
+            ln = Line.query.get(eq.line_id) if eq.line_id else None
+            ar = Area.query.get(ln.area_id) if ln and ln.area_id else None
+            equip_info = {
+                'id': eq.id, 'name': eq.name, 'tag': eq.tag,
+                'line': ln.name if ln else None,
+                'area': ar.name if ar else None,
+            }
+
+            events = []
+
+            # 1. Work Orders
+            ots = WorkOrder.query.filter_by(equipment_id=equip_id).order_by(WorkOrder.id.desc()).all()
+            for ot in ots:
+                events.append({
+                    'date': ot.real_start_date or ot.scheduled_date or '',
+                    'category': 'OT',
+                    'code': ot.code,
+                    'type': ot.maintenance_type,
+                    'status': ot.status,
+                    'description': ot.description,
+                    'failure_mode': ot.failure_mode,
+                    'duration_h': _safe_duration_hours(ot.real_duration),
+                    'source_type': getattr(ot, 'source_type', None),
+                })
+
+            # 2. Maintenance Notices
+            notices = MaintenanceNotice.query.filter_by(equipment_id=equip_id).order_by(MaintenanceNotice.id.desc()).all()
+            for n in notices:
+                events.append({
+                    'date': n.request_date or '',
+                    'category': 'AVISO',
+                    'code': n.code,
+                    'type': n.maintenance_type,
+                    'status': n.status,
+                    'description': n.description,
+                    'failure_mode': None,
+                    'duration_h': None,
+                    'source_type': getattr(n, 'source_type', None),
+                })
+
+            # 3. Lubrication
+            if LubricationExecution and LubricationPoint:
+                lub_points = LubricationPoint.query.filter_by(equipment_id=equip_id).all()
+                lub_ids = [p.id for p in lub_points]
+                lub_map = {p.id: p for p in lub_points}
+                if lub_ids:
+                    execs = LubricationExecution.query.filter(
+                        LubricationExecution.point_id.in_(lub_ids)
+                    ).order_by(LubricationExecution.id.desc()).all()
+                    for e in execs:
+                        pt = lub_map.get(e.point_id)
+                        events.append({
+                            'date': e.execution_date or '',
+                            'category': 'LUBRICACION',
+                            'code': pt.code if pt else None,
+                            'type': e.action_type,
+                            'status': f"{'Fuga' if e.leak_detected else ''}{'Anomalia' if e.anomaly_detected else ''}".strip() or 'Normal',
+                            'description': f"{pt.name if pt else ''}: {pt.lubricant_name if pt else ''} {e.quantity_used or ''} {e.quantity_unit or ''}".strip(),
+                            'failure_mode': None,
+                            'duration_h': None,
+                            'source_type': None,
+                        })
+
+            # 4. Inspections
+            if InspectionExecution and InspectionRoute:
+                insp_routes = InspectionRoute.query.filter_by(equipment_id=equip_id).all()
+                route_ids = [r.id for r in insp_routes]
+                route_map = {r.id: r for r in insp_routes}
+                if route_ids:
+                    execs = InspectionExecution.query.filter(
+                        InspectionExecution.route_id.in_(route_ids)
+                    ).order_by(InspectionExecution.id.desc()).all()
+                    for e in execs:
+                        rt = route_map.get(e.route_id)
+                        events.append({
+                            'date': e.execution_date or '',
+                            'category': 'INSPECCION',
+                            'code': rt.code if rt else None,
+                            'type': e.overall_result,
+                            'status': f"{e.findings_count} hallazgo(s)" if e.findings_count else 'OK',
+                            'description': rt.name if rt else '',
+                            'failure_mode': None,
+                            'duration_h': None,
+                            'source_type': None,
+                        })
+
+            # 5. Monitoring readings
+            if MonitoringReading and MonitoringPoint:
+                mon_points = MonitoringPoint.query.filter_by(equipment_id=equip_id).all()
+                mon_ids = [p.id for p in mon_points]
+                mon_map = {p.id: p for p in mon_points}
+                if mon_ids:
+                    readings = MonitoringReading.query.filter(
+                        MonitoringReading.point_id.in_(mon_ids)
+                    ).order_by(MonitoringReading.id.desc()).limit(100).all()
+                    for r in readings:
+                        pt = mon_map.get(r.point_id)
+                        events.append({
+                            'date': r.reading_date or '',
+                            'category': 'MONITOREO',
+                            'code': pt.code if pt else None,
+                            'type': pt.measurement_type if pt else None,
+                            'status': f"{r.value} {pt.unit if pt else ''}".strip(),
+                            'description': pt.name if pt else '',
+                            'failure_mode': None,
+                            'duration_h': None,
+                            'source_type': None,
+                        })
+
+            # Sort all events by date descending
+            events.sort(key=lambda e: e.get('date') or '', reverse=True)
+
+            return jsonify({
+                'equipment': equip_info,
+                'events': events[:200],
+                'counts': {
+                    'ots': len([e for e in events if e['category'] == 'OT']),
+                    'avisos': len([e for e in events if e['category'] == 'AVISO']),
+                    'lubricacion': len([e for e in events if e['category'] == 'LUBRICACION']),
+                    'inspeccion': len([e for e in events if e['category'] == 'INSPECCION']),
+                    'monitoreo': len([e for e in events if e['category'] == 'MONITOREO']),
+                }
+            })
+        except Exception as e:
+            logger.exception("Equipment history error")
+            return jsonify({"error": str(e)}), 500
 
     # ── KPI Dashboard — MTTR, MTBF, Availability per equipment/line/area ──
 

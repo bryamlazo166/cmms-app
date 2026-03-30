@@ -1,0 +1,235 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Historial de Equipo - CMMS Pro</title>
+    <link rel="stylesheet" href="/static/css/style.css?v=20260330">
+    <link rel="stylesheet" href="/static/css/sidebar.css?v=20260330">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css">
+    <style>
+        .wrap{max-width:1100px;margin:0 auto;padding:12px 16px}
+        h2 i{margin-right:8px;color:var(--sys-teal,#5AC8FA)}
+        .subtitle{color:rgba(255,255,255,.45);font-size:.84rem;margin-bottom:16px}
+
+        .selector-bar{display:flex;gap:10px;flex-wrap:wrap;align-items:end;margin-bottom:20px}
+        .selector-bar label{display:block;font-size:.72rem;color:rgba(255,255,255,.45);text-transform:uppercase;letter-spacing:.5px;margin-bottom:4px}
+        .selector-bar select{height:36px;background:rgba(255,255,255,.06);border:1px solid rgba(255,255,255,.10);border-radius:8px;color:rgba(255,255,255,.80);padding:0 10px;font-size:.84rem;min-width:180px}
+
+        /* Equipment header */
+        .eq-header{background:var(--bg-primary,#1C1C1E);border:1px solid rgba(255,255,255,.08);border-radius:14px;padding:16px 20px;margin-bottom:16px;display:none}
+        .eq-name{font-size:1.2rem;font-weight:700;color:rgba(255,255,255,.92)}
+        .eq-tag{color:#5AC8FA;font-weight:600;margin-right:8px}
+        .eq-location{color:rgba(255,255,255,.45);font-size:.84rem;margin-top:4px}
+
+        /* Category counters */
+        .cat-chips{display:flex;gap:8px;flex-wrap:wrap;margin-top:10px}
+        .cat-chip{padding:4px 12px;border-radius:999px;font-size:.75rem;font-weight:700;cursor:pointer;transition:all 150ms;border:1px solid transparent}
+        .cat-chip.active{border-color:rgba(255,255,255,.25)}
+        .cat-OT{background:rgba(10,132,255,.18);color:#5AC8FA}
+        .cat-AVISO{background:rgba(255,159,10,.18);color:#FFB340}
+        .cat-LUBRICACION{background:rgba(48,209,88,.18);color:#5cd870}
+        .cat-INSPECCION{background:rgba(191,90,242,.18);color:#D77AF5}
+        .cat-MONITOREO{background:rgba(90,200,250,.18);color:#5AC8FA}
+        .cat-ALL{background:rgba(255,255,255,.08);color:rgba(255,255,255,.60)}
+
+        /* Timeline */
+        .timeline{margin-top:14px}
+        .tl-event{display:flex;gap:14px;padding:12px 0;border-bottom:1px solid rgba(255,255,255,.05)}
+        .tl-event:last-child{border:none}
+        .tl-marker{display:flex;flex-direction:column;align-items:center;width:40px;flex-shrink:0}
+        .tl-dot{width:12px;height:12px;border-radius:50%}
+        .tl-line{width:2px;flex:1;background:rgba(255,255,255,.06);margin-top:4px}
+        .dot-OT{background:#0A84FF}
+        .dot-AVISO{background:#FF9F0A}
+        .dot-LUBRICACION{background:#30D158}
+        .dot-INSPECCION{background:#BF5AF2}
+        .dot-MONITOREO{background:#5AC8FA}
+        .tl-content{flex:1;min-width:0}
+        .tl-top{display:flex;align-items:center;gap:8px;flex-wrap:wrap}
+        .tl-cat{font-size:.72rem;font-weight:700;text-transform:uppercase;letter-spacing:.3px;padding:1px 7px;border-radius:4px}
+        .tl-cat-OT{background:rgba(10,132,255,.18);color:#5AC8FA}
+        .tl-cat-AVISO{background:rgba(255,159,10,.18);color:#FFB340}
+        .tl-cat-LUBRICACION{background:rgba(48,209,88,.18);color:#5cd870}
+        .tl-cat-INSPECCION{background:rgba(191,90,242,.18);color:#D77AF5}
+        .tl-cat-MONITOREO{background:rgba(90,200,250,.18);color:#5AC8FA}
+        .tl-code{font-size:.84rem;font-weight:600;color:rgba(255,255,255,.85)}
+        .tl-date{font-size:.78rem;color:rgba(255,255,255,.40)}
+        .tl-type{font-size:.78rem;color:rgba(255,255,255,.50)}
+        .tl-desc{font-size:.84rem;color:rgba(255,255,255,.70);margin-top:4px;line-height:1.4}
+        .tl-badges{display:flex;gap:6px;margin-top:4px;flex-wrap:wrap}
+        .tl-badge{font-size:.72rem;padding:1px 7px;border-radius:4px}
+        .tl-badge-status{background:rgba(255,255,255,.08);color:rgba(255,255,255,.50)}
+        .tl-badge-pm{background:rgba(48,209,88,.15);color:#30D158}
+        .tl-badge-dur{background:rgba(255,159,10,.12);color:#FF9F0A}
+
+        .empty{text-align:center;color:rgba(255,255,255,.30);padding:40px 20px}
+    </style>
+</head>
+<body>
+<nav class="sidebar">
+    <div class="logo-details"><i class="fas fa-industry icon"></i><div class="logo_name">CMMS Pro</div><i class="fas fa-bars" id="btn_toggle"></i></div>
+    <ul class="nav-list"></ul>
+</nav>
+<section class="home-section">
+<div class="wrap">
+    <h2><i class="fas fa-book-open"></i>Historial de Equipo</h2>
+    <p class="subtitle">Vista consolidada de OTs, avisos, lubricacion, inspecciones y monitoreo por equipo.</p>
+
+    <div class="selector-bar">
+        <div><label>Area</label><select id="hArea" onchange="onAreaChange()"><option value="">Seleccione area</option></select></div>
+        <div><label>Linea</label><select id="hLine" onchange="onLineChange()"><option value="">Seleccione linea</option></select></div>
+        <div><label>Equipo</label><select id="hEquip" onchange="loadHistory()"><option value="">Seleccione equipo</option></select></div>
+    </div>
+
+    <div class="eq-header" id="eqHeader">
+        <div class="eq-name"><span class="eq-tag" id="eqTag"></span><span id="eqName"></span></div>
+        <div class="eq-location" id="eqLocation"></div>
+        <div class="cat-chips" id="catChips"></div>
+    </div>
+
+    <div class="timeline" id="timeline">
+        <div class="empty">Selecciona un equipo para ver su historial completo.</div>
+    </div>
+</div>
+</section>
+
+<script src="/static/js/sidebar.js?v=20260330"></script>
+<script>
+let hState = { areas: [], lines: [], equips: [], events: [], filter: 'ALL' };
+
+async function jget(url) {
+    const r = await fetch(url);
+    const d = await r.json();
+    if (!r.ok || d.error) throw new Error(d.error || `HTTP ${r.status}`);
+    return d;
+}
+
+async function boot() {
+    const [areas, lines, equips] = await Promise.all([
+        jget('/api/areas'), jget('/api/lines'), jget('/api/equipments')
+    ]);
+    hState.areas = areas; hState.lines = lines; hState.equips = equips;
+    const aSel = document.getElementById('hArea');
+    areas.forEach(a => { const o = document.createElement('option'); o.value = a.id; o.textContent = a.name; aSel.appendChild(o); });
+
+    // Auto-select from URL params
+    const params = new URLSearchParams(window.location.search);
+    const eqId = params.get('equipment_id');
+    if (eqId) {
+        const eq = equips.find(e => String(e.id) === eqId);
+        if (eq) {
+            const ln = lines.find(l => l.id === eq.line_id);
+            if (ln) {
+                aSel.value = ln.area_id;
+                onAreaChange();
+                document.getElementById('hLine').value = ln.id;
+                onLineChange();
+            }
+            document.getElementById('hEquip').value = eqId;
+            loadHistory();
+        }
+    }
+}
+
+function onAreaChange() {
+    const areaId = Number(document.getElementById('hArea').value || 0);
+    const lSel = document.getElementById('hLine');
+    const filtered = hState.lines.filter(l => Number(l.area_id) === areaId);
+    lSel.innerHTML = '<option value="">Seleccione linea</option>' +
+        filtered.map(l => `<option value="${l.id}">${l.name}</option>`).join('');
+    document.getElementById('hEquip').innerHTML = '<option value="">Seleccione equipo</option>';
+    document.getElementById('eqHeader').style.display = 'none';
+    document.getElementById('timeline').innerHTML = '<div class="empty">Selecciona un equipo.</div>';
+}
+
+function onLineChange() {
+    const lineId = Number(document.getElementById('hLine').value || 0);
+    const eSel = document.getElementById('hEquip');
+    const filtered = hState.equips.filter(e => Number(e.line_id) === lineId);
+    eSel.innerHTML = '<option value="">Seleccione equipo</option>' +
+        filtered.map(e => `<option value="${e.id}">${e.tag ? e.tag + ' - ' : ''}${e.name}</option>`).join('');
+}
+
+async function loadHistory() {
+    const eqId = document.getElementById('hEquip').value;
+    if (!eqId) return;
+
+    try {
+        const data = await jget(`/api/equipment/${eqId}/history`);
+        hState.events = data.events;
+        hState.filter = 'ALL';
+
+        // Render header
+        const h = document.getElementById('eqHeader');
+        h.style.display = '';
+        document.getElementById('eqTag').textContent = data.equipment.tag || '';
+        document.getElementById('eqName').textContent = data.equipment.name;
+        document.getElementById('eqLocation').innerHTML =
+            `<i class="fas fa-map-marker-alt" style="margin-right:4px"></i>${[data.equipment.area, data.equipment.line].filter(Boolean).join(' / ')}`;
+
+        // Category chips
+        const c = data.counts;
+        const chips = document.getElementById('catChips');
+        chips.innerHTML = `
+            <span class="cat-chip cat-ALL active" onclick="filterCat('ALL')">Todos ${data.events.length}</span>
+            ${c.ots ? `<span class="cat-chip cat-OT" onclick="filterCat('OT')">OTs ${c.ots}</span>` : ''}
+            ${c.avisos ? `<span class="cat-chip cat-AVISO" onclick="filterCat('AVISO')">Avisos ${c.avisos}</span>` : ''}
+            ${c.lubricacion ? `<span class="cat-chip cat-LUBRICACION" onclick="filterCat('LUBRICACION')">Lubricacion ${c.lubricacion}</span>` : ''}
+            ${c.inspeccion ? `<span class="cat-chip cat-INSPECCION" onclick="filterCat('INSPECCION')">Inspeccion ${c.inspeccion}</span>` : ''}
+            ${c.monitoreo ? `<span class="cat-chip cat-MONITOREO" onclick="filterCat('MONITOREO')">Monitoreo ${c.monitoreo}</span>` : ''}
+        `;
+
+        renderTimeline(data.events);
+    } catch (e) {
+        document.getElementById('timeline').innerHTML = `<div class="empty" style="color:#FF6B61">Error: ${e.message}</div>`;
+    }
+}
+
+function filterCat(cat) {
+    hState.filter = cat;
+    document.querySelectorAll('.cat-chip').forEach(c => c.classList.remove('active'));
+    document.querySelector(`.cat-${cat}`)?.classList.add('active');
+    const filtered = cat === 'ALL' ? hState.events : hState.events.filter(e => e.category === cat);
+    renderTimeline(filtered);
+}
+
+function renderTimeline(events) {
+    const tl = document.getElementById('timeline');
+    if (!events.length) {
+        tl.innerHTML = '<div class="empty">Sin eventos para este filtro.</div>';
+        return;
+    }
+
+    tl.innerHTML = events.slice(0, 150).map((e, i) => {
+        const badges = [];
+        if (e.status) badges.push(`<span class="tl-badge tl-badge-status">${e.status}</span>`);
+        if (e.source_type) badges.push(`<span class="tl-badge tl-badge-pm">[PM] ${e.source_type}</span>`);
+        if (e.duration_h) badges.push(`<span class="tl-badge tl-badge-dur">${e.duration_h}h</span>`);
+        if (e.failure_mode) badges.push(`<span class="tl-badge tl-badge-status">${e.failure_mode}</span>`);
+
+        const showLine = i < events.length - 1;
+
+        return `<div class="tl-event">
+            <div class="tl-marker">
+                <div class="tl-dot dot-${e.category}"></div>
+                ${showLine ? '<div class="tl-line"></div>' : ''}
+            </div>
+            <div class="tl-content">
+                <div class="tl-top">
+                    <span class="tl-cat tl-cat-${e.category}">${e.category}</span>
+                    <span class="tl-code">${e.code || '-'}</span>
+                    <span class="tl-type">${e.type || ''}</span>
+                    <span class="tl-date">${e.date || '-'}</span>
+                </div>
+                ${e.description ? `<div class="tl-desc">${e.description}</div>` : ''}
+                ${badges.length ? `<div class="tl-badges">${badges.join('')}</div>` : ''}
+            </div>
+        </div>`;
+    }).join('');
+}
+
+document.addEventListener('DOMContentLoaded', boot);
+</script>
+</body>
+</html>

@@ -224,6 +224,12 @@ register_core_routes(
     OTPersonnel=OTPersonnel,
     _parse_date_flexible=_parse_date_flexible,
     _safe_duration_hours=_safe_duration_hours,
+    LubricationPoint=LubricationPoint,
+    LubricationExecution=LubricationExecution,
+    InspectionRoute=InspectionRoute,
+    InspectionExecution=InspectionExecution,
+    MonitoringPoint=MonitoringPoint,
+    MonitoringReading=MonitoringReading,
 )
 
 register_master_data_routes(
