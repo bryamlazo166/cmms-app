@@ -1070,6 +1070,8 @@ def register_reports_routes(
                     'Dias_Respuesta': response_days,
                     'OT_Asociada': n.ot_number,
                     'Motivo_Cancelacion': n.cancellation_reason,
+                    'Origen_Tipo': getattr(n, 'source_type', None),
+                    'Origen_ID': getattr(n, 'source_id', None),
                 })
             df_notices = pd.DataFrame(notice_rows)
 

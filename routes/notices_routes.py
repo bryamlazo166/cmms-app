@@ -87,7 +87,7 @@ def register_notices_routes(
                 logger.error(f"Error creating notice: {e}")
                 return jsonify({"error": str(e)}), 500
 
-        entries = MaintenanceNotice.query.all()
+        entries = MaintenanceNotice.query.order_by(MaintenanceNotice.id.desc()).all()
         results = []
 
         # Pre-fetch cache to avoid N+1 if possible, but for simplicity we'll do direct lookups first or simple caching

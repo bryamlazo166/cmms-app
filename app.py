@@ -420,6 +420,8 @@ _ENSURE_COLUMNS = [
     ("work_orders", "downtime_hours", "FLOAT"),
     ("work_orders", "source_type", "VARCHAR(20)"),
     ("work_orders", "source_id", "INTEGER"),
+    ("maintenance_notices", "source_type", "VARCHAR(20)"),
+    ("maintenance_notices", "source_id", "INTEGER"),
 ]
 
 

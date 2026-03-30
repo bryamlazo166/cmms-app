@@ -185,14 +185,25 @@ def register_work_orders_routes(
                             'description': mon_desc,
                         })
 
-            # Create OTs for sources that don't already have an open OT
+            # Create AVISOS (not OTs) for sources that don't already have an open aviso/OT
             for src in sources:
-                existing = WorkOrder.query.filter(
+                # Check for existing open aviso with same source
+                existing_notice = MaintenanceNotice.query.filter(
+                    MaintenanceNotice.source_type == src['source_type'],
+                    MaintenanceNotice.source_id == src['source_id'],
+                    MaintenanceNotice.status.in_(['Pendiente', 'En Tratamiento', 'En Progreso', 'Programado']),
+                ).first()
+                if existing_notice:
+                    skipped += 1
+                    continue
+
+                # Also check for existing open OT with same source
+                existing_ot = WorkOrder.query.filter(
                     WorkOrder.source_type == src['source_type'],
                     WorkOrder.source_id == src['source_id'],
                     WorkOrder.status.in_(['Abierta', 'Programada', 'En Progreso']),
                 ).first()
-                if existing:
+                if existing_ot:
                     skipped += 1
                     continue
 
@@ -211,11 +222,14 @@ def register_work_orders_routes(
                     if ln:
                         ar_id = ln.area_id
 
-                wo = WorkOrder(
-                    maintenance_type='Preventivo',
-                    status='Programada',
+                notice = MaintenanceNotice(
+                    reporter_name='Sistema CMMS',
+                    reporter_type='MANTENIMIENTO',
                     description=src['description'],
-                    scheduled_date=today,
+                    maintenance_type='Preventivo',
+                    priority='Media',
+                    status='Pendiente',
+                    request_date=today,
                     area_id=ar_id,
                     line_id=ln_id,
                     equipment_id=eq_id,
@@ -224,11 +238,11 @@ def register_work_orders_routes(
                     source_type=src['source_type'],
                     source_id=src['source_id'],
                 )
-                db.session.add(wo)
+                db.session.add(notice)
                 db.session.flush()
-                wo.code = f"OT-{wo.id:04d}"
+                notice.code = f"AV-{notice.id:04d}"
                 created.append({
-                    'code': wo.code,
+                    'code': notice.code,
                     'source': f"{src['source_code']} {src['source_name']}",
                     'type': src['source_type'],
                     'semaphore': src['semaphore'],
@@ -239,10 +253,11 @@ def register_work_orders_routes(
                 'created': len(created),
                 'skipped': skipped,
                 'items': created,
+                'message': f'{len(created)} avisos preventivos generados. Revisa el modulo de Avisos para crear OTs.'
             })
         except Exception as e:
             db.session.rollback()
-            logger.exception("Generate preventive OTs error")
+            logger.exception("Generate preventive notices error")
             return jsonify({"error": str(e)}), 500
 
     # --- OT PERSONNEL ENDPOINTS ---
@@ -479,12 +494,16 @@ def register_work_orders_routes(
                 db.session.flush()
                 wo.code = f"OT-{wo.id:04d}"
 
-                # If created from notice, update notice status
+                # If created from notice, update notice status and propagate source link
                 if clean_data.get('notice_id'):
                     notice = MaintenanceNotice.query.get(clean_data['notice_id'])
                     if notice:
                         notice.status = 'En Tratamiento'
                         notice.ot_number = wo.code
+                        # Propagate preventive source from notice to OT
+                        if notice.source_type and notice.source_id and not wo.source_type:
+                            wo.source_type = notice.source_type
+                            wo.source_id = notice.source_id
 
                 db.session.commit()
                 return jsonify(wo.to_dict()), 201

@@ -203,7 +203,11 @@ class MaintenanceNotice(db.Model):
     ot_number: Mapped[str | None] = mapped_column(String(20), nullable=True)
     status: Mapped[str] = mapped_column(String(50), default='Pendiente') # Pendiente, En Progreso, Cerrado, Anulado
     cancellation_reason: Mapped[str | None] = mapped_column(Text, nullable=True) # Reason for annulment
-    
+
+    # Link to preventive source (lubrication/inspection/monitoring point)
+    source_type: Mapped[str | None] = mapped_column(String(20), nullable=True)
+    source_id: Mapped[int | None] = mapped_column(Integer, nullable=True)
+
     # Link to Work Order (One-to-One or One-to-Many? usually One)
     work_order = relationship("WorkOrder", back_populates="notice", uselist=False)
 

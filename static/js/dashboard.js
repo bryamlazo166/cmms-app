@@ -361,14 +361,15 @@ async function generatePreventiveOTs() {
     if (data.error) { alert('Error: ' + data.error); return; }
 
     if (data.created === 0) {
-        alert('No hay puntos vencidos pendientes de OT.\n' +
-              (data.skipped ? `(${data.skipped} ya tienen OT abierta)` : ''));
+        alert('No hay puntos vencidos sin aviso pendiente.\n' +
+              (data.skipped ? `(${data.skipped} ya tienen aviso u OT abierta)` : ''));
     } else {
-        let msg = `Se generaron ${data.created} OTs preventivas:\n\n`;
+        let msg = `Se generaron ${data.created} avisos preventivos:\n\n`;
         data.items.forEach(it => {
             msg += `${it.code} - ${it.source} (${it.semaphore})\n`;
         });
-        if (data.skipped) msg += `\n${data.skipped} puntos ya tenian OT abierta.`;
+        if (data.skipped) msg += `\n${data.skipped} puntos ya tenian aviso u OT abierta.`;
+        msg += '\n\nRevisa el modulo de Avisos para crear OTs.';
         alert(msg);
     }
     // Reload dashboard data
