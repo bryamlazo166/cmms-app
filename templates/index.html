@@ -318,18 +318,11 @@
                     <div class="kpi-card-dash" style="border-left:3px solid #FFD60A"><div class="kpi-info"><h3 id="gFails">-</h3><p>Fallas</p></div><i class="fas fa-bolt kpi-icon" style="color:#FFD60A"></i></div>
                 </div>
 
-                <!-- Breadcrumb -->
-                <div id="kpiBreadcrumb" style="margin:14px 0 8px;display:flex;align-items:center;gap:6px;font-size:.84rem;flex-wrap:wrap"></div>
-
-                <!-- KPI Table (reused for all levels) -->
-                <div style="background:var(--bg-primary,#1C1C1E);border:1px solid rgba(255,255,255,.08);border-radius:14px;padding:12px">
-                    <div style="overflow-x:auto;max-height:450px;border-radius:8px">
-                        <table style="width:100%;border-collapse:collapse;min-width:900px" id="kpiTable">
-                            <thead id="kpiTableHead"></thead>
-                            <tbody id="kpiTableBody"><tr><td colspan="9" style="text-align:center;color:rgba(255,255,255,.30);padding:24px">Cargando indicadores...</td></tr></tbody>
-                        </table>
-                    </div>
-                </div>
+                <!-- Stacked drill-down panels -->
+                <div id="kpiPanelArea" class="kpi-panel" style="margin-top:14px"></div>
+                <div id="kpiPanelLine" class="kpi-panel" style="display:none;margin-top:10px"></div>
+                <div id="kpiPanelEquipment" class="kpi-panel" style="display:none;margin-top:10px"></div>
+                <div id="kpiPanelEvents" class="kpi-panel" style="display:none;margin-top:10px"></div>
             </div>
 
             <script src="/static/js/dashboard.js?v=20260330"></script>

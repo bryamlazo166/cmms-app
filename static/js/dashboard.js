@@ -145,8 +145,9 @@ function renderRecentActivity(list) {
         <div class="activity-item">
             <div>
                 <strong style="color: #0A84FF;">${item.code}</strong>
-                <span style="color:#aaa; font-size:0.9em;"> - ${item.date || 'Sin Fecha'}</span>
-                <div style="font-size:0.9em; margin-top:3px;">${item.description || 'Sin descripción'}</div>
+                <span style="color:rgba(255,255,255,.40); font-size:0.85em;"> ${item.date || ''}</span>
+                ${item.equipment ? `<span style="color:#5AC8FA;font-size:0.82em;margin-left:6px">${item.equipment}</span>` : ''}
+                <div style="font-size:0.88em; margin-top:3px;color:rgba(255,255,255,.65);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;max-width:380px">${item.description || '-'}</div>
             </div>
             <span class="badge ${getStatusClass(item.status)}">${item.status}</span>
         </div>
@@ -160,13 +161,15 @@ function getStatusClass(status) {
     return '';
 }
 
-// ── Industrial KPIs — Progressive drill-down: Area → Line → Equipment → Events
+// ── Industrial KPIs — Stacked drill-down: Area → Line → Equipment → Events ──
 
 const TH = 'padding:9px 10px;font-size:.73rem;font-weight:600;text-transform:uppercase;letter-spacing:.4px;color:rgba(255,255,255,.50);position:sticky;top:0;z-index:1;background:#2C2C2E';
-const TD = 'padding:9px 10px;font-size:.84rem;border-bottom:1px solid rgba(255,255,255,.06)';
+const TD = 'padding:9px 10px;font-size:.84rem';
+const PANEL_CSS = 'background:var(--bg-primary,#1C1C1E);border:1px solid rgba(255,255,255,.08);border-radius:14px;padding:12px';
+const LEVELS = ['area', 'line', 'equipment', 'events'];
 
-let kpiCache = {};  // level → response data
-let breadcrumb = []; // [{level, id, label}]
+let kpiCache = {};
+let selectedIds = {}; // { area: id, line: id, equipment: id }
 
 function availColor(v) {
     if (v == null) return 'rgba(255,255,255,.40)';
@@ -195,64 +198,43 @@ async function fetchKPIs(level, areaId, lineId) {
     return data;
 }
 
-function renderBreadcrumb() {
-    const el = document.getElementById('kpiBreadcrumb');
-    const crumbs = [{level: 'area', id: null, label: 'Planta'}].concat(breadcrumb);
-    el.innerHTML = crumbs.map((c, i) => {
-        const isLast = i === crumbs.length - 1;
-        const style = isLast
-            ? 'color:rgba(255,255,255,.90);font-weight:600'
-            : 'color:#0A84FF;cursor:pointer;text-decoration:underline';
-        const click = isLast ? '' : `onclick="drillTo('${c.level}', ${c.id ? c.id : 'null'}, ${i})"`;
-        return `<span style="${style}" ${click}>${c.label}</span>`;
-    }).join('<span style="color:rgba(255,255,255,.25);margin:0 2px">/</span>');
+function hidePanelsFrom(levelIndex) {
+    for (let i = levelIndex; i < LEVELS.length; i++) {
+        const panel = document.getElementById('kpiPanel' + capitalize(LEVELS[i]));
+        if (panel) { panel.style.display = 'none'; panel.innerHTML = ''; }
+    }
 }
 
-function renderKpiRows(items, level) {
-    const thead = document.getElementById('kpiTableHead');
-    const tbody = document.getElementById('kpiTableBody');
-    const levelLabels = { area: 'Area', line: 'Linea', equipment: 'Equipo', events: 'Eventos' };
+function capitalize(s) { return s.charAt(0).toUpperCase() + s.slice(1); }
 
-    if (level === 'events') {
-        thead.innerHTML = `<tr style="background:#2C2C2E">
-            <th style="${TH};text-align:left">OT</th><th style="${TH};text-align:left">Fecha</th>
-            <th style="${TH};text-align:left">Equipo</th><th style="${TH};text-align:left">Tipo</th>
-            <th style="${TH};text-align:left">Modo Falla</th><th style="${TH};text-align:right">Reparacion h</th>
-            <th style="${TH};text-align:left">Descripcion</th></tr>`;
-        if (!items.length) {
-            tbody.innerHTML = '<tr><td colspan="7" style="text-align:center;color:rgba(255,255,255,.30);padding:24px">Sin eventos en este periodo.</td></tr>';
-            return;
-        }
-        tbody.innerHTML = items.map(ot => `<tr style="${TD}">
-            <td style="${TD};color:#0A84FF;font-weight:600">${ot.code || '-'}</td>
-            <td style="${TD};color:rgba(255,255,255,.70)">${ot.date || '-'}</td>
-            <td style="${TD};color:rgba(255,255,255,.85)">${ot.equipment || '-'}</td>
-            <td style="${TD};color:rgba(255,255,255,.65)">${ot.type || '-'}</td>
-            <td style="${TD};color:rgba(255,255,255,.65)">${ot.failure_mode || '-'}</td>
-            <td style="${TD};color:#FF9F0A;text-align:right">${ot.repair_h || '-'}</td>
-            <td style="${TD};color:rgba(255,255,255,.55);font-size:.80rem">${ot.description || '-'}</td>
-        </tr>`).join('');
-        return;
-    }
+function buildKpiTable(items, level, title) {
+    const levelLabels = { area: 'Area', line: 'Linea', equipment: 'Equipo' };
+    const nextLevel = level === 'area' ? 'line' : level === 'line' ? 'equipment' : 'events';
 
-    thead.innerHTML = `<tr style="background:#2C2C2E">
-        <th style="${TH};text-align:left">${levelLabels[level] || 'Nombre'}</th>
-        <th style="${TH};text-align:right">OTs</th><th style="${TH};text-align:right">Fallas</th>
-        <th style="${TH};text-align:right">MTBF (h)</th><th style="${TH};text-align:right">MTTR (h)</th>
-        <th style="${TH};text-align:right">Disp %</th><th style="${TH};text-align:right">Conf %</th>
-        <th style="${TH};text-align:right">Parada h</th><th style="${TH};text-align:right">P/C %</th></tr>`;
+    let html = `<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:8px">
+        <h3 style="color:rgba(255,255,255,.88);font-size:.95rem;margin:0"><i class="fas fa-layer-group" style="color:var(--sys-teal,#5AC8FA);margin-right:6px"></i>${title}</h3>
+    </div>`;
 
     if (!items.length) {
-        tbody.innerHTML = '<tr><td colspan="9" style="text-align:center;color:rgba(255,255,255,.30);padding:24px">Sin datos para el periodo seleccionado.</td></tr>';
-        return;
+        return html + '<p style="color:rgba(255,255,255,.30);text-align:center;padding:16px">Sin datos para este periodo.</p>';
     }
 
-    tbody.innerHTML = items.map(it => {
+    html += '<div style="overflow-x:auto;max-height:350px;border-radius:8px"><table style="width:100%;border-collapse:collapse;min-width:850px">';
+    html += `<thead><tr style="background:#2C2C2E">
+        <th style="${TH};text-align:left">${levelLabels[level] || 'Nombre'}</th>
+        <th style="${TH};text-align:right">OTs</th><th style="${TH};text-align:right">Fallas</th>
+        <th style="${TH};text-align:right">MTBF</th><th style="${TH};text-align:right">MTTR</th>
+        <th style="${TH};text-align:right">Disp %</th><th style="${TH};text-align:right">Conf %</th>
+        <th style="${TH};text-align:right">Parada h</th><th style="${TH};text-align:right">P/C %</th>
+    </tr></thead><tbody>`;
+
+    html += items.map(it => {
         const ac = availColor(it.availability);
-        const nextLevel = level === 'area' ? 'line' : level === 'line' ? 'equipment' : 'events';
-        const escapedLabel = (it.label || '').replace(/'/g, "\\'");
-        return `<tr style="cursor:pointer;border-bottom:1px solid rgba(255,255,255,.06)" onclick="drillNext('${nextLevel}', ${it.id}, '${escapedLabel}')">
-            <td style="${TD};color:rgba(255,255,255,.88)">${it.label}<span style="color:rgba(255,255,255,.25);margin-left:6px;font-size:.75rem"><i class="fas fa-chevron-right"></i></span></td>
+        const sel = selectedIds[level] === it.id;
+        const rowBg = sel ? 'background:rgba(10,132,255,.12);' : '';
+        const esc = (it.label || '').replace(/"/g, '&quot;');
+        return `<tr style="${rowBg}cursor:pointer;border-bottom:1px solid rgba(255,255,255,.06)" onclick="selectLevel('${level}', ${it.id}, '${esc}')">
+            <td style="${TD};color:rgba(255,255,255,.88)">${sel ? '<i class="fas fa-chevron-down" style="color:#0A84FF;margin-right:5px;font-size:.7rem"></i>' : '<i class="fas fa-chevron-right" style="color:rgba(255,255,255,.20);margin-right:5px;font-size:.7rem"></i>'}${it.label}</td>
             <td style="${TD};color:rgba(255,255,255,.65);text-align:right">${it.total_ots}</td>
             <td style="${TD};color:#FF453A;text-align:right;font-weight:600">${it.failures}</td>
             <td style="${TD};color:#5AC8FA;text-align:right">${it.mtbf != null ? it.mtbf : '-'}</td>
@@ -263,65 +245,114 @@ function renderKpiRows(items, level) {
             <td style="${TD};color:#BF5AF2;text-align:right">${it.ratio_preventive != null ? it.ratio_preventive + '%' : '-'}</td>
         </tr>`;
     }).join('');
+
+    html += '</tbody></table></div>';
+    return html;
 }
 
-// Navigate to a level (called from breadcrumb or on page load)
-async function drillTo(level, filterId, breadcrumbIdx) {
-    try {
-        if (breadcrumbIdx !== undefined) {
-            breadcrumb = breadcrumb.slice(0, breadcrumbIdx);
-        } else {
-            breadcrumb = [];
-        }
+function buildEventsTable(ots, title) {
+    let html = `<div style="display:flex;align-items:center;margin-bottom:8px">
+        <h3 style="color:rgba(255,255,255,.88);font-size:.95rem;margin:0"><i class="fas fa-search" style="color:var(--sys-blue,#0A84FF);margin-right:6px"></i>${title}</h3>
+    </div>`;
 
-        const data = await fetchKPIs(level, null, null);
-        renderGlobalKPIs(data.kpis);
-        renderKpiRows(data.items, level);
-        renderBreadcrumb();
-        kpiCache[level] = data;
-    } catch (e) {
-        console.error('KPI drill error:', e);
+    if (!ots.length) {
+        return html + '<p style="color:rgba(255,255,255,.30);text-align:center;padding:16px">Sin eventos para este equipo.</p>';
     }
+
+    html += '<div style="overflow-x:auto;max-height:300px;border-radius:8px"><table style="width:100%;border-collapse:collapse;min-width:750px">';
+    html += `<thead><tr style="background:#2C2C2E">
+        <th style="${TH};text-align:left">OT</th><th style="${TH};text-align:left">Fecha</th>
+        <th style="${TH};text-align:left">Tipo</th><th style="${TH};text-align:left">Modo Falla</th>
+        <th style="${TH};text-align:right">Reparacion h</th><th style="${TH};text-align:left">Descripcion</th>
+    </tr></thead><tbody>`;
+    html += ots.map(ot => `<tr style="border-bottom:1px solid rgba(255,255,255,.06)">
+        <td style="${TD};color:#0A84FF;font-weight:600">${ot.code || '-'}</td>
+        <td style="${TD};color:rgba(255,255,255,.70)">${ot.date || '-'}</td>
+        <td style="${TD};color:rgba(255,255,255,.65)">${ot.type || '-'}</td>
+        <td style="${TD};color:rgba(255,255,255,.65)">${ot.failure_mode || '-'}</td>
+        <td style="${TD};color:#FF9F0A;text-align:right">${ot.repair_h || '-'}</td>
+        <td style="${TD};color:rgba(255,255,255,.55);font-size:.80rem;max-width:250px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${ot.description || '-'}</td>
+    </tr>`).join('');
+    html += '</tbody></table></div>';
+    return html;
 }
 
-// Drill into next level (called from table row click)
-async function drillNext(nextLevel, parentId, parentLabel) {
+// ── Main navigation functions ────────────────────────────────────────────────
+
+async function drillTo(level) {
     try {
-        // For events level, find the OTs from cached equipment data
-        if (nextLevel === 'events') {
-            const eqData = kpiCache['equipment'];
-            if (eqData) {
-                const item = eqData.items.find(it => it.id === parentId);
-                if (item && item.ots) {
-                    breadcrumb.push({level: 'events', id: parentId, label: parentLabel});
-                    renderKpiRows(item.ots, 'events');
-                    renderBreadcrumb();
-                    return;
-                }
-            }
+        selectedIds = {};
+        hidePanelsFrom(0);
+        const data = await fetchKPIs('area', null, null);
+        kpiCache.area = data;
+        renderGlobalKPIs(data.kpis);
+        const panel = document.getElementById('kpiPanelArea');
+        panel.style.cssText = PANEL_CSS;
+        panel.innerHTML = buildKpiTable(data.items, 'area', 'Indicadores por Area');
+    } catch (e) { console.error('KPI drillTo error:', e); }
+}
+
+async function selectLevel(level, id, label) {
+    try {
+        // If clicking the same item again, deselect
+        if (selectedIds[level] === id) {
+            delete selectedIds[level];
+            const nextIdx = LEVELS.indexOf(level) + 1;
+            hidePanelsFrom(nextIdx);
+            // Re-render current panel to remove highlight
+            const panelId = 'kpiPanel' + capitalize(level);
+            const panel = document.getElementById(panelId);
+            panel.innerHTML = buildKpiTable(kpiCache[level].items, level,
+                level === 'area' ? 'Indicadores por Area' :
+                level === 'line' ? `Lineas de ${selectedIds.area_label || ''}` :
+                `Equipos de ${selectedIds.line_label || ''}`);
             return;
         }
 
-        // Determine filter params based on current breadcrumb
-        let areaId = null, lineId = null;
-        if (nextLevel === 'line') {
-            areaId = parentId;
-        } else if (nextLevel === 'equipment') {
-            lineId = parentId;
-        }
+        selectedIds[level] = id;
+        if (level === 'area') selectedIds.area_label = label;
+        if (level === 'line') selectedIds.line_label = label;
+        if (level === 'equipment') selectedIds.equipment_label = label;
 
-        const data = await fetchKPIs(nextLevel, areaId, lineId);
-        breadcrumb.push({level: nextLevel, id: parentId, label: parentLabel});
-        renderGlobalKPIs(data.kpis);
-        renderKpiRows(data.items, nextLevel);
-        renderBreadcrumb();
-        kpiCache[nextLevel] = data;
-    } catch (e) {
-        console.error('KPI drillNext error:', e);
-    }
+        // Hide all panels below current
+        const currentIdx = LEVELS.indexOf(level);
+        hidePanelsFrom(currentIdx + 1);
+
+        // Re-render current panel to show selection highlight
+        const currentPanelId = 'kpiPanel' + capitalize(level);
+        const currentPanel = document.getElementById(currentPanelId);
+        const currentTitle = level === 'area' ? 'Indicadores por Area' :
+            level === 'line' ? `Lineas de ${selectedIds.area_label || ''}` :
+            `Equipos de ${selectedIds.line_label || ''}`;
+        currentPanel.innerHTML = buildKpiTable(kpiCache[level].items, level, currentTitle);
+
+        // Load next level
+        if (level === 'area') {
+            const data = await fetchKPIs('line', id, null);
+            kpiCache.line = data;
+            const panel = document.getElementById('kpiPanelLine');
+            panel.style.cssText = PANEL_CSS + ';margin-top:10px';
+            panel.innerHTML = buildKpiTable(data.items, 'line', `Lineas de ${label}`);
+        } else if (level === 'line') {
+            const data = await fetchKPIs('equipment', null, id);
+            kpiCache.equipment = data;
+            const panel = document.getElementById('kpiPanelEquipment');
+            panel.style.cssText = PANEL_CSS + ';margin-top:10px';
+            panel.innerHTML = buildKpiTable(data.items, 'equipment', `Equipos de ${label}`);
+        } else if (level === 'equipment') {
+            const eqData = kpiCache.equipment;
+            if (eqData) {
+                const item = eqData.items.find(it => it.id === id);
+                if (item && item.ots) {
+                    const panel = document.getElementById('kpiPanelEvents');
+                    panel.style.cssText = PANEL_CSS + ';margin-top:10px';
+                    panel.innerHTML = buildEventsTable(item.ots, `Eventos de ${label}`);
+                }
+            }
+        }
+    } catch (e) { console.error('KPI selectLevel error:', e); }
 }
 
-// Auto-load on page ready
 document.addEventListener('DOMContentLoaded', () => {
     setTimeout(() => drillTo('area'), 500);
 });

@@ -68,6 +68,7 @@ def register_core_routes(app, db, logger, app_build_tag,
                 recent_data.append({
                     'code': ot.code,
                     'description': desc,
+                    'equipment': eq_label,
                     'status': ot.status,
                     'date': ot.scheduled_date or ot.real_start_date,
                 })
