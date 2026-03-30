@@ -342,16 +342,25 @@ body {
     .sidebar.open { left: 0; }
 
     .sidebar #btn_toggle {
-        right: -40px;
-        width: 36px;
-        height: 36px;
-        font-size: 16px;
+        position: fixed;
+        top: 10px;
+        left: 10px;
+        right: auto;
+        width: 44px;
+        height: 44px;
+        font-size: 20px;
+        border-radius: var(--r-md);
+        border: 1px solid var(--sep);
+        z-index: 1001;
     }
     .sidebar.open #btn_toggle {
-        right: 6px;
+        position: absolute;
         top: 14px;
-        width: 28px;
-        height: 28px;
+        left: auto;
+        right: 8px;
+        width: 34px;
+        height: 34px;
+        font-size: 16px;
     }
 
     .home-section { padding: 10px; }

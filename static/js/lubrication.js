@@ -1,4 +1,4 @@
-const lubState = { points: [], systems: [], components: [], equipments: [], showInactive: false };
+const lubState = { points: [], areas: [], lines: [], systems: [], components: [], equipments: [], showInactive: false };
 
 function q(id) { return document.getElementById(id); }
 function fnum(v, d = 0) { return Number(v || 0).toLocaleString("es-PE", { minimumFractionDigits: d, maximumFractionDigits: d }); }
@@ -15,16 +15,39 @@ function fillSelect(select, rows, valueKey, textFn, first = "Seleccione") {
 }
 
 async function loadCatalogs() {
-    const [equipments, systems, components] = await Promise.all([
+    const [areas, lines, equipments, systems, components] = await Promise.all([
+        jget('/api/areas'),
+        jget('/api/lines'),
         jget('/api/equipments'),
         jget('/api/systems'),
         jget('/api/components')
     ]);
+    lubState.areas = areas || [];
+    lubState.lines = lines || [];
     lubState.equipments = equipments || [];
     lubState.systems = systems || [];
     lubState.components = components || [];
 
-    fillSelect(q('fEquipment'), lubState.equipments, 'id', e => `${e.tag ? e.tag + ' - ' : ''}${e.name}`);
+    fillSelect(q('fArea'), lubState.areas, 'id', a => a.name);
+    fillSelect(q('fLine'), [], 'id', l => l.name);
+    fillSelect(q('fEquipment'), [], 'id', e => `${e.tag ? e.tag + ' - ' : ''}${e.name}`);
+    fillSelect(q('fSystem'), [], 'id', s => s.name);
+    fillSelect(q('fComponent'), [], 'id', c => c.name);
+}
+
+function onAreaChange() {
+    const areaId = Number(q('fArea').value || 0);
+    const lines = lubState.lines.filter(l => Number(l.area_id) === areaId);
+    fillSelect(q('fLine'), lines, 'id', l => l.name);
+    fillSelect(q('fEquipment'), [], 'id', e => `${e.tag ? e.tag + ' - ' : ''}${e.name}`);
+    fillSelect(q('fSystem'), [], 'id', s => s.name);
+    fillSelect(q('fComponent'), [], 'id', c => c.name);
+}
+
+function onLineChange() {
+    const lineId = Number(q('fLine').value || 0);
+    const equips = lubState.equipments.filter(e => Number(e.line_id) === lineId);
+    fillSelect(q('fEquipment'), equips, 'id', e => `${e.tag ? e.tag + ' - ' : ''}${e.name}`);
     fillSelect(q('fSystem'), [], 'id', s => s.name);
     fillSelect(q('fComponent'), [], 'id', c => c.name);
 }
@@ -126,6 +149,8 @@ async function loadExecutions() {
 async function createPoint() {
     const payload = {
         name: (q('fName').value || '').trim(),
+        area_id: q('fArea').value || null,
+        line_id: q('fLine').value || null,
         equipment_id: q('fEquipment').value || null,
         system_id: q('fSystem').value || null,
         component_id: q('fComponent').value || null,
@@ -271,6 +296,8 @@ async function boot() {
         q('fExecDate').value = new Date().toISOString().slice(0, 10);
         await loadCatalogs();
         await refreshAll();
+        q('fArea').addEventListener('change', onAreaChange);
+        q('fLine').addEventListener('change', onLineChange);
         q('fEquipment').addEventListener('change', onEquipmentChange);
         q('fSystem').addEventListener('change', onSystemChange);
         q('btnCreate').addEventListener('click', createPoint);
