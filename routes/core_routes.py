@@ -60,15 +60,17 @@ def register_core_routes(app, db, logger, app_build_tag,
             failure_data = [{'mode': failure_mode, 'count': count} for failure_mode, count in failures]
 
             recent_ots = WorkOrder.query.order_by(WorkOrder.id.desc()).limit(5).all()
-            recent_data = [
-                {
+            recent_data = []
+            for ot in recent_ots:
+                eq = Equipment.query.get(ot.equipment_id) if ot.equipment_id else None
+                eq_label = f"{eq.tag or ''} {eq.name}".strip() if eq else None
+                desc = ot.description or ot.failure_mode or eq_label or ot.maintenance_type or '-'
+                recent_data.append({
                     'code': ot.code,
-                    'desc': ot.description,
+                    'description': desc,
                     'status': ot.status,
-                    'date': ot.scheduled_date,
-                }
-                for ot in recent_ots
-            ]
+                    'date': ot.scheduled_date or ot.real_start_date,
+                })
 
             return jsonify(
                 {
