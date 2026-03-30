@@ -31,6 +31,8 @@ def register_reports_routes(
     InspectionItem,
     InspectionExecution,
     InspectionResult,
+    Activity,
+    Milestone,
     _parse_date_flexible,
     _is_in_window,
     _normalize_maintenance_type,
@@ -1298,6 +1300,50 @@ def register_reports_routes(
                             'Comentario': e.comments,
                         })
                 pd.DataFrame(insp_exec_rows).to_excel(writer, index=False, sheet_name='Insp_Ejecuciones')
+
+                # ── 12. ACTIVIDADES + HITOS ────────────────────────────────
+                acts = Activity.query.order_by(Activity.id.desc()).all()
+                act_rows = []
+                for a in acts:
+                    ms_list = [m for m in (a.milestones or []) if m.is_active]
+                    done = sum(1 for m in ms_list if m.status == 'COMPLETADO')
+                    total = len(ms_list)
+                    if ms_list:
+                        for m in ms_list:
+                            act_rows.append({
+                                'ID_Actividad': a.id,
+                                'Titulo': a.title,
+                                'Tipo': a.activity_type,
+                                'Responsable': a.responsible,
+                                'Prioridad': a.priority,
+                                'Estado_Actividad': a.status,
+                                'Fecha_Inicio': a.start_date,
+                                'Fecha_Objetivo': a.target_date,
+                                'Fecha_Completado': a.completion_date,
+                                'Progreso_%': round((done / total) * 100) if total > 0 else 0,
+                                'Hito': m.description,
+                                'Hito_Objetivo': m.target_date,
+                                'Hito_Completado': m.completion_date,
+                                'Hito_Estado': m.status,
+                                'Hito_Comentario': m.comment,
+                            })
+                    else:
+                        act_rows.append({
+                            'ID_Actividad': a.id,
+                            'Titulo': a.title,
+                            'Tipo': a.activity_type,
+                            'Responsable': a.responsible,
+                            'Prioridad': a.priority,
+                            'Estado_Actividad': a.status,
+                            'Fecha_Inicio': a.start_date,
+                            'Fecha_Objetivo': a.target_date,
+                            'Fecha_Completado': a.completion_date,
+                            'Progreso_%': 0,
+                            'Hito': None, 'Hito_Objetivo': None,
+                            'Hito_Completado': None, 'Hito_Estado': None,
+                            'Hito_Comentario': None,
+                        })
+                pd.DataFrame(act_rows).to_excel(writer, index=False, sheet_name='Actividades')
 
             output.seek(0)
             today = dt.date.today().isoformat()

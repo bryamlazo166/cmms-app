@@ -16,7 +16,8 @@ from models import (
     OTMaterial, WarehouseMovement, PurchaseOrder, PurchaseRequest,
     LubricationPoint, LubricationExecution, MonitoringPoint, MonitoringReading,
     RotativeAsset, RotativeAssetHistory, RotativeAssetSpec,
-    InspectionRoute, InspectionItem, InspectionExecution, InspectionResult
+    InspectionRoute, InspectionItem, InspectionExecution, InspectionResult,
+    Activity, Milestone
 )
 from utils.crud_helpers import create_entry, get_entries, update_entry, delete_entry
 from utils.reporting_helpers import (
@@ -31,6 +32,7 @@ from utils.schedule_helpers import (
     _monitoring_semaphore_for_value,
     _nice_axis_step,
 )
+from routes.activity_routes import register_activity_routes
 from routes.auth_routes import register_auth_routes
 from routes.inspection_routes import register_inspection_routes
 from routes.core_routes import register_core_routes
@@ -185,6 +187,8 @@ def add_build_header(response):
 # ── Register all route modules ────────────────────────────────────────────────
 register_auth_routes(app=app, db=db, logger=logger, User=User)
 
+register_activity_routes(app=app, db=db, logger=logger, Activity=Activity, Milestone=Milestone)
+
 register_inspection_routes(
     app=app,
     db=db,
@@ -304,6 +308,8 @@ register_reports_routes(
     InspectionItem=InspectionItem,
     InspectionExecution=InspectionExecution,
     InspectionResult=InspectionResult,
+    Activity=Activity,
+    Milestone=Milestone,
     _parse_date_flexible=_parse_date_flexible,
     _is_in_window=_is_in_window,
     _normalize_maintenance_type=_normalize_maintenance_type,

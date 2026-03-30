@@ -1,0 +1,178 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Seguimiento - CMMS Pro</title>
+    <link rel="stylesheet" href="/static/css/style.css?v=20260330">
+    <link rel="stylesheet" href="/static/css/sidebar.css?v=20260330">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css">
+    <style>
+        .wrap{max-width:1100px;margin:0 auto;padding:12px 16px}
+        h2 i{margin-right:8px;color:var(--sys-indigo,#5E5CE6)}
+        .subtitle{color:rgba(255,255,255,.45);font-size:.84rem;margin-bottom:16px}
+        .toolbar{display:flex;gap:8px;flex-wrap:wrap;margin-bottom:16px;align-items:center}
+        .toolbar select,.toolbar input{height:34px;background:rgba(255,255,255,.06);border:1px solid rgba(255,255,255,.10);border-radius:8px;color:rgba(255,255,255,.80);padding:0 10px;font-size:.82rem}
+        .btn{height:34px;border:none;border-radius:8px;padding:0 14px;font-size:.84rem;font-weight:600;cursor:pointer;display:inline-flex;align-items:center;gap:6px;transition:opacity 150ms}
+        .btn:hover{opacity:.85}
+        .btn-primary{background:#0A84FF;color:#fff}
+        .btn-sm{height:28px;padding:0 10px;font-size:.78rem;border-radius:6px}
+        .btn-success{background:rgba(48,209,88,.18);color:#5cd870;border:1px solid rgba(48,209,88,.25)}
+        .btn-secondary{background:rgba(255,255,255,.10);color:rgba(255,255,255,.70)}
+        .btn-danger{background:rgba(255,69,58,.14);color:#FF6B61;border:1px solid rgba(255,69,58,.20)}
+
+        /* Activity cards */
+        .act-list{display:flex;flex-direction:column;gap:10px}
+        .act-card{background:var(--bg-primary,#1C1C1E);border:1px solid rgba(255,255,255,.08);border-radius:14px;padding:16px;transition:border-color 150ms}
+        .act-card:hover{border-color:rgba(255,255,255,.16)}
+        .act-card.expanded{border-color:rgba(10,132,255,.30)}
+        .act-header{display:flex;align-items:flex-start;gap:12px;cursor:pointer}
+        .act-header .chevron{color:rgba(255,255,255,.25);font-size:.7rem;margin-top:5px;transition:transform 200ms}
+        .act-card.expanded .chevron{transform:rotate(90deg);color:#0A84FF}
+        .act-body{flex:1;min-width:0}
+        .act-title{font-size:.95rem;font-weight:600;color:rgba(255,255,255,.90)}
+        .act-meta{display:flex;gap:12px;flex-wrap:wrap;margin-top:5px;font-size:.78rem;color:rgba(255,255,255,.45)}
+        .act-meta span{display:inline-flex;align-items:center;gap:4px}
+        .act-right{text-align:right;flex-shrink:0}
+        .progress-bar{width:120px;height:6px;background:rgba(255,255,255,.08);border-radius:3px;overflow:hidden;margin-top:6px}
+        .progress-fill{height:100%;border-radius:3px;transition:width 300ms}
+        .progress-text{font-size:.72rem;color:rgba(255,255,255,.45);margin-top:3px}
+        .next-ms{font-size:.78rem;color:rgba(255,255,255,.50);margin-top:6px}
+        .next-ms i{color:#FF9F0A;margin-right:4px}
+
+        /* Priority badges */
+        .badge-alta{background:rgba(255,69,58,.18);color:#FF6B61;padding:2px 8px;border-radius:999px;font-size:.72rem;font-weight:700}
+        .badge-media{background:rgba(255,159,10,.18);color:#FFB340;padding:2px 8px;border-radius:999px;font-size:.72rem;font-weight:700}
+        .badge-baja{background:rgba(48,209,88,.18);color:#5cd870;padding:2px 8px;border-radius:999px;font-size:.72rem;font-weight:700}
+        .badge-type{background:rgba(94,92,230,.18);color:#8F8DF0;padding:2px 8px;border-radius:999px;font-size:.72rem;font-weight:700}
+        .badge-status{padding:2px 8px;border-radius:999px;font-size:.72rem;font-weight:700}
+        .st-ABIERTA{background:rgba(10,132,255,.18);color:#5AC8FA}
+        .st-EN_PROGRESO{background:rgba(255,159,10,.18);color:#FFB340}
+        .st-COMPLETADA{background:rgba(48,209,88,.18);color:#5cd870}
+        .st-CANCELADA{background:rgba(255,255,255,.08);color:rgba(255,255,255,.35)}
+
+        /* Milestones panel */
+        .ms-panel{display:none;margin-top:14px;padding-top:14px;border-top:1px solid rgba(255,255,255,.06)}
+        .act-card.expanded .ms-panel{display:block}
+        .ms-list{list-style:none;padding:0;margin:0 0 12px}
+        .ms-item{display:flex;align-items:flex-start;gap:10px;padding:8px 0;border-bottom:1px solid rgba(255,255,255,.04)}
+        .ms-item:last-child{border:none}
+        .ms-icon{width:22px;height:22px;border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:.65rem;flex-shrink:0;margin-top:1px}
+        .ms-done{background:rgba(48,209,88,.22);color:#30D158}
+        .ms-pending{background:rgba(255,255,255,.08);color:rgba(255,255,255,.30)}
+        .ms-progress{background:rgba(255,159,10,.22);color:#FF9F0A}
+        .ms-body{flex:1;min-width:0}
+        .ms-desc{font-size:.84rem;color:rgba(255,255,255,.82)}
+        .ms-desc.done{text-decoration:line-through;color:rgba(255,255,255,.40)}
+        .ms-dates{font-size:.72rem;color:rgba(255,255,255,.35);margin-top:2px}
+        .ms-comment{font-size:.75rem;color:rgba(255,255,255,.40);font-style:italic;margin-top:2px}
+        .ms-actions{display:flex;gap:4px;flex-shrink:0}
+        .ms-actions button{width:26px;height:26px;border:none;border-radius:6px;cursor:pointer;font-size:.72rem;display:flex;align-items:center;justify-content:center}
+        .ms-btn-complete{background:rgba(48,209,88,.16);color:#5cd870}
+        .ms-btn-complete:hover{background:rgba(48,209,88,.32)}
+        .ms-btn-del{background:rgba(255,69,58,.12);color:#FF6B61}
+        .ms-btn-del:hover{background:rgba(255,69,58,.28)}
+
+        /* Add milestone inline */
+        .ms-add{display:flex;gap:6px;align-items:center;flex-wrap:wrap}
+        .ms-add input{height:32px;background:rgba(255,255,255,.06);border:1px solid rgba(255,255,255,.08);border-radius:6px;color:rgba(255,255,255,.80);padding:0 8px;font-size:.82rem}
+        .ms-add input::placeholder{color:rgba(255,255,255,.22)}
+
+        /* Modal */
+        .modal-overlay{display:none;position:fixed;inset:0;z-index:9999;background:rgba(0,0,0,.72);backdrop-filter:blur(6px);align-items:center;justify-content:center}
+        .modal-overlay.open{display:flex}
+        .modal-box{background:#1C1C1E;border:1px solid rgba(255,255,255,.10);border-radius:16px;padding:24px;width:min(520px,94vw);max-height:90vh;overflow-y:auto;box-shadow:0 32px 80px rgba(0,0,0,.8)}
+        .modal-box h3{font-size:1.05rem;font-weight:700;color:rgba(255,255,255,.92);margin:0 0 16px}
+        .mfield{margin-bottom:12px}
+        .mfield label{display:block;font-size:.72rem;font-weight:600;text-transform:uppercase;letter-spacing:.5px;color:rgba(255,255,255,.45);margin-bottom:4px}
+        .mfield input,.mfield select,.mfield textarea{width:100%;background:rgba(255,255,255,.06);border:1px solid rgba(255,255,255,.10);border-radius:8px;color:rgba(255,255,255,.88);font-size:.85rem;padding:8px 10px;outline:none}
+        .mfield textarea{height:60px;resize:vertical}
+        .mfield input::placeholder,.mfield textarea::placeholder{color:rgba(255,255,255,.22)}
+        .mrow{display:grid;grid-template-columns:1fr 1fr;gap:10px}
+        .modal-actions{display:flex;gap:8px;justify-content:flex-end;margin-top:16px}
+
+        .empty{text-align:center;color:rgba(255,255,255,.30);padding:40px 20px;font-size:.9rem}
+    </style>
+</head>
+<body>
+<nav class="sidebar">
+    <div class="logo-details"><i class="fas fa-industry icon"></i><div class="logo_name">CMMS Pro</div><i class="fas fa-bars" id="btn_toggle"></i></div>
+    <ul class="nav-list"></ul>
+</nav>
+<section class="home-section">
+<div class="wrap">
+    <h2><i class="fas fa-tasks"></i>Seguimiento de Actividades</h2>
+    <p class="subtitle">Control de actividades pendientes, reuniones, compras criticas, fabricaciones y proyectos con hitos de seguimiento.</p>
+
+    <div class="toolbar">
+        <button class="btn btn-primary" onclick="openCreateModal()"><i class="fas fa-plus"></i> Nueva Actividad</button>
+        <select id="filterStatus" onchange="loadActivities()">
+            <option value="">Activas</option>
+            <option value="all">Todas</option>
+            <option value="ABIERTA">Abiertas</option>
+            <option value="EN_PROGRESO">En Progreso</option>
+            <option value="COMPLETADA">Completadas</option>
+            <option value="CANCELADA">Canceladas</option>
+        </select>
+        <select id="filterType" onchange="loadActivities()">
+            <option value="">Todos los tipos</option>
+            <option value="FABRICACION">Fabricacion</option>
+            <option value="COMPRA">Compra</option>
+            <option value="REUNION">Reunion</option>
+            <option value="PROYECTO">Proyecto</option>
+            <option value="PARADA">Parada</option>
+            <option value="OTRO">Otro</option>
+        </select>
+    </div>
+
+    <div class="act-list" id="actList">
+        <div class="empty">Cargando...</div>
+    </div>
+</div>
+</section>
+
+<!-- Create/Edit Modal -->
+<div class="modal-overlay" id="actModal">
+    <div class="modal-box">
+        <h3 id="modalTitle"><i class="fas fa-plus-circle"></i> Nueva Actividad</h3>
+        <input type="hidden" id="aId">
+        <div class="mfield"><label>Titulo</label><input id="aTitle" placeholder="Ej: Fabricacion eje molino #2"></div>
+        <div class="mrow">
+            <div class="mfield"><label>Tipo</label>
+                <select id="aType">
+                    <option value="FABRICACION">Fabricacion</option>
+                    <option value="COMPRA">Compra / RQ</option>
+                    <option value="REUNION">Reunion</option>
+                    <option value="PROYECTO">Proyecto</option>
+                    <option value="PARADA">Parada programada</option>
+                    <option value="OTRO">Otro</option>
+                </select>
+            </div>
+            <div class="mfield"><label>Prioridad</label>
+                <select id="aPriority">
+                    <option value="ALTA">Alta</option>
+                    <option value="MEDIA" selected>Media</option>
+                    <option value="BAJA">Baja</option>
+                </select>
+            </div>
+        </div>
+        <div class="mrow">
+            <div class="mfield"><label>Responsable</label><input id="aResponsible" placeholder="Nombre"></div>
+            <div class="mfield"><label>Equipo (opcional)</label><select id="aEquipment"></select></div>
+        </div>
+        <div class="mrow">
+            <div class="mfield"><label>Fecha inicio</label><input id="aStart" type="date"></div>
+            <div class="mfield"><label>Fecha objetivo</label><input id="aTarget" type="date"></div>
+        </div>
+        <div class="mfield"><label>Descripcion</label><textarea id="aDesc" placeholder="Detalle de la actividad..."></textarea></div>
+        <div class="modal-actions">
+            <button class="btn btn-secondary" onclick="closeModal()">Cancelar</button>
+            <button class="btn btn-primary" onclick="withLoading(this, saveActivity)"><i class="fas fa-save"></i> Guardar</button>
+        </div>
+    </div>
+</div>
+
+<script src="/static/js/sidebar.js?v=20260330"></script>
+<script src="/static/js/activities.js?v=20260330"></script>
+</body>
+</html>

@@ -137,6 +137,10 @@ def register_core_routes(app, db, logger, app_build_tag,
     def purchasing_page():
         return render_template('purchasing.html')
 
+    @app.route('/seguimiento')
+    def activities_page():
+        return render_template('activities.html')
+
     # ── KPI Dashboard — MTTR, MTBF, Availability per equipment/line/area ──
 
     @app.route('/api/dashboard-kpis', methods=['GET'])

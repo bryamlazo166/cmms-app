@@ -923,6 +923,86 @@ class InspectionResult(db.Model):
         }
 
 
+# ── Activity Tracking / Seguimiento de Actividades ─────────────────────────────
+
+class Activity(db.Model):
+    __tablename__ = 'activities'
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    title: Mapped[str] = mapped_column(String(250), nullable=False)
+    activity_type: Mapped[str] = mapped_column(String(30), nullable=False, default='OTRO')
+    # FABRICACION | COMPRA | REUNION | PROYECTO | PARADA | OTRO
+    responsible: Mapped[str | None] = mapped_column(String(120), nullable=True)
+    priority: Mapped[str] = mapped_column(String(10), nullable=False, default='MEDIA')
+    # ALTA | MEDIA | BAJA
+    status: Mapped[str] = mapped_column(String(20), nullable=False, default='ABIERTA')
+    # ABIERTA | EN_PROGRESO | COMPLETADA | CANCELADA
+    description: Mapped[str | None] = mapped_column(Text, nullable=True)
+    start_date: Mapped[str | None] = mapped_column(String(20), nullable=True)
+    target_date: Mapped[str | None] = mapped_column(String(20), nullable=True)
+    completion_date: Mapped[str | None] = mapped_column(String(20), nullable=True)
+    equipment_id: Mapped[int | None] = mapped_column(ForeignKey('equipments.id'), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+
+    equipment = relationship("Equipment")
+    milestones = relationship("Milestone", back_populates="activity", cascade="all, delete-orphan",
+                              order_by="Milestone.order_index")
+
+    def to_dict(self):
+        ms = [m for m in (self.milestones or []) if m.is_active]
+        done = sum(1 for m in ms if m.status == 'COMPLETADO')
+        total = len(ms)
+        next_ms = next((m for m in ms if m.status != 'COMPLETADO'), None)
+        return {
+            "id": self.id,
+            "title": self.title,
+            "activity_type": self.activity_type,
+            "responsible": self.responsible,
+            "priority": self.priority,
+            "status": self.status,
+            "description": self.description,
+            "start_date": self.start_date,
+            "target_date": self.target_date,
+            "completion_date": self.completion_date,
+            "equipment_id": self.equipment_id,
+            "equipment_name": self.equipment.name if self.equipment else None,
+            "milestones_done": done,
+            "milestones_total": total,
+            "progress": round((done / total) * 100) if total > 0 else 0,
+            "next_milestone": next_ms.description if next_ms else None,
+            "next_milestone_date": next_ms.target_date if next_ms else None,
+        }
+
+
+class Milestone(db.Model):
+    __tablename__ = 'milestones'
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    activity_id: Mapped[int] = mapped_column(ForeignKey('activities.id'), nullable=False)
+    description: Mapped[str] = mapped_column(String(300), nullable=False)
+    target_date: Mapped[str | None] = mapped_column(String(20), nullable=True)
+    completion_date: Mapped[str | None] = mapped_column(String(20), nullable=True)
+    status: Mapped[str] = mapped_column(String(20), nullable=False, default='PENDIENTE')
+    # PENDIENTE | EN_PROGRESO | COMPLETADO
+    comment: Mapped[str | None] = mapped_column(Text, nullable=True)
+    order_index: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    is_active: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
+
+    activity = relationship("Activity", back_populates="milestones")
+
+    def to_dict(self):
+        return {
+            "id": self.id,
+            "activity_id": self.activity_id,
+            "description": self.description,
+            "target_date": self.target_date,
+            "completion_date": self.completion_date,
+            "status": self.status,
+            "comment": self.comment,
+            "order_index": self.order_index,
+        }
+
+
 class RotativeAssetHistory(db.Model):
     __tablename__ = 'rotative_asset_history'
 
