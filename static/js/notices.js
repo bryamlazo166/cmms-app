@@ -71,12 +71,12 @@ async function loadNotices() {
             const isLocked = n.status === 'Cerrado' || n.status === 'Anulado';
             const actionBtns = isLocked
                 ? `<button style="padding:2px 5px; opacity:0.3; cursor:default;">🚫</button>` // Placeholder for alignment
-                : `<button onclick="annulNotice(${n.id})" style="padding:2px 5px; background: transparent; border: none; cursor: pointer; color: #cf6679;" title="Anular Aviso">🚫</button>`;
+                : `<button onclick="annulNotice(${n.id})" style="padding:2px 5px; background: transparent; border: none; cursor: pointer; color: #FF453A;" title="Anular Aviso">🚫</button>`;
 
             const editBtn = `<button onclick="editNotice(${n.id})" style="padding:2px 5px; background: transparent; border: none; cursor: pointer;" title="Editar">✏️</button>`;
 
             // Status Badge
-            let statusColor = '#ff9800'; // Default Pendiente
+            let statusColor = '#FF9F0A'; // Default Pendiente
             if (n.status === 'En Tratamiento') statusColor = '#2196f3';
             if (n.status === 'En Progreso') statusColor = '#00bcd4';
             if (n.status === 'Cerrado') statusColor = '#4caf50';
@@ -89,7 +89,7 @@ async function loadNotices() {
             tr.innerHTML = `
                 <td>${n.code || n.id}</td>
                 <td>
-                    <span style="background-color: ${n.failure_count > 0 ? '#cf6679' : '#03dac6'}; color: ${n.failure_count > 0 ? 'white' : 'black'}; padding: 2px 6px; border-radius: 12px; font-weight: bold; font-size: 0.9em;">
+                    <span style="background-color: ${n.failure_count > 0 ? '#FF453A' : '#0A84FF'}; color: ${n.failure_count > 0 ? 'white' : 'black'}; padding: 2px 6px; border-radius: 12px; font-weight: bold; font-size: 0.9em;">
                         ${n.failure_count || 0}
                     </span>
                 </td>
@@ -102,7 +102,7 @@ async function loadNotices() {
                 <td>${getName(allEquips, n.equipment_id)}</td>
                 <td>${getName(allSys, n.system_id)}</td>
                 <td>${getName(allComps, n.component_id)}</td>
-                <td>${n.description || '-'} <br> <small style="color:#cf6679;">${n.cancellation_reason ? '(Anulado: ' + n.cancellation_reason + ')' : ''}</small></td>
+                <td>${n.description || '-'} <br> <small style="color:#FF453A;">${n.cancellation_reason ? '(Anulado: ' + n.cancellation_reason + ')' : ''}</small></td>
                 <td>${n.criticality || '-'}</td>
                 <td>${n.priority || '-'}</td>
                 <td>${n.request_date || '-'}</td>
@@ -136,7 +136,7 @@ function updateKPIIndicators(notices) {
 
     // Status Breakdown with color coding
     const statusColors = {
-        'Pendiente': { bg: '#ff9800', text: '#000' },
+        'Pendiente': { bg: '#FF9F0A', text: '#000' },
         'En Tratamiento': { bg: '#2196f3', text: '#fff' },
         'En Progreso': { bg: '#00bcd4', text: '#000' },
         'Cerrado': { bg: '#4caf50', text: '#fff' },
@@ -176,7 +176,7 @@ function updateKPIIndicators(notices) {
     if (areaEl) {
         areaEl.innerHTML = sortedReporterAreas.map(([area, count]) => `
             <div style="display: flex; align-items: center; gap: 6px; background: #3d3d3d; padding: 6px 12px; border-radius: 15px; border: 1px solid #555;">
-                <span style="font-weight: bold; color: #bb86fc;">${count}</span>
+                <span style="font-weight: bold; color: #BF5AF2;">${count}</span>
                 <span style="color: #ccc; font-size: 0.85em;">${area}</span>
             </div>
         `).join('');
@@ -556,11 +556,11 @@ function updateHierarchyDisplay() {
     };
 
     div.innerHTML = `
-        <strong style="color:#03dac6">Area:</strong> ${safeName(allAreas, areaId)} | 
-        <strong style="color:#03dac6">Línea:</strong> ${safeName(allLines, lineId)} | 
-        <strong style="color:#03dac6">Equipo:</strong> ${safeName(allEquips, eqId)} <br>
-        <strong style="color:#03dac6">Sistema:</strong> ${safeName(allSys, sysId)} | 
-        <strong style="color:#03dac6">Comp.:</strong> ${safeName(allComps, compId)}
+        <strong style="color:#0A84FF">Area:</strong> ${safeName(allAreas, areaId)} | 
+        <strong style="color:#0A84FF">Línea:</strong> ${safeName(allLines, lineId)} | 
+        <strong style="color:#0A84FF">Equipo:</strong> ${safeName(allEquips, eqId)} <br>
+        <strong style="color:#0A84FF">Sistema:</strong> ${safeName(allSys, sysId)} | 
+        <strong style="color:#0A84FF">Comp.:</strong> ${safeName(allComps, compId)}
     `;
 }
 

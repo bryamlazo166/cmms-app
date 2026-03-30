@@ -25,7 +25,7 @@
 
         .pipeline-step h3 {
             margin-top: 0;
-            color: #03dac6;
+            color: #0A84FF;
             border-bottom: 1px solid #444;
             padding-bottom: 5px;
         }
@@ -158,13 +158,13 @@
 
                 <div class="container" style="max-width: 100%;">
                     <div class="toolbar" style="justify-content: center; margin-bottom: 20px;">
-                        <button id="importBtn" class="btn-primary" style="background:#03dac6; color:black;">📥 Importar
+                        <button id="importBtn" class="btn-primary" style="background:#0A84FF; color:black;">📥 Importar
                             / Carga
                             Masiva</button>
                         <a href="/api/export-hierarchy-complete" target="_blank" style="text-decoration:none;">
-                            <button class="btn-secondary" style="background:#bb86fc; color:black;">📤 Descargar Arbol Completo</button>
+                            <button class="btn-secondary" style="background:#BF5AF2; color:black;">📤 Descargar Arbol Completo</button>
                         </a>
-                        <button id="resetDbBtn" class="btn-danger" style="background:#cf6679;">Reiniciar DB</button>
+                        <button id="resetDbBtn" class="btn-danger" style="background:#FF453A;">Reiniciar DB</button>
                     </div>
 
                     <!-- EDIT MODAL -->
@@ -181,7 +181,7 @@
                             <div id="editExtraFields"></div>
 
                             <div style="margin-top: 15px; display: flex; gap: 10px;">
-                                <button type="submit" style="background: #03dac6; color: black; flex: 1;">Guardar
+                                <button type="submit" style="background: #0A84FF; color: black; flex: 1;">Guardar
                                     Cambios</button>
                                 <button type="button" onclick="document.getElementById('editModal').close()"
                                     style="background: transparent; border: 1px solid #888; color: #888; flex: 1;">Cancelar</button>
@@ -218,7 +218,7 @@
                             <p>Usa una sola hoja con formato de Jerarquia Completa.</p>
                             <div style="margin-bottom: 15px;">
                                 <a href="/api/download-template" target="_blank"
-                                    style="color: #03dac6; text-decoration: none; border: 1px solid #03dac6; padding: 5px 10px; border-radius: 4px;">📥
+                                    style="color: #0A84FF; text-decoration: none; border: 1px solid #0A84FF; padding: 5px 10px; border-radius: 4px;">📥
                                     Descargar Plantilla / Formato</a>
                             </div>
                             <form id="uploadForm">
@@ -253,7 +253,7 @@
                         <!-- MODE: HIERARCHY -->
                         <div id="modeHierarchy" style="display: none;">
                             <p>Pega las columnas desde Excel en orden: <b>Area | Linea | Equipo | TAG(opcional) | Sistema | Componente</b></p>
-                            <small style="color: #bb86fc; display:block; margin-bottom:5px;">* Copia las filas
+                            <small style="color: #BF5AF2; display:block; margin-bottom:5px;">* Copia las filas
                                 directamente
                                 desde
                                 Excel (Ctrl+C) y pégalas aquí (Ctrl+V). NO incluir encabezados.</small>
@@ -262,7 +262,7 @@
                                 style="width: 100%; background: #1e1e1e; color: white; border: 1px solid #444; font-family: monospace; white-space: pre; overflow: auto; margin-bottom: 10px;"></textarea>
 
                             <button id="btnProcessHierarchy" onclick="processHierarchyPaste()"
-                                style="width:100%; background-color: #bb86fc; color: black;">Procesar Jerarquía
+                                style="width:100%; background-color: #BF5AF2; color: black;">Procesar Jerarquía
                                 Completa</button>
                         </div>
 

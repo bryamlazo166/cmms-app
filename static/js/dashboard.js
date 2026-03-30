@@ -50,12 +50,11 @@ function renderStatusChart(data) {
     const labels = Object.keys(data);
     const values = Object.values(data);
 
-    // Custom Colors
     const colors = {
-        'Abierta': '#ff9800',
-        'Programada': '#2196f3',
-        'En Progreso': '#03dac6',
-        'Cerrada': '#4caf50'
+        'Abierta': '#FF9F0A',
+        'Programada': '#0A84FF',
+        'En Progreso': '#5AC8FA',
+        'Cerrada': '#30D158'
     };
 
     new Chart(ctx, {
@@ -77,7 +76,7 @@ function renderStatusChart(data) {
                 legend: { display: false }
             },
             scales: {
-                y: { grid: { color: '#333' } },
+                y: { grid: { color: 'rgba(255,255,255,0.08)' } },
                 x: { grid: { display: false } }
             }
         }
@@ -92,7 +91,7 @@ function renderTypeChart(data) {
             labels: Object.keys(data),
             datasets: [{
                 data: Object.values(data),
-                backgroundColor: ['#bb86fc', '#3700b3', '#03dac6', '#cf6679'],
+                backgroundColor: ['#BF5AF2', '#5E5CE6', '#0A84FF', '#FF453A'],
                 borderWidth: 0
             }]
         },
@@ -119,7 +118,7 @@ function renderFailureChart(dataArray) {
             datasets: [{
                 label: 'Frecuencia',
                 data: values,
-                backgroundColor: '#cf6679',
+                backgroundColor: '#FF453A',
                 borderRadius: 4
             }]
         },
@@ -128,7 +127,7 @@ function renderFailureChart(dataArray) {
             maintainAspectRatio: false,
             plugins: { legend: { display: false } },
             scales: {
-                x: { grid: { color: '#333' } },
+                x: { grid: { color: 'rgba(255,255,255,0.08)' } },
                 y: { grid: { display: false } }
             }
         }
@@ -145,7 +144,7 @@ function renderRecentActivity(list) {
     container.innerHTML = list.map(item => `
         <div class="activity-item">
             <div>
-                <strong style="color: #03dac6;">${item.code}</strong>
+                <strong style="color: #0A84FF;">${item.code}</strong>
                 <span style="color:#aaa; font-size:0.9em;"> - ${item.date || 'Sin Fecha'}</span>
                 <div style="font-size:0.9em; margin-top:3px;">${item.description || 'Sin descripción'}</div>
             </div>

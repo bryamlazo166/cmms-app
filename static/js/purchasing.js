@@ -58,7 +58,7 @@ function renderRequests(list) {
             <div style="display:flex; align-items:center; gap: 15px;">
                 <input type="checkbox" value="${req.id}" onchange="toggleSelection(${req.id}, this)">
                 <div>
-                    <div style="color: #03dac6; font-weight: bold;">${req.req_code}</div>
+                    <div style="color: #0A84FF; font-weight: bold;">${req.req_code}</div>
                     <div style="color: #aaa; font-size: 0.9em;">OT: ${req.ot_code || 'N/A'}</div>
                 </div>
             </div>
@@ -142,7 +142,7 @@ function renderOrders(list) {
         });
 
         tr.innerHTML = `
-            <td><b style="color:#03dac6;">${po.po_code}</b></td>
+            <td><b style="color:#0A84FF;">${po.po_code}</b></td>
             <td>${po.provider_name}</td>
             <td>${po.issue_date || '-'}</td>
             <td><span class="status-pill status-${(po.status || '').toLowerCase()}">${po.status}</span></td>

@@ -198,7 +198,7 @@ function drawTrend(rows) {
         data: {
             labels: (rows || []).map(r => r.period),
             datasets: [
-                { label: "Cumplimiento %", data: (rows || []).map(r => Number(r.compliance_percent || 0)), borderColor: "#03dac6", tension: 0.2 },
+                { label: "Cumplimiento %", data: (rows || []).map(r => Number(r.compliance_percent || 0)), borderColor: "#0A84FF", tension: 0.2 },
                 { label: "Disponibilidad %", data: (rows || []).map(r => Number(r.availability || 0)), borderColor: "#64b5f6", tension: 0.2 }
             ]
         },

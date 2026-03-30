@@ -14,6 +14,21 @@ def register_core_routes(app, db, logger, app_build_tag, WorkOrder, MaintenanceN
             "build": app_build_tag,
         })
 
+    @app.route('/health', methods=['GET'])
+    def health_check():
+        """Uptime check for Render / external monitors. No auth required."""
+        try:
+            db.session.execute(db.text("SELECT 1"))
+            db_ok = True
+        except Exception:
+            db_ok = False
+        status = 200 if db_ok else 503
+        return jsonify({
+            "status": "ok" if db_ok else "degraded",
+            "db": "connected" if db_ok else "unreachable",
+            "build": app_build_tag,
+        }), status
+
     @app.route('/api/dashboard-stats', methods=['GET'])
     def dashboard_stats():
         try:

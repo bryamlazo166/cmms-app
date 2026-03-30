@@ -11,7 +11,7 @@
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css">
     <style>
         .stock-warning {
-            background: #ff9800 !important;
+            background: #FF9F0A !important;
         }
 
         .stock-critical {
@@ -136,7 +136,7 @@
                         <div style="display:flex; gap:10px; flex-wrap: wrap;">
                             <a href="/api/warehouse/export" target="_blank" style="text-decoration:none;">
                                 <button class="btn-secondary"
-                                    style="background:#28a745; color:white; border:none; padding: 8px 15px;">
+                                    style="background:#30D158; color:white; border:none; padding: 8px 15px;">
                                     <i class="fas fa-file-excel"></i> Exportar Maestro
                                 </button>
                             </a>
@@ -168,7 +168,7 @@
                             <!-- Populated by JS -->
                         </select>
                         <label
-                            style="display: flex; align-items: center; gap: 5px; color: #ff9800; font-weight: bold; margin-left: 10px; cursor: pointer;">
+                            style="display: flex; align-items: center; gap: 5px; color: #FF9F0A; font-weight: bold; margin-left: 10px; cursor: pointer;">
                             <input type="checkbox" id="filterReplenish" onchange="filterTable()">
                             <i class="fas fa-exclamation-triangle"></i> Por Reposición
                         </label>
@@ -280,7 +280,7 @@
                         </div>
 
                         <h4
-                            style="grid-column: span 2; margin: 10px 0 5px 0; color: #03dac6; border-bottom: 1px solid #444;">
+                            style="grid-column: span 2; margin: 10px 0 5px 0; color: #0A84FF; border-bottom: 1px solid #444;">
                             Gestión de Inventario</h4>
 
                         <div class="form-group">
@@ -498,7 +498,7 @@
                         // Criticality Badge Color
                         let critColor = '#888';
                         if (item.criticality === 'Alta') critColor = '#f44336';
-                        if (item.criticality === 'Media') critColor = '#ff9800';
+                        if (item.criticality === 'Media') critColor = '#FF9F0A';
                         if (item.criticality === 'Baja') critColor = '#4caf50';
 
                         tr.innerHTML = `
@@ -518,7 +518,7 @@
                     <td>${item.average_cost ? '$' + item.average_cost.toFixed(2) : '-'}</td>
                     <td>${item.is_active ? '✅' : '❌'}</td>
                     <td>
-                        <button onclick="openMovements(${item.id})" title="Kardex / Movimientos" style="color: #03dac6;"><i class="fas fa-history"></i></button>
+                        <button onclick="openMovements(${item.id})" title="Kardex / Movimientos" style="color: #0A84FF;"><i class="fas fa-history"></i></button>
                         <button onclick="editItem(${item.id})" title="Editar"><i class="fas fa-edit"></i></button>
                         <button onclick="toggleItem(${item.id})" title="${item.is_active ? 'Desactivar' : 'Activar'}">
                             <i class="fas fa-${item.is_active ? 'ban' : 'check'}"></i>
@@ -559,7 +559,7 @@
                     <td style="font-weight:bold; text-align:center;">${item.xyz_class || '-'}</td>
                     <td>${item.lead_time || 0}</td>
                     <td>${item.safety_stock || 0}</td>
-                    <td style="color:#03dac6; font-weight:bold;">${item.rop || 0}</td>
+                    <td style="color:#0A84FF; font-weight:bold;">${item.rop || 0}</td>
                     <td>${item.max_stock || 0}</td>
                     <td>${item.min_order_qty || 1}</td>
                  `;
@@ -685,7 +685,7 @@
                     if (!item) return;
 
                     currentMovItem = item;
-                    document.getElementById('movModalTitle').innerHTML = `<i class="fas fa-history"></i> Kardex: <span style="color:#03dac6">${item.name}</span> <small>(${item.code})</small>`;
+                    document.getElementById('movModalTitle').innerHTML = `<i class="fas fa-history"></i> Kardex: <span style="color:#0A84FF">${item.name}</span> <small>(${item.code})</small>`;
                     document.getElementById('movQty').value = '';
                     document.getElementById('movReason').value = '';
 

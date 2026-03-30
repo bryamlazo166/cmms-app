@@ -11,7 +11,7 @@
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css">
     <style>
         .status-disponible { background: #4caf50; }
-        .status-en-uso { background: #ff9800; }
+        .status-en-uso { background: #FF9F0A; }
         .status-mantenimiento { background: #f44336; }
 
         .tool-card {
@@ -27,7 +27,7 @@
 
         .tool-card:hover {
             transform: translateY(-3px);
-            border-color: #03dac6;
+            border-color: #0A84FF;
         }
 
         .tools-grid {
@@ -85,7 +85,7 @@
         }
 
         .view-toggle button.active {
-            background: #03dac6;
+            background: #0A84FF;
             color: #04262b;
             font-weight: 700;
         }
@@ -255,7 +255,7 @@
                 card.style.opacity = tool.is_active ? '1' : '0.5';
                 card.innerHTML = `
                     <div style="display: flex; justify-content: space-between; align-items: center;">
-                        <strong style="color: #03dac6;">${tool.code}</strong>
+                        <strong style="color: #0A84FF;">${tool.code}</strong>
                         <span class="${statusClass}" style="padding: 3px 10px; border-radius: 10px; font-size: 0.8em;">${tool.status}</span>
                     </div>
                     <h4 style="margin: 0; color: #fff;">${tool.name}</h4>
@@ -276,7 +276,7 @@
                 const tr = document.createElement('tr');
                 tr.style.opacity = tool.is_active ? '1' : '0.5';
                 tr.innerHTML = `
-                    <td style="color:#03dac6; font-weight:700;">${tool.code}</td>
+                    <td style="color:#0A84FF; font-weight:700;">${tool.code}</td>
                     <td>${tool.name}</td>
                     <td>${tool.category || '-'}</td>
                     <td><span class="${statusClass}" style="padding:3px 10px; border-radius:999px; font-size:0.8em;">${tool.status}</span></td>

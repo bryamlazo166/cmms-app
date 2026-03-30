@@ -158,7 +158,7 @@ def load_user(user_id):
     return User.query.get(int(user_id))
 
 # ── Auth guard: require login for all routes except /login and /static ────────
-_AUTH_EXEMPT = {'login', 'logout', 'static'}
+_AUTH_EXEMPT = {'login', 'logout', 'static', 'health_check'}
 
 @app.before_request
 def require_login():

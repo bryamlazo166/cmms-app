@@ -177,7 +177,7 @@ function renderTrend(trendRows, axisCfg, selectedPointId) {
             datasets: [{
                 label: 'Valor medido',
                 data: trendRows.map(r => Number(r.value)),
-                borderColor: '#03dac6',
+                borderColor: '#0A84FF',
                 backgroundColor: 'rgba(3, 218, 198, .15)',
                 fill: true,
                 pointRadius: 3,

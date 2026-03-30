@@ -245,7 +245,7 @@ window.deleteProvider = async (id) => {
 function getCriticalityColor(crit) {
     if (!crit) return '#777';
     if (crit === 'Alta') return '#f44336'; // Red
-    if (crit === 'Media') return '#ff9800'; // Orange
+    if (crit === 'Media') return '#FF9F0A'; // Orange
     if (crit === 'Baja') return '#4caf50'; // Green
     return '#777';
 }
@@ -434,7 +434,7 @@ function openCreateOTModal() {
     document.querySelectorAll('.ot-tab-content').forEach(t => t.style.display = 'none');
     document.getElementById('ot-tab-general').style.display = 'block';
     document.querySelectorAll('.ot-subtab').forEach((btn, i) => {
-        btn.style.background = i === 0 ? '#03dac6' : '#333';
+        btn.style.background = i === 0 ? '#0A84FF' : '#333';
         btn.style.color = i === 0 ? '#000' : '#aaa';
     });
 
@@ -489,7 +489,7 @@ async function editOT(id) {
     document.querySelectorAll('.ot-tab-content').forEach(t => t.style.display = 'none');
     document.getElementById('ot-tab-general').style.display = 'block';
     document.querySelectorAll('.ot-subtab').forEach((btn, i) => {
-        btn.style.background = i === 0 ? '#03dac6' : '#333';
+        btn.style.background = i === 0 ? '#0A84FF' : '#333';
         btn.style.color = i === 0 ? '#000' : '#aaa';
     });
 
@@ -727,7 +727,7 @@ function setActiveBtn(id) {
     const btn = document.getElementById(id);
     if (btn) {
         btn.classList.add('active');
-        btn.style.background = '#03dac6'; // Unified primary color
+        btn.style.background = '#0A84FF'; // Unified primary color
         btn.style.color = 'black';
     }
 }
@@ -782,7 +782,7 @@ function getCalendarEvents() {
         // Color logic
         let color = '#3788d8'; // Default blue
         if (ot.status === 'Cerrada') color = '#4caf50'; // Green
-        else if (ot.status === 'En Progreso') color = '#03dac6'; // Teal
+        else if (ot.status === 'En Progreso') color = '#0A84FF'; // Teal
         else if (ot.criticality === 'Alta' || ot.priority === 'Alta') color = '#f44336'; // Red programada alta
 
         return {
@@ -1544,7 +1544,7 @@ function renderPendingNotices() {
 
         // Status badge color
         const statusColors = {
-            'Pendiente': '#ff9800',
+            'Pendiente': '#FF9F0A',
             'En Tratamiento': '#2196f3',
             'En Progreso': '#00bcd4'
         };
@@ -1709,7 +1709,7 @@ window.openOTSubTab = function (evt, tabId) {
     document.getElementById(tabId).style.display = 'block';
 
     // Activate clicked button
-    evt.target.style.background = '#03dac6';
+    evt.target.style.background = '#0A84FF';
     evt.target.style.color = '#000';
 }
 
@@ -2145,7 +2145,7 @@ function renderMaterialsTable() {
     currentOTMaterials.forEach((m) => {
         const tr = document.createElement('tr');
         tr.innerHTML = `
-            <td><span class="badge" style="background: ${m.item_type === 'tool' ? '#ff9800' : '#4caf50'};">${m.item_type === 'tool' ? 'Herramienta' : 'Repuesto'}</span></td>
+            <td><span class="badge" style="background: ${m.item_type === 'tool' ? '#FF9F0A' : '#4caf50'};">${m.item_type === 'tool' ? 'Herramienta' : 'Repuesto'}</span></td>
             <td>${m.code || '-'}</td>
             <td>${m.name || m.item_name || 'N/A'}</td>
             <td>${m.quantity || 1}</td>
@@ -2389,7 +2389,7 @@ window.filterSpares = function () {
         div.style.cursor = "pointer";
         div.style.borderBottom = "1px solid #333";
         div.style.color = "#eee";
-        div.onmouseover = function () { this.style.backgroundColor = "#03dac6"; this.style.color = "black"; };
+        div.onmouseover = function () { this.style.backgroundColor = "#0A84FF"; this.style.color = "black"; };
         div.onmouseout = function () { this.style.backgroundColor = "transparent"; this.style.color = "#eee"; };
 
         div.innerHTML = `
@@ -2496,7 +2496,7 @@ window.renderPurchaseCart = function () {
         const tr = document.createElement('tr');
         tr.style.borderBottom = '1px solid #333';
         tr.innerHTML = `
-            <td style="padding:5px;">${item.item_type === 'MATERIAL' ? '<span style="color:#03dac6">REP</span>' : '<span style="color:#ffb74d">SERV</span>'}</td>
+            <td style="padding:5px;">${item.item_type === 'MATERIAL' ? '<span style="color:#0A84FF">REP</span>' : '<span style="color:#ffb74d">SERV</span>'}</td>
             <td style="padding:5px;">${item.detail}</td>
             <td style="padding:5px;">${item.quantity}</td>
             <td style="padding:5px;">
