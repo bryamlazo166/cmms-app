@@ -94,6 +94,14 @@ def register_work_orders_routes(
                     else:
                         sem = p.semaphore_status
                     if sem in ('ROJO', 'AMARILLO'):
+                        lub_desc = f"[PREVENTIVO - LUBRICACION] {p.code} {p.name}"
+                        if p.lubricant_name:
+                            lub_desc += f"\nLubricante: {p.lubricant_name}"
+                        if p.quantity_nominal:
+                            lub_desc += f" | Cantidad: {p.quantity_nominal} {p.quantity_unit or 'L'}"
+                        lub_desc += f"\nFrecuencia: cada {p.frequency_days} dias"
+                        if p.last_service_date:
+                            lub_desc += f" | Ultimo servicio: {p.last_service_date}"
                         sources.append({
                             'source_type': 'lubrication',
                             'source_id': p.id,
@@ -105,7 +113,7 @@ def register_work_orders_routes(
                             'line_id': p.line_id,
                             'system_id': p.system_id,
                             'component_id': p.component_id,
-                            'description': f"[PREVENTIVO] Lubricacion: {p.name}",
+                            'description': lub_desc,
                         })
 
             # Collect overdue inspection routes
@@ -117,6 +125,20 @@ def register_work_orders_routes(
                     else:
                         sem = r.semaphore_status
                     if sem in ('ROJO', 'AMARILLO'):
+                        # Build item list for description
+                        item_list = ""
+                        if hasattr(r, 'items') and r.items:
+                            active_items = [i for i in r.items if i.is_active]
+                            if active_items:
+                                item_list = "\nChecklist: " + " | ".join(
+                                    f"{i.description}{' ('+i.unit+')' if i.unit else ''}"
+                                    for i in active_items[:8]
+                                )
+                        insp_desc = f"[PREVENTIVO - INSPECCION] {r.code} {r.name}"
+                        insp_desc += f"\nFrecuencia: cada {r.frequency_days} dias"
+                        if r.last_execution_date:
+                            insp_desc += f" | Ultima ejecucion: {r.last_execution_date}"
+                        insp_desc += item_list
                         sources.append({
                             'source_type': 'inspection',
                             'source_id': r.id,
@@ -128,7 +150,7 @@ def register_work_orders_routes(
                             'line_id': r.line_id,
                             'system_id': None,
                             'component_id': None,
-                            'description': f"[PREVENTIVO] Inspeccion: {r.name}",
+                            'description': insp_desc,
                         })
 
             # Collect overdue monitoring points
@@ -137,6 +159,18 @@ def register_work_orders_routes(
                     _, sem = _calculate_monitoring_schedule(
                         p.last_measurement_date, p.frequency_days, p.warning_days)
                     if sem in ('ROJO', 'AMARILLO'):
+                        mon_desc = f"[PREVENTIVO - MONITOREO] {p.code} {p.name}"
+                        mon_desc += f"\nTipo: {p.measurement_type or 'VIBRACION'}"
+                        if p.axis:
+                            mon_desc += f" Eje: {p.axis}"
+                        mon_desc += f" | Unidad: {p.unit or 'mm/s'}"
+                        if p.normal_min is not None or p.normal_max is not None:
+                            mon_desc += f"\nRango normal: {p.normal_min or '-'} a {p.normal_max or '-'} {p.unit or ''}"
+                        if p.alarm_min is not None or p.alarm_max is not None:
+                            mon_desc += f" | Alarma: {p.alarm_min or '-'} a {p.alarm_max or '-'}"
+                        mon_desc += f"\nFrecuencia: cada {p.frequency_days} dias"
+                        if p.last_measurement_date:
+                            mon_desc += f" | Ultima medicion: {p.last_measurement_date}"
                         sources.append({
                             'source_type': 'monitoring',
                             'source_id': p.id,
@@ -148,7 +182,7 @@ def register_work_orders_routes(
                             'line_id': p.line_id,
                             'system_id': p.system_id,
                             'component_id': p.component_id,
-                            'description': f"[PREVENTIVO] Monitoreo: {p.name}",
+                            'description': mon_desc,
                         })
 
             # Create OTs for sources that don't already have an open OT
@@ -163,14 +197,28 @@ def register_work_orders_routes(
                     continue
 
                 today = datetime.now().strftime('%Y-%m-%d')
+
+                # Auto-resolve hierarchy from equipment if missing
+                eq_id = src['equipment_id']
+                ln_id = src['line_id']
+                ar_id = src['area_id']
+                if eq_id and not ln_id:
+                    eq = Equipment.query.get(eq_id)
+                    if eq:
+                        ln_id = eq.line_id
+                if ln_id and not ar_id:
+                    ln = Line.query.get(ln_id)
+                    if ln:
+                        ar_id = ln.area_id
+
                 wo = WorkOrder(
                     maintenance_type='Preventivo',
                     status='Programada',
                     description=src['description'],
                     scheduled_date=today,
-                    area_id=src['area_id'],
-                    line_id=src['line_id'],
-                    equipment_id=src['equipment_id'],
+                    area_id=ar_id,
+                    line_id=ln_id,
+                    equipment_id=eq_id,
                     system_id=src['system_id'],
                     component_id=src['component_id'],
                     source_type=src['source_type'],

@@ -202,7 +202,6 @@ function openEditModal(id) {
     q('eFreq').value = p.frequency_days || 30;
     q('eWarn').value = p.warning_days || 3;
     q('eLastDate').value = p.last_service_date || '';
-    q('eActive').value = p.is_active ? '1' : '0';
 
     // Populate equipment select
     fillSelect(q('eEquipment'), lubState.equipments, 'id', e => `${e.tag ? e.tag + ' - ' : ''}${e.name}`);
