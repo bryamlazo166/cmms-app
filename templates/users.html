@@ -228,6 +228,10 @@ function renderUsers(users) {
         tbody.innerHTML = '<tr><td colspan="5" class="empty-state">Sin usuarios registrados.</td></tr>';
         return;
     }
+    // Store users for edit lookup
+    window._usersCache = {};
+    users.forEach(u => window._usersCache[u.id] = u);
+
     tbody.innerHTML = users.map(u => `
         <tr>
             <td>
@@ -242,7 +246,7 @@ function renderUsers(users) {
             </td>
             <td>
                 <div class="actions">
-                    <button class="btn-icon btn-edit-ic" title="Editar" onclick="openEditModal(${JSON.stringify(u)})">
+                    <button class="btn-icon btn-edit-ic" title="Editar" onclick="openEditModal(window._usersCache[${u.id}])">
                         <i class="fas fa-pen"></i>
                     </button>
                     <button class="btn-icon btn-del-ic" title="Desactivar" onclick="deactivateUser(${u.id}, '${u.username}')">

@@ -341,26 +341,46 @@ body {
     }
     .sidebar.open { left: 0; }
 
+    /* Hide the toggle inside sidebar on mobile — JS creates external one */
     .sidebar #btn_toggle {
-        position: fixed;
-        top: 10px;
-        left: 10px;
-        right: auto;
-        width: 44px;
-        height: 44px;
-        font-size: 20px;
-        border-radius: var(--r-md);
-        border: 1px solid var(--sep);
-        z-index: 1001;
+        display: none;
     }
     .sidebar.open #btn_toggle {
+        display: flex;
         position: absolute;
         top: 14px;
-        left: auto;
         right: 8px;
+        left: auto;
         width: 34px;
         height: 34px;
         font-size: 16px;
+    }
+
+    /* External mobile toggle (created by JS, outside sidebar) */
+    #mobile-menu-btn {
+        position: fixed;
+        top: 10px;
+        left: 10px;
+        width: 46px;
+        height: 46px;
+        background: rgba(20,20,22,0.95);
+        backdrop-filter: blur(16px);
+        color: var(--label-primary);
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        cursor: pointer;
+        border-radius: var(--r-md);
+        font-size: 20px;
+        box-shadow: 0 4px 16px rgba(0,0,0,0.50);
+        border: 1px solid var(--sep-strong, rgba(255,255,255,0.14));
+        z-index: 2001;
+        transition: opacity var(--t-base);
+    }
+    .sidebar.open ~ #mobile-menu-btn,
+    .sidebar.open + section #mobile-menu-btn {
+        opacity: 0;
+        pointer-events: none;
     }
 
     .home-section { padding: 10px; }

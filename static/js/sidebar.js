@@ -116,6 +116,8 @@
                 btn.classList.remove('fa-times');
                 btn.classList.add('fa-bars');
             }
+            const mobileBtn = document.getElementById('mobile-menu-btn');
+            if (mobileBtn) mobileBtn.style.display = 'flex';
         };
         return overlay;
     }
@@ -155,18 +157,36 @@
         }
         setBtnIcon(sidebar, btn);
 
+        function toggleSidebar() {
+            sidebar.classList.toggle('open');
+            const isOpen = sidebar.classList.contains('open');
+            localStorage.setItem('cmms.sidebar.open', isOpen ? '1' : '0');
+            if (window.innerWidth < 1100) {
+                overlay.classList.toggle('active', isOpen);
+                // Hide/show mobile button
+                const mobileBtn = document.getElementById('mobile-menu-btn');
+                if (mobileBtn) mobileBtn.style.display = isOpen ? 'none' : 'flex';
+            } else {
+                overlay.classList.remove('active');
+            }
+            setBtnIcon(sidebar, btn);
+        }
+
         if (btn) {
-            btn.onclick = () => {
-                sidebar.classList.toggle('open');
-                const isOpen = sidebar.classList.contains('open');
-                localStorage.setItem('cmms.sidebar.open', isOpen ? '1' : '0');
-                if (window.innerWidth < 1100) {
-                    overlay.classList.toggle('active', isOpen);
-                } else {
-                    overlay.classList.remove('active');
-                }
-                setBtnIcon(sidebar, btn);
-            };
+            btn.onclick = toggleSidebar;
+        }
+
+        // Create external mobile menu button (outside sidebar, always reachable)
+        if (!document.getElementById('mobile-menu-btn')) {
+            const mobileBtn = document.createElement('div');
+            mobileBtn.id = 'mobile-menu-btn';
+            mobileBtn.innerHTML = '<i class="fas fa-bars"></i>';
+            mobileBtn.onclick = toggleSidebar;
+            document.body.appendChild(mobileBtn);
+            // Hide if sidebar is open
+            if (sidebar.classList.contains('open') && window.innerWidth < 1100) {
+                mobileBtn.style.display = 'none';
+            }
         }
 
         window.addEventListener('resize', () => {
