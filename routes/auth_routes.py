@@ -69,8 +69,8 @@ def register_auth_routes(app, db, logger, User):
             return jsonify({"error": "username es obligatorio."}), 400
         if not password or len(password) < 6:
             return jsonify({"error": "La contraseña debe tener al menos 6 caracteres."}), 400
-        if role not in ('admin', 'supervisor', 'tecnico'):
-            return jsonify({"error": "Rol inválido. Usa: admin, supervisor, tecnico."}), 400
+        if role not in ('admin', 'supervisor', 'tecnico', 'viewer'):
+            return jsonify({"error": "Rol inválido. Usa: admin, supervisor, tecnico, viewer."}), 400
         if User.query.filter_by(username=username).first():
             return jsonify({"error": f"El usuario '{username}' ya existe."}), 409
 
@@ -103,7 +103,7 @@ def register_auth_routes(app, db, logger, User):
         data = request.get_json() or {}
         if 'full_name' in data:
             user.full_name = (data['full_name'] or '').strip() or None
-        if 'role' in data and data['role'] in ('admin', 'supervisor', 'tecnico'):
+        if 'role' in data and data['role'] in ('admin', 'supervisor', 'tecnico', 'viewer'):
             user.role = data['role']
         if 'active' in data:
             user.active = bool(data['active'])

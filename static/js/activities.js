@@ -66,7 +66,7 @@ function renderActivities(items) {
                 </div>
                 <div style="margin-top:10px;display:flex;gap:6px">
                     <button class="btn btn-sm btn-secondary" onclick="openEditModal(${a.id})"><i class="fas fa-pen"></i> Editar</button>
-                    ${!isClosed ? `<button class="btn btn-sm btn-danger" onclick="cancelActivity(${a.id})"><i class="fas fa-ban"></i> Cancelar</button>` : ''}
+                    <button class="btn btn-sm btn-danger" onclick="cancelActivity(${a.id})"><i class="fas fa-ban"></i> Cancelar</button>
                 </div>
             </div>
         </div>`;
@@ -114,16 +114,21 @@ function renderMilestones(actId, milestones) {
         if (m.target_date) dateInfo += `Obj: ${m.target_date}`;
         if (m.completion_date) dateInfo += ` | Real: ${m.completion_date}`;
 
-        return `<li class="ms-item">
+        return `<li class="ms-item" style="flex-wrap:wrap">
             <div class="ms-icon ${iconClass}">${iconChar}</div>
             <div class="ms-body">
                 <div class="${descClass}">${m.description}</div>
                 ${dateInfo ? `<div class="ms-dates">${dateInfo}</div>` : ''}
-                ${m.comment ? `<div class="ms-comment">${m.comment}</div>` : ''}
+                ${m.comment ? `<div class="ms-comment"><i class="fas fa-comment" style="margin-right:3px"></i>${m.comment}</div>` : ''}
             </div>
             <div class="ms-actions">
                 ${!isDone ? `<button class="ms-btn-complete" title="Completar" onclick="completeMilestone(${m.id}, ${actId})"><i class="fas fa-check"></i></button>` : ''}
                 <button class="ms-btn-del" title="Eliminar" onclick="deleteMilestone(${m.id}, ${actId})"><i class="fas fa-trash"></i></button>
+            </div>
+            <div style="width:100%;padding-left:32px;margin-top:4px">
+                <input id="ms-cmt-${m.id}" value="${(m.comment || '').replace(/"/g, '&quot;')}" placeholder="Agregar comentario..."
+                    style="width:100%;height:26px;background:rgba(255,255,255,.04);border:1px solid rgba(255,255,255,.06);border-radius:5px;color:rgba(255,255,255,.55);padding:0 8px;font-size:.75rem"
+                    onblur="saveComment(${m.id}, ${actId}, this.value)">
             </div>
         </li>`;
     }).join('');
@@ -146,8 +151,20 @@ async function addMilestone(actId) {
     await loadActivities(true);
 }
 
+async function saveComment(msId, actId, comment) {
+    try {
+        await jget(`/api/milestones/${msId}`, {
+            method: 'PUT',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ comment: comment.trim() || null })
+        });
+    } catch (_) {}
+}
+
 async function completeMilestone(msId, actId) {
-    const comment = prompt('Comentario de cierre (opcional):') || '';
+    // Use existing comment from input if available
+    const commentEl = document.getElementById(`ms-cmt-${msId}`);
+    const comment = commentEl ? commentEl.value.trim() : '';
     await jget(`/api/milestones/${msId}`, {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
@@ -169,18 +186,98 @@ async function deleteMilestone(msId, actId) {
 async function loadActivities(keepExpand) {
     const statusFilter = q('filterStatus').value;
     const typeFilter = q('filterType').value;
-    let url = '/api/activities?';
-    if (statusFilter === 'all') url += 'all=true';
-    else if (statusFilter) url += `status=${statusFilter}`;
+
+    // Always load all to separate active vs closed
+    let url = '/api/activities?all=true';
     if (typeFilter) url += `&type=${typeFilter}`;
 
-    const items = await jget(url);
+    const allItems = await jget(url);
+
+    // Split into active and closed
+    let active, closed;
+    if (statusFilter === 'all') {
+        active = allItems.filter(a => !['COMPLETADA', 'CANCELADA'].includes(a.status));
+        closed = allItems.filter(a => ['COMPLETADA', 'CANCELADA'].includes(a.status));
+    } else if (statusFilter === 'COMPLETADA' || statusFilter === 'CANCELADA') {
+        active = [];
+        closed = allItems.filter(a => !statusFilter || a.status === statusFilter);
+    } else {
+        active = allItems.filter(a => {
+            if (statusFilter) return a.status === statusFilter;
+            return !['COMPLETADA', 'CANCELADA'].includes(a.status);
+        });
+        closed = allItems.filter(a => ['COMPLETADA', 'CANCELADA'].includes(a.status));
+    }
+
     const expandedId = keepExpand ? document.querySelector('.act-card.expanded')?.id?.replace('act-', '') : null;
-    renderActivities(items);
+    renderActivities(active);
+    renderClosedActivities(closed);
+
     if (expandedId) {
         const card = q(`act-${expandedId}`);
         if (card) { card.classList.add('expanded'); await loadMilestones(Number(expandedId)); }
     }
+}
+
+function renderClosedActivities(items) {
+    const section = q('closedSection');
+    const list = q('closedList');
+    const count = q('closedCount');
+
+    if (!items.length) {
+        section.style.display = 'none';
+        return;
+    }
+    section.style.display = '';
+    count.textContent = items.length;
+
+    list.innerHTML = items.map(a => {
+        const icon = TYPE_ICONS[a.activity_type] || 'fa-clipboard';
+        const isCompleted = a.status === 'COMPLETADA';
+        return `<div class="act-card" id="act-${a.id}" style="opacity:0.55">
+            <div class="act-header" onclick="toggleExpand(${a.id})">
+                <i class="fas fa-chevron-right chevron"></i>
+                <div class="act-body">
+                    <div class="act-title"><i class="fas ${icon}" style="color:#5E5CE6;margin-right:6px"></i>${a.title}</div>
+                    <div class="act-meta">
+                        <span class="badge-type">${a.activity_type}</span>
+                        <span class="badge-status st-${a.status}">${a.status.replace('_',' ')}</span>
+                        ${a.responsible ? `<span><i class="fas fa-user"></i> ${a.responsible}</span>` : ''}
+                        ${a.completion_date ? `<span><i class="fas fa-check-circle" style="color:#30D158"></i> ${a.completion_date}</span>` : ''}
+                    </div>
+                </div>
+                <div class="act-right">
+                    <div class="progress-bar"><div class="progress-fill" style="width:${a.progress}%;background:#30D158"></div></div>
+                    <div class="progress-text">${a.milestones_done}/${a.milestones_total} (${a.progress}%)</div>
+                </div>
+            </div>
+            <div class="ms-panel" id="ms-panel-${a.id}">
+                <ul class="ms-list" id="ms-list-${a.id}"><li style="color:rgba(255,255,255,.30);padding:8px">Cargando...</li></ul>
+                <div style="margin-top:10px;display:flex;gap:6px">
+                    <button class="btn btn-sm btn-success" onclick="reopenActivity(${a.id})"><i class="fas fa-redo"></i> Reabrir</button>
+                    <button class="btn btn-sm btn-secondary" onclick="openEditModal(${a.id})"><i class="fas fa-pen"></i> Editar</button>
+                </div>
+            </div>
+        </div>`;
+    }).join('');
+}
+
+function toggleClosedSection() {
+    const list = q('closedList');
+    const chevron = q('closedChevron');
+    const isVisible = list.style.display !== 'none';
+    list.style.display = isVisible ? 'none' : '';
+    chevron.style.transform = isVisible ? '' : 'rotate(180deg)';
+}
+
+async function reopenActivity(id) {
+    if (!confirm('Reabrir esta actividad?')) return;
+    await jget(`/api/activities/${id}`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ status: 'EN_PROGRESO', completion_date: null })
+    });
+    await loadActivities();
 }
 
 async function loadEquipments() {

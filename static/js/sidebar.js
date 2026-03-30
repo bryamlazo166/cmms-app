@@ -19,7 +19,7 @@
         { href: '/usuarios', icon: 'fas fa-users-cog', label: 'Usuarios', tip: 'Usuarios' }
     ];
 
-    const ROLE_LABELS = { admin: 'Administrador', supervisor: 'Supervisor', tecnico: 'Técnico' };
+    const ROLE_LABELS = { admin: 'Administrador', supervisor: 'Supervisor', tecnico: 'Técnico', viewer: 'Solo Lectura' };
     const AVATAR_COLORS = ['#0A84FF', '#30D158', '#FF9F0A', '#BF5AF2', '#5AC8FA', '#FF375F', '#FF9F0A'];
 
     function avatarColor(name) {

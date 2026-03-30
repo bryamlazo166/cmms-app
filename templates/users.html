@@ -60,6 +60,7 @@
         .role-admin    { background: rgba(191,90,242,0.18); color: #D77AF5; }
         .role-supervisor { background: rgba(10,132,255,0.18); color: #5AC8FA; }
         .role-tecnico  { background: rgba(48,209,88,0.18); color: #5CD870; }
+        .role-viewer   { background: rgba(255,255,255,0.08); color: rgba(255,255,255,0.50); }
 
         .status-badge {
             display: inline-block; width: 8px; height: 8px; border-radius: 50%; margin-right: 6px;
@@ -169,6 +170,7 @@
                 <option value="tecnico">Técnico</option>
                 <option value="supervisor">Supervisor</option>
                 <option value="admin">Administrador</option>
+                <option value="viewer">Solo Lectura</option>
             </select>
         </div>
         <div class="mfield" id="pwdField">
@@ -196,7 +198,7 @@
 <script>
 let editingId = null;
 
-const ROLE_LABELS = { admin: 'Administrador', supervisor: 'Supervisor', tecnico: 'Técnico' };
+const ROLE_LABELS = { admin: 'Administrador', supervisor: 'Supervisor', tecnico: 'Técnico', viewer: 'Solo Lectura' };
 const AVATAR_COLORS = ['#0A84FF','#30D158','#FF9F0A','#BF5AF2','#FF453A','#5AC8FA','#FF375F'];
 
 function avatarColor(name) {

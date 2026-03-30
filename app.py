@@ -162,16 +162,24 @@ def load_user(user_id):
 # ── Auth guard: require login for all routes except /login and /static ────────
 _AUTH_EXEMPT = {'login', 'logout', 'static', 'health_check'}
 
+# Viewer-safe GET-only endpoints (exports blocked)
+_VIEWER_BLOCKED_PATHS = ('/api/reports/powerbi-export', '/api/warehouse/export', '/api/reports/weekly-plan/export')
+
 @app.before_request
 def require_login():
     if current_user.is_authenticated:
+        # Viewer role: block all modifications and downloads
+        if getattr(current_user, 'role', None) == 'viewer':
+            if request.method in ('POST', 'PUT', 'DELETE'):
+                if request.path.startswith('/api/'):
+                    return jsonify({"error": "Acceso de solo lectura. Contacta al administrador."}), 403
+            if request.path in _VIEWER_BLOCKED_PATHS:
+                return jsonify({"error": "Descarga no permitida para usuario de solo lectura."}), 403
         return
     if request.endpoint in _AUTH_EXEMPT:
         return
-    # API calls → return JSON 401
     if request.path.startswith('/api/'):
         return jsonify({"error": "No autorizado. Inicia sesion.", "redirect": "/login"}), 401
-    # Page requests → redirect to login
     return redirect(url_for('login', next=request.path))
 
 
@@ -461,6 +469,33 @@ def _init_schema_on_startup():
 
 _init_schema_on_startup()
 _create_default_admin()
+
+
+# ── Supabase keep-alive: ping DB every 24h to prevent free-tier suspension ────
+def _start_keepalive():
+    import threading
+    INTERVAL = 24 * 60 * 60  # 24 hours
+
+    def ping():
+        while True:
+            import time
+            time.sleep(INTERVAL)
+            try:
+                with app.app_context():
+                    db.session.execute(text("SELECT 1"))
+                    db.session.commit()
+                logger.info("Supabase keep-alive ping OK")
+            except Exception as e:
+                logger.warning(f"Supabase keep-alive ping failed: {e}")
+
+    t = threading.Thread(target=ping, daemon=True)
+    t.start()
+    logger.info("Supabase keep-alive thread started (24h interval)")
+
+
+if resolved_db_mode == 'supabase':
+    _start_keepalive()
+
 
 if __name__ == '__main__':
     print(f"DEBUG: FINAL URI: {app.config.get('SQLALCHEMY_DATABASE_URI')}")
