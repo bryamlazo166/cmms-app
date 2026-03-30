@@ -1032,6 +1032,8 @@ def register_reports_routes(
                     'Comentarios_Ejecucion': o.execution_comments,
                     'Causo_Parada': 'Si' if getattr(o, 'caused_downtime', False) else 'No',
                     'Horas_Parada': getattr(o, 'downtime_hours', None),
+                    'Origen_Tipo': getattr(o, 'source_type', None),
+                    'Origen_ID': getattr(o, 'source_id', None),
                 })
             df_ots = pd.DataFrame(ot_rows)
 

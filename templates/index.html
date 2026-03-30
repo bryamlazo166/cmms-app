@@ -299,6 +299,7 @@
             <div style="margin-top:20px" id="kpiSection">
                 <div style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:10px;margin-bottom:14px">
                     <h2 style="color:rgba(255,255,255,.92);font-size:1.2rem;margin:0"><i class="fas fa-industry" style="color:var(--sys-teal,#5AC8FA);margin-right:8px"></i>Indicadores Industriales</h2>
+                    <button onclick="withLoading(this, generatePreventiveOTs)" style="height:34px;background:linear-gradient(145deg,#1d6b35,#217a3e);border:1px solid #2a9d4e;border-radius:8px;color:#c8ffd4;padding:0 14px;font-size:.82rem;font-weight:600;cursor:pointer;white-space:nowrap"><i class="fas fa-calendar-plus"></i> Generar OTs Preventivas</button>
                     <select id="kpiDays" onchange="drillTo('area')" style="height:34px;background:rgba(255,255,255,.06);border:1px solid rgba(255,255,255,.10);border-radius:8px;color:rgba(255,255,255,.80);padding:0 10px;font-size:.82rem">
                         <option value="30">30 dias</option>
                         <option value="60">60 dias</option>

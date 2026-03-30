@@ -379,7 +379,7 @@ function renderPlanningTable(data = null) {
             <td>${ot.component_name || '-'}</td>
             <td><span class="badge" style="background:${getCriticalityColor(ot.criticality)}; color:white;">${ot.criticality || '-'}</span></td>
             <td title="${ot.description || ''}">${ot.description || ''}</td>
-            <td>${ot.maintenance_type || '-'}</td>
+            <td>${ot.maintenance_type || '-'}${ot.source_type ? ' <span style="font-size:.7rem;color:#30D158" title="' + ot.source_type + '">[PM]</span>' : ''}</td>
             <td><span class="badge ${statusClass}">${ot.status || '-'}</span></td>
             <td><span class="badge ${priorityClass}">${ot.priority || '-'}</span></td>
             <td>${ot.scheduled_date || '-'}</td>

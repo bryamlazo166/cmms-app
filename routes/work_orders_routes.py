@@ -25,7 +25,178 @@ def register_work_orders_routes(
     Technician,
     PurchaseRequest,
     delete_entry,
+    LubricationPoint=None,
+    InspectionRoute=None,
+    MonitoringPoint=None,
+    _calculate_lubrication_schedule=None,
+    _calculate_monitoring_schedule=None,
 ):
+
+    def _update_source_on_close(source_type, source_id, close_date):
+        """Update the source preventive point when its OT is closed."""
+        try:
+            # Parse close_date to just date string YYYY-MM-DD
+            if 'T' in str(close_date):
+                close_date = str(close_date).split('T')[0]
+
+            if source_type == 'lubrication' and LubricationPoint:
+                point = LubricationPoint.query.get(source_id)
+                if point:
+                    point.last_service_date = close_date
+                    if _calculate_lubrication_schedule:
+                        nd, sem = _calculate_lubrication_schedule(
+                            close_date, point.frequency_days, point.warning_days)
+                        point.next_due_date = nd
+                        point.semaphore_status = sem
+                    logger.info(f"Source LUB-{source_id} updated: last_service={close_date}")
+
+            elif source_type == 'inspection' and InspectionRoute:
+                route = InspectionRoute.query.get(source_id)
+                if route:
+                    route.last_execution_date = close_date
+                    if _calculate_lubrication_schedule:
+                        nd, sem = _calculate_lubrication_schedule(
+                            close_date, route.frequency_days, route.warning_days)
+                        route.next_due_date = nd
+                        route.semaphore_status = sem
+                    logger.info(f"Source INSP-{source_id} updated: last_execution={close_date}")
+
+            elif source_type == 'monitoring' and MonitoringPoint:
+                point = MonitoringPoint.query.get(source_id)
+                if point:
+                    point.last_measurement_date = close_date
+                    if _calculate_monitoring_schedule:
+                        nd, sem = _calculate_monitoring_schedule(
+                            close_date, point.frequency_days, point.warning_days)
+                        point.next_due_date = nd
+                        point.semaphore_status = sem
+                    logger.info(f"Source MON-{source_id} updated: last_measurement={close_date}")
+        except Exception as e:
+            logger.error(f"Error updating source {source_type}/{source_id}: {e}")
+
+    # ── Generate Preventive OTs from overdue points ───────────────────────
+
+    @app.route('/api/generate-preventive-ots', methods=['POST'])
+    def generate_preventive_ots():
+        """Scan all overdue lub/insp/mon points and create preventive OTs."""
+        try:
+            created = []
+            skipped = 0
+
+            sources = []
+
+            # Collect overdue lubrication points
+            if LubricationPoint:
+                for p in LubricationPoint.query.filter_by(is_active=True).all():
+                    if _calculate_lubrication_schedule:
+                        _, sem = _calculate_lubrication_schedule(
+                            p.last_service_date, p.frequency_days, p.warning_days)
+                    else:
+                        sem = p.semaphore_status
+                    if sem in ('ROJO', 'AMARILLO'):
+                        sources.append({
+                            'source_type': 'lubrication',
+                            'source_id': p.id,
+                            'source_code': p.code,
+                            'source_name': p.name,
+                            'semaphore': sem,
+                            'equipment_id': p.equipment_id,
+                            'area_id': p.area_id,
+                            'line_id': p.line_id,
+                            'system_id': p.system_id,
+                            'component_id': p.component_id,
+                            'description': f"[PREVENTIVO] Lubricacion: {p.name}",
+                        })
+
+            # Collect overdue inspection routes
+            if InspectionRoute:
+                for r in InspectionRoute.query.filter_by(is_active=True).all():
+                    if _calculate_lubrication_schedule:
+                        _, sem = _calculate_lubrication_schedule(
+                            r.last_execution_date, r.frequency_days, r.warning_days)
+                    else:
+                        sem = r.semaphore_status
+                    if sem in ('ROJO', 'AMARILLO'):
+                        sources.append({
+                            'source_type': 'inspection',
+                            'source_id': r.id,
+                            'source_code': r.code,
+                            'source_name': r.name,
+                            'semaphore': sem,
+                            'equipment_id': r.equipment_id,
+                            'area_id': r.area_id,
+                            'line_id': r.line_id,
+                            'system_id': None,
+                            'component_id': None,
+                            'description': f"[PREVENTIVO] Inspeccion: {r.name}",
+                        })
+
+            # Collect overdue monitoring points
+            if MonitoringPoint and _calculate_monitoring_schedule:
+                for p in MonitoringPoint.query.filter_by(is_active=True).all():
+                    _, sem = _calculate_monitoring_schedule(
+                        p.last_measurement_date, p.frequency_days, p.warning_days)
+                    if sem in ('ROJO', 'AMARILLO'):
+                        sources.append({
+                            'source_type': 'monitoring',
+                            'source_id': p.id,
+                            'source_code': p.code,
+                            'source_name': p.name,
+                            'semaphore': sem,
+                            'equipment_id': p.equipment_id,
+                            'area_id': p.area_id,
+                            'line_id': p.line_id,
+                            'system_id': p.system_id,
+                            'component_id': p.component_id,
+                            'description': f"[PREVENTIVO] Monitoreo: {p.name}",
+                        })
+
+            # Create OTs for sources that don't already have an open OT
+            for src in sources:
+                existing = WorkOrder.query.filter(
+                    WorkOrder.source_type == src['source_type'],
+                    WorkOrder.source_id == src['source_id'],
+                    WorkOrder.status.in_(['Abierta', 'Programada', 'En Progreso']),
+                ).first()
+                if existing:
+                    skipped += 1
+                    continue
+
+                today = datetime.now().strftime('%Y-%m-%d')
+                wo = WorkOrder(
+                    maintenance_type='Preventivo',
+                    status='Programada',
+                    description=src['description'],
+                    scheduled_date=today,
+                    area_id=src['area_id'],
+                    line_id=src['line_id'],
+                    equipment_id=src['equipment_id'],
+                    system_id=src['system_id'],
+                    component_id=src['component_id'],
+                    source_type=src['source_type'],
+                    source_id=src['source_id'],
+                )
+                db.session.add(wo)
+                db.session.flush()
+                wo.code = f"OT-{wo.id:04d}"
+                created.append({
+                    'code': wo.code,
+                    'source': f"{src['source_code']} {src['source_name']}",
+                    'type': src['source_type'],
+                    'semaphore': src['semaphore'],
+                })
+
+            db.session.commit()
+            return jsonify({
+                'created': len(created),
+                'skipped': skipped,
+                'items': created,
+            })
+        except Exception as e:
+            db.session.rollback()
+            logger.exception("Generate preventive OTs error")
+            return jsonify({"error": str(e)}), 500
+
     # --- OT PERSONNEL ENDPOINTS ---
     @app.route('/api/work_orders/<int:ot_id>/personnel', methods=['GET', 'POST'])
     def handle_ot_personnel(ot_id):
@@ -488,6 +659,11 @@ def register_work_orders_routes(
                     if notice:
                         notice.status = 'Cerrado'
                         notice.ot_number = wo.code
+
+                # If closing a preventive OT linked to a source, update the source point
+                if data.get('status') == 'Cerrada' and wo.source_type and wo.source_id:
+                    close_date = wo.real_end_date or wo.real_start_date or datetime.now().strftime('%Y-%m-%d')
+                    _update_source_on_close(wo.source_type, wo.source_id, close_date)
 
                 # AUTO-LEARNING: Update Component's criticality if provided
                 criticality_value = data.get('priority') or data.get('criticality')

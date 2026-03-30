@@ -251,8 +251,13 @@ class WorkOrder(db.Model):
     real_duration: Mapped[float | None] = mapped_column(nullable=True)
 
     # Downtime tracking — for availability KPIs
-    caused_downtime: Mapped[bool] = mapped_column(Boolean, default=False)  # Did this OT stop production?
-    downtime_hours: Mapped[float | None] = mapped_column(Float, nullable=True)  # Hours of production lost
+    caused_downtime: Mapped[bool] = mapped_column(Boolean, default=False)
+    downtime_hours: Mapped[float | None] = mapped_column(Float, nullable=True)
+
+    # Link to preventive source (lubrication/inspection/monitoring point)
+    source_type: Mapped[str | None] = mapped_column(String(20), nullable=True)
+    # source_type: lubrication | inspection | monitoring
+    source_id: Mapped[int | None] = mapped_column(Integer, nullable=True)
     
     def to_dict(self):
         return {c.name: getattr(self, c.name) for c in self.__table__.columns}

@@ -259,6 +259,11 @@ register_work_orders_routes(
     Technician=Technician,
     PurchaseRequest=PurchaseRequest,
     delete_entry=delete_entry,
+    LubricationPoint=LubricationPoint,
+    InspectionRoute=InspectionRoute,
+    MonitoringPoint=MonitoringPoint,
+    _calculate_lubrication_schedule=_calculate_lubrication_schedule,
+    _calculate_monitoring_schedule=_calculate_monitoring_schedule,
 )
 
 register_notices_routes(
@@ -413,6 +418,8 @@ def _create_default_admin():
 _ENSURE_COLUMNS = [
     ("work_orders", "caused_downtime", "BOOLEAN DEFAULT false"),
     ("work_orders", "downtime_hours", "FLOAT"),
+    ("work_orders", "source_type", "VARCHAR(20)"),
+    ("work_orders", "source_id", "INTEGER"),
 ]
 
 

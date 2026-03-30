@@ -353,6 +353,29 @@ async function selectLevel(level, id, label) {
     } catch (e) { console.error('KPI selectLevel error:', e); }
 }
 
+// ── Generate Preventive OTs ──────────────────────────────────────────────────
+
+async function generatePreventiveOTs() {
+    const res = await fetch('/api/generate-preventive-ots', { method: 'POST' });
+    const data = await res.json();
+    if (data.error) { alert('Error: ' + data.error); return; }
+
+    if (data.created === 0) {
+        alert('No hay puntos vencidos pendientes de OT.\n' +
+              (data.skipped ? `(${data.skipped} ya tienen OT abierta)` : ''));
+    } else {
+        let msg = `Se generaron ${data.created} OTs preventivas:\n\n`;
+        data.items.forEach(it => {
+            msg += `${it.code} - ${it.source} (${it.semaphore})\n`;
+        });
+        if (data.skipped) msg += `\n${data.skipped} puntos ya tenian OT abierta.`;
+        alert(msg);
+    }
+    // Reload dashboard data
+    loadDashboardData();
+    drillTo('area');
+}
+
 document.addEventListener('DOMContentLoaded', () => {
     setTimeout(() => drillTo('area'), 500);
 });
