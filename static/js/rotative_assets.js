@@ -296,13 +296,29 @@ async function toggleAsset(id) {
 }
 
 async function showAssetHistory(id) {
+    const asset = rotState.assets.find(a => a.id === id);
     const rows = await rFetch(`/api/rotative-assets/${id}/history`);
+
+    const title = document.getElementById('historyTitle');
+    title.innerHTML = `<i class="fas fa-history" style="color:#5AC8FA;margin-right:8px"></i>Historial — ${asset ? (asset.code || '') + ' ' + (asset.name || '') : 'Activo'}`;
+
+    const container = document.getElementById('historyTimeline');
     if (!rows.length) {
-        alert('Sin historial.');
-        return;
+        container.innerHTML = '<p style="color:rgba(255,255,255,.35);text-align:center;padding:20px">Sin historial registrado.</p>';
+    } else {
+        container.innerHTML = rows.slice(0, 30).map(h => {
+            const loc = [h.area_name, h.line_name, h.equipment_name].filter(Boolean).join(' / ');
+            return `<div class="tl-item">
+                <div class="tl-dot tl-dot-${h.event_type}"></div>
+                <div class="tl-body">
+                    <div><span class="tl-type tl-type-${h.event_type}">${h.event_type.replace(/_/g, ' ')}</span><span class="tl-date">${h.event_date || '-'}</span></div>
+                    ${loc ? `<div class="tl-location"><i class="fas fa-map-marker-alt" style="margin-right:4px"></i>${loc}</div>` : ''}
+                    ${h.comments ? `<div class="tl-comment">${h.comments}</div>` : ''}
+                </div>
+            </div>`;
+        }).join('');
     }
-    const txt = rows.slice(0, 20).map(h => `${h.event_date} | ${h.event_type} | ${h.area_name || '-'} / ${h.line_name || '-'} / ${h.equipment_name || '-'}${h.comments ? ' | ' + h.comments : ''}`).join('\n');
-    alert(txt);
+    document.getElementById('historyModal').showModal();
 }
 
 async function openSpecModal(id) {

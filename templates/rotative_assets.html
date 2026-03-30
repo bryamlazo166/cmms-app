@@ -176,8 +176,42 @@
             <button type="button" class="btn-secondary" onclick="closeDialog('specModal')">Cerrar</button>
         </div>
     </dialog>
-    <script src="/static/js/sidebar.js?v=20260329"></script>
-    <script src="/static/js/rotative_assets.js?v=20260322r"></script>
+    <!-- History Modal -->
+    <dialog id="historyModal" class="modal" style="max-width:700px;width:94vw;background:#1C1C1E;border:1px solid rgba(255,255,255,.10);border-radius:16px;padding:0;color:#fff">
+        <div style="padding:20px 24px 16px;border-bottom:1px solid rgba(255,255,255,.08);display:flex;align-items:center;justify-content:space-between">
+            <h3 id="historyTitle" style="margin:0;font-size:1.05rem;color:rgba(255,255,255,.92)"><i class="fas fa-history" style="color:#5AC8FA;margin-right:8px"></i>Historial</h3>
+            <button onclick="closeDialog('historyModal')" style="background:none;border:none;color:rgba(255,255,255,.40);cursor:pointer;font-size:1.1rem"><i class="fas fa-times"></i></button>
+        </div>
+        <div style="padding:16px 24px 24px;max-height:60vh;overflow-y:auto">
+            <div id="historyTimeline"></div>
+        </div>
+    </dialog>
+
+    <style>
+        .tl-item{display:flex;gap:12px;padding:10px 0;border-bottom:1px solid rgba(255,255,255,.05)}
+        .tl-item:last-child{border:none}
+        .tl-dot{width:10px;height:10px;border-radius:50%;margin-top:5px;flex-shrink:0}
+        .tl-dot-CREACION{background:#30D158}
+        .tl-dot-INSTALACION{background:#0A84FF}
+        .tl-dot-RETIRO{background:#FF9F0A}
+        .tl-dot-ACTUALIZACION{background:#5AC8FA}
+        .tl-dot-CAMBIO_ESTADO{background:#BF5AF2}
+        .tl-dot-FICHA_AGREGADA{background:#FFD60A}
+        .tl-body{flex:1;min-width:0}
+        .tl-type{font-size:.78rem;font-weight:700;text-transform:uppercase;letter-spacing:.3px}
+        .tl-type-CREACION{color:#30D158}
+        .tl-type-INSTALACION{color:#0A84FF}
+        .tl-type-RETIRO{color:#FF9F0A}
+        .tl-type-ACTUALIZACION{color:#5AC8FA}
+        .tl-type-CAMBIO_ESTADO{color:#BF5AF2}
+        .tl-type-FICHA_AGREGADA{color:#FFD60A}
+        .tl-date{font-size:.75rem;color:rgba(255,255,255,.40);margin-left:8px;font-weight:400}
+        .tl-location{font-size:.80rem;color:rgba(255,255,255,.55);margin-top:3px}
+        .tl-comment{font-size:.80rem;color:rgba(255,255,255,.70);margin-top:2px}
+    </style>
+
+    <script src="/static/js/sidebar.js?v=20260330"></script>
+    <script src="/static/js/rotative_assets.js?v=20260330"></script>
 </body>
 </html>
 
