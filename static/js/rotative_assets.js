@@ -78,6 +78,8 @@ function renderAssets(rows) {
                 <button class="btn-micro" onclick="openSpecModal(${a.id})">Ficha</button>
                 <button class="btn-micro" onclick="openInstallModal(${a.id})">Instalar</button>
                 <button class="btn-micro" onclick="removeAssetFromSite(${a.id})">Retirar</button>
+                <button class="btn-micro" style="background:rgba(48,209,88,.15);color:#5cd870" onclick="openBomModal(${a.id})">Repuestos</button>
+                ${a.status === 'Instalado' ? `<button class="btn-micro" style="background:rgba(255,159,10,.15);color:#FFB340" onclick="openSwapModal(${a.id})">Swap</button>` : ''}
                 <button class="btn-micro" onclick="showAssetHistory(${a.id})">Historial</button>
                 <button class="btn-micro" onclick="toggleAsset(${a.id})">Activo/Inactivo</button>
             </div>
@@ -297,28 +299,160 @@ async function toggleAsset(id) {
 
 async function showAssetHistory(id) {
     const asset = rotState.assets.find(a => a.id === id);
-    const rows = await rFetch(`/api/rotative-assets/${id}/history`);
-
     const title = document.getElementById('historyTitle');
     title.innerHTML = `<i class="fas fa-history" style="color:#5AC8FA;margin-right:8px"></i>Historial — ${asset ? (asset.code || '') + ' ' + (asset.name || '') : 'Activo'}`;
 
     const container = document.getElementById('historyTimeline');
-    if (!rows.length) {
-        container.innerHTML = '<p style="color:rgba(255,255,255,.35);text-align:center;padding:20px">Sin historial registrado.</p>';
-    } else {
-        container.innerHTML = rows.slice(0, 30).map(h => {
-            const loc = [h.area_name, h.line_name, h.equipment_name].filter(Boolean).join(' / ');
-            return `<div class="tl-item">
-                <div class="tl-dot tl-dot-${h.event_type}"></div>
-                <div class="tl-body">
-                    <div><span class="tl-type tl-type-${h.event_type}">${h.event_type.replace(/_/g, ' ')}</span><span class="tl-date">${h.event_date || '-'}</span></div>
-                    ${loc ? `<div class="tl-location"><i class="fas fa-map-marker-alt" style="margin-right:4px"></i>${loc}</div>` : ''}
-                    ${h.comments ? `<div class="tl-comment">${h.comments}</div>` : ''}
-                </div>
+    try {
+        const data = await rFetch(`/api/rotative-assets/${id}/full-history`);
+        const events = data.events || [];
+
+        if (!events.length) {
+            container.innerHTML = '<p style="color:rgba(255,255,255,.35);text-align:center;padding:20px">Sin historial registrado.</p>';
+        } else {
+            container.innerHTML = events.map(e => {
+                const dotClass = `tl-dot-${e.category}`;
+                const typeClass = `tl-type-${e.category}`;
+                return `<div class="tl-item">
+                    <div class="tl-dot ${dotClass}"></div>
+                    <div class="tl-body">
+                        <div><span class="tl-type ${typeClass}">${e.category} — ${e.type || ''}</span><span class="tl-date">${e.date || '-'}</span></div>
+                        ${e.location ? `<div class="tl-location"><i class="fas fa-map-marker-alt" style="margin-right:4px"></i>${e.location}</div>` : ''}
+                        ${e.description ? `<div class="tl-comment">${e.description}</div>` : ''}
+                        ${e.status ? `<div style="margin-top:2px"><span style="font-size:.72rem;padding:1px 6px;border-radius:4px;background:rgba(255,255,255,.08);color:rgba(255,255,255,.50)">${e.status}</span></div>` : ''}
+                    </div>
+                </div>`;
+            }).join('');
+        }
+
+        // Show BOM summary if available
+        if (data.bom && data.bom.length) {
+            container.innerHTML += `<div style="border-top:1px solid rgba(255,255,255,.08);padding-top:12px;margin-top:12px">
+                <h4 style="color:rgba(255,255,255,.60);font-size:.85rem;margin:0 0 8px"><i class="fas fa-boxes" style="margin-right:5px"></i>Repuestos asociados (${data.bom.length})</h4>
+                ${data.bom.map(b => `<div style="font-size:.82rem;color:rgba(255,255,255,.65);padding:3px 0">${b.item_code || '-'} ${b.item_name || '-'} <span style="color:rgba(255,255,255,.35)">(x${b.quantity} ${b.category})</span> <span style="color:${(b.item_stock||0)>0?'#30D158':'#FF453A'};font-size:.75rem">Stock: ${b.item_stock||0}</span></div>`).join('')}
             </div>`;
-        }).join('');
+        }
+    } catch (e) {
+        container.innerHTML = `<p style="color:#FF6B61;text-align:center;padding:20px">Error: ${e.message}</p>`;
     }
     document.getElementById('historyModal').showModal();
+}
+
+// ── BOM (Bill of Materials) ──────────────────────────────────────────────────
+
+async function openBomModal(assetId) {
+    const asset = rotState.assets.find(a => a.id === assetId);
+    document.getElementById('bomTitle').innerHTML = `<i class="fas fa-boxes" style="color:#30D158;margin-right:8px"></i>Repuestos — ${asset ? (asset.code || '') + ' ' + (asset.name || '') : 'Activo'}`;
+    document.getElementById('bomAssetId').value = assetId;
+
+    // Load warehouse items for selector
+    try {
+        const items = await rFetch('/api/warehouse');
+        const sel = document.getElementById('bomItem');
+        sel.innerHTML = '<option value="">Seleccione repuesto</option>' +
+            items.map(i => `<option value="${i.id}">${i.code} ${i.name}</option>`).join('');
+    } catch (_) {}
+
+    await loadBomItems(assetId);
+    document.getElementById('bomModal').showModal();
+}
+
+async function loadBomItems(assetId) {
+    const items = await rFetch(`/api/rotative-assets/${assetId}/bom`);
+    const container = document.getElementById('bomList');
+    if (!items.length) {
+        container.innerHTML = '<p style="color:rgba(255,255,255,.35);text-align:center;padding:12px">Sin repuestos asignados. Agrega repuestos del almacen.</p>';
+        return;
+    }
+
+    container.innerHTML = '<table style="width:100%;border-collapse:collapse"><thead><tr>' +
+        '<th style="padding:6px 8px;font-size:.72rem;color:rgba(255,255,255,.40);text-align:left">Codigo</th>' +
+        '<th style="padding:6px 8px;font-size:.72rem;color:rgba(255,255,255,.40);text-align:left">Repuesto</th>' +
+        '<th style="padding:6px 8px;font-size:.72rem;color:rgba(255,255,255,.40);text-align:center">Cat.</th>' +
+        '<th style="padding:6px 8px;font-size:.72rem;color:rgba(255,255,255,.40);text-align:center">Cant</th>' +
+        '<th style="padding:6px 8px;font-size:.72rem;color:rgba(255,255,255,.40);text-align:center">Stock</th>' +
+        '<th style="padding:6px 8px;font-size:.72rem;color:rgba(255,255,255,.40)">Nota</th>' +
+        '<th></th></tr></thead><tbody>' +
+        items.map(b => {
+            const stockColor = (b.item_stock || 0) > 0 ? '#30D158' : '#FF453A';
+            const catColor = b.category === 'ELECTRICO' ? '#5AC8FA' : b.category === 'CONSUMIBLE' ? '#FF9F0A' : '#30D158';
+            return `<tr style="border-bottom:1px solid rgba(255,255,255,.05)">
+                <td style="padding:6px 8px;font-size:.82rem;color:#0A84FF">${b.item_code || '-'}</td>
+                <td style="padding:6px 8px;font-size:.82rem;color:rgba(255,255,255,.80)">${b.item_name || '-'}</td>
+                <td style="padding:6px 8px;font-size:.72rem;text-align:center;color:${catColor}">${b.category}</td>
+                <td style="padding:6px 8px;font-size:.82rem;text-align:center">${b.quantity}</td>
+                <td style="padding:6px 8px;font-size:.82rem;text-align:center;color:${stockColor}">${b.item_stock || 0} ${b.item_unit || ''}</td>
+                <td style="padding:6px 8px;font-size:.78rem;color:rgba(255,255,255,.45)">${b.notes || '-'}</td>
+                <td><button onclick="removeBomItem(${b.id})" style="background:rgba(255,69,58,.12);border:none;border-radius:4px;color:#FF6B61;width:24px;height:24px;cursor:pointer;font-size:.72rem"><i class="fas fa-trash"></i></button></td>
+            </tr>`;
+        }).join('') + '</tbody></table>';
+}
+
+async function addBomItem() {
+    const assetId = document.getElementById('bomAssetId').value;
+    const wiId = document.getElementById('bomItem').value;
+    if (!wiId) { alert('Seleccione un repuesto.'); return; }
+    try {
+        await rFetch(`/api/rotative-assets/${assetId}/bom`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                warehouse_item_id: wiId,
+                category: document.getElementById('bomCat').value,
+                quantity: Number(document.getElementById('bomQty').value || 1),
+                notes: document.getElementById('bomNote').value || null,
+            })
+        });
+        document.getElementById('bomNote').value = '';
+        await loadBomItems(assetId);
+    } catch (e) { alert(e.message); }
+}
+
+async function removeBomItem(bomId) {
+    if (!confirm('Quitar este repuesto de la lista?')) return;
+    const assetId = document.getElementById('bomAssetId').value;
+    await rFetch(`/api/rotative-assets/bom/${bomId}`, { method: 'DELETE' });
+    await loadBomItems(assetId);
+}
+
+// ── Swap ─────────────────────────────────────────────────────────────────────
+
+async function openSwapModal(assetId) {
+    const asset = rotState.assets.find(a => a.id === assetId);
+    if (!asset) return;
+    document.getElementById('swapRemoveId').value = assetId;
+    document.getElementById('swapRemoveLabel').textContent = `${asset.code} ${asset.name} — ${asset.equipment_name || ''}`;
+    document.getElementById('swapReason').value = '';
+
+    // Load available assets (Disponible status) for replacement
+    const available = rotState.assets.filter(a => a.id !== assetId && a.status === 'Disponible' && a.is_active);
+    const sel = document.getElementById('swapInstallId');
+    sel.innerHTML = '<option value="">Seleccione reemplazo</option>' +
+        available.map(a => `<option value="${a.id}">${a.code} ${a.name} (${a.category || '-'})</option>`).join('');
+
+    document.getElementById('swapModal').showModal();
+}
+
+async function executeSwap() {
+    const removeId = document.getElementById('swapRemoveId').value;
+    const installId = document.getElementById('swapInstallId').value;
+    if (!installId) { alert('Seleccione un activo de reemplazo.'); return; }
+
+    try {
+        await rFetch('/api/rotative-assets/swap', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                remove_asset_id: Number(removeId),
+                install_asset_id: Number(installId),
+                old_status: document.getElementById('swapOldStatus').value,
+                reason: document.getElementById('swapReason').value || null,
+            })
+        });
+        closeDialog('swapModal');
+        alert('Swap realizado correctamente.');
+        await reloadRotative();
+    } catch (e) { alert('Error: ' + e.message); }
 }
 
 async function openSpecModal(id) {

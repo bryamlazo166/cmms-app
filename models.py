@@ -279,7 +279,10 @@ class WorkOrder(db.Model):
     source_type: Mapped[str | None] = mapped_column(String(20), nullable=True)
     # source_type: lubrication | inspection | monitoring
     source_id: Mapped[int | None] = mapped_column(Integer, nullable=True)
-    
+
+    # Link to rotative asset (the physical device being worked on)
+    rotative_asset_id: Mapped[int | None] = mapped_column(Integer, nullable=True)
+
     def to_dict(self):
         return {c.name: getattr(self, c.name) for c in self.__table__.columns}
 
@@ -1017,6 +1020,37 @@ class Milestone(db.Model):
             "status": self.status,
             "comment": self.comment,
             "order_index": self.order_index,
+        }
+
+
+class RotativeAssetBOM(db.Model):
+    """Bill of Materials — spare parts linked to a rotative asset."""
+    __tablename__ = 'rotative_asset_bom'
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    asset_id: Mapped[int] = mapped_column(ForeignKey('rotative_assets.id'), nullable=False)
+    warehouse_item_id: Mapped[int] = mapped_column(ForeignKey('warehouse_items.id'), nullable=False)
+    category: Mapped[str] = mapped_column(String(30), nullable=False, default='MECANICO')
+    # MECANICO | ELECTRICO | CONSUMIBLE
+    quantity: Mapped[float] = mapped_column(Float, nullable=False, default=1)
+    notes: Mapped[str | None] = mapped_column(String(250), nullable=True)
+
+    asset = relationship("RotativeAsset")
+    warehouse_item = relationship("WarehouseItem")
+
+    def to_dict(self):
+        wi = self.warehouse_item
+        return {
+            "id": self.id,
+            "asset_id": self.asset_id,
+            "warehouse_item_id": self.warehouse_item_id,
+            "item_code": wi.code if wi else None,
+            "item_name": wi.name if wi else None,
+            "item_stock": wi.stock if wi else None,
+            "item_unit": wi.unit if wi else None,
+            "category": self.category,
+            "quantity": self.quantity,
+            "notes": self.notes,
         }
 
 

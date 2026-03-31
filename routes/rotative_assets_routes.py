@@ -10,6 +10,11 @@ def register_rotative_assets_routes(
     RotativeAsset,
     RotativeAssetHistory,
     RotativeAssetSpec,
+    RotativeAssetBOM=None,
+    WarehouseItem=None,
+    WorkOrder=None,
+    LubricationExecution=None,
+    LubricationPoint=None,
 ):
     # _generate_rotative_code removed — code assigned after flush
 
@@ -262,3 +267,147 @@ def register_rotative_assets_routes(
         except Exception as e:
             db.session.rollback()
             return jsonify({"error": str(e)}), 500
+
+    # ── BOM (Bill of Materials) ────────────────────────────────────────────
+
+    @app.route('/api/rotative-assets/<int:asset_id>/bom', methods=['GET', 'POST'])
+    def handle_asset_bom(asset_id):
+        RotativeAsset.query.get_or_404(asset_id)
+
+        if request.method == 'POST':
+            if not RotativeAssetBOM:
+                return jsonify({"error": "BOM no disponible"}), 500
+            try:
+                data = request.json or {}
+                wi_id = data.get('warehouse_item_id')
+                if not wi_id:
+                    return jsonify({"error": "Seleccione un repuesto del almacen."}), 400
+                existing = RotativeAssetBOM.query.filter_by(
+                    asset_id=asset_id, warehouse_item_id=wi_id).first()
+                if existing:
+                    return jsonify({"error": "Este repuesto ya esta en la lista."}), 409
+                bom = RotativeAssetBOM(
+                    asset_id=asset_id,
+                    warehouse_item_id=int(wi_id),
+                    category=(data.get('category') or 'MECANICO').upper(),
+                    quantity=float(data.get('quantity') or 1),
+                    notes=data.get('notes'),
+                )
+                db.session.add(bom)
+                db.session.commit()
+                return jsonify(bom.to_dict()), 201
+            except Exception as exc:
+                db.session.rollback()
+                return jsonify({"error": str(exc)}), 500
+
+        if not RotativeAssetBOM:
+            return jsonify([])
+        items = RotativeAssetBOM.query.filter_by(asset_id=asset_id).all()
+        return jsonify([b.to_dict() for b in items])
+
+    @app.route('/api/rotative-assets/bom/<int:bom_id>', methods=['DELETE'])
+    def delete_asset_bom(bom_id):
+        if not RotativeAssetBOM:
+            return jsonify({"error": "BOM no disponible"}), 500
+        bom = RotativeAssetBOM.query.get_or_404(bom_id)
+        db.session.delete(bom)
+        db.session.commit()
+        return jsonify({"ok": True})
+
+    # ── Swap: Uninstall current + Install replacement ──────────────────────
+
+    @app.route('/api/rotative-assets/swap', methods=['POST'])
+    def swap_rotative_assets():
+        try:
+            data = request.json or {}
+            remove_id = data.get('remove_asset_id')
+            install_id = data.get('install_asset_id')
+            if not remove_id or not install_id:
+                return jsonify({"error": "Se requiere remove_asset_id e install_asset_id."}), 400
+
+            old_asset = RotativeAsset.query.get(remove_id)
+            new_asset = RotativeAsset.query.get(install_id)
+            if not old_asset or not new_asset:
+                return jsonify({"error": "Activo no encontrado."}), 404
+
+            location = {
+                'area_id': old_asset.area_id, 'line_id': old_asset.line_id,
+                'equipment_id': old_asset.equipment_id,
+                'system_id': old_asset.system_id, 'component_id': old_asset.component_id,
+            }
+            swap_date = data.get('date') or dt.date.today().isoformat()
+            reason = data.get('reason') or 'Swap de activo'
+
+            _record_history(old_asset, 'RETIRO', event_date=swap_date,
+                            comments=f"Retirado por swap: {reason}")
+            old_asset.status = data.get('old_status') or 'En Taller'
+            for k in location:
+                setattr(old_asset, k, None)
+            old_asset.install_date = None
+
+            for k, v in location.items():
+                setattr(new_asset, k, v)
+            new_asset.status = 'Instalado'
+            new_asset.install_date = swap_date
+            _record_history(new_asset, 'INSTALACION', event_date=swap_date,
+                            comments=f"Instalado por swap (reemplaza {old_asset.code}): {reason}")
+
+            db.session.commit()
+            return jsonify({'removed': old_asset.to_dict(), 'installed': new_asset.to_dict()})
+        except Exception as exc:
+            db.session.rollback()
+            return jsonify({"error": str(exc)}), 500
+
+    # ── Consolidated Asset History ─────────────────────────────────────────
+
+    @app.route('/api/rotative-assets/<int:asset_id>/full-history', methods=['GET'])
+    def get_asset_full_history(asset_id):
+        try:
+            asset = RotativeAsset.query.get_or_404(asset_id)
+            events = []
+
+            for h in (asset.history or []):
+                loc = ' / '.join(filter(None, [
+                    h.area.name if h.area else None,
+                    h.line.name if h.line else None,
+                    h.equipment.name if h.equipment else None,
+                ]))
+                events.append({
+                    'date': h.event_date, 'category': 'MOVIMIENTO',
+                    'type': h.event_type.replace('_', ' '),
+                    'description': h.comments, 'location': loc,
+                })
+
+            if WorkOrder:
+                ots = WorkOrder.query.filter_by(rotative_asset_id=asset_id).all()
+                for ot in ots:
+                    events.append({
+                        'date': ot.real_start_date or ot.scheduled_date,
+                        'category': 'OT', 'type': ot.maintenance_type,
+                        'description': f"{ot.code}: {ot.description or ot.failure_mode or ''}",
+                        'location': None, 'status': ot.status,
+                    })
+
+            if asset.equipment_id and LubricationExecution and LubricationPoint:
+                lub_points = LubricationPoint.query.filter_by(equipment_id=asset.equipment_id).all()
+                lub_ids = [p.id for p in lub_points]
+                if lub_ids:
+                    lub_map = {p.id: p for p in lub_points}
+                    for e in LubricationExecution.query.filter(LubricationExecution.point_id.in_(lub_ids)).all():
+                        pt = lub_map.get(e.point_id)
+                        events.append({
+                            'date': e.execution_date, 'category': 'LUBRICACION',
+                            'type': e.action_type,
+                            'description': f"{pt.name if pt else ''}: {pt.lubricant_name if pt else ''} {e.quantity_used or ''} {e.quantity_unit or ''}",
+                            'location': None,
+                        })
+
+            events.sort(key=lambda x: x.get('date') or '', reverse=True)
+
+            bom_items = []
+            if RotativeAssetBOM:
+                bom_items = [b.to_dict() for b in RotativeAssetBOM.query.filter_by(asset_id=asset_id).all()]
+
+            return jsonify({'asset': asset.to_dict(), 'events': events[:100], 'bom': bom_items})
+        except Exception as exc:
+            return jsonify({"error": str(exc)}), 500

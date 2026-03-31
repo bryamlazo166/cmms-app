@@ -15,7 +15,7 @@ from models import (
     WorkOrder, Provider, Technician, Tool, WarehouseItem, OTPersonnel,
     OTMaterial, WarehouseMovement, PurchaseOrder, PurchaseRequest,
     LubricationPoint, LubricationExecution, MonitoringPoint, MonitoringReading,
-    RotativeAsset, RotativeAssetHistory, RotativeAssetSpec,
+    RotativeAsset, RotativeAssetHistory, RotativeAssetSpec, RotativeAssetBOM,
     InspectionRoute, InspectionItem, InspectionExecution, InspectionResult,
     Activity, Milestone, RolePermission
 )
@@ -383,6 +383,11 @@ register_rotative_assets_routes(
     RotativeAsset=RotativeAsset,
     RotativeAssetHistory=RotativeAssetHistory,
     RotativeAssetSpec=RotativeAssetSpec,
+    RotativeAssetBOM=RotativeAssetBOM,
+    WarehouseItem=WarehouseItem,
+    WorkOrder=WorkOrder,
+    LubricationExecution=LubricationExecution,
+    LubricationPoint=LubricationPoint,
 )
 
 register_tools_routes(
@@ -467,6 +472,7 @@ _ENSURE_COLUMNS = [
     ("work_orders", "source_id", "INTEGER"),
     ("maintenance_notices", "source_type", "VARCHAR(20)"),
     ("maintenance_notices", "source_id", "INTEGER"),
+    ("work_orders", "rotative_asset_id", "INTEGER"),
 ]
 
 

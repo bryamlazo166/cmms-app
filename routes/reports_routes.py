@@ -1345,6 +1345,45 @@ def register_reports_routes(
                         })
                 pd.DataFrame(act_rows).to_excel(writer, index=False, sheet_name='Actividades')
 
+                # ── 13. ACTIVOS ROTATIVOS + BOM ────────────────────────────
+                try:
+                    from models import RotativeAsset as RA, RotativeAssetBOM as RABOM
+                    ra_rows = []
+                    for a in RA.query.order_by(RA.id).all():
+                        bom_items = RABOM.query.filter_by(asset_id=a.id).all() if RABOM else []
+                        if bom_items:
+                            for b in bom_items:
+                                ra_rows.append({
+                                    'Codigo_Activo': a.code, 'Nombre_Activo': a.name,
+                                    'Categoria': a.category, 'Marca': a.brand, 'Modelo': a.model,
+                                    'Serie': a.serial_number, 'Estado': a.status,
+                                    'Ubicacion': ' / '.join(filter(None, [
+                                        a.area.name if a.area else None,
+                                        a.line.name if a.line else None,
+                                        a.equipment.name if a.equipment else None,
+                                    ])),
+                                    'Repuesto_Codigo': b.warehouse_item.code if b.warehouse_item else None,
+                                    'Repuesto_Nombre': b.warehouse_item.name if b.warehouse_item else None,
+                                    'Repuesto_Cat': b.category, 'Repuesto_Cant': b.quantity,
+                                    'Repuesto_Nota': b.notes,
+                                })
+                        else:
+                            ra_rows.append({
+                                'Codigo_Activo': a.code, 'Nombre_Activo': a.name,
+                                'Categoria': a.category, 'Marca': a.brand, 'Modelo': a.model,
+                                'Serie': a.serial_number, 'Estado': a.status,
+                                'Ubicacion': ' / '.join(filter(None, [
+                                    a.area.name if a.area else None,
+                                    a.line.name if a.line else None,
+                                    a.equipment.name if a.equipment else None,
+                                ])),
+                                'Repuesto_Codigo': None, 'Repuesto_Nombre': None,
+                                'Repuesto_Cat': None, 'Repuesto_Cant': None, 'Repuesto_Nota': None,
+                            })
+                    pd.DataFrame(ra_rows).to_excel(writer, index=False, sheet_name='Activos_BOM')
+                except Exception:
+                    pass
+
             output.seek(0)
             today = dt.date.today().isoformat()
             return send_file(

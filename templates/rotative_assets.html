@@ -187,15 +187,50 @@
         </div>
     </dialog>
 
+    <!-- BOM Modal -->
+    <dialog id="bomModal" class="modal" style="max-width:700px;width:94vw;background:#1C1C1E;border:1px solid rgba(255,255,255,.10);border-radius:16px;padding:0;color:#fff">
+        <div style="padding:20px 24px 16px;border-bottom:1px solid rgba(255,255,255,.08);display:flex;align-items:center;justify-content:space-between">
+            <h3 id="bomTitle" style="margin:0;font-size:1.05rem;color:rgba(255,255,255,.92)"><i class="fas fa-boxes" style="color:#30D158;margin-right:8px"></i>Lista de Repuestos</h3>
+            <button onclick="closeDialog('bomModal')" style="background:none;border:none;color:rgba(255,255,255,.40);cursor:pointer;font-size:1.1rem"><i class="fas fa-times"></i></button>
+        </div>
+        <div style="padding:16px 24px 24px;max-height:65vh;overflow-y:auto">
+            <div id="bomList"></div>
+            <div style="border-top:1px solid rgba(255,255,255,.08);padding-top:12px;margin-top:12px">
+                <input type="hidden" id="bomAssetId">
+                <div style="display:grid;grid-template-columns:1fr 120px 80px 1fr auto;gap:6px;align-items:end">
+                    <div><label style="font-size:.72rem;color:rgba(255,255,255,.40);text-transform:uppercase">Repuesto</label><select id="bomItem" style="width:100%;height:34px;background:rgba(255,255,255,.06);border:1px solid rgba(255,255,255,.10);border-radius:6px;color:rgba(255,255,255,.80);padding:0 8px;font-size:.82rem"></select></div>
+                    <div><label style="font-size:.72rem;color:rgba(255,255,255,.40);text-transform:uppercase">Categoria</label><select id="bomCat" style="width:100%;height:34px;background:rgba(255,255,255,.06);border:1px solid rgba(255,255,255,.10);border-radius:6px;color:rgba(255,255,255,.80);padding:0 8px;font-size:.82rem"><option value="MECANICO">Mecanico</option><option value="ELECTRICO">Electrico</option><option value="CONSUMIBLE">Consumible</option></select></div>
+                    <div><label style="font-size:.72rem;color:rgba(255,255,255,.40);text-transform:uppercase">Cant</label><input id="bomQty" type="number" value="1" min="0.1" step="0.1" style="width:100%;height:34px;background:rgba(255,255,255,.06);border:1px solid rgba(255,255,255,.10);border-radius:6px;color:rgba(255,255,255,.80);padding:0 8px;font-size:.82rem"></div>
+                    <div><label style="font-size:.72rem;color:rgba(255,255,255,.40);text-transform:uppercase">Nota</label><input id="bomNote" placeholder="Ej: Lado carga" style="width:100%;height:34px;background:rgba(255,255,255,.06);border:1px solid rgba(255,255,255,.10);border-radius:6px;color:rgba(255,255,255,.80);padding:0 8px;font-size:.82rem"></div>
+                    <button onclick="addBomItem()" style="height:34px;padding:0 12px;background:#30D158;border:none;border-radius:6px;color:#fff;font-size:.82rem;cursor:pointer;font-weight:600"><i class="fas fa-plus"></i></button>
+                </div>
+            </div>
+        </div>
+    </dialog>
+
+    <!-- Swap Modal -->
+    <dialog id="swapModal" class="modal" style="max-width:480px;width:94vw;background:#1C1C1E;border:1px solid rgba(255,255,255,.10);border-radius:16px;padding:24px;color:#fff">
+        <h3 style="margin:0 0 16px;font-size:1.05rem;color:rgba(255,255,255,.92)"><i class="fas fa-exchange-alt" style="color:#FF9F0A;margin-right:8px"></i>Swap Rapido</h3>
+        <input type="hidden" id="swapRemoveId">
+        <div style="margin-bottom:12px"><label style="font-size:.72rem;color:rgba(255,255,255,.40);text-transform:uppercase">Retirar activo</label><div id="swapRemoveLabel" style="color:rgba(255,255,255,.80);font-size:.88rem;padding:6px 0"></div></div>
+        <div style="margin-bottom:12px"><label style="font-size:.72rem;color:rgba(255,255,255,.40);text-transform:uppercase">Instalar reemplazo</label><select id="swapInstallId" style="width:100%;height:36px;background:rgba(255,255,255,.06);border:1px solid rgba(255,255,255,.10);border-radius:8px;color:rgba(255,255,255,.80);padding:0 10px;font-size:.84rem"></select></div>
+        <div style="margin-bottom:12px"><label style="font-size:.72rem;color:rgba(255,255,255,.40);text-transform:uppercase">Estado del retirado</label><select id="swapOldStatus" style="width:100%;height:36px;background:rgba(255,255,255,.06);border:1px solid rgba(255,255,255,.10);border-radius:8px;color:rgba(255,255,255,.80);padding:0 10px;font-size:.84rem"><option value="En Taller">En Taller</option><option value="Disponible">Disponible (Stand-by)</option><option value="Baja">Baja</option></select></div>
+        <div style="margin-bottom:12px"><label style="font-size:.72rem;color:rgba(255,255,255,.40);text-transform:uppercase">Motivo</label><input id="swapReason" placeholder="Ej: Vibracion excesiva" style="width:100%;height:36px;background:rgba(255,255,255,.06);border:1px solid rgba(255,255,255,.10);border-radius:8px;color:rgba(255,255,255,.80);padding:0 10px;font-size:.84rem"></div>
+        <div style="display:flex;gap:8px;justify-content:flex-end;margin-top:16px">
+            <button onclick="closeDialog('swapModal')" style="height:34px;padding:0 14px;background:rgba(255,255,255,.10);border:none;border-radius:8px;color:rgba(255,255,255,.70);cursor:pointer">Cancelar</button>
+            <button onclick="executeSwap()" style="height:34px;padding:0 14px;background:#FF9F0A;border:none;border-radius:8px;color:#000;font-weight:600;cursor:pointer"><i class="fas fa-exchange-alt"></i> Ejecutar Swap</button>
+        </div>
+    </dialog>
+
     <style>
         .tl-item{display:flex;gap:12px;padding:10px 0;border-bottom:1px solid rgba(255,255,255,.05)}
         .tl-item:last-child{border:none}
         .tl-dot{width:10px;height:10px;border-radius:50%;margin-top:5px;flex-shrink:0}
-        .tl-dot-CREACION{background:#30D158}
+        .tl-dot-CREACION,.tl-dot-LUBRICACION{background:#30D158}
         .tl-dot-INSTALACION{background:#0A84FF}
         .tl-dot-RETIRO{background:#FF9F0A}
-        .tl-dot-ACTUALIZACION{background:#5AC8FA}
-        .tl-dot-CAMBIO_ESTADO{background:#BF5AF2}
+        .tl-dot-ACTUALIZACION,.tl-dot-MOVIMIENTO{background:#5AC8FA}
+        .tl-dot-CAMBIO_ESTADO,.tl-dot-OT{background:#BF5AF2}
         .tl-dot-FICHA_AGREGADA{background:#FFD60A}
         .tl-body{flex:1;min-width:0}
         .tl-type{font-size:.78rem;font-weight:700;text-transform:uppercase;letter-spacing:.3px}
