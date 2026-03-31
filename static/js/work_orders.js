@@ -435,9 +435,27 @@ async function handleProviderSubmit(e) {
     loadProviders();
 }
 
+async function loadRotativeAssets(equipmentId, selectedId) {
+    const sel = document.getElementById('otRotativeAsset');
+    sel.innerHTML = '<option value="">- Sin activo rotativo -</option>';
+    if (!equipmentId) return;
+    try {
+        const assets = await fetch(`/api/rotative-assets?equipment_id=${equipmentId}`).then(r => r.json());
+        const installed = Array.isArray(assets) ? assets.filter(a => a.status === 'Instalado') : [];
+        installed.forEach(a => {
+            const opt = document.createElement('option');
+            opt.value = a.id;
+            opt.textContent = `${a.code} ${a.name} (${a.category || '-'})`;
+            sel.appendChild(opt);
+        });
+        if (selectedId) sel.value = selectedId;
+    } catch (_) {}
+}
+
 function openCreateOTModal() {
     document.getElementById('otForm').reset();
     document.getElementById('otId').value = '';
+    document.getElementById('otRotativeAsset').innerHTML = '<option value="">- Sin activo rotativo -</option>';
 
     // Reset sub-tabs to General
     document.querySelectorAll('.ot-tab-content').forEach(t => t.style.display = 'none');
@@ -474,6 +492,11 @@ async function editOT(id) {
     document.getElementById('otEstDuration').value = ot.estimated_duration || '';
     document.getElementById('otStatus').value = ot.status || 'Abierta';
     document.getElementById('otFailureMode').value = ot.failure_mode || '';
+
+    // Load rotative assets for this equipment
+    if (ot.equipment_id) {
+        await loadRotativeAssets(ot.equipment_id, ot.rotative_asset_id);
+    }
 
     // Load notice data if linked
     if (ot.notice_id) {
@@ -616,6 +639,7 @@ async function handleOTSubmit(e) {
         const id = document.getElementById('otId').value;
         const noticeId = document.getElementById('otNoticeId').value;
 
+        const raVal = document.getElementById('otRotativeAsset').value;
         const data = {
             description: document.getElementById('otDescription').value,
             maintenance_type: document.getElementById('otType').value,
@@ -625,7 +649,8 @@ async function handleOTSubmit(e) {
             provider_id: document.getElementById('otProvider').value ? parseInt(document.getElementById('otProvider').value) : null,
             estimated_duration: document.getElementById('otEstDuration').value,
             status: document.getElementById('otStatus').value,
-            failure_mode: document.getElementById('otFailureMode').value
+            failure_mode: document.getElementById('otFailureMode').value,
+            rotative_asset_id: raVal ? parseInt(raVal) : null,
         };
 
         let url = '/api/work-orders';
