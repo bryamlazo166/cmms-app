@@ -51,6 +51,23 @@ class User(db.Model):
         }
 
 
+class RolePermission(db.Model):
+    """Configurable permissions per role per module."""
+    __tablename__ = 'role_permissions'
+    id: Mapped[int] = mapped_column(primary_key=True)
+    role: Mapped[str] = mapped_column(String(20), nullable=False)
+    module: Mapped[str] = mapped_column(String(50), nullable=False)
+    can_view: Mapped[bool] = mapped_column(Boolean, default=True)
+    can_edit: Mapped[bool] = mapped_column(Boolean, default=False)
+    can_export: Mapped[bool] = mapped_column(Boolean, default=False)
+
+    def to_dict(self):
+        return {
+            "id": self.id, "role": self.role, "module": self.module,
+            "can_view": self.can_view, "can_edit": self.can_edit, "can_export": self.can_export,
+        }
+
+
 # Taxonomy: Area -> Line -> Equipment -> System -> Component -> SparePart
 
 class Area(db.Model):

@@ -63,6 +63,17 @@
         .tl-badge-pm{background:rgba(48,209,88,.15);color:#30D158}
         .tl-badge-dur{background:rgba(255,159,10,.12);color:#FF9F0A}
 
+        .view-btn{height:32px;padding:0 12px;border-radius:8px;border:1px solid rgba(255,255,255,.10);background:rgba(255,255,255,.06);color:rgba(255,255,255,.50);font-size:.78rem;cursor:pointer;display:inline-flex;align-items:center;gap:5px;transition:all 150ms}
+        .view-btn:hover{background:rgba(255,255,255,.12)}
+        .view-btn.active{background:rgba(10,132,255,.18);border-color:rgba(10,132,255,.30);color:#5AC8FA}
+
+        /* Grouped view */
+        .group-section{background:var(--bg-primary,#1C1C1E);border:1px solid rgba(255,255,255,.08);border-radius:14px;padding:14px;margin-bottom:12px}
+        .group-title{font-size:.92rem;font-weight:700;margin:0 0 10px;display:flex;align-items:center;gap:8px}
+        .group-table{width:100%;border-collapse:collapse}
+        .group-table th{padding:7px 10px;font-size:.72rem;font-weight:600;text-transform:uppercase;letter-spacing:.4px;color:rgba(255,255,255,.45);text-align:left;border-bottom:1px solid rgba(255,255,255,.08)}
+        .group-table td{padding:8px 10px;font-size:.82rem;color:rgba(255,255,255,.75);border-bottom:1px solid rgba(255,255,255,.04)}
+
         .empty{text-align:center;color:rgba(255,255,255,.30);padding:40px 20px}
     </style>
 </head>
@@ -83,8 +94,16 @@
     </div>
 
     <div class="eq-header" id="eqHeader">
-        <div class="eq-name"><span class="eq-tag" id="eqTag"></span><span id="eqName"></span></div>
-        <div class="eq-location" id="eqLocation"></div>
+        <div style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:8px">
+            <div>
+                <div class="eq-name"><span class="eq-tag" id="eqTag"></span><span id="eqName"></span></div>
+                <div class="eq-location" id="eqLocation"></div>
+            </div>
+            <div style="display:flex;gap:4px">
+                <button id="viewTimeline" onclick="setView('timeline')" class="view-btn active" title="Cronologico"><i class="fas fa-stream"></i> Cronologico</button>
+                <button id="viewGrouped" onclick="setView('grouped')" class="view-btn" title="Agrupado"><i class="fas fa-layer-group"></i> Agrupado</button>
+            </div>
+        </div>
         <div class="cat-chips" id="catChips"></div>
     </div>
 
@@ -96,7 +115,7 @@
 
 <script src="/static/js/sidebar.js?v=20260330"></script>
 <script>
-let hState = { areas: [], lines: [], equips: [], events: [], filter: 'ALL' };
+let hState = { areas: [], lines: [], equips: [], events: [], filter: 'ALL', view: 'timeline' };
 
 async function jget(url) {
     const r = await fetch(url);
@@ -190,8 +209,69 @@ function filterCat(cat) {
     hState.filter = cat;
     document.querySelectorAll('.cat-chip').forEach(c => c.classList.remove('active'));
     document.querySelector(`.cat-${cat}`)?.classList.add('active');
-    const filtered = cat === 'ALL' ? hState.events : hState.events.filter(e => e.category === cat);
-    renderTimeline(filtered);
+    renderCurrentView();
+}
+
+function setView(view) {
+    hState.view = view;
+    document.querySelectorAll('.view-btn').forEach(b => b.classList.remove('active'));
+    document.getElementById(view === 'timeline' ? 'viewTimeline' : 'viewGrouped')?.classList.add('active');
+    renderCurrentView();
+}
+
+function renderCurrentView() {
+    const filtered = hState.filter === 'ALL' ? hState.events : hState.events.filter(e => e.category === hState.filter);
+    if (hState.view === 'grouped') {
+        renderGrouped(hState.filter === 'ALL' ? hState.events : filtered);
+    } else {
+        renderTimeline(filtered);
+    }
+}
+
+function renderGrouped(events) {
+    const tl = document.getElementById('timeline');
+    const CATS = ['OT', 'AVISO', 'LUBRICACION', 'INSPECCION', 'MONITOREO'];
+    const CAT_ICONS = { OT: 'fa-tools', AVISO: 'fa-bell', LUBRICACION: 'fa-oil-can', INSPECCION: 'fa-clipboard-check', MONITOREO: 'fa-wave-square' };
+    const CAT_HEADERS = {
+        OT: ['Codigo', 'Fecha', 'Tipo', 'Estado', 'Modo Falla', 'Duracion', 'Descripcion'],
+        AVISO: ['Codigo', 'Fecha', 'Tipo', 'Estado', 'Descripcion'],
+        LUBRICACION: ['Codigo', 'Fecha', 'Tipo', 'Estado', 'Descripcion'],
+        INSPECCION: ['Codigo', 'Fecha', 'Resultado', 'Descripcion'],
+        MONITOREO: ['Codigo', 'Fecha', 'Tipo', 'Valor', 'Descripcion'],
+    };
+
+    const grouped = {};
+    CATS.forEach(c => grouped[c] = []);
+    events.forEach(e => { if (grouped[e.category]) grouped[e.category].push(e); });
+
+    let html = '';
+    CATS.forEach(cat => {
+        const items = grouped[cat];
+        if (!items.length) return;
+        const icon = CAT_ICONS[cat] || 'fa-circle';
+        const headers = CAT_HEADERS[cat];
+
+        html += `<div class="group-section">
+            <div class="group-title"><span class="tl-cat tl-cat-${cat}" style="font-size:.80rem;padding:3px 10px">${cat.replace(/_/g, ' ')}</span><span style="color:rgba(255,255,255,.35);font-size:.80rem">${items.length} registros</span></div>
+            <div style="overflow-x:auto;max-height:350px"><table class="group-table"><thead><tr>${headers.map(h => `<th>${h}</th>`).join('')}</tr></thead><tbody>`;
+
+        items.forEach(e => {
+            if (cat === 'OT') {
+                html += `<tr><td style="color:#0A84FF;font-weight:600">${e.code||'-'}</td><td>${e.date||'-'}</td><td>${e.type||'-'}${e.source_type?' <span style="color:#30D158;font-size:.7rem">[PM]</span>':''}</td><td>${e.status||'-'}</td><td>${e.failure_mode||'-'}</td><td>${e.duration_h||'-'}</td><td style="max-width:250px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${e.description||'-'}</td></tr>`;
+            } else if (cat === 'AVISO') {
+                html += `<tr><td style="color:#FF9F0A;font-weight:600">${e.code||'-'}</td><td>${e.date||'-'}</td><td>${e.type||'-'}</td><td>${e.status||'-'}</td><td style="max-width:300px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${e.description||'-'}</td></tr>`;
+            } else if (cat === 'LUBRICACION') {
+                html += `<tr><td style="color:#30D158;font-weight:600">${e.code||'-'}</td><td>${e.date||'-'}</td><td>${e.type||'-'}</td><td>${e.status||'-'}</td><td>${e.description||'-'}</td></tr>`;
+            } else if (cat === 'INSPECCION') {
+                html += `<tr><td style="color:#BF5AF2;font-weight:600">${e.code||'-'}</td><td>${e.date||'-'}</td><td>${e.type||'-'}</td><td>${e.description||'-'}</td></tr>`;
+            } else {
+                html += `<tr><td style="color:#5AC8FA;font-weight:600">${e.code||'-'}</td><td>${e.date||'-'}</td><td>${e.type||'-'}</td><td>${e.status||'-'}</td><td>${e.description||'-'}</td></tr>`;
+            }
+        });
+        html += '</tbody></table></div></div>';
+    });
+
+    tl.innerHTML = html || '<div class="empty">Sin eventos.</div>';
 }
 
 function renderTimeline(events) {

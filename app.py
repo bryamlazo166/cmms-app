@@ -17,7 +17,7 @@ from models import (
     LubricationPoint, LubricationExecution, MonitoringPoint, MonitoringReading,
     RotativeAsset, RotativeAssetHistory, RotativeAssetSpec,
     InspectionRoute, InspectionItem, InspectionExecution, InspectionResult,
-    Activity, Milestone
+    Activity, Milestone, RolePermission
 )
 from utils.crud_helpers import create_entry, get_entries, update_entry, delete_entry
 from utils.reporting_helpers import (
@@ -162,19 +162,44 @@ def load_user(user_id):
 # ── Auth guard: require login for all routes except /login and /static ────────
 _AUTH_EXEMPT = {'login', 'logout', 'static', 'health_check'}
 
-# Viewer-safe GET-only endpoints (exports blocked)
-_VIEWER_BLOCKED_PATHS = ('/api/reports/powerbi-export', '/api/warehouse/export', '/api/reports/weekly-plan/export')
+# ── Role-based access control ─────────────────────────────────────────────────
+_EXPORT_PATHS = ('/api/reports/powerbi-export', '/api/warehouse/export',
+                 '/api/reports/weekly-plan/export', '/api/warehouse/export-kardex')
+
+# Supervisor: can manage notices, work orders, tools, lubrication exec, inspections exec
+# Blocked: exports, rotative assets, equipment history, users, taxonomy config
+_SUPERVISOR_BLOCKED_PAGES = ('/activos-rotativos', '/equipo-historial', '/usuarios', '/configuracion')
+_SUPERVISOR_BLOCKED_API = ('/api/rotative-assets', '/api/equipment/', '/api/auth/users',
+                           '/api/areas', '/api/lines', '/api/equipments', '/api/systems',
+                           '/api/components', '/api/spare-parts')
 
 @app.before_request
 def require_login():
     if current_user.is_authenticated:
-        # Viewer role: block all modifications and downloads
-        if getattr(current_user, 'role', None) == 'viewer':
+        role = getattr(current_user, 'role', None)
+
+        # Viewer: read-only, no exports
+        if role == 'viewer':
+            if request.method in ('POST', 'PUT', 'DELETE') and request.path.startswith('/api/'):
+                return jsonify({"error": "Acceso de solo lectura. Contacta al administrador."}), 403
+            if request.path in _EXPORT_PATHS:
+                return jsonify({"error": "Descarga no permitida para este rol."}), 403
+
+        # Supervisor: manage maintenance, block admin/assets/exports
+        elif role == 'supervisor':
+            # Block exports
+            if request.path in _EXPORT_PATHS:
+                return jsonify({"error": "Descarga no permitida para este rol."}), 403
+            # Block restricted pages
+            for blocked in _SUPERVISOR_BLOCKED_PAGES:
+                if request.path == blocked or request.path.startswith(blocked + '/'):
+                    return redirect(url_for('index'))
+            # Block write to taxonomy/admin APIs (allow GET for dropdowns)
             if request.method in ('POST', 'PUT', 'DELETE'):
-                if request.path.startswith('/api/'):
-                    return jsonify({"error": "Acceso de solo lectura. Contacta al administrador."}), 403
-            if request.path in _VIEWER_BLOCKED_PATHS:
-                return jsonify({"error": "Descarga no permitida para usuario de solo lectura."}), 403
+                for blocked in _SUPERVISOR_BLOCKED_API:
+                    if request.path.startswith(blocked):
+                        return jsonify({"error": "No tienes permisos para esta accion."}), 403
+
         return
     if request.endpoint in _AUTH_EXEMPT:
         return
@@ -193,7 +218,7 @@ def add_build_header(response):
 
 
 # ── Register all route modules ────────────────────────────────────────────────
-register_auth_routes(app=app, db=db, logger=logger, User=User)
+register_auth_routes(app=app, db=db, logger=logger, User=User, RolePermission=RolePermission)
 
 register_activity_routes(app=app, db=db, logger=logger, Activity=Activity, Milestone=Milestone)
 

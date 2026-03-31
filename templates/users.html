@@ -149,6 +149,40 @@
         </table>
     </div>
 </div>
+
+<!-- Permissions Panel -->
+<div style="margin-top:20px">
+    <div class="page-header" style="margin-bottom:14px">
+        <div>
+            <h1 style="font-size:1.2rem"><i class="fas fa-shield-alt" style="color:#FF9F0A;margin-right:8px"></i>Permisos por Rol</h1>
+            <p style="font-size:.83rem;color:rgba(255,255,255,0.45);margin-top:3px">Configura que puede ver y editar cada rol</p>
+        </div>
+        <button class="btn btn-primary" onclick="withLoading(this, savePermissions)"><i class="fas fa-save"></i> Guardar Permisos</button>
+    </div>
+    <div class="panel" id="permPanel" style="overflow-x:auto">
+        <table style="width:100%;border-collapse:collapse;min-width:600px">
+            <thead>
+                <tr>
+                    <th style="text-align:left">Modulo</th>
+                    <th colspan="2" style="text-align:center;color:#5AC8FA">Supervisor</th>
+                    <th colspan="2" style="text-align:center;color:#5CD870">Tecnico</th>
+                    <th colspan="2" style="text-align:center;color:rgba(255,255,255,.50)">Solo Lectura</th>
+                </tr>
+                <tr>
+                    <th></th>
+                    <th style="text-align:center;font-size:.70rem;color:rgba(255,255,255,.40)">Ver</th>
+                    <th style="text-align:center;font-size:.70rem;color:rgba(255,255,255,.40)">Editar</th>
+                    <th style="text-align:center;font-size:.70rem;color:rgba(255,255,255,.40)">Ver</th>
+                    <th style="text-align:center;font-size:.70rem;color:rgba(255,255,255,.40)">Editar</th>
+                    <th style="text-align:center;font-size:.70rem;color:rgba(255,255,255,.40)">Ver</th>
+                    <th style="text-align:center;font-size:.70rem;color:rgba(255,255,255,.40)">Editar</th>
+                </tr>
+            </thead>
+            <tbody id="permBody"><tr><td colspan="7" class="empty-state">Cargando permisos...</td></tr></tbody>
+        </table>
+    </div>
+</div>
+
 </section>
 
 <!-- Create/Edit Modal -->
@@ -346,7 +380,64 @@ async function deactivateUser(id, username) {
     }
 }
 
-document.addEventListener('DOMContentLoaded', loadUsers);
+document.addEventListener('DOMContentLoaded', () => {
+    loadUsers();
+    loadPermissions();
+});
+
+let permData = {};
+
+async function loadPermissions() {
+    try {
+        const res = await fetch('/api/auth/permissions');
+        if (!res.ok) return;
+        const data = await res.json();
+        if (!data.modules) return; // non-admin
+        permData = data;
+        renderPermissions(data);
+    } catch (_) {}
+}
+
+function renderPermissions(data) {
+    const tbody = document.getElementById('permBody');
+    const roles = data.roles;
+    const perms = data.permissions;
+
+    tbody.innerHTML = data.modules.map(mod => {
+        let row = `<td style="padding:8px 10px;font-size:.85rem;color:rgba(255,255,255,.82)">${mod.label}</td>`;
+        roles.forEach(role => {
+            const p = (perms[role] || {})[mod.key] || { view: false, edit: false };
+            row += `<td style="text-align:center"><input type="checkbox" data-role="${role}" data-mod="${mod.key}" data-perm="view" ${p.view ? 'checked' : ''}></td>`;
+            row += `<td style="text-align:center"><input type="checkbox" data-role="${role}" data-mod="${mod.key}" data-perm="edit" ${p.edit ? 'checked' : ''}></td>`;
+        });
+        return `<tr style="border-bottom:1px solid rgba(255,255,255,.05)">${row}</tr>`;
+    }).join('');
+}
+
+async function savePermissions() {
+    const checkboxes = document.querySelectorAll('#permBody input[type=checkbox]');
+    const result = {};
+    checkboxes.forEach(cb => {
+        const role = cb.dataset.role;
+        const mod = cb.dataset.mod;
+        const perm = cb.dataset.perm;
+        if (!result[role]) result[role] = {};
+        if (!result[role][mod]) result[role][mod] = {};
+        result[role][mod][perm] = cb.checked;
+    });
+
+    const res = await fetch('/api/auth/permissions', {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(result)
+    });
+    const data = await res.json();
+    if (data.ok) {
+        alert('Permisos guardados correctamente.');
+    } else {
+        alert('Error: ' + (data.error || 'Desconocido'));
+    }
+}
 </script>
 </body>
 </html>

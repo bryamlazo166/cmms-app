@@ -2,7 +2,7 @@ from flask import jsonify, redirect, render_template, request, url_for
 from flask_login import current_user, login_required, login_user, logout_user
 
 
-def register_auth_routes(app, db, logger, User):
+def register_auth_routes(app, db, logger, User, RolePermission=None):
 
     # ── Pages ──────────────────────────────────────────────────────────────────
 
@@ -142,5 +142,118 @@ def register_auth_routes(app, db, logger, User):
             return jsonify({"error": "La nueva contraseña debe tener al menos 6 caracteres."}), 400
 
         current_user.set_password(new_pwd)
+        db.session.commit()
+        return jsonify({"ok": True})
+
+    # ── Role Permissions ──────────────────────────────────────────────────
+
+    MODULES = [
+        {'key': 'avisos', 'label': 'Avisos'},
+        {'key': 'ordenes', 'label': 'Ordenes de Trabajo'},
+        {'key': 'compras', 'label': 'Compras'},
+        {'key': 'almacen', 'label': 'Almacen'},
+        {'key': 'herramientas', 'label': 'Herramientas'},
+        {'key': 'activos_rotativos', 'label': 'Activos Rotativos'},
+        {'key': 'activos_config', 'label': 'Arbol de Equipos'},
+        {'key': 'monitoreo', 'label': 'Monitoreo'},
+        {'key': 'lubricacion', 'label': 'Lubricacion'},
+        {'key': 'inspecciones', 'label': 'Inspecciones'},
+        {'key': 'seguimiento', 'label': 'Seguimiento'},
+        {'key': 'reportes', 'label': 'Reportes'},
+        {'key': 'historial_equipo', 'label': 'Historial Equipo'},
+        {'key': 'exportar', 'label': 'Exportar Excel'},
+        {'key': 'usuarios', 'label': 'Gestion Usuarios'},
+    ]
+
+    ROLES = ['supervisor', 'tecnico', 'viewer']
+
+    # Default permissions per role
+    DEFAULTS = {
+        'supervisor': {
+            'avisos': {'view': True, 'edit': True}, 'ordenes': {'view': True, 'edit': True},
+            'compras': {'view': True, 'edit': True}, 'almacen': {'view': True, 'edit': True},
+            'herramientas': {'view': True, 'edit': True}, 'lubricacion': {'view': True, 'edit': True},
+            'inspecciones': {'view': True, 'edit': True}, 'monitoreo': {'view': True, 'edit': True},
+            'seguimiento': {'view': True, 'edit': True}, 'reportes': {'view': True, 'edit': False},
+            'activos_rotativos': {'view': False, 'edit': False}, 'activos_config': {'view': False, 'edit': False},
+            'historial_equipo': {'view': False, 'edit': False}, 'exportar': {'view': False, 'edit': False},
+            'usuarios': {'view': False, 'edit': False},
+        },
+        'tecnico': {
+            'avisos': {'view': True, 'edit': True}, 'ordenes': {'view': True, 'edit': True},
+            'compras': {'view': True, 'edit': False}, 'almacen': {'view': True, 'edit': False},
+            'herramientas': {'view': True, 'edit': True}, 'lubricacion': {'view': True, 'edit': True},
+            'inspecciones': {'view': True, 'edit': True}, 'monitoreo': {'view': True, 'edit': True},
+            'seguimiento': {'view': True, 'edit': True}, 'reportes': {'view': True, 'edit': False},
+            'activos_rotativos': {'view': True, 'edit': False}, 'activos_config': {'view': True, 'edit': False},
+            'historial_equipo': {'view': True, 'edit': False}, 'exportar': {'view': False, 'edit': False},
+            'usuarios': {'view': False, 'edit': False},
+        },
+        'viewer': {
+            'avisos': {'view': True, 'edit': False}, 'ordenes': {'view': True, 'edit': False},
+            'compras': {'view': True, 'edit': False}, 'almacen': {'view': True, 'edit': False},
+            'herramientas': {'view': True, 'edit': False}, 'lubricacion': {'view': True, 'edit': False},
+            'inspecciones': {'view': True, 'edit': False}, 'monitoreo': {'view': True, 'edit': False},
+            'seguimiento': {'view': True, 'edit': False}, 'reportes': {'view': True, 'edit': False},
+            'activos_rotativos': {'view': True, 'edit': False}, 'activos_config': {'view': True, 'edit': False},
+            'historial_equipo': {'view': True, 'edit': False}, 'exportar': {'view': False, 'edit': False},
+            'usuarios': {'view': False, 'edit': False},
+        },
+    }
+
+    def _get_permissions():
+        """Load permissions from DB, fill with defaults if missing."""
+        if not RolePermission:
+            return DEFAULTS
+        result = {}
+        for role in ROLES:
+            result[role] = {}
+            for mod in MODULES:
+                key = mod['key']
+                perm = RolePermission.query.filter_by(role=role, module=key).first()
+                if perm:
+                    result[role][key] = {'view': perm.can_view, 'edit': perm.can_edit}
+                else:
+                    defaults = DEFAULTS.get(role, {}).get(key, {'view': True, 'edit': False})
+                    result[role][key] = defaults
+        return result
+
+    @app.route('/api/auth/permissions', methods=['GET'])
+    @login_required
+    def get_permissions():
+        if current_user.role != 'admin':
+            # Non-admin gets their own permissions only
+            perms = _get_permissions()
+            return jsonify({current_user.role: perms.get(current_user.role, {})})
+        return jsonify({
+            'permissions': _get_permissions(),
+            'modules': MODULES,
+            'roles': ROLES,
+        })
+
+    @app.route('/api/auth/permissions', methods=['PUT'])
+    @login_required
+    def update_permissions():
+        if current_user.role != 'admin':
+            return jsonify({"error": "Solo admin puede modificar permisos."}), 403
+        if not RolePermission:
+            return jsonify({"error": "Modelo de permisos no disponible."}), 500
+
+        data = request.get_json() or {}
+        # data = { role: { module: { view: bool, edit: bool } } }
+        for role, modules in data.items():
+            if role not in ROLES:
+                continue
+            for module, perms in modules.items():
+                existing = RolePermission.query.filter_by(role=role, module=module).first()
+                if existing:
+                    existing.can_view = bool(perms.get('view', True))
+                    existing.can_edit = bool(perms.get('edit', False))
+                else:
+                    db.session.add(RolePermission(
+                        role=role, module=module,
+                        can_view=bool(perms.get('view', True)),
+                        can_edit=bool(perms.get('edit', False)),
+                    ))
         db.session.commit()
         return jsonify({"ok": True})

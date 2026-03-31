@@ -44,9 +44,9 @@
         return path.startsWith(href.toLowerCase());
     }
 
-    function renderNav(navList, extraItems) {
+    function renderNav(navList, extraItems, baseItems) {
         if (!navList) return;
-        const items = [...MENU_ITEMS, ...(extraItems || [])];
+        const items = [...(baseItems || MENU_ITEMS), ...(extraItems || [])];
         navList.innerHTML = items.map((item) => {
             const active = isActive(item.href) ? 'active' : '';
             return `<li>
@@ -85,20 +85,27 @@
         sidebar.appendChild(profileEl);
     }
 
+    // Pages hidden per role
+    const ROLE_HIDDEN = {
+        supervisor: ['/activos-rotativos', '/equipo-historial', '/configuracion'],
+        viewer: [],
+        tecnico: [],
+    };
+
     async function loadCurrentUser(sidebar) {
         try {
             const res = await fetch('/api/auth/me');
             if (!res.ok) return;
             const user = await res.json();
             renderProfile(sidebar, user);
-            // Add admin-only menu items
-            if (user.role === 'admin') {
-                const navList = sidebar.querySelector('.nav-list');
-                renderNav(navList, ADMIN_MENU_ITEMS);
-            }
-        } catch (_) {
-            // silently skip — user display is non-critical
-        }
+
+            // Re-render nav with role-based filtering
+            const hidden = ROLE_HIDDEN[user.role] || [];
+            const navList = sidebar.querySelector('.nav-list');
+            const extra = user.role === 'admin' ? ADMIN_MENU_ITEMS : [];
+            const filtered = MENU_ITEMS.filter(item => !hidden.includes(item.href));
+            renderNav(navList, extra, filtered);
+        } catch (_) {}
     }
 
     function ensureOverlay(sidebar) {
