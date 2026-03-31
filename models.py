@@ -225,6 +225,9 @@ class MaintenanceNotice(db.Model):
     source_type: Mapped[str | None] = mapped_column(String(20), nullable=True)
     source_id: Mapped[int | None] = mapped_column(Integer, nullable=True)
 
+    # Link to rotative asset
+    rotative_asset_id: Mapped[int | None] = mapped_column(Integer, nullable=True)
+
     # Link to Work Order (One-to-One or One-to-Many? usually One)
     work_order = relationship("WorkOrder", back_populates="notice", uselist=False)
 

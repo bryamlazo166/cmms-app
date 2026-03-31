@@ -22,7 +22,7 @@ def register_master_data_routes(
         if request.method == 'POST':
             return create_entry(Provider, request.json, ['name'])
 
-        providers = Provider.query.filter_by(is_active=True).all()
+        providers = Provider.query.filter_by(is_active=True).order_by(Provider.name).all()
         return jsonify([provider.to_dict() for provider in providers])
 
     @app.route('/api/providers/<int:id>', methods=['PUT', 'DELETE'])
@@ -49,9 +49,9 @@ def register_master_data_routes(
 
         show_all = request.args.get('all', 'false').lower() == 'true'
         if show_all:
-            technicians = Technician.query.all()
+            technicians = Technician.query.order_by(Technician.name).all()
         else:
-            technicians = Technician.query.filter_by(is_active=True).all()
+            technicians = Technician.query.filter_by(is_active=True).order_by(Technician.name).all()
         return jsonify([tech.to_dict() for tech in technicians])
 
     @app.route('/api/technicians/<int:id>', methods=['PUT', 'DELETE'])

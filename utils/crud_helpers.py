@@ -30,7 +30,10 @@ def create_entry(Model, data, required_fields, logger=None):
 
 
 def get_entries(Model):
-    entries = Model.query.all()
+    if hasattr(Model, 'name'):
+        entries = Model.query.order_by(Model.name).all()
+    else:
+        entries = Model.query.order_by(Model.id).all()
     return jsonify([entry.to_dict() for entry in entries])
 
 

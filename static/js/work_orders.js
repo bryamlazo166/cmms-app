@@ -1698,7 +1698,8 @@ async function convertNoticeToOT(noticeId) {
             line_id: notice.line_id,
             equipment_id: notice.equipment_id,
             system_id: notice.system_id,
-            component_id: notice.component_id
+            component_id: notice.component_id,
+            rotative_asset_id: notice.rotative_asset_id || null,
         };
 
         const res = await fetch('/api/work-orders', {

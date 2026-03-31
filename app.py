@@ -473,6 +473,7 @@ _ENSURE_COLUMNS = [
     ("maintenance_notices", "source_type", "VARCHAR(20)"),
     ("maintenance_notices", "source_id", "INTEGER"),
     ("work_orders", "rotative_asset_id", "INTEGER"),
+    ("maintenance_notices", "rotative_asset_id", "INTEGER"),
 ]
 
 

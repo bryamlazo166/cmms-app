@@ -208,6 +208,7 @@ async function saveNotice(e) {
         equipment_id: val('equipmentId'),
         system_id: val('systemId'),
         component_id: val('componentId'),
+        rotative_asset_id: document.getElementById('noticeRotativeAsset')?.value || null,
         description: val('description'),
         criticality: val('criticality'),
         priority: val('priority'),
@@ -556,12 +557,33 @@ function updateHierarchyDisplay() {
     };
 
     div.innerHTML = `
-        <strong style="color:#0A84FF">Area:</strong> ${safeName(allAreas, areaId)} | 
-        <strong style="color:#0A84FF">Línea:</strong> ${safeName(allLines, lineId)} | 
+        <strong style="color:#0A84FF">Area:</strong> ${safeName(allAreas, areaId)} |
+        <strong style="color:#0A84FF">Línea:</strong> ${safeName(allLines, lineId)} |
         <strong style="color:#0A84FF">Equipo:</strong> ${safeName(allEquips, eqId)} <br>
-        <strong style="color:#0A84FF">Sistema:</strong> ${safeName(allSys, sysId)} | 
+        <strong style="color:#0A84FF">Sistema:</strong> ${safeName(allSys, sysId)} |
         <strong style="color:#0A84FF">Comp.:</strong> ${safeName(allComps, compId)}
     `;
+
+    // Load rotative assets for selected equipment
+    loadNoticeRotativeAssets(eqId);
+}
+
+async function loadNoticeRotativeAssets(equipmentId) {
+    const sel = document.getElementById('noticeRotativeAsset');
+    if (!sel) return;
+    sel.innerHTML = '<option value="">- Sin activo rotativo -</option>';
+    if (!equipmentId) return;
+    try {
+        const res = await fetch(`/api/rotative-assets?equipment_id=${equipmentId}`);
+        const assets = await res.json();
+        if (!Array.isArray(assets)) return;
+        assets.filter(a => a.status === 'Instalado').forEach(a => {
+            const opt = document.createElement('option');
+            opt.value = a.id;
+            opt.textContent = `${a.code} ${a.name} (${a.category || '-'})`;
+            sel.appendChild(opt);
+        });
+    } catch (_) {}
 }
 
 // Helper function to get name from list by id
