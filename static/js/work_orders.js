@@ -1555,9 +1555,11 @@ async function loadPendingNotices() {
         const res = await fetch('/api/notices');
         const notices = await res.json();
 
-        // Filter notices that don't have an OT yet and are actionable
-        const HIDDEN_STATUSES = ['Cerrado', 'Anulado', 'Duplicado', 'Cancelado'];
-        allPendingNotices = notices.filter(n => !n.ot_number && !HIDDEN_STATUSES.includes(n.status));
+        // Duplicados are shown (need review), Anulados hidden by default
+        const showAnulados = document.getElementById('showAnulados')?.checked || false;
+        const HIDDEN = ['Cerrado', 'Cancelado'];
+        if (!showAnulados) HIDDEN.push('Anulado');
+        allPendingNotices = notices.filter(n => !n.ot_number && !HIDDEN.includes(n.status));
 
         renderPendingNotices();
     } catch (e) { console.error("Error loading notices:", e); }
@@ -1587,17 +1589,23 @@ function renderPendingNotices() {
         // Status badge color
         const statusColors = {
             'Pendiente': '#FF9F0A',
-            'En Tratamiento': '#2196f3',
-            'En Progreso': '#00bcd4'
+            'En Tratamiento': '#0A84FF',
+            'En Progreso': '#5AC8FA',
+            'Duplicado': '#BF5AF2',
+            'Anulado': '#666',
         };
         const statusColor = statusColors[n.status] || '#666';
+        const isDuplicado = n.status === 'Duplicado';
+        const isAnulado = n.status === 'Anulado';
+        const rowOpacity = isAnulado ? 'opacity:0.45' : '';
 
         const tr = document.createElement('tr');
+        tr.style.cssText = rowOpacity;
         tr.innerHTML = `
             <td>${n.code || n.id}</td>
             <td>${n.reporter_type || '-'}</td>
             <td>${equipName}</td>
-            <td>${n.description ? (n.description.length > 30 ? n.description.substring(0, 30) + '...' : n.description) : '-'}</td>
+            <td title="${(n.description||'').replace(/"/g,'&quot;')}">${n.description ? (n.description.length > 40 ? n.description.substring(0, 40) + '...' : n.description) : '-'}</td>
             <td>${n.criticality || '-'}</td>
             <td>${n.priority || '-'}</td>
             <td>${n.request_date || '-'}</td>
@@ -1606,12 +1614,21 @@ function renderPendingNotices() {
             <td><span style="background: ${statusColor}; padding: 3px 8px; border-radius: 10px; font-size: 0.8em; color: white;">${n.status || 'Pendiente'}</span></td>
             <td>
                 <div style="display: flex; gap: 5px;">
-                    <button onclick="viewNoticeDetails(${n.id})" class="btn-info" style="padding: 5px 8px;" title="Ver Detalle y Duplicados">
+                    <button onclick="viewNoticeDetails(${n.id})" class="btn-info" style="padding: 5px 8px;" title="Ver Detalle">
                         <i class="fas fa-eye"></i>
                     </button>
-                    <button onclick="convertNoticeToOT(${n.id})" class="btn-success" style="padding: 5px 8px;" title="Crear OT">
-                        <i class="fas fa-wrench"></i>
-                    </button>
+                    ${isDuplicado ? `
+                        <button onclick="acceptDuplicateNotice(${n.id})" class="btn-success" style="padding: 5px 8px;" title="Aceptar (convertir a Pendiente)">
+                            <i class="fas fa-check"></i>
+                        </button>
+                        <button onclick="annulNotice(${n.id})" class="btn-danger" style="padding: 5px 8px;background:rgba(255,69,58,.2);color:#FF6B61;border:none;border-radius:4px;cursor:pointer" title="Anular">
+                            <i class="fas fa-ban"></i>
+                        </button>
+                    ` : isAnulado ? '' : `
+                        <button onclick="convertNoticeToOT(${n.id})" class="btn-success" style="padding: 5px 8px;" title="Crear OT">
+                            <i class="fas fa-wrench"></i>
+                        </button>
+                    `}
                 </div>
             </td>
         `;
@@ -1677,6 +1694,33 @@ window.viewNoticeDetails = async function (id) {
         document.getElementById('noticeDetailModal').showModal();
 
     } catch (e) { console.error(e); alert("Error cargando detalles"); }
+}
+
+// Accept duplicate notice → change status to Pendiente
+async function acceptDuplicateNotice(noticeId) {
+    if (!confirm('Aceptar este aviso duplicado? Se cambiara a estado Pendiente.')) return;
+    try {
+        await fetch(`/api/notices/${noticeId}`, {
+            method: 'PUT',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ status: 'Pendiente' })
+        });
+        loadPendingNotices();
+    } catch (e) { alert('Error: ' + e.message); }
+}
+
+// Annul notice
+async function annulNotice(noticeId) {
+    const reason = prompt('Motivo de anulacion:');
+    if (reason === null) return;
+    try {
+        await fetch(`/api/notices/${noticeId}`, {
+            method: 'PUT',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ status: 'Anulado', cancellation_reason: reason || 'Anulado por usuario' })
+        });
+        loadPendingNotices();
+    } catch (e) { alert('Error: ' + e.message); }
 }
 
 // Convert Notice to OT

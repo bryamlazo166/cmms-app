@@ -410,9 +410,10 @@
             <!-- TAB: AVISOS PENDIENTES -->
             <div id="tab-notices" class="tab-content">
                 <div class="toolbar">
-                    <h3 style="margin: 0; color: #0A84FF;"><i class="fas fa-clipboard-list"></i> Avisos sin OT -
-                        Convertir a
-                        Orden de Trabajo</h3>
+                    <h3 style="margin: 0; color: #0A84FF;"><i class="fas fa-clipboard-list"></i> Avisos Pendientes</h3>
+                    <label style="display:flex;align-items:center;gap:6px;font-size:.80rem;color:rgba(255,255,255,.50);cursor:pointer;margin-left:auto">
+                        <input type="checkbox" id="showAnulados" onchange="loadPendingNotices()" style="accent-color:#FF453A"> Mostrar anulados
+                    </label>
                 </div>
                 <div class="table-container" style="margin-top: 15px;">
                     <table class="data-table" id="pendingNoticesTable">
