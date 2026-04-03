@@ -28,6 +28,7 @@ def register_work_orders_routes(
     LubricationPoint=None,
     InspectionRoute=None,
     MonitoringPoint=None,
+    OTLogEntry=None,
     _calculate_lubrication_schedule=None,
     _calculate_monitoring_schedule=None,
 ):
@@ -258,6 +259,103 @@ def register_work_orders_routes(
         except Exception as e:
             db.session.rollback()
             logger.exception("Generate preventive notices error")
+            return jsonify({"error": str(e)}), 500
+
+    # ── OT Activity Log (Bitacora) ───────────────────────────────────────
+
+    @app.route('/api/work_orders/<int:ot_id>/log', methods=['GET', 'POST'])
+    def handle_ot_log(ot_id):
+        if not OTLogEntry:
+            return jsonify([])
+
+        if request.method == 'POST':
+            try:
+                data = request.json or {}
+                comment = (data.get('comment') or '').strip()
+                if not comment:
+                    return jsonify({"error": "Comentario es obligatorio."}), 400
+
+                from flask_login import current_user
+                entry = OTLogEntry(
+                    work_order_id=ot_id,
+                    log_date=data.get('log_date') or datetime.now().strftime('%Y-%m-%d'),
+                    log_type=(data.get('log_type') or 'NOTA').upper(),
+                    author=data.get('author') or (current_user.full_name or current_user.username if hasattr(current_user, 'username') else None),
+                    comment=comment,
+                )
+                db.session.add(entry)
+                db.session.commit()
+                return jsonify(entry.to_dict()), 201
+            except Exception as e:
+                db.session.rollback()
+                return jsonify({"error": str(e)}), 500
+
+        entries = OTLogEntry.query.filter_by(work_order_id=ot_id) \
+            .order_by(OTLogEntry.log_date.desc(), OTLogEntry.id.desc()).all()
+        return jsonify([e.to_dict() for e in entries])
+
+    @app.route('/api/work_orders/<int:ot_id>/log/<int:log_id>', methods=['DELETE'])
+    def delete_ot_log(ot_id, log_id):
+        if not OTLogEntry:
+            return jsonify({"error": "No disponible"}), 500
+        entry = OTLogEntry.query.get_or_404(log_id)
+        db.session.delete(entry)
+        db.session.commit()
+        return jsonify({"ok": True})
+
+    # ── OT Report Tracking ─────────────────────────────────────────────────
+
+    @app.route('/api/work_orders/<int:ot_id>/report', methods=['PUT'])
+    def update_ot_report(ot_id):
+        try:
+            wo = WorkOrder.query.get_or_404(ot_id)
+            data = request.json or {}
+            if 'report_required' in data:
+                wo.report_required = bool(data['report_required'])
+            if 'report_status' in data:
+                wo.report_status = data['report_status']
+            if 'report_due_date' in data:
+                wo.report_due_date = data['report_due_date'] or None
+            if 'report_received_date' in data:
+                wo.report_received_date = data['report_received_date'] or None
+            db.session.commit()
+            return jsonify(wo.to_dict())
+        except Exception as e:
+            db.session.rollback()
+            return jsonify({"error": str(e)}), 500
+
+    @app.route('/api/pending-reports', methods=['GET'])
+    def get_pending_reports():
+        """List OTs that require a report but haven't received one."""
+        try:
+            ots = WorkOrder.query.filter(
+                WorkOrder.report_required == True,
+                db.or_(WorkOrder.report_status == None, WorkOrder.report_status == 'PENDIENTE')
+            ).order_by(WorkOrder.id.desc()).all()
+
+            results = []
+            for wo in ots:
+                eq = Equipment.query.get(wo.equipment_id) if wo.equipment_id else None
+                prov = Provider.query.get(wo.provider_id) if wo.provider_id else None
+                results.append({
+                    'id': wo.id,
+                    'code': wo.code,
+                    'description': wo.description,
+                    'equipment': f"{eq.tag or ''} {eq.name}".strip() if eq else '-',
+                    'provider': prov.name if prov else '-',
+                    'status': wo.status,
+                    'scheduled_date': wo.scheduled_date,
+                    'report_due_date': wo.report_due_date,
+                    'days_pending': None,
+                })
+                if wo.report_due_date:
+                    try:
+                        due = datetime.strptime(wo.report_due_date, '%Y-%m-%d').date()
+                        results[-1]['days_pending'] = (datetime.now().date() - due).days
+                    except Exception:
+                        pass
+            return jsonify(results)
+        except Exception as e:
             return jsonify({"error": str(e)}), 500
 
     # --- OT PERSONNEL ENDPOINTS ---

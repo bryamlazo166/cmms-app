@@ -1127,6 +1127,11 @@ async function searchForExecution() {
     } else if (ot.status === 'En Progreso') {
         btnEnd.classList.remove('hidden');
     }
+
+    // Load bitacora + report status
+    loadOTLog(ot.id);
+    loadReportStatus(ot);
+    document.getElementById('logDate').value = new Date().toISOString().slice(0, 10);
 }
 
 function populateExecutionOperationalInfo(ot) {
@@ -1867,6 +1872,116 @@ window.openAddPersonnelModal = function () {
     select.innerHTML = techSelect.map(t =>
         `<option value="${t.id}" data-specialty="${t.specialty || 'GENERAL'}">${t.name} (${t.specialty || 'N/A'})</option>`
     ).join('');
+}
+
+// ── OT Activity Log (Bitacora) ──────────────────────────────────────────────
+
+const LOG_TYPE_COLORS = {
+    NOTA: '#888', AVANCE: '#30D158', MATERIAL: '#FF9F0A',
+    PROVEEDOR: '#BF5AF2', INFORME: '#0A84FF', CIERRE: '#FF453A',
+};
+
+async function loadOTLog(otId) {
+    const container = document.getElementById('exec-log-list');
+    try {
+        const res = await fetch(`/api/work_orders/${otId}/log`);
+        const entries = await res.json();
+        if (!entries.length) {
+            container.innerHTML = '<p style="color:#888;font-style:italic;text-align:center;padding:8px">Sin registros en la bitacora.</p>';
+            return;
+        }
+        container.innerHTML = entries.map(e => {
+            const c = LOG_TYPE_COLORS[e.log_type] || '#888';
+            return `<div style="display:flex;gap:8px;padding:6px 0;border-bottom:1px solid rgba(255,255,255,.06)">
+                <div style="width:8px;height:8px;border-radius:50%;background:${c};margin-top:6px;flex-shrink:0"></div>
+                <div style="flex:1;min-width:0">
+                    <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">
+                        <span style="font-size:.75rem;color:${c};font-weight:700;text-transform:uppercase">${e.log_type}</span>
+                        <span style="font-size:.75rem;color:rgba(255,255,255,.40)">${e.log_date}</span>
+                        ${e.author ? `<span style="font-size:.72rem;color:rgba(255,255,255,.35)">por ${e.author}</span>` : ''}
+                    </div>
+                    <div style="font-size:.84rem;color:rgba(255,255,255,.78);margin-top:2px">${e.comment}</div>
+                </div>
+                <button onclick="deleteLogEntry(${e.id})" style="background:none;border:none;color:rgba(255,255,255,.20);cursor:pointer;font-size:.72rem;flex-shrink:0" title="Eliminar"><i class="fas fa-trash"></i></button>
+            </div>`;
+        }).join('');
+    } catch (err) {
+        container.innerHTML = `<p style="color:#FF6B61">${err.message}</p>`;
+    }
+}
+
+async function addLogEntry() {
+    if (!activeExecutionOT) return;
+    const comment = document.getElementById('logComment').value.trim();
+    if (!comment) { alert('Ingresa un comentario.'); return; }
+
+    try {
+        await fetch(`/api/work_orders/${activeExecutionOT.id}/log`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                log_date: document.getElementById('logDate').value || new Date().toISOString().slice(0, 10),
+                log_type: document.getElementById('logType').value,
+                comment,
+            })
+        });
+        document.getElementById('logComment').value = '';
+        loadOTLog(activeExecutionOT.id);
+    } catch (e) { alert('Error: ' + e.message); }
+}
+
+async function deleteLogEntry(logId) {
+    if (!activeExecutionOT || !confirm('Eliminar esta entrada?')) return;
+    await fetch(`/api/work_orders/${activeExecutionOT.id}/log/${logId}`, { method: 'DELETE' });
+    loadOTLog(activeExecutionOT.id);
+}
+
+// ── Report Tracking ─────────────────────────────────────────────────────────
+
+function loadReportStatus(ot) {
+    document.getElementById('reportRequired').checked = !!ot.report_required;
+    document.getElementById('reportDueDate').value = ot.report_due_date || '';
+    document.getElementById('reportReceivedDate').value = ot.report_received_date || '';
+    updateReportBadge(ot);
+}
+
+function updateReportBadge(ot) {
+    const badge = document.getElementById('reportStatusBadge');
+    const req = document.getElementById('reportRequired').checked;
+    const received = document.getElementById('reportReceivedDate').value;
+    if (!req) {
+        badge.textContent = '';
+        badge.style.background = 'none';
+    } else if (received) {
+        badge.textContent = 'RECIBIDO';
+        badge.style.background = 'rgba(48,209,88,.18)';
+        badge.style.color = '#30D158';
+    } else {
+        badge.textContent = 'PENDIENTE';
+        badge.style.background = 'rgba(255,69,58,.18)';
+        badge.style.color = '#FF6B61';
+    }
+}
+
+async function updateReport() {
+    if (!activeExecutionOT) return;
+    const required = document.getElementById('reportRequired').checked;
+    const dueDate = document.getElementById('reportDueDate').value;
+    const receivedDate = document.getElementById('reportReceivedDate').value;
+
+    try {
+        await fetch(`/api/work_orders/${activeExecutionOT.id}/report`, {
+            method: 'PUT',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                report_required: required,
+                report_status: receivedDate ? 'RECIBIDO' : (required ? 'PENDIENTE' : null),
+                report_due_date: dueDate || null,
+                report_received_date: receivedDate || null,
+            })
+        });
+        updateReportBadge(activeExecutionOT);
+    } catch (e) { console.error('Report update error:', e); }
 
     // Set default specialty from first technician
     const firstTech = techSelect[0];

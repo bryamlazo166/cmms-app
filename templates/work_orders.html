@@ -390,6 +390,35 @@
                             </div>
                         </div>
 
+                        <!-- Bitacora / Activity Log -->
+                        <div style="background: #1e1e1e; border-radius: 8px; padding: 15px; margin-bottom: 15px; border: 1px solid #1a3a5c;">
+                            <h4 style="margin: 0 0 10px 0; color: #5AC8FA;"><i class="fas fa-clipboard-list"></i> Bitacora de la OT</h4>
+                            <div id="exec-log-list" style="max-height:250px;overflow-y:auto;margin-bottom:10px">
+                                <p style="color:#888;font-style:italic">Sin registros.</p>
+                            </div>
+                            <div style="display:grid;grid-template-columns:100px 1fr 120px auto;gap:6px;align-items:end">
+                                <div><label style="font-size:.70rem;color:#888;text-transform:uppercase">Fecha</label><input type="date" id="logDate" style="width:100%;height:32px;background:#2a2a2e;border:1px solid #444;border-radius:6px;color:#ddd;padding:0 6px;font-size:.82rem"></div>
+                                <div><label style="font-size:.70rem;color:#888;text-transform:uppercase">Comentario</label><input type="text" id="logComment" placeholder="Ej: Proveedor retira tripo a taller" style="width:100%;height:32px;background:#2a2a2e;border:1px solid #444;border-radius:6px;color:#ddd;padding:0 8px;font-size:.82rem"></div>
+                                <div><label style="font-size:.70rem;color:#888;text-transform:uppercase">Tipo</label><select id="logType" style="width:100%;height:32px;background:#2a2a2e;border:1px solid #444;border-radius:6px;color:#ddd;padding:0 6px;font-size:.82rem">
+                                    <option value="NOTA">Nota</option><option value="AVANCE">Avance</option><option value="MATERIAL">Material</option><option value="PROVEEDOR">Proveedor</option><option value="INFORME">Informe</option>
+                                </select></div>
+                                <button onclick="addLogEntry()" style="height:32px;padding:0 12px;background:#5AC8FA;border:none;border-radius:6px;color:#000;font-weight:600;cursor:pointer;font-size:.82rem"><i class="fas fa-plus"></i></button>
+                            </div>
+                        </div>
+
+                        <!-- Report tracking -->
+                        <div style="background: #1e1e1e; border-radius: 8px; padding: 15px; margin-bottom: 15px; border: 1px solid #3a2a1a;">
+                            <h4 style="margin: 0 0 10px 0; color: #FF9F0A;"><i class="fas fa-file-alt"></i> Control de Informe</h4>
+                            <div style="display:grid;grid-template-columns:auto 140px 140px auto;gap:8px;align-items:center">
+                                <label style="display:flex;align-items:center;gap:6px;font-size:.84rem;color:#ddd;cursor:pointer">
+                                    <input type="checkbox" id="reportRequired" onchange="updateReport()" style="accent-color:#FF9F0A"> Requiere informe del proveedor
+                                </label>
+                                <div><label style="font-size:.70rem;color:#888">Fecha limite</label><input type="date" id="reportDueDate" onchange="updateReport()" style="width:100%;height:30px;background:#2a2a2e;border:1px solid #444;border-radius:6px;color:#ddd;padding:0 6px;font-size:.80rem"></div>
+                                <div><label style="font-size:.70rem;color:#888">Fecha recibido</label><input type="date" id="reportReceivedDate" onchange="updateReport()" style="width:100%;height:30px;background:#2a2a2e;border:1px solid #444;border-radius:6px;color:#ddd;padding:0 6px;font-size:.80rem"></div>
+                                <span id="reportStatusBadge" style="font-size:.78rem;padding:3px 10px;border-radius:999px"></span>
+                            </div>
+                        </div>
+
                         <!-- Botones de Accion -->
                         <div class="actions-execution"
                             style="display: flex; gap: 10px; justify-content: center; padding-top: 10px; border-top: 1px solid #444;">

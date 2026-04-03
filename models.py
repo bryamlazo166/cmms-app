@@ -312,6 +312,13 @@ class WorkOrder(db.Model):
     # Link to rotative asset (the physical device being worked on)
     rotative_asset_id: Mapped[int | None] = mapped_column(Integer, nullable=True)
 
+    # Report tracking
+    report_required: Mapped[bool] = mapped_column(Boolean, default=False)
+    report_status: Mapped[str | None] = mapped_column(String(20), nullable=True)
+    # PENDIENTE | RECIBIDO
+    report_due_date: Mapped[str | None] = mapped_column(String(20), nullable=True)
+    report_received_date: Mapped[str | None] = mapped_column(String(20), nullable=True)
+
     def to_dict(self):
         return {c.name: getattr(self, c.name) for c in self.__table__.columns}
 
@@ -420,6 +427,33 @@ class OTPersonnel(db.Model):
             "specialty": self.specialty,
             "hours_assigned": self.hours_assigned,
             "hours_worked": self.hours_worked
+        }
+
+
+class OTLogEntry(db.Model):
+    """Activity log / bitacora for work orders."""
+    __tablename__ = 'ot_log_entries'
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    work_order_id: Mapped[int] = mapped_column(ForeignKey('work_orders.id'), nullable=False)
+    log_date: Mapped[str] = mapped_column(String(20), nullable=False)
+    log_type: Mapped[str] = mapped_column(String(20), nullable=False, default='NOTA')
+    # NOTA | AVANCE | MATERIAL | INFORME | PROVEEDOR | CIERRE
+    author: Mapped[str | None] = mapped_column(String(100), nullable=True)
+    comment: Mapped[str] = mapped_column(Text, nullable=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+
+    work_order = relationship("WorkOrder")
+
+    def to_dict(self):
+        return {
+            "id": self.id,
+            "work_order_id": self.work_order_id,
+            "log_date": self.log_date,
+            "log_type": self.log_type,
+            "author": self.author,
+            "comment": self.comment,
+            "created_at": self.created_at.isoformat() if self.created_at else None,
         }
 
 

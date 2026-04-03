@@ -15,6 +15,7 @@ from models import (
     WorkOrder, Provider, Technician, Tool, WarehouseItem, OTPersonnel,
     OTMaterial, WarehouseMovement, PurchaseOrder, PurchaseRequest,
     LubricationPoint, LubricationExecution, MonitoringPoint, MonitoringReading,
+    OTLogEntry,
     RotativeAsset, RotativeAssetHistory, RotativeAssetSpec, RotativeAssetBOM,
     InspectionRoute, InspectionItem, InspectionExecution, InspectionResult,
     Activity, Milestone, Notification, RolePermission
@@ -308,6 +309,7 @@ register_work_orders_routes(
     LubricationPoint=LubricationPoint,
     InspectionRoute=InspectionRoute,
     MonitoringPoint=MonitoringPoint,
+    OTLogEntry=OTLogEntry,
     _calculate_lubrication_schedule=_calculate_lubrication_schedule,
     _calculate_monitoring_schedule=_calculate_monitoring_schedule,
 )
@@ -477,6 +479,10 @@ _ENSURE_COLUMNS = [
     ("maintenance_notices", "source_id", "INTEGER"),
     ("work_orders", "rotative_asset_id", "INTEGER"),
     ("maintenance_notices", "rotative_asset_id", "INTEGER"),
+    ("work_orders", "report_required", "BOOLEAN DEFAULT false"),
+    ("work_orders", "report_status", "VARCHAR(20)"),
+    ("work_orders", "report_due_date", "VARCHAR(20)"),
+    ("work_orders", "report_received_date", "VARCHAR(20)"),
 ]
 
 
