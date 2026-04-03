@@ -17,7 +17,7 @@ from models import (
     LubricationPoint, LubricationExecution, MonitoringPoint, MonitoringReading,
     RotativeAsset, RotativeAssetHistory, RotativeAssetSpec, RotativeAssetBOM,
     InspectionRoute, InspectionItem, InspectionExecution, InspectionResult,
-    Activity, Milestone, RolePermission
+    Activity, Milestone, Notification, RolePermission
 )
 from utils.crud_helpers import create_entry, get_entries, update_entry, delete_entry
 from utils.reporting_helpers import (
@@ -255,6 +255,9 @@ register_core_routes(
     InspectionExecution=InspectionExecution,
     MonitoringPoint=MonitoringPoint,
     MonitoringReading=MonitoringReading,
+    Notification=Notification,
+    WarehouseItem=WarehouseItem,
+    _calculate_lubrication_schedule=_calculate_lubrication_schedule,
 )
 
 register_master_data_routes(

@@ -262,6 +262,140 @@
     }
 })();
 
+// ── Notification Bell ─────────────────────────────────────────────────────────
+(function() {
+    function createBell() {
+        // Bell button (top-right)
+        const bell = document.createElement('div');
+        bell.id = 'notif-bell';
+        bell.innerHTML = '<i class="fas fa-bell"></i><span id="notif-badge" style="display:none">0</span>';
+        bell.onclick = toggleNotifPanel;
+        document.body.appendChild(bell);
+
+        // Panel
+        const panel = document.createElement('div');
+        panel.id = 'notif-panel';
+        panel.innerHTML = `
+            <div style="display:flex;align-items:center;justify-content:space-between;padding:12px 14px;border-bottom:1px solid rgba(255,255,255,.08)">
+                <strong style="color:rgba(255,255,255,.90);font-size:.92rem"><i class="fas fa-bell" style="margin-right:6px;color:#FF9F0A"></i>Notificaciones</strong>
+                <div style="display:flex;gap:6px">
+                    <button onclick="scanNotifications()" style="background:rgba(10,132,255,.18);border:none;border-radius:6px;color:#5AC8FA;padding:4px 8px;font-size:.72rem;cursor:pointer" title="Escanear alertas"><i class="fas fa-sync"></i></button>
+                    <button onclick="markAllRead()" style="background:rgba(255,255,255,.08);border:none;border-radius:6px;color:rgba(255,255,255,.50);padding:4px 8px;font-size:.72rem;cursor:pointer">Marcar leidas</button>
+                </div>
+            </div>
+            <div id="notif-list" style="max-height:400px;overflow-y:auto;padding:4px 0"></div>
+        `;
+        document.body.appendChild(panel);
+
+        // CSS
+        const style = document.createElement('style');
+        style.textContent = `
+            #notif-bell{position:fixed;top:12px;right:16px;width:40px;height:40px;background:rgba(20,20,22,.94);backdrop-filter:blur(16px);border:1px solid rgba(255,255,255,.10);border-radius:50%;display:flex;align-items:center;justify-content:center;cursor:pointer;z-index:2002;color:rgba(255,255,255,.70);font-size:1rem;transition:all 150ms}
+            #notif-bell:hover{color:#FF9F0A;border-color:rgba(255,159,10,.30)}
+            #notif-badge{position:absolute;top:-2px;right:-2px;background:#FF453A;color:#fff;font-size:.62rem;font-weight:700;min-width:16px;height:16px;border-radius:8px;display:flex;align-items:center;justify-content:center;padding:0 4px}
+            #notif-panel{position:fixed;top:58px;right:16px;width:min(380px,92vw);background:rgba(28,28,30,.96);backdrop-filter:blur(20px);border:1px solid rgba(255,255,255,.10);border-radius:14px;box-shadow:0 16px 48px rgba(0,0,0,.6);z-index:2002;display:none;overflow:hidden}
+            #notif-panel.open{display:block}
+            .notif-item{display:flex;gap:10px;padding:10px 14px;border-bottom:1px solid rgba(255,255,255,.05);cursor:pointer;transition:background 100ms}
+            .notif-item:hover{background:rgba(255,255,255,.04)}
+            .notif-item.unread{background:rgba(10,132,255,.06)}
+            .notif-icon{width:28px;height:28px;border-radius:8px;display:flex;align-items:center;justify-content:center;font-size:.75rem;flex-shrink:0;margin-top:2px}
+            .ni-VENCIDO{background:rgba(255,69,58,.18);color:#FF6B61}
+            .ni-STOCK_BAJO{background:rgba(255,159,10,.18);color:#FFB340}
+            .ni-OT{background:rgba(10,132,255,.18);color:#5AC8FA}
+            .ni-AVISO{background:rgba(191,90,242,.18);color:#D77AF5}
+            .ni-SISTEMA,.ni-INFO{background:rgba(255,255,255,.08);color:rgba(255,255,255,.50)}
+            .notif-body{flex:1;min-width:0}
+            .notif-title{font-size:.82rem;color:rgba(255,255,255,.85);font-weight:600}
+            .notif-msg{font-size:.75rem;color:rgba(255,255,255,.45);margin-top:2px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+            .notif-time{font-size:.68rem;color:rgba(255,255,255,.25);margin-top:2px}
+            .notif-empty{text-align:center;color:rgba(255,255,255,.30);padding:30px;font-size:.85rem}
+        `;
+        document.head.appendChild(style);
+
+        // Auto-load count
+        refreshNotifCount();
+        setInterval(refreshNotifCount, 60000); // Every 60s
+        // Auto-scan on first load
+        scanNotifications();
+    }
+
+    function toggleNotifPanel() {
+        const panel = document.getElementById('notif-panel');
+        panel.classList.toggle('open');
+        if (panel.classList.contains('open')) loadNotifications();
+    }
+
+    async function refreshNotifCount() {
+        try {
+            const res = await fetch('/api/notifications/count');
+            const data = await res.json();
+            const badge = document.getElementById('notif-badge');
+            if (badge) {
+                badge.textContent = data.count;
+                badge.style.display = data.count > 0 ? 'flex' : 'none';
+            }
+        } catch (_) {}
+    }
+
+    async function loadNotifications() {
+        try {
+            const res = await fetch('/api/notifications');
+            const items = await res.json();
+            const list = document.getElementById('notif-list');
+            if (!items.length) {
+                list.innerHTML = '<div class="notif-empty"><i class="fas fa-check-circle" style="margin-right:6px;color:#30D158"></i>Sin notificaciones</div>';
+                return;
+            }
+            const ICONS = { VENCIDO: 'fa-clock', STOCK_BAJO: 'fa-box-open', OT: 'fa-tools', AVISO: 'fa-bell', SISTEMA: 'fa-cog', INFO: 'fa-info' };
+            list.innerHTML = items.map(n => {
+                const icon = ICONS[n.category] || 'fa-info';
+                const cls = n.is_read ? '' : ' unread';
+                const ago = n.created_at ? timeAgo(n.created_at) : '';
+                return `<div class="notif-item${cls}" onclick="goNotif('${n.link||''}', ${n.id})">
+                    <div class="notif-icon ni-${n.category}"><i class="fas ${icon}"></i></div>
+                    <div class="notif-body">
+                        <div class="notif-title">${n.title}</div>
+                        ${n.message ? `<div class="notif-msg">${n.message}</div>` : ''}
+                        <div class="notif-time">${ago}</div>
+                    </div>
+                </div>`;
+            }).join('');
+        } catch (_) {}
+    }
+
+    function timeAgo(iso) {
+        const d = new Date(iso);
+        const diff = (Date.now() - d.getTime()) / 1000;
+        if (diff < 60) return 'Ahora';
+        if (diff < 3600) return Math.floor(diff / 60) + ' min';
+        if (diff < 86400) return Math.floor(diff / 3600) + ' h';
+        return Math.floor(diff / 86400) + ' d';
+    }
+
+    window.goNotif = function(link, id) {
+        fetch('/api/notifications/read', {
+            method: 'POST', headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ ids: [id] })
+        }).then(() => refreshNotifCount());
+        if (link) window.location.href = link;
+    };
+    window.markAllRead = function() {
+        fetch('/api/notifications/read', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: '{}' })
+            .then(() => { refreshNotifCount(); loadNotifications(); });
+    };
+    window.scanNotifications = async function() {
+        await fetch('/api/notifications/scan', { method: 'POST' });
+        refreshNotifCount();
+        loadNotifications();
+    };
+
+    if (document.readyState === 'loading') {
+        document.addEventListener('DOMContentLoaded', createBell);
+    } else {
+        createBell();
+    }
+})();
+
 /**
  * Wrap an async handler to disable a button during execution.
  * Usage: onclick="withLoading(this, saveMyForm)"

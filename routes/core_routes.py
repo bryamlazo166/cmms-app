@@ -10,7 +10,9 @@ def register_core_routes(app, db, logger, app_build_tag,
                          _parse_date_flexible, _safe_duration_hours,
                          LubricationPoint=None, LubricationExecution=None,
                          InspectionRoute=None, InspectionExecution=None,
-                         MonitoringPoint=None, MonitoringReading=None):
+                         MonitoringPoint=None, MonitoringReading=None,
+                         Notification=None, WarehouseItem=None,
+                         _calculate_lubrication_schedule=None):
     @app.route('/configuracion')
     def taxonomy_page():
         return render_template('taxonomy.html')
@@ -484,4 +486,138 @@ def register_core_routes(app, db, logger, app_build_tag,
             })
         except Exception as e:
             logger.exception("Dashboard KPIs error")
+            return jsonify({"error": str(e)}), 500
+
+    # ── Notifications ──────────────────────────────────────────────────────
+
+    @app.route('/api/notifications', methods=['GET'])
+    def get_notifications():
+        if not Notification:
+            return jsonify([])
+        from flask_login import current_user
+        unread_only = request.args.get('unread', 'false').lower() == 'true'
+        query = Notification.query.filter(
+            db.or_(Notification.user_id == None, Notification.user_id == current_user.id)
+        ).order_by(Notification.id.desc())
+        if unread_only:
+            query = query.filter_by(is_read=False)
+        items = query.limit(50).all()
+        return jsonify([n.to_dict() for n in items])
+
+    @app.route('/api/notifications/count', methods=['GET'])
+    def notification_count():
+        if not Notification:
+            return jsonify({'count': 0})
+        from flask_login import current_user
+        count = Notification.query.filter(
+            Notification.is_read == False,
+            db.or_(Notification.user_id == None, Notification.user_id == current_user.id)
+        ).count()
+        return jsonify({'count': count})
+
+    @app.route('/api/notifications/read', methods=['POST'])
+    def mark_notifications_read():
+        if not Notification:
+            return jsonify({'ok': True})
+        data = request.get_json() or {}
+        ids = data.get('ids', [])
+        if ids:
+            Notification.query.filter(Notification.id.in_(ids)).update(
+                {Notification.is_read: True}, synchronize_session=False)
+        else:
+            from flask_login import current_user
+            Notification.query.filter(
+                Notification.is_read == False,
+                db.or_(Notification.user_id == None, Notification.user_id == current_user.id)
+            ).update({Notification.is_read: True}, synchronize_session=False)
+        db.session.commit()
+        return jsonify({'ok': True})
+
+    @app.route('/api/notifications/scan', methods=['POST'])
+    def scan_notifications():
+        """Generate notifications from overdue points and low stock."""
+        if not Notification:
+            return jsonify({'created': 0})
+        try:
+            created = 0
+            today = dt.date.today()
+            today_str = today.isoformat()
+
+            # Don't duplicate: only create if no unread notification of same category+title exists
+            def _exists(title):
+                return Notification.query.filter_by(
+                    title=title, is_read=False).first() is not None
+
+            # 1. Overdue lubrication points
+            if LubricationPoint and _calculate_lubrication_schedule:
+                for p in LubricationPoint.query.filter_by(is_active=True).all():
+                    _, sem = _calculate_lubrication_schedule(
+                        p.last_service_date, p.frequency_days, p.warning_days)
+                    if sem == 'ROJO':
+                        title = f"Lubricacion vencida: {p.code}"
+                        if not _exists(title):
+                            db.session.add(Notification(
+                                title=title,
+                                message=f"{p.name} — vencido desde {p.next_due_date or '?'}",
+                                category='VENCIDO',
+                                link='/lubricacion',
+                            ))
+                            created += 1
+
+            # 2. Overdue inspections
+            if InspectionRoute and _calculate_lubrication_schedule:
+                for r in InspectionRoute.query.filter_by(is_active=True).all():
+                    _, sem = _calculate_lubrication_schedule(
+                        r.last_execution_date, r.frequency_days, r.warning_days)
+                    if sem == 'ROJO':
+                        title = f"Inspeccion vencida: {r.code}"
+                        if not _exists(title):
+                            db.session.add(Notification(
+                                title=title,
+                                message=f"{r.name} — vencida desde {r.next_due_date or '?'}",
+                                category='VENCIDO',
+                                link='/inspecciones',
+                            ))
+                            created += 1
+
+            # 3. Low stock items
+            if WarehouseItem:
+                low = WarehouseItem.query.filter(
+                    WarehouseItem.is_active == True,
+                    WarehouseItem.min_stock != None,
+                    WarehouseItem.stock <= WarehouseItem.min_stock
+                ).all()
+                for item in low:
+                    title = f"Stock bajo: {item.code}"
+                    if not _exists(title):
+                        db.session.add(Notification(
+                            title=title,
+                            message=f"{item.name} — Stock: {item.stock} {item.unit or ''} (min: {item.min_stock})",
+                            category='STOCK_BAJO',
+                            link='/almacen',
+                        ))
+                        created += 1
+
+            # 4. OTs open > 7 days without progress
+            old_ots = WorkOrder.query.filter(
+                WorkOrder.status.in_(['Abierta', 'Pendiente']),
+            ).all()
+            for ot in old_ots:
+                d = _parse_date_flexible(ot.scheduled_date)
+                if d and (today - d).days > 7:
+                    title = f"OT sin progreso: {ot.code}"
+                    if not _exists(title):
+                        db.session.add(Notification(
+                            title=title,
+                            message=f"{ot.description or '-'} — {(today - d).days} dias sin avance",
+                            category='OT',
+                            link='/ordenes',
+                        ))
+                        created += 1
+
+            db.session.commit()
+            return jsonify({'created': created})
+        except Exception as e:
+            db.session.rollback()
+            logger.exception("Notification scan error")
             return jsonify({"error": str(e)}), 500

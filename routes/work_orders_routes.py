@@ -516,7 +516,16 @@ def register_work_orders_routes(
                 logger.error(f"Error creating work order: {e}")
                 return jsonify({"error": str(e)}), 500
 
-        entries = WorkOrder.query.all()
+        # Pagination support: ?page=1&per_page=50 (omit page for all)
+        page = request.args.get('page', type=int)
+        query = WorkOrder.query.order_by(WorkOrder.id.desc())
+        pagination_meta = None
+        if page:
+            from utils.crud_helpers import paginate_query
+            entries, pagination_meta = paginate_query(query)
+        else:
+            entries = query.all()
+
         purchase_by_ot = {}
         if entries:
             ot_ids = [wo.id for wo in entries]
@@ -608,6 +617,8 @@ def register_work_orders_routes(
             data['purchase_tracking'] = ' | '.join(tracking_parts) if tracking_parts else ''
             results.append(data)
 
+        if pagination_meta:
+            return jsonify({'items': results, 'pagination': pagination_meta})
         return jsonify(results)
 
     @app.route('/api/export-ots', methods=['GET'])

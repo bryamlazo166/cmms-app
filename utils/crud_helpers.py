@@ -1,7 +1,7 @@
-﻿import logging
+import logging
 import traceback
 
-from flask import jsonify
+from flask import jsonify, request
 
 from database import db
 
@@ -10,6 +10,23 @@ DEFAULT_LOGGER = logging.getLogger(__name__)
 
 def _safe_log_error(logger, message):
     (logger or DEFAULT_LOGGER).error(message)
+
+
+def paginate_query(query, default_per_page=50):
+    """Apply pagination to a SQLAlchemy query. Returns (items, meta)."""
+    page = request.args.get('page', 1, type=int)
+    per_page = request.args.get('per_page', default_per_page, type=int)
+    per_page = min(per_page, 200)  # Cap at 200
+
+    total = query.count()
+    items = query.offset((page - 1) * per_page).limit(per_page).all()
+
+    return items, {
+        'page': page,
+        'per_page': per_page,
+        'total': total,
+        'pages': (total + per_page - 1) // per_page,
+    }
 
 
 def create_entry(Model, data, required_fields, logger=None):

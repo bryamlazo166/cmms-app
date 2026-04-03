@@ -87,7 +87,14 @@ def register_notices_routes(
                 logger.error(f"Error creating notice: {e}")
                 return jsonify({"error": str(e)}), 500
 
-        entries = MaintenanceNotice.query.order_by(MaintenanceNotice.id.desc()).all()
+        page = request.args.get('page', type=int)
+        query = MaintenanceNotice.query.order_by(MaintenanceNotice.id.desc())
+        pagination_meta = None
+        if page:
+            from utils.crud_helpers import paginate_query
+            entries, pagination_meta = paginate_query(query)
+        else:
+            entries = query.all()
         results = []
 
         # Pre-fetch cache to avoid N+1 if possible, but for simplicity we'll do direct lookups first or simple caching
@@ -140,6 +147,8 @@ def register_notices_routes(
 
             results.append(data)
 
+        if pagination_meta:
+            return jsonify({'items': results, 'pagination': pagination_meta})
         return jsonify(results)
 
     @app.route('/api/notices/<int:id>', methods=['GET', 'PUT', 'DELETE'])
