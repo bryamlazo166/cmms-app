@@ -1555,8 +1555,9 @@ async function loadPendingNotices() {
         const res = await fetch('/api/notices');
         const notices = await res.json();
 
-        // Filter notices that don't have an OT yet and are not closed
-        allPendingNotices = notices.filter(n => !n.ot_number && n.status !== 'Cerrado');
+        // Filter notices that don't have an OT yet and are actionable
+        const HIDDEN_STATUSES = ['Cerrado', 'Anulado', 'Duplicado', 'Cancelado'];
+        allPendingNotices = notices.filter(n => !n.ot_number && !HIDDEN_STATUSES.includes(n.status));
 
         renderPendingNotices();
     } catch (e) { console.error("Error loading notices:", e); }
