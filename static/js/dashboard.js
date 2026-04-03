@@ -377,6 +377,97 @@ async function generatePreventiveOTs() {
     drillTo('area');
 }
 
+// ── Trends + Costs Charts ────────────────────────────────────────────────────
+
+let trendAvailChart = null, trendCostChart = null;
+
+async function loadTrends() {
+    try {
+        const res = await fetch('/api/dashboard-trends?months=12');
+        const data = await res.json();
+        if (data.error) return;
+
+        const months = data.trends.map(t => t.month);
+
+        // Availability + MTBF chart
+        const ctx1 = document.getElementById('trendAvailChart')?.getContext('2d');
+        if (ctx1) {
+            if (trendAvailChart) trendAvailChart.destroy();
+            trendAvailChart = new Chart(ctx1, {
+                type: 'line',
+                data: {
+                    labels: months,
+                    datasets: [
+                        {
+                            label: 'Disponibilidad %',
+                            data: data.trends.map(t => t.availability),
+                            borderColor: '#30D158', backgroundColor: 'rgba(48,209,88,.12)',
+                            fill: true, tension: 0.3, yAxisID: 'y',
+                        },
+                        {
+                            label: 'MTBF (h)',
+                            data: data.trends.map(t => t.mtbf),
+                            borderColor: '#5AC8FA', borderDash: [4, 4],
+                            fill: false, tension: 0.3, yAxisID: 'y1',
+                        }
+                    ]
+                },
+                options: {
+                    responsive: true, maintainAspectRatio: false,
+                    plugins: { legend: { labels: { color: 'rgba(255,255,255,.60)', font: { size: 11 } } } },
+                    scales: {
+                        x: { ticks: { color: 'rgba(255,255,255,.40)', font: { size: 10 } }, grid: { color: 'rgba(255,255,255,.06)' } },
+                        y: { position: 'left', min: 0, max: 100, ticks: { color: '#30D158', font: { size: 10 } }, grid: { color: 'rgba(255,255,255,.06)' }, title: { display: true, text: 'Disp %', color: 'rgba(255,255,255,.40)' } },
+                        y1: { position: 'right', ticks: { color: '#5AC8FA', font: { size: 10 } }, grid: { display: false }, title: { display: true, text: 'MTBF h', color: 'rgba(255,255,255,.40)' } },
+                    }
+                }
+            });
+        }
+
+        // Cost chart
+        const ctx2 = document.getElementById('trendCostChart')?.getContext('2d');
+        if (ctx2) {
+            if (trendCostChart) trendCostChart.destroy();
+            trendCostChart = new Chart(ctx2, {
+                type: 'bar',
+                data: {
+                    labels: months,
+                    datasets: [
+                        { label: 'Costo HH ($)', data: data.trends.map(t => t.cost_hh), backgroundColor: 'rgba(10,132,255,.50)', borderRadius: 3, stack: 'cost' },
+                        { label: 'Costo Materiales ($)', data: data.trends.map(t => t.cost_materials), backgroundColor: 'rgba(255,159,10,.50)', borderRadius: 3, stack: 'cost' },
+                    ]
+                },
+                options: {
+                    responsive: true, maintainAspectRatio: false,
+                    plugins: { legend: { labels: { color: 'rgba(255,255,255,.60)', font: { size: 11 } } } },
+                    scales: {
+                        x: { stacked: true, ticks: { color: 'rgba(255,255,255,.40)', font: { size: 10 } }, grid: { color: 'rgba(255,255,255,.06)' } },
+                        y: { stacked: true, ticks: { color: 'rgba(255,255,255,.50)', font: { size: 10 } }, grid: { color: 'rgba(255,255,255,.06)' }, title: { display: true, text: 'Costo $', color: 'rgba(255,255,255,.40)' } },
+                    }
+                }
+            });
+        }
+
+        // Cost table
+        const tbody = document.getElementById('costTableBody');
+        if (tbody && data.costs && data.costs.length) {
+            const TD = 'padding:7px 10px;font-size:.82rem;border-bottom:1px solid rgba(255,255,255,.05)';
+            tbody.innerHTML = data.costs.map(c => `<tr>
+                <td style="${TD};color:#0A84FF;font-weight:600">${c.code}</td>
+                <td style="${TD};color:rgba(255,255,255,.75)">${c.equipment}</td>
+                <td style="${TD};color:rgba(255,255,255,.55)">${c.type || '-'}</td>
+                <td style="${TD};text-align:right;color:rgba(255,255,255,.60)">${c.hh}h</td>
+                <td style="${TD};text-align:right;color:#5AC8FA">$${c.cost_hh}</td>
+                <td style="${TD};text-align:right;color:#FF9F0A">$${c.cost_materials}</td>
+                <td style="${TD};text-align:right;color:#30D158;font-weight:600">$${c.cost_total}</td>
+            </tr>`).join('');
+        } else if (tbody) {
+            tbody.innerHTML = '<tr><td colspan="7" style="text-align:center;color:rgba(255,255,255,.30);padding:20px">Sin datos de costos.</td></tr>';
+        }
+    } catch (e) { console.error('Trends load error:', e); }
+}
+
 document.addEventListener('DOMContentLoaded', () => {
     setTimeout(() => drillTo('area'), 500);
+    setTimeout(loadTrends, 800);
 });

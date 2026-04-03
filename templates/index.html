@@ -326,7 +326,41 @@
                 <div id="kpiPanelEvents" class="kpi-panel" style="display:none;margin-top:10px"></div>
             </div>
 
-            <script src="/static/js/dashboard.js?v=20260330"></script>
+            <!-- ══ TRENDS + COSTS ══════════════════════════════════════════ -->
+            <div style="margin-top:20px">
+                <h2 style="color:rgba(255,255,255,.92);font-size:1.2rem;margin:0 0 14px"><i class="fas fa-chart-area" style="color:#30D158;margin-right:8px"></i>Tendencia Mensual y Costos</h2>
+                <div class="charts-container">
+                    <div class="chart-box">
+                        <h3 style="color:rgba(255,255,255,.70);margin-top:0;font-size:.92rem">Disponibilidad y MTBF</h3>
+                        <div style="height:280px"><canvas id="trendAvailChart"></canvas></div>
+                    </div>
+                    <div class="chart-box">
+                        <h3 style="color:rgba(255,255,255,.70);margin-top:0;font-size:.92rem">Costos de Mantenimiento</h3>
+                        <div style="height:280px"><canvas id="trendCostChart"></canvas></div>
+                    </div>
+                </div>
+
+                <!-- Cost table -->
+                <div style="background:var(--bg-primary,#1C1C1E);border:1px solid rgba(255,255,255,.08);border-radius:14px;padding:12px;margin-top:10px">
+                    <h3 style="color:rgba(255,255,255,.88);font-size:.92rem;margin:0 0 10px">Top OTs por Costo</h3>
+                    <div style="overflow-x:auto;max-height:300px;border-radius:8px">
+                        <table style="width:100%;border-collapse:collapse;min-width:600px">
+                            <thead><tr style="background:#2C2C2E">
+                                <th style="padding:8px 10px;font-size:.72rem;color:rgba(255,255,255,.45);text-align:left">OT</th>
+                                <th style="padding:8px 10px;font-size:.72rem;color:rgba(255,255,255,.45);text-align:left">Equipo</th>
+                                <th style="padding:8px 10px;font-size:.72rem;color:rgba(255,255,255,.45);text-align:left">Tipo</th>
+                                <th style="padding:8px 10px;font-size:.72rem;color:rgba(255,255,255,.45);text-align:right">HH</th>
+                                <th style="padding:8px 10px;font-size:.72rem;color:rgba(255,255,255,.45);text-align:right">Costo HH</th>
+                                <th style="padding:8px 10px;font-size:.72rem;color:rgba(255,255,255,.45);text-align:right">Costo Mat.</th>
+                                <th style="padding:8px 10px;font-size:.72rem;color:rgba(255,255,255,.45);text-align:right">Total</th>
+                            </tr></thead>
+                            <tbody id="costTableBody"><tr><td colspan="7" style="text-align:center;color:rgba(255,255,255,.30);padding:20px">Cargando...</td></tr></tbody>
+                        </table>
+                    </div>
+                </div>
+            </div>
+
+            <script src="/static/js/dashboard.js?v=20260331"></script>
         </div>
     </section>
     <script src="/static/js/sidebar.js?v=20260330"></script>

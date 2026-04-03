@@ -13,6 +13,7 @@
         { href: '/lubricacion', icon: 'fas fa-oil-can', label: 'Lubricacion', tip: 'Lubricacion' },
         { href: '/inspecciones', icon: 'fas fa-clipboard-check', label: 'Inspecciones', tip: 'Inspecciones' },
         { href: '/seguimiento', icon: 'fas fa-tasks', label: 'Seguimiento', tip: 'Seguimiento' },
+        { href: '/calendario', icon: 'fas fa-calendar-alt', label: 'Calendario', tip: 'Plan Mtto' },
         { href: '/reportes', icon: 'fas fa-file-contract', label: 'Reportes', tip: 'Reportes' }
     ];
 

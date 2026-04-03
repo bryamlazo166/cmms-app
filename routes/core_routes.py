@@ -488,6 +488,210 @@ def register_core_routes(app, db, logger, app_build_tag,
             logger.exception("Dashboard KPIs error")
             return jsonify({"error": str(e)}), 500
 
+    # ── KPI Trends + Costs ───────────────────────────────────────────────
+
+    @app.route('/api/dashboard-trends', methods=['GET'])
+    def dashboard_trends():
+        """Monthly KPI trends + cost breakdown for last N months."""
+        try:
+            months = int(request.args.get('months', 12))
+            today = dt.date.today()
+
+            # Build month buckets
+            month_buckets = []
+            for i in range(months - 1, -1, -1):
+                d = today.replace(day=1) - dt.timedelta(days=i * 30)
+                m_start = d.replace(day=1)
+                if m_start.month == 12:
+                    m_end = m_start.replace(year=m_start.year + 1, month=1, day=1)
+                else:
+                    m_end = m_start.replace(month=m_start.month + 1, day=1)
+                month_buckets.append({
+                    'label': m_start.strftime('%Y-%m'),
+                    'start': m_start, 'end': m_end,
+                })
+
+            # Load all closed OTs
+            all_ots = WorkOrder.query.filter(WorkOrder.status == 'Cerrada').all()
+            # Load personnel hours and materials
+            ot_ids = [o.id for o in all_ots]
+            personnel = OTPersonnel.query.filter(OTPersonnel.work_order_id.in_(ot_ids)).all() if ot_ids else []
+            from models import OTMaterial, WarehouseItem as WI
+            materials = OTMaterial.query.filter(OTMaterial.work_order_id.in_(ot_ids)).all() if ot_ids else []
+
+            # Build cost lookup per OT
+            hh_by_ot = defaultdict(float)
+            for p in personnel:
+                hh_by_ot[p.work_order_id] += (p.hours_worked or p.hours_assigned or 0)
+
+            mat_cost_by_ot = defaultdict(float)
+            for m in materials:
+                if m.item_type == 'warehouse' and m.item_id:
+                    wi = WI.query.get(m.item_id)
+                    if wi and wi.unit_cost:
+                        mat_cost_by_ot[m.work_order_id] += (m.quantity or 0) * wi.unit_cost
+
+            HH_COST = float(request.args.get('hh_cost', 15))  # $/hour default
+
+            # Calculate per month
+            trend_data = []
+            for bucket in month_buckets:
+                ots_in_month = []
+                for o in all_ots:
+                    d = _parse_date_flexible(o.real_end_date or o.real_start_date or o.scheduled_date)
+                    if d and bucket['start'] <= d < bucket['end']:
+                        ots_in_month.append(o)
+
+                n_corr = sum(1 for o in ots_in_month if 'correct' in (o.maintenance_type or '').lower())
+                n_prev = sum(1 for o in ots_in_month if 'correct' not in (o.maintenance_type or '').lower())
+                total_repair = sum(_safe_duration_hours(o.real_duration) or 0 for o in ots_in_month)
+                total_down = sum(getattr(o, 'downtime_hours', 0) or 0 for o in ots_in_month
+                                 if getattr(o, 'caused_downtime', False))
+
+                cal_hours = (bucket['end'] - bucket['start']).days * 24
+                t_up = max(cal_hours - total_down, 0)
+                mtbf = round(t_up / n_corr, 1) if n_corr > 0 else None
+                mttr = round(total_repair / n_corr, 1) if n_corr > 0 else None
+                avail = round((t_up / cal_hours) * 100, 1) if cal_hours > 0 else 100
+
+                # Costs
+                total_hh = sum(hh_by_ot.get(o.id, 0) for o in ots_in_month)
+                total_mat = sum(mat_cost_by_ot.get(o.id, 0) for o in ots_in_month)
+                cost_hh = round(total_hh * HH_COST, 2)
+                cost_mat = round(total_mat, 2)
+
+                trend_data.append({
+                    'month': bucket['label'],
+                    'ots': len(ots_in_month),
+                    'correctivo': n_corr,
+                    'preventivo': n_prev,
+                    'mtbf': mtbf,
+                    'mttr': mttr,
+                    'availability': avail,
+                    'downtime_h': round(total_down, 1),
+                    'hh_total': round(total_hh, 1),
+                    'cost_hh': cost_hh,
+                    'cost_materials': cost_mat,
+                    'cost_total': round(cost_hh + cost_mat, 2),
+                })
+
+            # OT cost summary (all time)
+            cost_summary = []
+            for o in all_ots:
+                hh = hh_by_ot.get(o.id, 0)
+                mc = mat_cost_by_ot.get(o.id, 0)
+                if hh > 0 or mc > 0:
+                    eq = Equipment.query.get(o.equipment_id) if o.equipment_id else None
+                    cost_summary.append({
+                        'code': o.code,
+                        'equipment': f"{eq.tag or ''} {eq.name}".strip() if eq else '-',
+                        'type': o.maintenance_type,
+                        'hh': round(hh, 1),
+                        'cost_hh': round(hh * HH_COST, 2),
+                        'cost_materials': round(mc, 2),
+                        'cost_total': round(hh * HH_COST + mc, 2),
+                    })
+            cost_summary.sort(key=lambda x: x['cost_total'], reverse=True)
+
+            return jsonify({
+                'trends': trend_data,
+                'costs': cost_summary[:50],
+                'hh_rate': HH_COST,
+            })
+        except Exception as e:
+            logger.exception("Dashboard trends error")
+            return jsonify({"error": str(e)}), 500
+
+    # ── Maintenance Calendar ───────────────────────────────────────────────
+
+    @app.route('/api/maintenance-calendar', methods=['GET'])
+    def maintenance_calendar():
+        """Return all due dates for lub/insp/mon points as calendar events."""
+        try:
+            events = []
+
+            if LubricationPoint:
+                for p in LubricationPoint.query.filter_by(is_active=True).all():
+                    if _calculate_lubrication_schedule:
+                        nd, sem = _calculate_lubrication_schedule(
+                            p.last_service_date, p.frequency_days, p.warning_days)
+                    else:
+                        nd, sem = p.next_due_date, p.semaphore_status
+                    eq = Equipment.query.get(p.equipment_id) if p.equipment_id else None
+                    events.append({
+                        'id': f'lub-{p.id}',
+                        'title': f'LUB {p.code}: {p.name}',
+                        'start': nd or '',
+                        'category': 'lubricacion',
+                        'semaphore': sem,
+                        'equipment': eq.name if eq else None,
+                        'frequency': p.frequency_days,
+                        'last_date': p.last_service_date,
+                    })
+
+            if InspectionRoute:
+                for r in InspectionRoute.query.filter_by(is_active=True).all():
+                    if _calculate_lubrication_schedule:
+                        nd, sem = _calculate_lubrication_schedule(
+                            r.last_execution_date, r.frequency_days, r.warning_days)
+                    else:
+                        nd, sem = r.next_due_date, r.semaphore_status
+                    eq = Equipment.query.get(r.equipment_id) if r.equipment_id else None
+                    events.append({
+                        'id': f'insp-{r.id}',
+                        'title': f'INSP {r.code}: {r.name}',
+                        'start': nd or '',
+                        'category': 'inspeccion',
+                        'semaphore': sem,
+                        'equipment': eq.name if eq else None,
+                        'frequency': r.frequency_days,
+                        'last_date': r.last_execution_date,
+                    })
+
+            if MonitoringPoint:
+                for p in MonitoringPoint.query.filter_by(is_active=True).all():
+                    from utils.schedule_helpers import _calculate_monitoring_schedule
+                    nd, sem = _calculate_monitoring_schedule(
+                        p.last_measurement_date, p.frequency_days, p.warning_days)
+                    eq = Equipment.query.get(p.equipment_id) if p.equipment_id else None
+                    events.append({
+                        'id': f'mon-{p.id}',
+                        'title': f'MON {p.code}: {p.name}',
+                        'start': nd or '',
+                        'category': 'monitoreo',
+                        'semaphore': sem,
+                        'equipment': eq.name if eq else None,
+                        'frequency': p.frequency_days,
+                        'last_date': p.last_measurement_date,
+                    })
+
+            # Also add scheduled OTs
+            scheduled_ots = WorkOrder.query.filter(
+                WorkOrder.status.in_(['Programada', 'Abierta']),
+                WorkOrder.scheduled_date.isnot(None),
+            ).all()
+            for ot in scheduled_ots:
+                eq = Equipment.query.get(ot.equipment_id) if ot.equipment_id else None
+                events.append({
+                    'id': f'ot-{ot.id}',
+                    'title': f'OT {ot.code}: {ot.description or ot.maintenance_type or ""}',
+                    'start': ot.scheduled_date,
+                    'category': 'ot',
+                    'semaphore': 'AMARILLO' if ot.status == 'Abierta' else 'VERDE',
+                    'equipment': eq.name if eq else None,
+                    'frequency': None,
+                    'last_date': None,
+                })
+
+            return jsonify(events)
+        except Exception as e:
+            logger.exception("Maintenance calendar error")
+            return jsonify({"error": str(e)}), 500
+
+    @app.route('/calendario')
+    def calendar_page():
+        return render_template('calendar.html')
+
     # ── Notifications ──────────────────────────────────────────────────────
 
     @app.route('/api/notifications', methods=['GET'])

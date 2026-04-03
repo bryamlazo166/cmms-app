@@ -1,0 +1,131 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Plan de Mantenimiento - CMMS Pro</title>
+    <link rel="stylesheet" href="/static/css/style.css?v=20260330">
+    <link rel="stylesheet" href="/static/css/sidebar.css?v=20260330">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css">
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/fullcalendar@6.1.9/index.global.min.css">
+    <style>
+        .wrap{max-width:1300px;margin:0 auto;padding:12px 16px}
+        h2 i{margin-right:8px;color:var(--sys-green,#30D158)}
+        .subtitle{color:rgba(255,255,255,.45);font-size:.84rem;margin-bottom:16px}
+        .legend{display:flex;gap:14px;flex-wrap:wrap;margin-bottom:14px}
+        .legend-item{display:flex;align-items:center;gap:5px;font-size:.78rem;color:rgba(255,255,255,.60)}
+        .legend-dot{width:10px;height:10px;border-radius:3px}
+        #calendar{background:var(--bg-primary,#1C1C1E);border:1px solid rgba(255,255,255,.08);border-radius:14px;padding:14px}
+
+        /* FullCalendar dark theme overrides */
+        .fc{--fc-border-color:rgba(255,255,255,.08);--fc-page-bg-color:transparent;--fc-neutral-bg-color:rgba(255,255,255,.04);--fc-today-bg-color:rgba(10,132,255,.08)}
+        .fc .fc-toolbar-title{color:rgba(255,255,255,.88);font-size:1.1rem}
+        .fc .fc-button{background:rgba(255,255,255,.08);border:1px solid rgba(255,255,255,.12);color:rgba(255,255,255,.70);font-size:.82rem;padding:4px 10px}
+        .fc .fc-button:hover{background:rgba(255,255,255,.14)}
+        .fc .fc-button-active{background:rgba(10,132,255,.22)!important;border-color:rgba(10,132,255,.40)!important;color:#5AC8FA!important}
+        .fc .fc-col-header-cell{color:rgba(255,255,255,.50);font-size:.75rem;text-transform:uppercase;letter-spacing:.4px}
+        .fc .fc-daygrid-day-number{color:rgba(255,255,255,.65);font-size:.82rem}
+        .fc .fc-day-today .fc-daygrid-day-number{color:#0A84FF;font-weight:700}
+        .fc-event{border:none!important;border-radius:4px!important;padding:1px 4px!important;font-size:.72rem!important;cursor:pointer}
+        .fc-event.cat-lubricacion{background:rgba(48,209,88,.25)!important;color:#5cd870!important}
+        .fc-event.cat-inspeccion{background:rgba(191,90,242,.25)!important;color:#D77AF5!important}
+        .fc-event.cat-monitoreo{background:rgba(90,200,250,.25)!important;color:#5AC8FA!important}
+        .fc-event.cat-ot{background:rgba(10,132,255,.25)!important;color:#5AC8FA!important}
+        .fc-event.sem-ROJO{border-left:3px solid #FF453A!important}
+        .fc-event.sem-AMARILLO{border-left:3px solid #FFD60A!important}
+        .fc-event.sem-VERDE{border-left:3px solid #30D158!important}
+
+        /* Event tooltip */
+        .cal-tooltip{position:fixed;z-index:9999;background:rgba(28,28,30,.96);border:1px solid rgba(255,255,255,.15);border-radius:10px;padding:10px 14px;max-width:280px;box-shadow:0 8px 24px rgba(0,0,0,.5);pointer-events:none;display:none}
+        .cal-tooltip.show{display:block}
+        .cal-tooltip .tt-title{font-size:.85rem;font-weight:600;color:rgba(255,255,255,.90);margin-bottom:4px}
+        .cal-tooltip .tt-meta{font-size:.75rem;color:rgba(255,255,255,.50)}
+    </style>
+</head>
+<body>
+<nav class="sidebar">
+    <div class="logo-details"><i class="fas fa-industry icon"></i><div class="logo_name">CMMS Pro</div><i class="fas fa-bars" id="btn_toggle"></i></div>
+    <ul class="nav-list"></ul>
+</nav>
+<section class="home-section">
+<div class="wrap">
+    <h2><i class="fas fa-calendar-alt"></i>Plan de Mantenimiento</h2>
+    <p class="subtitle">Vista calendarizada de lubricacion, inspecciones, monitoreo y OTs programadas.</p>
+
+    <div class="legend">
+        <div class="legend-item"><div class="legend-dot" style="background:#30D158"></div>Lubricacion</div>
+        <div class="legend-item"><div class="legend-dot" style="background:#BF5AF2"></div>Inspeccion</div>
+        <div class="legend-item"><div class="legend-dot" style="background:#5AC8FA"></div>Monitoreo</div>
+        <div class="legend-item"><div class="legend-dot" style="background:#0A84FF"></div>OT Programada</div>
+        <div class="legend-item"><div style="width:10px;height:10px;border-left:3px solid #FF453A"></div>Vencido</div>
+        <div class="legend-item"><div style="width:10px;height:10px;border-left:3px solid #FFD60A"></div>Por vencer</div>
+        <div class="legend-item"><div style="width:10px;height:10px;border-left:3px solid #30D158"></div>Al dia</div>
+    </div>
+
+    <div id="calendar"></div>
+</div>
+</section>
+
+<div class="cal-tooltip" id="calTooltip">
+    <div class="tt-title" id="ttTitle"></div>
+    <div class="tt-meta" id="ttMeta"></div>
+</div>
+
+<script src="/static/js/sidebar.js?v=20260330"></script>
+<script src="https://cdn.jsdelivr.net/npm/fullcalendar@6.1.9/index.global.min.js"></script>
+<script>
+document.addEventListener('DOMContentLoaded', async () => {
+    try {
+        const res = await fetch('/api/maintenance-calendar');
+        const events = await res.json();
+
+        const calendarEl = document.getElementById('calendar');
+        const calendar = new FullCalendar.Calendar(calendarEl, {
+            initialView: 'dayGridMonth',
+            locale: 'es',
+            height: 'auto',
+            headerToolbar: {
+                left: 'prev,next today',
+                center: 'title',
+                right: 'dayGridMonth,dayGridWeek,listWeek'
+            },
+            buttonText: { today: 'Hoy', month: 'Mes', week: 'Semana', list: 'Lista' },
+            events: events.map(e => ({
+                id: e.id,
+                title: e.title,
+                start: e.start,
+                classNames: [`cat-${e.category}`, `sem-${e.semaphore || 'VERDE'}`],
+                extendedProps: e,
+            })),
+            eventMouseEnter: function(info) {
+                const e = info.event.extendedProps;
+                const tt = document.getElementById('calTooltip');
+                document.getElementById('ttTitle').textContent = info.event.title;
+                let meta = `${(e.category || '').toUpperCase()}`;
+                if (e.equipment) meta += ` | ${e.equipment}`;
+                if (e.frequency) meta += ` | Cada ${e.frequency} dias`;
+                if (e.last_date) meta += `\nUltimo: ${e.last_date}`;
+                if (e.semaphore) meta += ` | ${e.semaphore}`;
+                document.getElementById('ttMeta').textContent = meta;
+                tt.style.left = (info.jsEvent.pageX + 10) + 'px';
+                tt.style.top = (info.jsEvent.pageY - 40) + 'px';
+                tt.classList.add('show');
+            },
+            eventMouseLeave: function() {
+                document.getElementById('calTooltip').classList.remove('show');
+            },
+            eventClick: function(info) {
+                const cat = info.event.extendedProps.category;
+                const links = { lubricacion: '/lubricacion', inspeccion: '/inspecciones', monitoreo: '/monitoreo', ot: '/ordenes' };
+                if (links[cat]) window.location.href = links[cat];
+            },
+        });
+        calendar.render();
+    } catch (e) {
+        document.getElementById('calendar').innerHTML =
+            `<p style="color:#FF6B61;text-align:center;padding:40px">Error: ${e.message}</p>`;
+    }
+});
+</script>
+</body>
+</html>
