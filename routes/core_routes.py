@@ -511,8 +511,34 @@ def register_core_routes(app, db, logger, app_build_tag,
                     'start': m_start, 'end': m_end,
                 })
 
-            # Load all closed OTs
-            all_ots = WorkOrder.query.filter(WorkOrder.status == 'Cerrada').all()
+            # Filter params
+            f_area = request.args.get('area_id', type=int)
+            f_line = request.args.get('line_id', type=int)
+            f_equip = request.args.get('equipment_id', type=int)
+
+            # Load closed OTs with optional filters
+            q = WorkOrder.query.filter(WorkOrder.status == 'Cerrada')
+            if f_equip:
+                q = q.filter(WorkOrder.equipment_id == f_equip)
+            elif f_line:
+                # Get all equipments in this line
+                eq_ids = [e.id for e in Equipment.query.filter_by(line_id=f_line).all()]
+                if eq_ids:
+                    q = q.filter(WorkOrder.equipment_id.in_(eq_ids))
+                else:
+                    q = q.filter(db.literal(False))
+            elif f_area:
+                # Get all lines in area, then all equipments
+                ln_ids = [l.id for l in Line.query.filter_by(area_id=f_area).all()]
+                if ln_ids:
+                    eq_ids = [e.id for e in Equipment.query.filter(Equipment.line_id.in_(ln_ids)).all()]
+                    if eq_ids:
+                        q = q.filter(WorkOrder.equipment_id.in_(eq_ids))
+                    else:
+                        q = q.filter(db.literal(False))
+                else:
+                    q = q.filter(db.literal(False))
+            all_ots = q.all()
             # Load personnel hours and materials
             ot_ids = [o.id for o in all_ots]
             personnel = OTPersonnel.query.filter(OTPersonnel.work_order_id.in_(ot_ids)).all() if ot_ids else []

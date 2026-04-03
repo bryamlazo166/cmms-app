@@ -289,6 +289,7 @@ async function drillTo(level) {
         const panel = document.getElementById('kpiPanelArea');
         panel.style.cssText = PANEL_CSS;
         panel.innerHTML = buildKpiTable(data.items, 'area', 'Indicadores por Area');
+        loadTrends();
     } catch (e) { console.error('KPI drillTo error:', e); }
 }
 
@@ -306,6 +307,7 @@ async function selectLevel(level, id, label) {
                 level === 'area' ? 'Indicadores por Area' :
                 level === 'line' ? `Lineas de ${selectedIds.area_label || ''}` :
                 `Equipos de ${selectedIds.line_label || ''}`);
+            loadTrends();
             return;
         }
 
@@ -350,6 +352,8 @@ async function selectLevel(level, id, label) {
                 }
             }
         }
+        // Refresh trends with current selection
+        loadTrends();
     } catch (e) { console.error('KPI selectLevel error:', e); }
 }
 
@@ -383,7 +387,22 @@ let trendAvailChart = null, trendCostChart = null;
 
 async function loadTrends() {
     try {
-        const res = await fetch('/api/dashboard-trends?months=12');
+        let url = '/api/dashboard-trends?months=12';
+        // Pass current drill-down selection
+        const label = document.getElementById('trendFilterLabel');
+        if (selectedIds.equipment) {
+            url += `&equipment_id=${selectedIds.equipment}`;
+            if (label) label.textContent = `— ${selectedIds.equipment_label || 'Equipo'}`;
+        } else if (selectedIds.line) {
+            url += `&line_id=${selectedIds.line}`;
+            if (label) label.textContent = `— ${selectedIds.line_label || 'Linea'}`;
+        } else if (selectedIds.area) {
+            url += `&area_id=${selectedIds.area}`;
+            if (label) label.textContent = `— ${selectedIds.area_label || 'Area'}`;
+        } else {
+            if (label) label.textContent = '— Planta completa';
+        }
+        const res = await fetch(url);
         const data = await res.json();
         if (data.error) return;
 
@@ -469,5 +488,4 @@ async function loadTrends() {
 
 document.addEventListener('DOMContentLoaded', () => {
     setTimeout(() => drillTo('area'), 500);
-    setTimeout(loadTrends, 800);
 });
