@@ -1132,6 +1132,7 @@ async function searchForExecution() {
     loadOTLog(ot.id);
     loadReportStatus(ot);
     loadOTPhotos(ot.id);
+    loadNoticePhotosInExecution(ot.notice_id);
     document.getElementById('logDate').value = new Date().toISOString().slice(0, 10);
 }
 
@@ -2908,4 +2909,35 @@ async function deleteOTPhoto(photoId) {
     if (!activeExecutionOT || !confirm('Eliminar foto?')) return;
     await fetch(`/api/photos/${photoId}`, { method: 'DELETE' });
     loadOTPhotos(activeExecutionOT.id);
+}
+
+// ── Notice Photos in Execution Panel ────────────────────────────────────────
+
+async function loadNoticePhotosInExecution(noticeId) {
+    const section = document.getElementById('exec-notice-photos');
+    const gallery = document.getElementById('exec-notice-photo-gallery');
+    if (!section || !gallery) return;
+
+    if (!noticeId) {
+        section.style.display = 'none';
+        return;
+    }
+
+    try {
+        const res = await fetch(`/api/photos/notice/${noticeId}`);
+        const photos = await res.json();
+        if (!photos.length) {
+            section.style.display = 'none';
+            return;
+        }
+        section.style.display = '';
+        gallery.innerHTML = photos.map(p => `
+            <div style="position:relative;width:120px;height:120px;border-radius:8px;overflow:hidden;border:1px solid rgba(255,255,255,.10)">
+                <img src="${p.url}" style="width:100%;height:100%;object-fit:cover;cursor:pointer" onclick="window.open('${p.url}','_blank')" title="${p.caption || 'Foto del aviso'}">
+                ${p.caption ? '<div style="position:absolute;bottom:0;left:0;right:0;background:rgba(0,0,0,.7);padding:3px 6px;font-size:.70rem;color:#ddd;overflow:hidden;white-space:nowrap;text-overflow:ellipsis">' + p.caption + '</div>' : ''}
+            </div>
+        `).join('');
+    } catch (_) {
+        section.style.display = 'none';
+    }
 }
