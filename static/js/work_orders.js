@@ -275,6 +275,8 @@ window.applyFilters = () => {
     const search = searchInput ? searchInput.value.toLowerCase().trim() : '';
     const logisticsSelect = document.getElementById('planningLogisticsFilter');
     const logisticsFilter = logisticsSelect ? logisticsSelect.value : 'all';
+    const reportSelect = document.getElementById('planningReportFilter');
+    const reportFilter = reportSelect ? reportSelect.value : 'all';
 
     const filtered = allWorkOrders.filter(ot => {
         const otArea = ot.area_name || '(Sin Area)';
@@ -295,6 +297,9 @@ window.applyFilters = () => {
         if (logisticsFilter === 'blocked' && !hasBlock) return false;
         if (logisticsFilter === 'released' && (hasBlock || !hasRequest)) return false;
         if (logisticsFilter === 'none' && hasRequest) return false;
+
+        if (reportFilter === 'pending' && !(ot.report_required && ot.report_status !== 'RECIBIDO')) return false;
+        if (reportFilter === 'received' && !(ot.report_required && ot.report_status === 'RECIBIDO')) return false;
 
         if (search) {
             const code = (ot.code || '').toLowerCase();
@@ -388,6 +393,10 @@ function renderPlanningTable(data = null) {
                 <span class="logistics-chip ${logisticsClass}">${logisticsLabel}</span>
                 <span class="logistics-track" title="${logisticsTrack}">${logisticsTrack}</span>
             </td>
+            <td>${ot.report_required ? (ot.report_status === 'RECIBIDO'
+                ? '<span style="color:#30D158;font-size:.78rem"><i class="fas fa-check-circle"></i> Recibido</span>'
+                : '<span style="color:#FF453A;font-size:.78rem"><i class="fas fa-clock"></i> Pendiente</span>')
+                : '<span style="color:rgba(255,255,255,.20);font-size:.78rem">-</span>'}</td>
             <td>
                 <div style="display:flex; align-items:center; gap:6px;">
                     <button class="btn-icon planning-action-btn" onclick="editOT(${ot.id})" title="Editar OT"><i class="fas fa-edit"></i></button>

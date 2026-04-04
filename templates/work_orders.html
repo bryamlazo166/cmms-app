@@ -165,6 +165,12 @@
                             <option value="none">Sin solicitudes</option>
                         </select>
 
+                        <select id="planningReportFilter" class="filter-btn" onchange="applyFilters()">
+                            <option value="all">Informes: Todos</option>
+                            <option value="pending">Informe pendiente</option>
+                            <option value="received">Informe recibido</option>
+                        </select>
+
                         <div class="search-bar">
                             <input type="text" id="searchPlanning" placeholder="Buscar OT..." onkeyup="applyFilters()">
                         </div>
@@ -201,6 +207,7 @@
                                     <th>Fecha Prog.</th>
                                     <th>Tecnico/Prov.</th>
                                     <th>Logistica</th>
+                                    <th>Informe</th>
                                     <th>Acciones</th>
                                 </tr>
                             </thead>
