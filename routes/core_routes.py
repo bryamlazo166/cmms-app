@@ -488,6 +488,73 @@ def register_core_routes(app, db, logger, app_build_tag,
             logger.exception("Dashboard KPIs error")
             return jsonify({"error": str(e)}), 500
 
+    # ── Photo Attachments ────────────────────────────────────────────────
+
+    @app.route('/api/photos/<entity_type>/<int:entity_id>', methods=['GET', 'POST'])
+    def handle_photos(entity_type, entity_id):
+        if entity_type not in ('notice', 'work_order'):
+            return jsonify({"error": "entity_type debe ser notice o work_order."}), 400
+
+        if request.method == 'POST':
+            try:
+                from models import PhotoAttachment
+                from utils.photo_helpers import compress_photo, upload_to_supabase_storage, MAX_FILE_SIZE
+
+                if 'photo' not in request.files:
+                    return jsonify({"error": "No se envio archivo. Campo: photo"}), 400
+
+                file = request.files['photo']
+                if not file.filename:
+                    return jsonify({"error": "Archivo vacio."}), 400
+
+                raw = file.read()
+                if len(raw) > MAX_FILE_SIZE:
+                    return jsonify({"error": f"Archivo muy grande. Maximo {MAX_FILE_SIZE // (1024*1024)}MB."}), 400
+
+                original_kb = len(raw) // 1024
+
+                # Compress
+                compressed, dimensions = compress_photo(raw)
+                compressed_kb = len(compressed) // 1024
+
+                # Upload to Supabase Storage
+                url = upload_to_supabase_storage(compressed, file.filename)
+
+                caption = request.form.get('caption', '').strip() or None
+
+                photo = PhotoAttachment(
+                    entity_type=entity_type,
+                    entity_id=entity_id,
+                    url=url,
+                    caption=caption,
+                    original_size_kb=original_kb,
+                    compressed_size_kb=compressed_kb,
+                )
+                db.session.add(photo)
+                db.session.commit()
+                return jsonify(photo.to_dict()), 201
+            except ValueError as ve:
+                return jsonify({"error": str(ve)}), 400
+            except Exception as e:
+                db.session.rollback()
+                logger.exception("Photo upload error")
+                return jsonify({"error": str(e)}), 500
+
+        # GET
+        from models import PhotoAttachment
+        photos = PhotoAttachment.query.filter_by(
+            entity_type=entity_type, entity_id=entity_id
+        ).order_by(PhotoAttachment.id.desc()).all()
+        return jsonify([p.to_dict() for p in photos])
+
+    @app.route('/api/photos/<int:photo_id>', methods=['DELETE'])
+    def delete_photo(photo_id):
+        from models import PhotoAttachment
+        photo = PhotoAttachment.query.get_or_404(photo_id)
+        db.session.delete(photo)
+        db.session.commit()
+        return jsonify({"ok": True})
+
     # ── KPI Trends + Costs ───────────────────────────────────────────────
 
     @app.route('/api/dashboard-trends', methods=['GET'])

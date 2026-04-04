@@ -406,6 +406,17 @@
                             </div>
                         </div>
 
+                        <!-- Photos -->
+                        <div style="background: #1e1e1e; border-radius: 8px; padding: 15px; margin-bottom: 15px; border: 1px solid #1a3a2a;">
+                            <h4 style="margin: 0 0 10px 0; color: #30D158;"><i class="fas fa-camera"></i> Fotos de Evidencia</h4>
+                            <div id="exec-photo-gallery" style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:10px"></div>
+                            <div style="display:flex;gap:6px;align-items:center">
+                                <input type="file" id="execPhotoFile" accept="image/*" capture="environment" style="font-size:.80rem;color:#aaa;flex:1">
+                                <input type="text" id="execPhotoCaption" placeholder="Descripcion" style="height:32px;background:#2a2a2e;border:1px solid #444;border-radius:6px;color:#ddd;padding:0 8px;font-size:.80rem;width:160px">
+                                <button onclick="uploadOTPhoto()" style="height:32px;padding:0 12px;background:#30D158;border:none;border-radius:6px;color:#fff;font-size:.80rem;cursor:pointer"><i class="fas fa-upload"></i></button>
+                            </div>
+                        </div>
+
                         <!-- Report tracking -->
                         <div style="background: #1e1e1e; border-radius: 8px; padding: 15px; margin-bottom: 15px; border: 1px solid #3a2a1a;">
                             <h4 style="margin: 0 0 10px 0; color: #FF9F0A;"><i class="fas fa-file-alt"></i> Control de Informe</h4>

@@ -430,6 +430,33 @@ class OTPersonnel(db.Model):
         }
 
 
+class PhotoAttachment(db.Model):
+    """Photos attached to notices or work orders."""
+    __tablename__ = 'photo_attachments'
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    entity_type: Mapped[str] = mapped_column(String(20), nullable=False)
+    # notice | work_order
+    entity_id: Mapped[int] = mapped_column(Integer, nullable=False)
+    url: Mapped[str] = mapped_column(String(500), nullable=False)
+    caption: Mapped[str | None] = mapped_column(String(200), nullable=True)
+    original_size_kb: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    compressed_size_kb: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+
+    def to_dict(self):
+        return {
+            "id": self.id,
+            "entity_type": self.entity_type,
+            "entity_id": self.entity_id,
+            "url": self.url,
+            "caption": self.caption,
+            "original_size_kb": self.original_size_kb,
+            "compressed_size_kb": self.compressed_size_kb,
+            "created_at": self.created_at.isoformat() if self.created_at else None,
+        }
+
+
 class OTLogEntry(db.Model):
     """Activity log / bitacora for work orders."""
     __tablename__ = 'ot_log_entries'

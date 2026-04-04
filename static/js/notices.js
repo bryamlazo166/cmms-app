@@ -251,6 +251,7 @@ document.addEventListener('DOMContentLoaded', async () => {
     document.getElementById('newNoticeBtn').onclick = () => {
         document.getElementById('noticeForm').reset();
         document.getElementById('noticeId').value = '';
+        document.getElementById('photoSection').style.display = 'none';
 
         // Default Date: Today
         const today = new Date().toISOString().split('T')[0];
@@ -381,6 +382,9 @@ window.editNotice = async (id) => {
         document.getElementById('componentId').value = n.component_id || '';
 
         updateHierarchyDisplay();
+        // Show photo section for existing notices
+        document.getElementById('photoSection').style.display = '';
+        loadNoticePhotos(n.id);
         document.getElementById('noticeModal').showModal();
 
     } catch (e) { console.error(e); }
@@ -670,5 +674,58 @@ window.convertToOT = async (noticeId) => {
     } catch (e) {
         alert("Error de red: " + e);
     }
+}
+
+// ── Photo Functions ──────────────────────────────────────────────────────────
+
+async function loadNoticePhotos(noticeId) {
+    const gallery = document.getElementById('photoGallery');
+    try {
+        const res = await fetch(`/api/photos/notice/${noticeId}`);
+        const photos = await res.json();
+        if (!photos.length) {
+            gallery.innerHTML = '<span style="color:rgba(255,255,255,.30);font-size:.80rem">Sin fotos adjuntas.</span>';
+            return;
+        }
+        gallery.innerHTML = photos.map(p => `
+            <div style="position:relative;width:100px;height:100px;border-radius:8px;overflow:hidden;border:1px solid rgba(255,255,255,.10)">
+                <img src="${p.url}" style="width:100%;height:100%;object-fit:cover;cursor:pointer" onclick="window.open('${p.url}','_blank')" title="${p.caption || ''}">
+                <button onclick="deleteNoticePhoto(${p.id}, ${noticeId})" style="position:absolute;top:2px;right:2px;width:20px;height:20px;background:rgba(0,0,0,.7);border:none;border-radius:50%;color:#FF453A;font-size:.65rem;cursor:pointer"><i class="fas fa-times"></i></button>
+                ${p.caption ? `<div style="position:absolute;bottom:0;left:0;right:0;background:rgba(0,0,0,.7);padding:2px 4px;font-size:.65rem;color:#ddd;overflow:hidden;white-space:nowrap;text-overflow:ellipsis">${p.caption}</div>` : ''}
+            </div>
+        `).join('');
+    } catch (_) {
+        gallery.innerHTML = '<span style="color:#FF6B61;font-size:.80rem">Error cargando fotos.</span>';
+    }
+}
+
+async function uploadNoticePhoto() {
+    const noticeId = document.getElementById('noticeId').value;
+    if (!noticeId) { alert('Guarda el aviso primero antes de adjuntar fotos.'); return; }
+
+    const fileInput = document.getElementById('photoFile');
+    if (!fileInput.files.length) { alert('Selecciona una foto.'); return; }
+
+    const formData = new FormData();
+    formData.append('photo', fileInput.files[0]);
+    formData.append('caption', document.getElementById('photoCaption').value || '');
+
+    try {
+        const res = await fetch(`/api/photos/notice/${noticeId}`, {
+            method: 'POST',
+            body: formData,
+        });
+        const data = await res.json();
+        if (!res.ok) { alert(data.error || 'Error subiendo foto.'); return; }
+        fileInput.value = '';
+        document.getElementById('photoCaption').value = '';
+        loadNoticePhotos(noticeId);
+    } catch (e) { alert('Error: ' + e.message); }
+}
+
+async function deleteNoticePhoto(photoId, noticeId) {
+    if (!confirm('Eliminar esta foto?')) return;
+    await fetch(`/api/photos/${photoId}`, { method: 'DELETE' });
+    loadNoticePhotos(noticeId);
 }
 

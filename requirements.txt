@@ -10,3 +10,5 @@ openpyxl
 python-dotenv
 gunicorn
 pytest
+Pillow
+requests

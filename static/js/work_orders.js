@@ -1128,9 +1128,10 @@ async function searchForExecution() {
         btnEnd.classList.remove('hidden');
     }
 
-    // Load bitacora + report status
+    // Load bitacora + report status + photos
     loadOTLog(ot.id);
     loadReportStatus(ot);
+    loadOTPhotos(ot.id);
     document.getElementById('logDate').value = new Date().toISOString().slice(0, 10);
 }
 
@@ -2856,3 +2857,55 @@ window.confirmAddPersonnel = function () {
 
 
 
+
+// ── OT Photo Functions ──────────────────────────────────────────────────────
+
+async function loadOTPhotos(otId) {
+    const gallery = document.getElementById('exec-photo-gallery');
+    if (!gallery) return;
+    try {
+        const res = await fetch(`/api/photos/work_order/${otId}`);
+        const photos = await res.json();
+        if (!photos.length) {
+            gallery.innerHTML = '<span style="color:rgba(255,255,255,.30);font-size:.80rem">Sin fotos.</span>';
+            return;
+        }
+        gallery.innerHTML = photos.map(p => `
+            <div style="position:relative;width:100px;height:100px;border-radius:8px;overflow:hidden;border:1px solid rgba(255,255,255,.10)">
+                <img src="${p.url}" style="width:100%;height:100%;object-fit:cover;cursor:pointer" onclick="window.open('${p.url}','_blank')" title="${p.caption || ''}">
+                <button onclick="deleteOTPhoto(${p.id})" style="position:absolute;top:2px;right:2px;width:20px;height:20px;background:rgba(0,0,0,.7);border:none;border-radius:50%;color:#FF453A;font-size:.65rem;cursor:pointer"><i class="fas fa-times"></i></button>
+                ${p.caption ? '<div style="position:absolute;bottom:0;left:0;right:0;background:rgba(0,0,0,.7);padding:2px 4px;font-size:.65rem;color:#ddd;overflow:hidden;white-space:nowrap;text-overflow:ellipsis">' + p.caption + '</div>' : ''}
+            </div>
+        `).join('');
+    } catch (_) {
+        gallery.innerHTML = '<span style="color:#FF6B61;font-size:.80rem">Error cargando fotos.</span>';
+    }
+}
+
+async function uploadOTPhoto() {
+    if (!activeExecutionOT) return;
+    const fileInput = document.getElementById('execPhotoFile');
+    if (!fileInput.files.length) { alert('Selecciona una foto.'); return; }
+
+    const formData = new FormData();
+    formData.append('photo', fileInput.files[0]);
+    formData.append('caption', document.getElementById('execPhotoCaption').value || '');
+
+    try {
+        const res = await fetch(`/api/photos/work_order/${activeExecutionOT.id}`, {
+            method: 'POST',
+            body: formData,
+        });
+        const data = await res.json();
+        if (!res.ok) { alert(data.error || 'Error subiendo foto.'); return; }
+        fileInput.value = '';
+        document.getElementById('execPhotoCaption').value = '';
+        loadOTPhotos(activeExecutionOT.id);
+    } catch (e) { alert('Error: ' + e.message); }
+}
+
+async function deleteOTPhoto(photoId) {
+    if (!activeExecutionOT || !confirm('Eliminar foto?')) return;
+    await fetch(`/api/photos/${photoId}`, { method: 'DELETE' });
+    loadOTPhotos(activeExecutionOT.id);
+}

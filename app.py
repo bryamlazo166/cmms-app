@@ -15,7 +15,7 @@ from models import (
     WorkOrder, Provider, Technician, Tool, WarehouseItem, OTPersonnel,
     OTMaterial, WarehouseMovement, PurchaseOrder, PurchaseRequest,
     LubricationPoint, LubricationExecution, MonitoringPoint, MonitoringReading,
-    OTLogEntry,
+    PhotoAttachment, OTLogEntry,
     RotativeAsset, RotativeAssetHistory, RotativeAssetSpec, RotativeAssetBOM,
     InspectionRoute, InspectionItem, InspectionExecution, InspectionResult,
     Activity, Milestone, Notification, RolePermission
