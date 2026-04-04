@@ -87,11 +87,14 @@
         sidebar.appendChild(profileEl);
     }
 
-    // Pages hidden per role
-    const ROLE_HIDDEN = {
-        supervisor: ['/activos-rotativos', '/equipo-historial', '/configuracion'],
-        viewer: [],
-        tecnico: [],
+    // Module key → sidebar href mapping
+    const MODULE_TO_HREF = {
+        'avisos': '/avisos', 'ordenes': '/ordenes', 'compras': '/compras',
+        'almacen': '/almacen', 'herramientas': '/herramientas',
+        'activos_rotativos': '/activos-rotativos', 'activos_config': '/configuracion',
+        'monitoreo': '/monitoreo', 'lubricacion': '/lubricacion',
+        'inspecciones': '/inspecciones', 'seguimiento': '/seguimiento',
+        'reportes': '/reportes', 'historial_equipo': '/equipo-historial',
     };
 
     async function loadCurrentUser(sidebar) {
@@ -101,8 +104,21 @@
             const user = await res.json();
             renderProfile(sidebar, user);
 
-            // Re-render nav with role-based filtering
-            const hidden = ROLE_HIDDEN[user.role] || [];
+            // Load permissions to filter sidebar
+            let hidden = [];
+            if (user.role !== 'admin') {
+                try {
+                    const permRes = await fetch('/api/auth/permissions');
+                    const permData = await permRes.json();
+                    const rolePerms = permData[user.role] || {};
+                    for (const [mod, href] of Object.entries(MODULE_TO_HREF)) {
+                        if (rolePerms[mod] && !rolePerms[mod].view) {
+                            hidden.push(href);
+                        }
+                    }
+                } catch (_) {}
+            }
+
             const navList = sidebar.querySelector('.nav-list');
             const extra = user.role === 'admin' ? ADMIN_MENU_ITEMS : [];
             const filtered = MENU_ITEMS.filter(item => !hidden.includes(item.href));

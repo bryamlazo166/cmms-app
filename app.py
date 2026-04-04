@@ -163,43 +163,135 @@ def load_user(user_id):
 # ── Auth guard: require login for all routes except /login and /static ────────
 _AUTH_EXEMPT = {'login', 'logout', 'static', 'health_check'}
 
-# ── Role-based access control ─────────────────────────────────────────────────
-_EXPORT_PATHS = ('/api/reports/powerbi-export', '/api/warehouse/export',
-                 '/api/reports/weekly-plan/export', '/api/warehouse/export-kardex')
+# ── Dynamic role-based access control ─────────────────────────────────────────
 
-# Supervisor: can manage notices, work orders, tools, lubrication exec, inspections exec
-# Blocked: exports, rotative assets, equipment history, users, taxonomy config
-_SUPERVISOR_BLOCKED_PAGES = ('/activos-rotativos', '/equipo-historial', '/usuarios', '/configuracion')
-_SUPERVISOR_BLOCKED_API = ('/api/rotative-assets', '/api/equipment/', '/api/auth/users',
-                           '/api/areas', '/api/lines', '/api/equipments', '/api/systems',
-                           '/api/components', '/api/spare-parts')
+# Map module keys → page paths and API prefixes
+_MODULE_ROUTES = {
+    'avisos':           {'pages': ['/avisos'], 'api': ['/api/notices']},
+    'ordenes':          {'pages': ['/ordenes'], 'api': ['/api/work-orders', '/api/work_orders', '/api/generate-preventive', '/api/pending-reports']},
+    'compras':          {'pages': ['/compras'], 'api': ['/api/purchase']},
+    'almacen':          {'pages': ['/almacen'], 'api': ['/api/warehouse']},
+    'herramientas':     {'pages': ['/herramientas'], 'api': ['/api/tools']},
+    'activos_rotativos':{'pages': ['/activos-rotativos'], 'api': ['/api/rotative-assets']},
+    'activos_config':   {'pages': ['/configuracion'], 'api': ['/api/areas', '/api/lines', '/api/equipments', '/api/systems', '/api/components', '/api/spare-parts', '/api/upload-excel', '/api/bulk-paste']},
+    'monitoreo':        {'pages': ['/monitoreo'], 'api': ['/api/monitoring']},
+    'lubricacion':      {'pages': ['/lubricacion'], 'api': ['/api/lubrication']},
+    'inspecciones':     {'pages': ['/inspecciones'], 'api': ['/api/inspection']},
+    'seguimiento':      {'pages': ['/seguimiento'], 'api': ['/api/activities', '/api/milestones']},
+    'reportes':         {'pages': ['/reportes'], 'api': ['/api/reports']},
+    'historial_equipo': {'pages': ['/equipo-historial'], 'api': ['/api/equipment/']},
+    'exportar':         {'pages': [], 'api': ['/api/reports/powerbi-export', '/api/warehouse/export', '/api/reports/weekly-plan/export', '/api/warehouse/export-kardex']},
+    'usuarios':         {'pages': ['/usuarios'], 'api': ['/api/auth/users', '/api/auth/permissions']},
+}
+
+# Default permissions (used when no DB config exists)
+_DEFAULT_PERMS = {
+    'supervisor': {
+        'avisos': {'view': True, 'edit': True}, 'ordenes': {'view': True, 'edit': True},
+        'compras': {'view': True, 'edit': True}, 'almacen': {'view': True, 'edit': True},
+        'herramientas': {'view': True, 'edit': True}, 'lubricacion': {'view': True, 'edit': True},
+        'inspecciones': {'view': True, 'edit': True}, 'monitoreo': {'view': True, 'edit': True},
+        'seguimiento': {'view': True, 'edit': True}, 'reportes': {'view': True, 'edit': False},
+        'activos_rotativos': {'view': False, 'edit': False}, 'activos_config': {'view': False, 'edit': False},
+        'historial_equipo': {'view': False, 'edit': False}, 'exportar': {'view': False, 'edit': False},
+        'usuarios': {'view': False, 'edit': False},
+    },
+    'tecnico': {
+        'avisos': {'view': True, 'edit': True}, 'ordenes': {'view': True, 'edit': True},
+        'compras': {'view': True, 'edit': False}, 'almacen': {'view': True, 'edit': False},
+        'herramientas': {'view': True, 'edit': True}, 'lubricacion': {'view': True, 'edit': True},
+        'inspecciones': {'view': True, 'edit': True}, 'monitoreo': {'view': True, 'edit': True},
+        'seguimiento': {'view': True, 'edit': True}, 'reportes': {'view': True, 'edit': False},
+        'activos_rotativos': {'view': True, 'edit': False}, 'activos_config': {'view': True, 'edit': False},
+        'historial_equipo': {'view': True, 'edit': False}, 'exportar': {'view': False, 'edit': False},
+        'usuarios': {'view': False, 'edit': False},
+    },
+    'viewer': {
+        'avisos': {'view': True, 'edit': False}, 'ordenes': {'view': True, 'edit': False},
+        'compras': {'view': True, 'edit': False}, 'almacen': {'view': True, 'edit': False},
+        'herramientas': {'view': True, 'edit': False}, 'lubricacion': {'view': True, 'edit': False},
+        'inspecciones': {'view': True, 'edit': False}, 'monitoreo': {'view': True, 'edit': False},
+        'seguimiento': {'view': True, 'edit': False}, 'reportes': {'view': True, 'edit': False},
+        'activos_rotativos': {'view': True, 'edit': False}, 'activos_config': {'view': True, 'edit': False},
+        'historial_equipo': {'view': True, 'edit': False}, 'exportar': {'view': False, 'edit': False},
+        'usuarios': {'view': False, 'edit': False},
+    },
+}
+
+_perms_cache = {}
+_perms_cache_ts = 0
+
+def _load_role_perms(role):
+    """Load permissions for a role from DB, fallback to defaults."""
+    import time
+    global _perms_cache, _perms_cache_ts
+    now = time.time()
+    # Cache for 60 seconds
+    if now - _perms_cache_ts < 60 and role in _perms_cache:
+        return _perms_cache[role]
+
+    defaults = _DEFAULT_PERMS.get(role, {})
+    result = {}
+    try:
+        from models import RolePermission
+        for mod_key in _MODULE_ROUTES:
+            perm = RolePermission.query.filter_by(role=role, module=mod_key).first()
+            if perm:
+                result[mod_key] = {'view': perm.can_view, 'edit': perm.can_edit}
+            else:
+                result[mod_key] = defaults.get(mod_key, {'view': True, 'edit': False})
+    except Exception:
+        result = defaults
+
+    _perms_cache[role] = result
+    _perms_cache_ts = now
+    return result
+
+
+def _find_module_for_path(path):
+    """Find which module a request path belongs to. More specific paths match first."""
+    best_match = None
+    best_len = 0
+    for mod_key, routes in _MODULE_ROUTES.items():
+        for p in routes.get('pages', []):
+            if (path == p or path.startswith(p + '/')) and len(p) > best_len:
+                best_match = (mod_key, 'page')
+                best_len = len(p)
+        for a in routes.get('api', []):
+            if path.startswith(a) and len(a) > best_len:
+                best_match = (mod_key, 'api')
+                best_len = len(a)
+    return best_match if best_match else (None, None)
+
 
 @app.before_request
 def require_login():
     if current_user.is_authenticated:
         role = getattr(current_user, 'role', None)
 
-        # Viewer: read-only, no exports
-        if role == 'viewer':
-            if request.method in ('POST', 'PUT', 'DELETE') and request.path.startswith('/api/'):
-                return jsonify({"error": "Acceso de solo lectura. Contacta al administrador."}), 403
-            if request.path in _EXPORT_PATHS:
-                return jsonify({"error": "Descarga no permitida para este rol."}), 403
+        # Admin has full access
+        if role == 'admin':
+            return
 
-        # Supervisor: manage maintenance, block admin/assets/exports
-        elif role == 'supervisor':
-            # Block exports
-            if request.path in _EXPORT_PATHS:
-                return jsonify({"error": "Descarga no permitida para este rol."}), 403
-            # Block restricted pages
-            for blocked in _SUPERVISOR_BLOCKED_PAGES:
-                if request.path == blocked or request.path.startswith(blocked + '/'):
+        perms = _load_role_perms(role)
+        module, route_type = _find_module_for_path(request.path)
+
+        if module and module in perms:
+            p = perms[module]
+            is_write = request.method in ('POST', 'PUT', 'DELETE')
+
+            # Check view permission
+            if not p.get('view', True):
+                if route_type == 'page':
                     return redirect(url_for('index'))
-            # Block write to taxonomy/admin APIs (allow GET for dropdowns)
-            if request.method in ('POST', 'PUT', 'DELETE'):
-                for blocked in _SUPERVISOR_BLOCKED_API:
-                    if request.path.startswith(blocked):
-                        return jsonify({"error": "No tienes permisos para esta accion."}), 403
+                elif route_type == 'api':
+                    return jsonify({"error": "No tienes permiso para ver este modulo."}), 403
+
+            # Check edit permission (write operations)
+            if is_write and not p.get('edit', False):
+                if route_type == 'api':
+                    # Allow GET-like reads for dropdowns (taxonomy needs GET for selectors)
+                    return jsonify({"error": "No tienes permiso para modificar en este modulo."}), 403
 
         return
     if request.endpoint in _AUTH_EXEMPT:
