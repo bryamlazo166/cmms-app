@@ -50,54 +50,67 @@ def _get_cmms_context(app):
     ctx_parts = []
 
     with app.app_context():
+        from database import db as _db
         try:
-            from models import WorkOrder, MaintenanceNotice, Equipment, Area, Line
-            from models import LubricationPoint, MonitoringPoint, InspectionRoute
+            # Use raw SQL to avoid ORM session issues in background thread
+            from sqlalchemy import text
 
-            # KPIs summary
-            total_ots = WorkOrder.query.count()
-            open_ots = WorkOrder.query.filter(WorkOrder.status != 'Cerrada').count()
-            closed_ots = WorkOrder.query.filter_by(status='Cerrada').count()
-            total_notices = MaintenanceNotice.query.count()
-            pending_notices = MaintenanceNotice.query.filter_by(status='Pendiente').count()
+            r = _db.session.execute(text("SELECT count(*) FROM work_orders")).scalar()
+            r_open = _db.session.execute(text("SELECT count(*) FROM work_orders WHERE status != 'Cerrada'")).scalar()
+            r_closed = _db.session.execute(text("SELECT count(*) FROM work_orders WHERE status = 'Cerrada'")).scalar()
+            r_notices = _db.session.execute(text("SELECT count(*) FROM maintenance_notices")).scalar()
+            r_pending = _db.session.execute(text("SELECT count(*) FROM maintenance_notices WHERE status = 'Pendiente'")).scalar()
 
-            ctx_parts.append(f"RESUMEN CMMS:")
-            ctx_parts.append(f"- OTs totales: {total_ots} (abiertas: {open_ots}, cerradas: {closed_ots})")
-            ctx_parts.append(f"- Avisos totales: {total_notices} (pendientes: {pending_notices})")
+            ctx_parts.append("RESUMEN CMMS:")
+            ctx_parts.append(f"- OTs totales: {r} (abiertas: {r_open}, cerradas: {r_closed})")
+            ctx_parts.append(f"- Avisos totales: {r_notices} (pendientes: {r_pending})")
 
             # Equipment list
-            equipments = Equipment.query.order_by(Equipment.name).all()
-            if equipments:
-                eq_list = ', '.join(f"{e.tag or ''} {e.name} (id:{e.id})" for e in equipments[:20])
+            equips = _db.session.execute(text("SELECT id, name, tag FROM equipments ORDER BY name LIMIT 20")).fetchall()
+            if equips:
+                eq_list = ', '.join(f"{e[2] or ''} {e[1]} (id:{e[0]})" for e in equips)
                 ctx_parts.append(f"- Equipos: {eq_list}")
 
-            # Recent OTs
-            recent = WorkOrder.query.order_by(WorkOrder.id.desc()).limit(10).all()
+            # Recent OTs with equipment names
+            recent = _db.session.execute(text("""
+                SELECT w.code, w.maintenance_type, w.status, w.description,
+                       w.scheduled_date, w.failure_mode, e.name as eq_name, e.tag as eq_tag
+                FROM work_orders w
+                LEFT JOIN equipments e ON w.equipment_id = e.id
+                ORDER BY w.id DESC LIMIT 10
+            """)).fetchall()
             if recent:
                 ctx_parts.append("\nULTIMAS 10 OTs:")
                 for ot in recent:
-                    eq = Equipment.query.get(ot.equipment_id) if ot.equipment_id else None
-                    eq_name = f"{eq.tag or ''} {eq.name}" if eq else '-'
-                    ctx_parts.append(f"  {ot.code} | {ot.maintenance_type or '-'} | {ot.status} | {eq_name} | {ot.description or '-'}")
+                    eq_name = f"{ot[7] or ''} {ot[6] or '-'}".strip()
+                    ctx_parts.append(f"  {ot[0]} | {ot[1] or '-'} | {ot[2]} | {eq_name} | {ot[3] or '-'}")
 
             # Overdue points
-            lub_overdue = LubricationPoint.query.filter_by(is_active=True, semaphore_status='ROJO').count()
-            insp_overdue = InspectionRoute.query.filter_by(is_active=True, semaphore_status='ROJO').count()
-            mon_overdue = MonitoringPoint.query.filter_by(is_active=True, semaphore_status='ROJO').count()
-
-            if lub_overdue or insp_overdue or mon_overdue:
-                ctx_parts.append(f"\nPUNTOS VENCIDOS (ROJO):")
-                if lub_overdue: ctx_parts.append(f"  Lubricacion: {lub_overdue}")
-                if insp_overdue: ctx_parts.append(f"  Inspeccion: {insp_overdue}")
-                if mon_overdue: ctx_parts.append(f"  Monitoreo: {mon_overdue}")
+            try:
+                lub_r = _db.session.execute(text("SELECT count(*) FROM lubrication_points WHERE is_active = true AND semaphore_status = 'ROJO'")).scalar()
+                insp_r = _db.session.execute(text("SELECT count(*) FROM inspection_routes WHERE is_active = true AND semaphore_status = 'ROJO'")).scalar()
+                mon_r = _db.session.execute(text("SELECT count(*) FROM monitoring_points WHERE is_active = true AND semaphore_status = 'ROJO'")).scalar()
+                if lub_r or insp_r or mon_r:
+                    ctx_parts.append("\nPUNTOS VENCIDOS (ROJO):")
+                    if lub_r: ctx_parts.append(f"  Lubricacion: {lub_r}")
+                    if insp_r: ctx_parts.append(f"  Inspeccion: {insp_r}")
+                    if mon_r: ctx_parts.append(f"  Monitoreo: {mon_r}")
+            except Exception:
+                pass
 
             # Areas
-            areas = Area.query.all()
+            areas = _db.session.execute(text("SELECT name FROM areas ORDER BY name")).fetchall()
             if areas:
-                ctx_parts.append(f"\nAREAS: {', '.join(a.name for a in areas)}")
+                ctx_parts.append(f"\nAREAS: {', '.join(a[0] for a in areas)}")
+
+            _db.session.remove()
 
         except Exception as e:
             ctx_parts.append(f"Error cargando datos: {e}")
+            try:
+                _db.session.remove()
+            except Exception:
+                pass
 
     return '\n'.join(ctx_parts)
 
