@@ -1384,6 +1384,25 @@ def register_reports_routes(
                 except Exception:
                     pass
 
+                # ── 14. OT BITACORA (Log Entries) ──────────────────────────
+                try:
+                    from models import OTLogEntry
+                    log_entries = OTLogEntry.query.order_by(OTLogEntry.id.desc()).all()
+                    log_rows = []
+                    for e in log_entries:
+                        wo = WorkOrder.query.get(e.work_order_id)
+                        log_rows.append({
+                            'Codigo_OT': wo.code if wo else f'OT-{e.work_order_id}',
+                            'Fecha': e.log_date,
+                            'Tipo': e.log_type,
+                            'Autor': e.author,
+                            'Comentario': e.comment,
+                            'Creado': e.created_at.isoformat() if e.created_at else None,
+                        })
+                    pd.DataFrame(log_rows).to_excel(writer, index=False, sheet_name='OT_Bitacora')
+                except Exception:
+                    pass
+
             output.seek(0)
             today = dt.date.today().isoformat()
             return send_file(

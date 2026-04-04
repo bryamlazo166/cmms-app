@@ -665,6 +665,15 @@ def register_work_orders_routes(
             data['system_name'] = get_name(system)
             data['component_name'] = get_name(component)
 
+            # Rotative asset name
+            ra_id = getattr(wo, 'rotative_asset_id', None)
+            if ra_id:
+                from models import RotativeAsset
+                ra = RotativeAsset.query.get(ra_id)
+                data['rotative_asset_name'] = f"{ra.code} {ra.name}" if ra else None
+            else:
+                data['rotative_asset_name'] = None
+
             # Determine Criticality
             crit = '-'
             if component and component.criticality:
