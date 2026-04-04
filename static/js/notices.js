@@ -706,6 +706,9 @@ async function uploadNoticePhoto() {
     const fileInput = document.getElementById('photoFile');
     if (!fileInput.files.length) { alert('Selecciona una foto.'); return; }
 
+    const gallery = document.getElementById('photoGallery');
+    gallery.innerHTML = '<span style="color:#5AC8FA;font-size:.82rem"><i class="fas fa-circle-notch fa-spin"></i> Subiendo y comprimiendo foto...</span>';
+
     const formData = new FormData();
     formData.append('photo', fileInput.files[0]);
     formData.append('caption', document.getElementById('photoCaption').value || '');
@@ -716,11 +719,19 @@ async function uploadNoticePhoto() {
             body: formData,
         });
         const data = await res.json();
-        if (!res.ok) { alert(data.error || 'Error subiendo foto.'); return; }
+        if (!res.ok) {
+            alert(data.error || 'Error subiendo foto.');
+            loadNoticePhotos(noticeId);
+            return;
+        }
         fileInput.value = '';
         document.getElementById('photoCaption').value = '';
+        alert(`Foto subida correctamente.\nOriginal: ${data.original_size_kb || '?'}KB → Comprimida: ${data.compressed_size_kb || '?'}KB`);
         loadNoticePhotos(noticeId);
-    } catch (e) { alert('Error: ' + e.message); }
+    } catch (e) {
+        alert('Error: ' + e.message);
+        loadNoticePhotos(noticeId);
+    }
 }
 
 async function deleteNoticePhoto(photoId, noticeId) {

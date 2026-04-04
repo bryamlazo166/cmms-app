@@ -2897,6 +2897,9 @@ async function uploadOTPhoto() {
     const fileInput = document.getElementById('execPhotoFile');
     if (!fileInput.files.length) { alert('Selecciona una foto.'); return; }
 
+    const gallery = document.getElementById('exec-photo-gallery');
+    gallery.innerHTML = '<span style="color:#5AC8FA;font-size:.82rem"><i class="fas fa-circle-notch fa-spin"></i> Subiendo y comprimiendo foto...</span>';
+
     const formData = new FormData();
     formData.append('photo', fileInput.files[0]);
     formData.append('caption', document.getElementById('execPhotoCaption').value || '');
@@ -2907,11 +2910,19 @@ async function uploadOTPhoto() {
             body: formData,
         });
         const data = await res.json();
-        if (!res.ok) { alert(data.error || 'Error subiendo foto.'); return; }
+        if (!res.ok) {
+            alert(data.error || 'Error subiendo foto.');
+            loadOTPhotos(activeExecutionOT.id);
+            return;
+        }
         fileInput.value = '';
         document.getElementById('execPhotoCaption').value = '';
+        alert(`Foto subida correctamente.\nOriginal: ${data.original_size_kb || '?'}KB → Comprimida: ${data.compressed_size_kb || '?'}KB`);
         loadOTPhotos(activeExecutionOT.id);
-    } catch (e) { alert('Error: ' + e.message); }
+    } catch (e) {
+        alert('Error: ' + e.message);
+        loadOTPhotos(activeExecutionOT.id);
+    }
 }
 
 async function deleteOTPhoto(photoId) {
