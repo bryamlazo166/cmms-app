@@ -635,6 +635,13 @@ def _start_keepalive():
 if resolved_db_mode == 'supabase':
     _start_keepalive()
 
+# ── Telegram Bot ──────────────────────────────────────────────────────────────
+try:
+    from bot.telegram_bot import start_telegram_bot
+    start_telegram_bot(app)
+except Exception as e:
+    logger.warning(f"Telegram bot not started: {e}")
+
 
 if __name__ == '__main__':
     print(f"DEBUG: FINAL URI: {app.config.get('SQLALCHEMY_DATABASE_URI')}")
