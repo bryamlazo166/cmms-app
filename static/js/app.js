@@ -369,97 +369,105 @@ async function loadGlobalTree() {
     const tree = document.getElementById('globalTree');
     tree.innerHTML = '';
 
+    // Stats
+    const totalEquips = equips.length;
+    const totalSys = systems.length;
+    const totalComps = comps.length;
+
     // Expand/Collapse All Buttons
     const controls = document.createElement('div');
+    controls.className = 'tree-controls';
     controls.innerHTML = `
-        <button onclick="expandAll()" style="padding: 5px 10px; font-size: 0.8em; margin-right: 5px;">Expandir Todo</button>
-        <button onclick="collapseAll()" style="padding: 5px 10px; font-size: 0.8em;">Colapsar Todo</button>
+        <button onclick="expandAll()"><i class="fas fa-expand-alt"></i> Expandir Todo</button>
+        <button onclick="collapseAll()"><i class="fas fa-compress-alt"></i> Colapsar Todo</button>
+        <span class="tree-stats">${areas.length} areas · ${lines.length} lineas · ${totalEquips} equipos · ${totalSys} sistemas · ${totalComps} componentes</span>
     `;
-    controls.style.marginBottom = "10px";
     tree.appendChild(controls);
 
     const ulRoot = document.createElement('ul');
 
-    areas.forEach(area => {
-        const liArea = document.createElement('li');
-        const contentArea = createNode(`🏭 ${area.name}`, 'Area', area);
+    const LEVEL_CONFIG = {
+        Area:      { icon: 'fa-industry',    css: 'area',   badge: 'Area' },
+        Line:      { icon: 'fa-grip-lines',  css: 'line',   badge: 'Linea' },
+        Equipment: { icon: 'fa-cog',         css: 'equip',  badge: 'Equipo' },
+        System:    { icon: 'fa-project-diagram', css: 'system', badge: 'Sistema' },
+        Component: { icon: 'fa-puzzle-piece', css: 'comp',  badge: 'Componente' },
+    };
 
+    function buildTreeNode(label, type, data, childCount) {
+        const cfg = LEVEL_CONFIG[type];
+        const li = document.createElement('li');
+        const node = createNode(label, type, data, cfg, childCount);
+        return { li, node };
+    }
+
+    areas.forEach(area => {
         const areaLines = lines.filter(l => l.area_id === area.id);
+        const { li: liArea, node: nodeArea } = buildTreeNode(area.name, 'Area', area, areaLines.length);
 
         if (areaLines.length > 0) {
-            // Add Caret
             addCaret(liArea);
-            liArea.appendChild(contentArea);
-
+            liArea.appendChild(nodeArea);
             const ulLines = document.createElement('ul');
             ulLines.className = 'nested';
 
             areaLines.forEach(line => {
-                const liLine = document.createElement('li');
-                const contentLine = createNode(`〰️ ${line.name}`, 'Line', line);
-
                 const lineEquips = equips.filter(e => e.line_id === line.id);
+                const { li: liLine, node: nodeLine } = buildTreeNode(line.name, 'Line', line, lineEquips.length);
 
                 if (lineEquips.length > 0) {
                     addCaret(liLine);
-                    liLine.appendChild(contentLine);
-
+                    liLine.appendChild(nodeLine);
                     const ulEquips = document.createElement('ul');
                     ulEquips.className = 'nested';
 
                     lineEquips.forEach(eq => {
-                        const liEquip = document.createElement('li');
-                        const contentEquip = createNode(`⚙️ ${eq.name} [${eq.tag}]`, 'Equipment', eq);
-
                         const equipSys = systems.filter(s => s.equipment_id === eq.id);
+                        const eqLabel = eq.tag ? `${eq.name} [${eq.tag}]` : eq.name;
+                        const { li: liEquip, node: nodeEquip } = buildTreeNode(eqLabel, 'Equipment', eq, equipSys.length);
 
                         if (equipSys.length > 0) {
                             addCaret(liEquip);
-                            liEquip.appendChild(contentEquip);
-
+                            liEquip.appendChild(nodeEquip);
                             const ulSys = document.createElement('ul');
                             ulSys.className = 'nested';
 
                             equipSys.forEach(sys => {
-                                const liSys = document.createElement('li');
-                                const contentSys = createNode(`🔌 ${sys.name}`, 'System', sys);
-
                                 const sysComps = comps.filter(c => c.system_id === sys.id);
+                                const { li: liSys, node: nodeSys } = buildTreeNode(sys.name, 'System', sys, sysComps.length);
 
                                 if (sysComps.length > 0) {
                                     addCaret(liSys);
-                                    liSys.appendChild(contentSys);
-
+                                    liSys.appendChild(nodeSys);
                                     const ulComps = document.createElement('ul');
                                     ulComps.className = 'nested';
 
                                     sysComps.forEach(comp => {
-                                        const liComp = document.createElement('li');
-                                        const contentComp = createNode(`🔧 ${comp.name}`, 'Component', comp);
-                                        liComp.appendChild(contentComp);
+                                        const { li: liComp, node: nodeComp } = buildTreeNode(comp.name, 'Component', comp, 0);
+                                        liComp.appendChild(nodeComp);
                                         ulComps.appendChild(liComp);
                                     });
                                     liSys.appendChild(ulComps);
                                 } else {
-                                    liSys.appendChild(contentSys);
+                                    liSys.appendChild(nodeSys);
                                 }
                                 ulSys.appendChild(liSys);
                             });
                             liEquip.appendChild(ulSys);
                         } else {
-                            liEquip.appendChild(contentEquip);
+                            liEquip.appendChild(nodeEquip);
                         }
                         ulEquips.appendChild(liEquip);
                     });
                     liLine.appendChild(ulEquips);
                 } else {
-                    liLine.appendChild(contentLine);
+                    liLine.appendChild(nodeLine);
                 }
                 ulLines.appendChild(liLine);
             });
             liArea.appendChild(ulLines);
         } else {
-            liArea.appendChild(contentArea);
+            liArea.appendChild(nodeArea);
         }
         ulRoot.appendChild(liArea);
     });
@@ -595,70 +603,63 @@ document.getElementById('editForm').onsubmit = async (e) => {
     }
 };
 
-function createNode(text, type, data) {
-    const li = document.createElement('li');
-    // REMOVED li.style.display = "flex"; to fix vertical layout
+function createNode(text, type, data, cfg, childCount) {
+    cfg = cfg || { icon: 'fa-circle', css: 'comp', badge: type };
 
-    // Create a wrapper for the content (Text + Buttons) to align them horizontally
-    const contentDiv = document.createElement('div');
-    contentDiv.style.display = "flex";
-    contentDiv.style.alignItems = "center";
+    const node = document.createElement('div');
+    node.className = `tree-node level-${cfg.css}`;
 
-    const spanText = document.createElement('span');
-    spanText.textContent = text;
+    // Icon
+    const icon = document.createElement('span');
+    icon.className = `node-icon icon-${cfg.css}`;
+    icon.innerHTML = `<i class="fas ${cfg.icon}"></i>`;
 
-    const actionsDiv = document.createElement('div');
-    actionsDiv.style.marginLeft = "10px";
-    actionsDiv.style.opacity = "0.6"; // subtle
+    // Label
+    const label = document.createElement('span');
+    label.className = 'node-label';
+    label.textContent = text;
 
-    // Create Notice Button
-    {
-        const btnNotice = document.createElement('span');
-        btnNotice.innerHTML = "📋";
-        btnNotice.style.cursor = "pointer";
-        btnNotice.style.marginRight = "5px";
-        btnNotice.title = "Crear Aviso";
-        btnNotice.onclick = (e) => {
-            e.stopPropagation();
-            if (!data || !data.id) return;
-            window.location.href = `/avisos?create=true&type=${type}&id=${data.id}`;
-        };
-        actionsDiv.appendChild(btnNotice);
-    }
+    // Badge
+    const badge = document.createElement('span');
+    badge.className = `node-badge badge-${cfg.css}`;
+    badge.textContent = cfg.badge;
 
-    // Edit Button
+    // Child count
+    const countEl = childCount > 0 ? (() => {
+        const s = document.createElement('span');
+        s.style.cssText = 'font-size:.7rem;color:#666;margin-left:6px;';
+        s.textContent = `(${childCount})`;
+        return s;
+    })() : null;
+
+    // Actions
+    const actions = document.createElement('div');
+    actions.className = 'node-actions';
+
+    const btnNotice = document.createElement('span');
+    btnNotice.innerHTML = '<i class="fas fa-clipboard-list"></i>';
+    btnNotice.title = 'Crear Aviso';
+    btnNotice.onclick = (e) => { e.stopPropagation(); if (data && data.id) window.location.href = `/avisos?create=true&type=${type}&id=${data.id}`; };
+
     const btnEdit = document.createElement('span');
-    btnEdit.innerHTML = "✏️";
-    btnEdit.style.cursor = "pointer";
-    btnEdit.style.marginRight = "5px";
-    btnEdit.title = "Editar";
-    btnEdit.onclick = (e) => {
-        e.stopPropagation();
-        if (!data || !data.id) {
-            alert("Error: Datos del elemento no encontrados.");
-            return;
-        }
-        openEditModal(type, data.id, data);
-    };
+    btnEdit.innerHTML = '<i class="fas fa-pen"></i>';
+    btnEdit.title = 'Editar';
+    btnEdit.onclick = (e) => { e.stopPropagation(); if (data && data.id) openEditModal(type, data.id, data); };
 
-    // Delete Button
     const btnDel = document.createElement('span');
-    btnDel.innerHTML = "🗑️";
-    btnDel.style.cursor = "pointer";
-    btnDel.title = "Eliminar";
-    btnDel.onclick = (e) => {
-        e.stopPropagation();
-        if (!data || !data.id) return;
-        deleteItem(type, data.id, data.name);
-    };
+    btnDel.innerHTML = '<i class="fas fa-trash-alt"></i>';
+    btnDel.title = 'Eliminar';
+    btnDel.onclick = (e) => { e.stopPropagation(); if (data && data.id) deleteItem(type, data.id, data.name); };
 
-    actionsDiv.appendChild(btnEdit);
-    actionsDiv.appendChild(btnDel);
+    actions.appendChild(btnNotice);
+    actions.appendChild(btnEdit);
+    actions.appendChild(btnDel);
 
-    contentDiv.appendChild(spanText);
-    contentDiv.appendChild(actionsDiv);
+    node.appendChild(icon);
+    node.appendChild(label);
+    node.appendChild(badge);
+    if (countEl) node.appendChild(countEl);
+    node.appendChild(actions);
 
-    li.appendChild(contentDiv);
-
-    return li;
+    return node;
 }
