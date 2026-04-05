@@ -141,6 +141,10 @@ final_db_url, resolved_db_mode = _resolve_database_url()
 
 app.config['SQLALCHEMY_DATABASE_URI'] = final_db_url
 app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
+app.config['SQLALCHEMY_ENGINE_OPTIONS'] = {
+    'pool_pre_ping': True,
+    'pool_recycle': 280,
+}
 app.config['CMMS_DB_MODE'] = resolved_db_mode
 app.config['CMMS_DB_URI_MASKED'] = _mask_db_url(final_db_url)
 print(f"----> APPLICATION STARTING ON PORT 5009 <----")
