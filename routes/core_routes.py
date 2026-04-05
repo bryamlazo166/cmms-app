@@ -500,6 +500,14 @@ def register_core_routes(app, db, logger, app_build_tag,
                 from models import PhotoAttachment
                 from utils.photo_helpers import compress_photo, upload_to_supabase_storage, MAX_FILE_SIZE
 
+                MAX_PHOTOS = {'notice': 3, 'work_order': 10}
+                current_count = PhotoAttachment.query.filter_by(
+                    entity_type=entity_type, entity_id=entity_id
+                ).count()
+                limit = MAX_PHOTOS.get(entity_type, 10)
+                if current_count >= limit:
+                    return jsonify({"error": f"Maximo {limit} fotos por {entity_type}."}), 400
+
                 if 'photo' not in request.files:
                     return jsonify({"error": "No se envio archivo. Campo: photo"}), 400
 
@@ -550,7 +558,9 @@ def register_core_routes(app, db, logger, app_build_tag,
     @app.route('/api/photos/<int:photo_id>', methods=['DELETE'])
     def delete_photo(photo_id):
         from models import PhotoAttachment
+        from utils.photo_helpers import delete_from_supabase_storage
         photo = PhotoAttachment.query.get_or_404(photo_id)
+        delete_from_supabase_storage(photo.url)
         db.session.delete(photo)
         db.session.commit()
         return jsonify({"ok": True})

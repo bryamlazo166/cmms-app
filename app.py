@@ -1,5 +1,6 @@
 import os
 import logging
+from datetime import datetime
 from flask import Flask, jsonify, redirect, url_for, request
 from flask_sqlalchemy import SQLAlchemy
 from flask_login import LoginManager, current_user
@@ -153,6 +154,13 @@ print(f"----> DATABASE URI: {app.config['CMMS_DB_URI_MASKED']} <----")
 print(f"----> BUILD TAG: {APP_BUILD_TAG} <----")
 
 db.init_app(app)
+
+# ── Cache busting: inject version into all templates ────────────────────────
+_ASSET_VERSION = datetime.now().strftime('%Y%m%d%H%M%S')
+
+@app.context_processor
+def inject_asset_version():
+    return dict(v=_ASSET_VERSION)
 
 # ── Flask-Login setup ─────────────────────────────────────────────────────────
 login_manager = LoginManager()

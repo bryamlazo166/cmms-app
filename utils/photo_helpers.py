@@ -71,3 +71,32 @@ def upload_to_supabase_storage(file_bytes, filename, bucket='cmms-photos'):
     public_url = f"{supabase_url}/storage/v1/object/public/{bucket}/{storage_path}"
     logger.info(f"Photo uploaded: {public_url}")
     return public_url
+
+
+def delete_from_supabase_storage(public_url, bucket='cmms-photos'):
+    """Delete a file from Supabase Storage given its public URL."""
+    supabase_url = os.getenv('SUPABASE_URL')
+    supabase_key = os.getenv('SUPABASE_SERVICE_KEY') or os.getenv('SUPABASE_ANON_KEY')
+
+    if not supabase_url or not supabase_key:
+        logger.warning("SUPABASE credentials missing, cannot delete from storage.")
+        return
+
+    prefix = f"{supabase_url}/storage/v1/object/public/{bucket}/"
+    if not public_url.startswith(prefix):
+        logger.warning(f"URL does not match bucket pattern: {public_url}")
+        return
+
+    storage_path = public_url[len(prefix):]
+
+    delete_url = f"{supabase_url}/storage/v1/object/{bucket}"
+    headers = {
+        'Authorization': f'Bearer {supabase_key}',
+        'Content-Type': 'application/json',
+    }
+
+    resp = requests.delete(delete_url, headers=headers, json={"prefixes": [storage_path]})
+    if resp.status_code in (200, 201):
+        logger.info(f"Photo deleted from storage: {storage_path}")
+    else:
+        logger.warning(f"Storage delete failed: {resp.status_code} {resp.text}")
