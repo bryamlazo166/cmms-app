@@ -231,6 +231,14 @@ def _create_notice(app, data):
                     component_id = comp_row[0]
                     system_id = comp_row[1]
 
+            # Build enriched description with failure info
+            desc_parts = [data.get('description', 'Reporte desde Telegram')]
+            if data.get('failure_mode'):
+                desc_parts.append(f"[Modo de falla: {data['failure_mode']}]")
+            if data.get('failure_category'):
+                desc_parts.append(f"[Tipo: {data['failure_category']}]")
+            full_desc = ' | '.join(desc_parts)
+
             _db.session.execute(text("""
                 INSERT INTO maintenance_notices (code, description, criticality, priority, request_date,
                     maintenance_type, status, reporter_name, reporter_type,
@@ -239,7 +247,7 @@ def _create_notice(app, data):
                     :area_id, :line_id, :eq_id, :sys_id, :comp_id, :shift)
             """), {
                 "code": next_code,
-                "desc": data.get('description', 'Reporte desde Telegram'),
+                "desc": full_desc,
                 "crit": data.get('criticality', 'Media'),
                 "prio": data.get('priority', 'Normal'),
                 "rdate": date.today().isoformat(),
@@ -317,12 +325,37 @@ def _ask_deepseek(question, cmms_context, is_action=False):
     if is_action:
         action_instructions = """
 
-IMPORTANTE SOBRE ACCIONES:
-Cuando el usuario quiera CREAR un aviso o reportar una falla, responde UNICAMENTE con un JSON asi:
-{"action": "create_notice", "data": {"description": "...", "equipment_tag": "D1", "equipment_name": "DIGESTOR #1", "component_name": "FAJA", "criticality": "Alta|Media|Baja", "priority": "Alta|Normal|Baja", "maintenance_type": "Correctivo", "reporter_name": "...", "shift": "Dia|Noche"}}
+IMPORTANTE SOBRE ACCIONES — CREACION DE AVISOS:
+Cuando el usuario quiera reportar una falla o crear un aviso, responde UNICAMENTE con un JSON.
+Tu rol es INTERPRETAR el mensaje del usuario como un profesional de mantenimiento industrial y enriquecer los datos:
 
-Solo incluye los campos que puedas deducir del mensaje. Si no sabes el equipo, pregunta.
-NO confirmes que creaste nada. Solo devuelve el JSON si el usuario quiere crear un aviso.
+1. **description**: Redacta una descripcion profesional orientada al MODO DE FALLA, no copies textual lo que dijo el usuario.
+   Ejemplos de buenas descripciones:
+   - Usuario dice "la faja del digestor 2 se rompio" → "Rotura de faja de transmision - requiere inspeccion y reemplazo"
+   - Usuario dice "el motor suena raro" → "Ruido anormal en motor electrico - posible falla en rodamientos"
+   - Usuario dice "se salio la cadena del TH3" → "Descarrilamiento de cadena de transmision - verificar tension y estado de sprockets"
+   - Usuario dice "el reductor bota aceite" → "Fuga de aceite en caja reductora - revisar retenes y nivel de aceite"
+
+2. **failure_mode**: Clasifica el modo de falla usando terminologia estandar:
+   - Rotura | Desgaste | Fuga | Desalineacion | Desbalanceo | Sobrecalentamiento | Ruido anormal | Vibracion excesiva | Aflojamiento | Corrosion | Atascamiento | Descarrilamiento | Cortocircuito | Sobrecarga | Deformacion | Fatiga
+
+3. **failure_category**: Clasifica el tipo de falla:
+   - Mecanica | Electrica | Hidraulica | Neumatica | Instrumentacion | Lubricacion | Estructural
+
+4. **criticality**: Deduce la criticidad segun el impacto:
+   - Alta: parada de linea, riesgo de seguridad, dano mayor
+   - Media: degradacion de rendimiento, falla parcial
+   - Baja: estetico, menor, no afecta produccion
+
+5. **equipment_tag** / **equipment_name** / **component_name**: Identifica del arbol de equipos del CMMS.
+   Busca coincidencias con los datos proporcionados. Si el usuario dice "digestor 2" busca "DIGESTOR #2" con tag "D2".
+   Si dice "TH3" busca el equipo con tag "TH3". Si menciona "faja", "cadena", "motor", "reductor", busca el componente mas cercano.
+
+Formato JSON de respuesta:
+{"action": "create_notice", "data": {"description": "...", "failure_mode": "Rotura|Desgaste|...", "failure_category": "Mecanica|Electrica|...", "equipment_tag": "D2", "equipment_name": "DIGESTOR #2", "component_name": "FAJA", "criticality": "Alta|Media|Baja", "priority": "Alta|Normal|Baja", "maintenance_type": "Correctivo"}}
+
+Solo incluye los campos que puedas deducir. Si no sabes el equipo, PREGUNTA antes de generar el JSON.
+NO confirmes que creaste nada. Solo devuelve el JSON.
 Si es una consulta normal (no una accion), responde normalmente con texto."""
 
     system_prompt = f"""Eres el asistente de mantenimiento del CMMS Pro, un sistema de gestion de mantenimiento industrial.
@@ -449,12 +482,16 @@ Solo escribe tu pregunta en lenguaje natural.""")
                     equip_info = data.get('equipment_tag') or data.get('equipment_name') or '-'
                     comp_info = data.get('component_name') or ''
                     desc = data.get('description', '-')
+                    fm = data.get('failure_mode', '')
+                    fc = data.get('failure_category', '')
 
                     _send_message(chat_id, f"""✅ *Aviso creado: {code}*
 
 📋 {desc}
 ⚙️ Equipo: {equip_info}
 🔧 Componente: {comp_info}
+⚠️ Modo de falla: {fm or '-'}
+🏷️ Tipo: {fc or '-'}
 🔴 Criticidad: {data.get('criticality', 'Media')}
 📅 Fecha: {date.today().isoformat()}
 
