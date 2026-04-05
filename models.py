@@ -231,6 +231,30 @@ class DocumentLink(db.Model):
         return {"id": self.id, "entity_type": self.entity_type, "entity_id": self.entity_id, "title": self.title, "url": self.url, "doc_type": self.doc_type, "created_at": self.created_at.isoformat() if self.created_at else None}
 
 
+# ── Failure Catalog (Catalogo de Fallas) ──────────────────────────────────────
+
+class FailureCatalog(db.Model):
+    __tablename__ = 'failure_catalog'
+    id: Mapped[int] = mapped_column(primary_key=True)
+    failure_mode: Mapped[str] = mapped_column(String(100), nullable=False)
+    failure_category: Mapped[str] = mapped_column(String(50), nullable=False)
+    description: Mapped[str | None] = mapped_column(Text, nullable=True)
+    recommended_action: Mapped[str | None] = mapped_column(Text, nullable=True)
+    is_active: Mapped[bool] = mapped_column(Boolean, default=True)
+    usage_count: Mapped[int] = mapped_column(Integer, default=0)
+
+    def to_dict(self):
+        return {
+            "id": self.id,
+            "failure_mode": self.failure_mode,
+            "failure_category": self.failure_category,
+            "description": self.description,
+            "recommended_action": self.recommended_action,
+            "is_active": self.is_active,
+            "usage_count": self.usage_count,
+        }
+
+
 class Provider(db.Model):
     __tablename__ = 'providers'
     id: Mapped[int] = mapped_column(primary_key=True)

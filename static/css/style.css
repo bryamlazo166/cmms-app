@@ -575,3 +575,99 @@ ul, #globalTree { list-style-type: none; }
     .toolbar { flex-wrap: wrap; gap: 8px; }
     dialog { width: min(92vw, 960px); max-width: 92vw; }
 }
+
+/* ══════════════════════════════════════════════════════
+   MOBILE — OT EXECUTION PANEL
+══════════════════════════════════════════════════════ */
+@media (max-width: 768px) {
+    /* Execution panel grids stack vertically */
+    #execution-details [style*="grid-template-columns"] {
+        grid-template-columns: 1fr !important;
+    }
+
+    /* Photo gallery - smaller thumbnails on mobile */
+    #exec-photo-gallery div,
+    #exec-notice-photo-gallery div {
+        width: 80px !important;
+        height: 80px !important;
+    }
+
+    /* Upload controls stack */
+    #exec-photo-gallery + div {
+        flex-wrap: wrap !important;
+    }
+
+    /* Log entry form compact */
+    .log-entry-form {
+        grid-template-columns: 1fr !important;
+    }
+
+    /* Execution info labels */
+    #execution-details label {
+        font-size: 0.65rem !important;
+    }
+
+    /* Status badges */
+    .status-badge {
+        font-size: 11px !important;
+        padding: 3px 8px !important;
+    }
+
+    /* Bottom action buttons full width */
+    #btn-start-job, #btn-finish-job {
+        width: 100% !important;
+        padding: 14px !important;
+        font-size: 15px !important;
+    }
+
+    /* Notices form compact */
+    #noticeForm [style*="grid-template-columns: 1fr 1fr"] {
+        grid-template-columns: 1fr !important;
+    }
+
+    /* Dashboard grid */
+    .dashboard-grid {
+        grid-template-columns: 1fr 1fr !important;
+        gap: 8px !important;
+    }
+
+    /* KPI cards compact */
+    .kpi-card {
+        padding: 10px !important;
+    }
+    .kpi-card .kpi-value {
+        font-size: 1.4rem !important;
+    }
+
+    /* Tree view mobile */
+    #globalTree ul ul {
+        padding-left: 12px !important;
+        margin-left: 6px !important;
+    }
+    #globalTree .tree-node {
+        padding: 5px 8px !important;
+        font-size: 0.78rem !important;
+    }
+    #globalTree .node-badge {
+        display: none !important;
+    }
+    #globalTree .node-actions {
+        opacity: 0.6 !important;
+    }
+
+    /* Floating action hint */
+    .fab-hint {
+        position: fixed;
+        bottom: 16px;
+        right: 16px;
+        z-index: 1000;
+        padding: 12px 20px;
+        background: var(--sys-blue, #0A84FF);
+        color: #fff;
+        border-radius: 999px;
+        font-size: 14px;
+        font-weight: 600;
+        box-shadow: 0 4px 20px rgba(10,132,255,0.4);
+        cursor: pointer;
+    }
+}

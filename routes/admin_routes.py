@@ -110,27 +110,27 @@ def register_admin_routes(app, db, logger):
             }
             sorted_tables = sorted(tables, key=lambda t: PRIORITY.get(t, 5))
 
+            def safe_delete(sql):
+                """Execute DELETE with savepoint so failures don't break the transaction."""
+                try:
+                    db.session.execute(text("SAVEPOINT cleanup_sp"))
+                    db.session.execute(text(sql))
+                    db.session.execute(text("RELEASE SAVEPOINT cleanup_sp"))
+                except Exception:
+                    db.session.execute(text("ROLLBACK TO SAVEPOINT cleanup_sp"))
+
             deleted = {}
             for table_name in sorted_tables:
                 count = db.session.execute(text(f"SELECT count(*) FROM {table_name}")).scalar()
                 # Auto-clean dependent tables not in the selected list
                 if table_name == 'work_orders':
-                    for dep in ['work_order_rca', 'work_order_files', 'photo_attachments',
-                                'ot_log_entries', 'ot_materials', 'ot_personnel',
-                                'purchase_requests', 'purchase_request']:
-                        try:
-                            db.session.execute(text(f"DELETE FROM {dep} WHERE work_order_id IN (SELECT id FROM work_orders)"))
-                        except Exception:
-                            pass
-                    try:
-                        db.session.execute(text("DELETE FROM photo_attachments WHERE entity_type = 'work_order'"))
-                    except Exception:
-                        pass
+                    for dep in ['work_order_rca', 'work_order_files', 'ot_log_entries',
+                                'ot_materials', 'ot_personnel', 'purchase_requests',
+                                'ot_bitacora']:
+                        safe_delete(f"DELETE FROM {dep}")
+                    safe_delete("DELETE FROM photo_attachments WHERE entity_type = 'work_order'")
                 if table_name == 'maintenance_notices':
-                    try:
-                        db.session.execute(text("DELETE FROM photo_attachments WHERE entity_type = 'notice'"))
-                    except Exception:
-                        pass
+                    safe_delete("DELETE FROM photo_attachments WHERE entity_type = 'notice'")
                 db.session.execute(text(f"DELETE FROM {table_name}"))
                 deleted[table_name] = count
                 logger.warning(f"Admin cleanup: {table_name} ({count} rows deleted) by {current_user.username}")

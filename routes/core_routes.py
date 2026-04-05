@@ -12,7 +12,8 @@ def register_core_routes(app, db, logger, app_build_tag,
                          InspectionRoute=None, InspectionExecution=None,
                          MonitoringPoint=None, MonitoringReading=None,
                          Notification=None, WarehouseItem=None,
-                         _calculate_lubrication_schedule=None):
+                         _calculate_lubrication_schedule=None,
+                         FailureCatalog=None):
     @app.route('/configuracion')
     def taxonomy_page():
         return render_template('taxonomy.html')
@@ -699,6 +700,119 @@ def register_core_routes(app, db, logger, app_build_tag,
             })
 
         return jsonify({"by_component": data, "by_equipment": eq_data, "months": months})
+
+    # ── Failure Catalog (Catalogo de Fallas) ──────────────────────────────
+
+    @app.route('/api/failure-catalog', methods=['GET'])
+    def get_failure_catalog():
+        """List all active failure catalog entries ordered by usage_count desc."""
+        if FailureCatalog is None:
+            return jsonify({"error": "FailureCatalog not available"}), 501
+        entries = FailureCatalog.query.filter_by(is_active=True).order_by(
+            FailureCatalog.usage_count.desc()
+        ).all()
+        return jsonify([e.to_dict() for e in entries])
+
+    @app.route('/api/failure-catalog', methods=['POST'])
+    def create_failure_catalog():
+        """Create a new failure catalog entry."""
+        if FailureCatalog is None:
+            return jsonify({"error": "FailureCatalog not available"}), 501
+        data = request.get_json(force=True)
+        entry = FailureCatalog(
+            failure_mode=data.get('failure_mode', '').strip(),
+            failure_category=data.get('failure_category', '').strip(),
+            description=data.get('description'),
+            recommended_action=data.get('recommended_action'),
+            is_active=data.get('is_active', True),
+            usage_count=data.get('usage_count', 0),
+        )
+        if not entry.failure_mode or not entry.failure_category:
+            return jsonify({"error": "failure_mode and failure_category are required"}), 400
+        db.session.add(entry)
+        db.session.commit()
+        return jsonify(entry.to_dict()), 201
+
+    @app.route('/api/failure-catalog/<int:entry_id>', methods=['PUT'])
+    def update_failure_catalog(entry_id):
+        """Update an existing failure catalog entry."""
+        if FailureCatalog is None:
+            return jsonify({"error": "FailureCatalog not available"}), 501
+        entry = FailureCatalog.query.get_or_404(entry_id)
+        data = request.get_json(force=True)
+        if 'failure_mode' in data:
+            entry.failure_mode = data['failure_mode'].strip()
+        if 'failure_category' in data:
+            entry.failure_category = data['failure_category'].strip()
+        if 'description' in data:
+            entry.description = data['description']
+        if 'recommended_action' in data:
+            entry.recommended_action = data['recommended_action']
+        if 'is_active' in data:
+            entry.is_active = data['is_active']
+        if 'usage_count' in data:
+            entry.usage_count = data['usage_count']
+        db.session.commit()
+        return jsonify(entry.to_dict())
+
+    @app.route('/api/failure-catalog/<int:entry_id>', methods=['DELETE'])
+    def delete_failure_catalog(entry_id):
+        """Soft-delete a failure catalog entry (set is_active=False)."""
+        if FailureCatalog is None:
+            return jsonify({"error": "FailureCatalog not available"}), 501
+        entry = FailureCatalog.query.get_or_404(entry_id)
+        entry.is_active = False
+        db.session.commit()
+        return jsonify({"ok": True, "id": entry_id})
+
+    @app.route('/api/failure-catalog/increment/<int:entry_id>', methods=['POST'])
+    def increment_failure_catalog(entry_id):
+        """Increment the usage_count for a failure catalog entry."""
+        if FailureCatalog is None:
+            return jsonify({"error": "FailureCatalog not available"}), 501
+        entry = FailureCatalog.query.get_or_404(entry_id)
+        entry.usage_count = (entry.usage_count or 0) + 1
+        db.session.commit()
+        return jsonify(entry.to_dict())
+
+    @app.route('/api/failure-catalog/seed', methods=['POST'])
+    def seed_failure_catalog():
+        """Seed the failure catalog with common failure modes (only if table is empty)."""
+        if FailureCatalog is None:
+            return jsonify({"error": "FailureCatalog not available"}), 501
+        existing = FailureCatalog.query.first()
+        if existing:
+            return jsonify({"message": "Catalog already has entries, seed skipped",
+                            "count": FailureCatalog.query.count()}), 200
+        defaults = [
+            ("Rotura", "Mecanica"),
+            ("Desgaste", "Mecanica"),
+            ("Fuga", "Mecanica"),
+            ("Desalineacion", "Mecanica"),
+            ("Desbalanceo", "Mecanica"),
+            ("Sobrecalentamiento", "Mecanica"),
+            ("Ruido anormal", "Mecanica"),
+            ("Vibracion excesiva", "Mecanica"),
+            ("Aflojamiento", "Mecanica"),
+            ("Corrosion", "Mecanica"),
+            ("Atascamiento", "Mecanica"),
+            ("Descarrilamiento", "Mecanica"),
+            ("Fatiga", "Mecanica"),
+            ("Deformacion", "Mecanica"),
+            ("Cortocircuito", "Electrica"),
+            ("Sobrecarga", "Electrica"),
+            ("Falla de aislamiento", "Electrica"),
+            ("Fuga hidraulica", "Hidraulica"),
+            ("Fuga neumatica", "Neumatica"),
+            ("Falla de sensor", "Instrumentacion"),
+            ("Falta de lubricacion", "Lubricacion"),
+            ("Contaminacion de lubricante", "Lubricacion"),
+            ("Fractura estructural", "Estructural"),
+        ]
+        for mode, category in defaults:
+            db.session.add(FailureCatalog(failure_mode=mode, failure_category=category))
+        db.session.commit()
+        return jsonify({"message": "Catalog seeded", "count": len(defaults)}), 201
 
     # ── KPI Trends + Costs ───────────────────────────────────────────────
 

@@ -1415,4 +1415,141 @@ def register_reports_routes(
             logger.exception("Power BI export error")
             return jsonify({"error": str(e)}), 500
 
+    # ── Power BI JSON Endpoints (real-time) ───────────────────────────────
+
+    @app.route('/api/powerbi/work-orders', methods=['GET'])
+    def powerbi_work_orders():
+        """All work orders with resolved names for Power BI direct query."""
+        from sqlalchemy import text
+        rows = db.session.execute(text("""
+            SELECT w.id, w.code, w.status, w.maintenance_type, w.failure_mode, w.description,
+                   w.scheduled_date, w.real_start_date, w.real_end_date, w.real_duration,
+                   w.estimated_duration, w.tech_count, w.caused_downtime, w.downtime_hours,
+                   w.source_type, w.execution_comments,
+                   a.name as area, l.name as linea, e.name as equipo, e.tag,
+                   s.name as sistema, c.name as componente,
+                   t.name as tecnico, p.name as proveedor, w.notice_id
+            FROM work_orders w
+            LEFT JOIN areas a ON w.area_id = a.id
+            LEFT JOIN lines l ON w.line_id = l.id
+            LEFT JOIN equipments e ON w.equipment_id = e.id
+            LEFT JOIN systems s ON w.system_id = s.id
+            LEFT JOIN components c ON w.component_id = c.id
+            LEFT JOIN technicians t ON CAST(w.technician_id AS INTEGER) = t.id
+            LEFT JOIN providers p ON w.provider_id = p.id
+            ORDER BY w.id
+        """)).fetchall()
+        cols = ['id','code','status','maintenance_type','failure_mode','description',
+                'scheduled_date','real_start_date','real_end_date','real_duration',
+                'estimated_duration','tech_count','caused_downtime','downtime_hours',
+                'source_type','execution_comments',
+                'area','linea','equipo','tag','sistema','componente','tecnico','proveedor','notice_id']
+        db.session.remove()
+        return jsonify([dict(zip(cols, r)) for r in rows])
+
+    @app.route('/api/powerbi/notices', methods=['GET'])
+    def powerbi_notices():
+        """All notices with resolved names."""
+        from sqlalchemy import text
+        rows = db.session.execute(text("""
+            SELECT n.id, n.code, n.status, n.description, n.criticality, n.priority,
+                   n.maintenance_type, n.request_date, n.treatment_date, n.planning_date,
+                   n.reporter_name, n.reporter_type, n.shift, n.ot_number,
+                   a.name as area, l.name as linea, e.name as equipo, e.tag,
+                   s.name as sistema, c.name as componente
+            FROM maintenance_notices n
+            LEFT JOIN areas a ON n.area_id = a.id
+            LEFT JOIN lines l ON n.line_id = l.id
+            LEFT JOIN equipments e ON n.equipment_id = e.id
+            LEFT JOIN systems s ON n.system_id = s.id
+            LEFT JOIN components c ON n.component_id = c.id
+            ORDER BY n.id
+        """)).fetchall()
+        cols = ['id','code','status','description','criticality','priority',
+                'maintenance_type','request_date','treatment_date','planning_date',
+                'reporter_name','reporter_type','shift','ot_number',
+                'area','linea','equipo','tag','sistema','componente']
+        db.session.remove()
+        return jsonify([dict(zip(cols, r)) for r in rows])
+
+    @app.route('/api/powerbi/equipment-tree', methods=['GET'])
+    def powerbi_equipment_tree():
+        """Full equipment hierarchy for Power BI."""
+        from sqlalchemy import text
+        rows = db.session.execute(text("""
+            SELECT a.name as area, l.name as linea, e.name as equipo, e.tag, e.criticality,
+                   s.name as sistema, c.name as componente, c.criticality as comp_criticality
+            FROM components c
+            JOIN systems s ON c.system_id = s.id
+            JOIN equipments e ON s.equipment_id = e.id
+            JOIN lines l ON e.line_id = l.id
+            JOIN areas a ON l.area_id = a.id
+            ORDER BY a.name, l.name, e.name, s.name, c.name
+        """)).fetchall()
+        cols = ['area','linea','equipo','tag','criticality','sistema','componente','comp_criticality']
+        db.session.remove()
+        return jsonify([dict(zip(cols, r)) for r in rows])
+
+    @app.route('/api/powerbi/kpis', methods=['GET'])
+    def powerbi_kpis():
+        """Summary KPIs for Power BI dashboard."""
+        from sqlalchemy import text
+        try:
+            total_ot = db.session.execute(text("SELECT count(*) FROM work_orders")).scalar()
+            open_ot = db.session.execute(text("SELECT count(*) FROM work_orders WHERE status != 'Cerrada'")).scalar()
+            closed_ot = db.session.execute(text("SELECT count(*) FROM work_orders WHERE status = 'Cerrada'")).scalar()
+            corrective = db.session.execute(text("SELECT count(*) FROM work_orders WHERE maintenance_type = 'Correctivo'")).scalar()
+            preventive = db.session.execute(text("SELECT count(*) FROM work_orders WHERE maintenance_type = 'Preventivo'")).scalar()
+            notices_pending = db.session.execute(text("SELECT count(*) FROM maintenance_notices WHERE status = 'Pendiente'")).scalar()
+
+            lub_red = insp_red = mon_red = 0
+            try:
+                lub_red = db.session.execute(text("SELECT count(*) FROM lubrication_points WHERE is_active = true AND semaphore_status = 'ROJO'")).scalar() or 0
+                insp_red = db.session.execute(text("SELECT count(*) FROM inspection_routes WHERE is_active = true AND semaphore_status = 'ROJO'")).scalar() or 0
+                mon_red = db.session.execute(text("SELECT count(*) FROM monitoring_points WHERE is_active = true AND semaphore_status = 'ROJO'")).scalar() or 0
+            except Exception:
+                pass
+
+            total_mt = corrective + preventive
+            db.session.remove()
+            return jsonify({
+                "total_ot": total_ot,
+                "open_ot": open_ot,
+                "closed_ot": closed_ot,
+                "corrective": corrective,
+                "preventive": preventive,
+                "corrective_pct": round(corrective / total_mt * 100, 1) if total_mt > 0 else 0,
+                "preventive_pct": round(preventive / total_mt * 100, 1) if total_mt > 0 else 0,
+                "notices_pending": notices_pending,
+                "lub_overdue": lub_red,
+                "insp_overdue": insp_red,
+                "mon_overdue": mon_red,
+            })
+        except Exception as e:
+            db.session.remove()
+            return jsonify({"error": str(e)}), 500
+
+    @app.route('/api/powerbi/failure-analysis', methods=['GET'])
+    def powerbi_failure_analysis():
+        """Failure recurrence data for Power BI."""
+        from sqlalchemy import text
+        rows = db.session.execute(text("""
+            SELECT c.name as componente, s.name as sistema, e.name as equipo, e.tag,
+                   l.name as linea, a.name as area,
+                   w.failure_mode, w.maintenance_type, w.status,
+                   w.real_start_date, w.real_end_date, w.caused_downtime, w.downtime_hours
+            FROM work_orders w
+            JOIN components c ON w.component_id = c.id
+            JOIN systems s ON c.system_id = s.id
+            JOIN equipments e ON w.equipment_id = e.id
+            JOIN lines l ON e.line_id = l.id
+            JOIN areas a ON l.area_id = a.id
+            WHERE w.maintenance_type = 'Correctivo'
+            ORDER BY w.id DESC
+        """)).fetchall()
+        cols = ['componente','sistema','equipo','tag','linea','area',
+                'failure_mode','maintenance_type','status',
+                'real_start_date','real_end_date','caused_downtime','downtime_hours']
+        db.session.remove()
+        return jsonify([dict(zip(cols, r)) for r in rows])
 

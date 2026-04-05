@@ -19,7 +19,8 @@ from models import (
     PhotoAttachment, OTLogEntry,
     RotativeAsset, RotativeAssetHistory, RotativeAssetSpec, RotativeAssetBOM,
     InspectionRoute, InspectionItem, InspectionExecution, InspectionResult,
-    Activity, Milestone, Notification, RolePermission
+    Activity, Milestone, Notification, RolePermission,
+    FailureCatalog
 )
 from utils.crud_helpers import create_entry, get_entries, update_entry, delete_entry
 from utils.reporting_helpers import (
@@ -363,6 +364,7 @@ register_core_routes(
     Notification=Notification,
     WarehouseItem=WarehouseItem,
     _calculate_lubrication_schedule=_calculate_lubrication_schedule,
+    FailureCatalog=FailureCatalog,
 )
 
 register_master_data_routes(
