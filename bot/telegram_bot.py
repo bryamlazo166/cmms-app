@@ -169,6 +169,84 @@ def _get_cmms_context(app):
             except Exception:
                 pass
 
+            # Equipment specs (key technical data)
+            try:
+                especs = _db.session.execute(text("""
+                    SELECT e.name, e.tag, es.key_name, es.value_text, es.unit
+                    FROM equipment_specs es
+                    JOIN equipments e ON es.equipment_id = e.id
+                    ORDER BY e.name, es.order_index LIMIT 100
+                """)).fetchall()
+                if especs:
+                    ctx.append(f"\n=== SPECS TECNICOS DE EQUIPOS ===")
+                    curr_eq = ''
+                    for s in especs:
+                        eq_label = f"{s[0]} [{s[1]}]"
+                        if eq_label != curr_eq:
+                            curr_eq = eq_label
+                            ctx.append(f"  {eq_label}:")
+                        ctx.append(f"    {s[2]}: {s[3]} {s[4] or ''}")
+            except Exception:
+                pass
+
+            # Component specs
+            try:
+                cspecs = _db.session.execute(text("""
+                    SELECT e.tag, c.name, cs.key_name, cs.value_text, cs.unit
+                    FROM component_specs cs
+                    JOIN components c ON cs.component_id = c.id
+                    JOIN systems s ON c.system_id = s.id
+                    JOIN equipments e ON s.equipment_id = e.id
+                    ORDER BY e.tag, c.name, cs.order_index LIMIT 100
+                """)).fetchall()
+                if cspecs:
+                    ctx.append(f"\n=== SPECS DE COMPONENTES ===")
+                    for s in cspecs:
+                        ctx.append(f"  [{s[0]}] {s[1]}: {s[2]}={s[3]} {s[4] or ''}")
+            except Exception:
+                pass
+
+            # Document links
+            try:
+                docs = _db.session.execute(text("""
+                    SELECT entity_type, entity_id, title, url, doc_type FROM document_links ORDER BY id DESC LIMIT 30
+                """)).fetchall()
+                if docs:
+                    ctx.append(f"\n=== DOCUMENTOS/PLANOS ({len(docs)}) ===")
+                    for d in docs:
+                        ctx.append(f"  [{d[0]} id:{d[1]}] {d[2]} ({d[4] or 'otro'}) — {d[3]}")
+            except Exception:
+                pass
+
+            # OTs per technician (workload)
+            try:
+                workload = _db.session.execute(text("""
+                    SELECT t.name, count(w.id) as cnt,
+                           sum(CASE WHEN w.status = 'En Progreso' THEN 1 ELSE 0 END) as prog,
+                           sum(CASE WHEN w.status IN ('Abierta','Programada') THEN 1 ELSE 0 END) as pend
+                    FROM work_orders w
+                    JOIN technicians t ON CAST(w.technician_id AS INTEGER) = t.id
+                    WHERE w.status != 'Cerrada'
+                    GROUP BY t.name ORDER BY cnt DESC
+                """)).fetchall()
+                if workload:
+                    ctx.append(f"\n=== CARGA DE TRABAJO POR TECNICO ===")
+                    for w in workload:
+                        ctx.append(f"  {w[0]}: {w[1]} OTs ({w[2]} en progreso, {w[3]} pendientes)")
+            except Exception:
+                pass
+
+            # KPI: corrective vs preventive ratio
+            try:
+                corr = _db.session.execute(text("SELECT count(*) FROM work_orders WHERE maintenance_type = 'Correctivo'")).scalar() or 0
+                prev = _db.session.execute(text("SELECT count(*) FROM work_orders WHERE maintenance_type = 'Preventivo'")).scalar() or 0
+                total_mt = corr + prev
+                if total_mt > 0:
+                    ctx.append(f"\n=== KPI MANTENIMIENTO ===")
+                    ctx.append(f"  Correctivo: {corr} ({round(corr/total_mt*100)}%) | Preventivo: {prev} ({round(prev/total_mt*100)}%)")
+            except Exception:
+                pass
+
             _db.session.remove()
         except Exception as e:
             ctx.append(f"Error cargando datos: {e}")
@@ -331,6 +409,26 @@ def _start_ot(app, data):
             return None, str(e)
 
 
+def _reschedule_ot(app, data):
+    with app.app_context():
+        from database import db as _db
+        from sqlalchemy import text
+        try:
+            ot_code = data.get('ot_code', '').upper()
+            new_date = data.get('new_date', '')
+            row = _db.session.execute(text("SELECT id FROM work_orders WHERE code = :c"), {"c": ot_code}).fetchone()
+            if not row:
+                return None, f"OT {ot_code} no encontrada"
+            _db.session.execute(text("UPDATE work_orders SET scheduled_date = :d, status = 'Programada' WHERE code = :c"), {"d": new_date, "c": ot_code})
+            _db.session.commit()
+            _db.session.remove()
+            return ot_code, None
+        except Exception as e:
+            _db.session.rollback()
+            _db.session.remove()
+            return None, str(e)
+
+
 def _upload_telegram_photo(app, file_id, entity_type, entity_id):
     try:
         fi = _tg_api('getFile', file_id=file_id)
@@ -378,6 +476,10 @@ ACCIONES DISPONIBLES — responde SOLO con JSON cuando el usuario quiera ejecuta
 
 4. AGREGAR NOTA A BITACORA:
 {"action": "add_log", "data": {"ot_code": "OT-0034", "comment": "Se cambio faja y se alineo poleas", "entry_type": "NOTA|AVANCE|MATERIAL|PROVEEDOR|INFORME"}}
+
+5. REPROGRAMAR OT (cambiar fecha):
+{"action": "reschedule_ot", "data": {"ot_code": "OT-0034", "new_date": "2026-04-10"}}
+Convierte fechas relativas: "lunes" = proximo lunes, "mañana" = fecha de mañana. Hoy es """ + date.today().isoformat() + """.
 
 REGLAS para interpretar avisos:
 - description: Redacta profesionalmente orientado al modo de falla, NO copies textual al usuario.
@@ -545,6 +647,69 @@ def _check_recurring_alerts(app):
                 pass
 
 
+def _generate_weekly_report(app):
+    """Generate weekly report every Monday."""
+    if not _admin_chats:
+        return
+
+    with app.app_context():
+        from database import db as _db
+        from sqlalchemy import text
+        try:
+            week_ago = (date.today() - timedelta(days=7)).isoformat()
+
+            closed = _db.session.execute(text("SELECT count(*) FROM work_orders WHERE status = 'Cerrada' AND real_end_date >= :d"), {"d": week_ago}).scalar() or 0
+            created = _db.session.execute(text("SELECT count(*) FROM work_orders WHERE code > '' AND id >= (SELECT COALESCE(MAX(id),0) FROM work_orders) - 50")).scalar() or 0
+            open_now = _db.session.execute(text("SELECT count(*) FROM work_orders WHERE status != 'Cerrada'")).scalar() or 0
+            notices_w = _db.session.execute(text("SELECT count(*) FROM maintenance_notices WHERE request_date >= :d"), {"d": week_ago}).scalar() or 0
+
+            corr = _db.session.execute(text("SELECT count(*) FROM work_orders WHERE maintenance_type = 'Correctivo' AND real_end_date >= :d"), {"d": week_ago}).scalar() or 0
+            prev = _db.session.execute(text("SELECT count(*) FROM work_orders WHERE maintenance_type = 'Preventivo' AND real_end_date >= :d"), {"d": week_ago}).scalar() or 0
+
+            # Top equipment with most OTs this week
+            top_eq = _db.session.execute(text("""
+                SELECT e.name, e.tag, count(w.id) FROM work_orders w
+                JOIN equipments e ON w.equipment_id = e.id
+                WHERE w.real_end_date >= :d OR (w.status != 'Cerrada' AND w.scheduled_date >= :d)
+                GROUP BY e.name, e.tag ORDER BY count(w.id) DESC LIMIT 5
+            """), {"d": week_ago}).fetchall()
+
+            _db.session.remove()
+
+            total_w = corr + prev
+            corr_pct = round(corr / total_w * 100) if total_w > 0 else 0
+            prev_pct = round(prev / total_w * 100) if total_w > 0 else 0
+
+            msg = f"""📊 *Reporte Semanal CMMS*
+_{week_ago} al {date.today().isoformat()}_
+
+✅ OTs cerradas: *{closed}*
+📋 Avisos nuevos: *{notices_w}*
+📂 OTs abiertas ahora: *{open_now}*
+
+⚙️ Correctivo: {corr} ({corr_pct}%) | Preventivo: {prev} ({prev_pct}%)"""
+
+            if top_eq:
+                msg += "\n\n🏭 *Equipos con mas actividad:*"
+                for e in top_eq:
+                    msg += f"\n  {e[0]} [{e[1]}] — {e[2]} OTs"
+
+            msg += "\n\n_Escribe 'resumen ejecutivo' para mas detalle._"
+
+            for cid in _admin_chats:
+                try:
+                    _send(cid, msg)
+                except Exception:
+                    pass
+
+        except Exception as e:
+            logger.error(f"Weekly report error: {e}")
+            try:
+                _db.session.remove()
+            except Exception:
+                pass
+
+
 # ── Message Processing ───────────────────────────────────────────────────────
 
 _pending_photos = {}
@@ -555,7 +720,8 @@ ACTION_KEYWORDS = ['reportar', 'crear aviso', 'falla', 'fallo', 'se rompio', 'ro
                    'cerrar ot', 'cierra ot', 'cerrar la ot', 'cierra la ot',
                    'iniciar ot', 'inicia ot', 'iniciar la ot', 'empezar ot',
                    'agregar nota', 'agregar bitacora', 'anotar en', 'registrar en ot',
-                   'nota a la ot', 'bitacora ot']
+                   'nota a la ot', 'bitacora ot',
+                   'reprogramar', 'mover ot', 'cambiar fecha', 'postergar', 'adelantar']
 
 
 def _extract_json(text):
@@ -726,6 +892,14 @@ def _process_message(app, chat_id, text, photos=None):
                     _send(chat_id, f"❌ {err}")
                 return
 
+            elif action == 'reschedule_ot':
+                code, err = _reschedule_ot(app, data)
+                if code:
+                    _send(chat_id, f"📅 *{code}* reprogramada para *{data.get('new_date', '-')}*")
+                else:
+                    _send(chat_id, f"❌ {err}")
+                return
+
     _send(chat_id, answer)
 
 
@@ -762,9 +936,10 @@ def start_telegram_bot(app):
             time.sleep(POLL_INTERVAL)
 
     def daily_alerts():
-        """Run daily summary at 7:00 AM (local time)."""
+        """Run daily summary at 7:00 AM, weekly report on Mondays."""
         logger.info("Daily alerts thread started.")
         last_sent = None
+        last_weekly = None
         while True:
             now = datetime.now()
             today_key = now.strftime('%Y-%m-%d')
@@ -772,6 +947,10 @@ def start_telegram_bot(app):
                 try:
                     _generate_daily_summary(app)
                     _check_recurring_alerts(app)
+                    # Weekly report on Mondays
+                    if now.weekday() == 0 and last_weekly != today_key:
+                        _generate_weekly_report(app)
+                        last_weekly = today_key
                     last_sent = today_key
                     logger.info("Daily summary sent.")
                 except Exception as e:
