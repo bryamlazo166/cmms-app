@@ -14,7 +14,11 @@ DEEPSEEK_API_KEY = os.getenv('DEEPSEEK_API_KEY')
 DEEPSEEK_URL = 'https://api.deepseek.com/chat/completions'
 POLL_INTERVAL = 2
 
-# Store admin chat_ids that have interacted with the bot
+# Authorized chat_ids — only these can use the bot
+OWNER_CHAT_ID = 1853592586
+_allowed_chats = {OWNER_CHAT_ID}
+
+# Store admin chat_ids for daily alerts
 _admin_chats = set()
 
 
@@ -579,7 +583,42 @@ def _extract_json(text):
 def _process_message(app, chat_id, text, photos=None):
     text = (text or '').strip()
 
-    # Track admin chats
+    # Authorization check
+    if chat_id not in _allowed_chats:
+        _send(chat_id, "🔒 No autorizado. Contacta al administrador del CMMS.")
+        logger.warning(f"Unauthorized access attempt from chat_id: {chat_id}")
+        return
+
+    # Owner commands
+    if chat_id == OWNER_CHAT_ID and text.lower().startswith('/autorizar'):
+        parts = text.split()
+        if len(parts) == 2 and parts[1].lstrip('-').isdigit():
+            new_id = int(parts[1])
+            _allowed_chats.add(new_id)
+            _send(chat_id, f"✅ Chat ID *{new_id}* autorizado.")
+        else:
+            _send(chat_id, "Uso: `/autorizar <chat_id>`")
+        return
+
+    if chat_id == OWNER_CHAT_ID and text.lower().startswith('/revocar'):
+        parts = text.split()
+        if len(parts) == 2 and parts[1].lstrip('-').isdigit():
+            rev_id = int(parts[1])
+            if rev_id == OWNER_CHAT_ID:
+                _send(chat_id, "❌ No puedes revocarte a ti mismo.")
+            else:
+                _allowed_chats.discard(rev_id)
+                _send(chat_id, f"🚫 Chat ID *{rev_id}* revocado.")
+        else:
+            _send(chat_id, "Uso: `/revocar <chat_id>`")
+        return
+
+    if chat_id == OWNER_CHAT_ID and text.lower() == '/usuarios':
+        users = '\n'.join(f"  `{cid}`" + (' (tu)' if cid == OWNER_CHAT_ID else '') for cid in _allowed_chats)
+        _send(chat_id, f"👥 *Usuarios autorizados:*\n{users}")
+        return
+
+    # Track for daily alerts
     _admin_chats.add(chat_id)
 
     # Handle photos
