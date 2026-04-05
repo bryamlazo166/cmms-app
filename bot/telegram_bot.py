@@ -1,11 +1,11 @@
-"""Telegram Bot for CMMS — queries and creates maintenance data via DeepSeek AI."""
+"""Telegram Bot for CMMS — full data access, actions, alerts via DeepSeek AI."""
 import os
 import json
 import logging
 import threading
 import time
 import requests
-from datetime import datetime, date
+from datetime import datetime, date, timedelta
 
 logger = logging.getLogger(__name__)
 
@@ -14,87 +14,84 @@ DEEPSEEK_API_KEY = os.getenv('DEEPSEEK_API_KEY')
 DEEPSEEK_URL = 'https://api.deepseek.com/chat/completions'
 POLL_INTERVAL = 2
 
+# Store admin chat_ids that have interacted with the bot
+_admin_chats = set()
+
 
 def _tg_api(method, **kwargs):
-    """Call Telegram Bot API."""
     url = f'https://api.telegram.org/bot{TELEGRAM_TOKEN}/{method}'
     r = requests.post(url, json=kwargs, timeout=30)
     return r.json()
 
 
-def _send_message(chat_id, text):
-    """Send a message to a Telegram chat (chunked if too long)."""
+def _send(chat_id, text):
     for i in range(0, len(text), 4000):
         _tg_api('sendMessage', chat_id=chat_id, text=text[i:i+4000], parse_mode='Markdown')
 
 
-def _get_cmms_context(app):
-    """Build comprehensive context string with all CMMS data (except costs)."""
-    ctx = []
+# ── Data Context ─────────────────────────────────────────────────────────────
 
+def _get_cmms_context(app):
+    ctx = []
     with app.app_context():
         from database import db as _db
         from sqlalchemy import text
         try:
-            # ── Summary counts ──
+            # Summary
             wo_total = _db.session.execute(text("SELECT count(*) FROM work_orders")).scalar()
             wo_open = _db.session.execute(text("SELECT count(*) FROM work_orders WHERE status != 'Cerrada'")).scalar()
             wo_closed = _db.session.execute(text("SELECT count(*) FROM work_orders WHERE status = 'Cerrada'")).scalar()
             wo_progress = _db.session.execute(text("SELECT count(*) FROM work_orders WHERE status = 'En Progreso'")).scalar()
-            wo_programmed = _db.session.execute(text("SELECT count(*) FROM work_orders WHERE status = 'Programada'")).scalar()
+            wo_prog = _db.session.execute(text("SELECT count(*) FROM work_orders WHERE status = 'Programada'")).scalar()
             n_total = _db.session.execute(text("SELECT count(*) FROM maintenance_notices")).scalar()
             n_pending = _db.session.execute(text("SELECT count(*) FROM maintenance_notices WHERE status = 'Pendiente'")).scalar()
 
             ctx.append("=== RESUMEN CMMS ===")
-            ctx.append(f"OTs totales: {wo_total} | Abiertas: {wo_open} | En Progreso: {wo_progress} | Programadas: {wo_programmed} | Cerradas: {wo_closed}")
+            ctx.append(f"OTs totales: {wo_total} | Abiertas: {wo_open} | En Progreso: {wo_progress} | Programadas: {wo_prog} | Cerradas: {wo_closed}")
             ctx.append(f"Avisos totales: {n_total} | Pendientes: {n_pending}")
 
-            # ── Areas and Lines ──
+            # Areas + Lines
             areas = _db.session.execute(text("SELECT id, name FROM areas ORDER BY name")).fetchall()
             lines = _db.session.execute(text("SELECT id, name, area_id FROM lines ORDER BY name")).fetchall()
             ctx.append(f"\n=== AREAS ({len(areas)}) ===")
             for a in areas:
-                area_lines = [l for l in lines if l[2] == a[0]]
-                line_names = ', '.join(l[1] for l in area_lines)
-                ctx.append(f"  {a[1]} (id:{a[0]}) — Lineas: {line_names or 'ninguna'}")
+                al = ', '.join(l[1] for l in lines if l[2] == a[0])
+                ctx.append(f"  {a[1]} (id:{a[0]}) — Lineas: {al or 'ninguna'}")
 
-            # ── Equipment (all) ──
+            # Equipment
             equips = _db.session.execute(text("""
-                SELECT e.id, e.name, e.tag, e.criticality, l.name as line_name
-                FROM equipments e LEFT JOIN lines l ON e.line_id = l.id
-                ORDER BY l.name, e.name
+                SELECT e.id, e.name, e.tag, e.criticality, l.name FROM equipments e
+                LEFT JOIN lines l ON e.line_id = l.id ORDER BY l.name, e.name
             """)).fetchall()
             ctx.append(f"\n=== EQUIPOS ({len(equips)}) ===")
             for e in equips:
-                ctx.append(f"  {e[1]} [{e[2]}] | Criticidad: {e[3] or '-'} | Linea: {e[4] or '-'} | id:{e[0]}")
+                ctx.append(f"  {e[1]} [{e[2]}] | Crit: {e[3] or '-'} | Linea: {e[4] or '-'} | id:{e[0]}")
 
-            # ── All Work Orders (last 50) ──
-            all_ots = _db.session.execute(text("""
+            # Work Orders (last 50)
+            ots = _db.session.execute(text("""
                 SELECT w.id, w.code, w.maintenance_type, w.status, w.description,
                        w.scheduled_date, w.failure_mode, w.real_start_date, w.real_end_date,
-                       e.name as eq_name, e.tag as eq_tag,
-                       c.name as comp_name, s.name as sys_name, l.name as line_name,
-                       w.notice_id, w.created_at
+                       e.name, e.tag, c.name, s.name, l.name, w.notice_id,
+                       t.name as tech_name, w.technician_id
                 FROM work_orders w
                 LEFT JOIN equipments e ON w.equipment_id = e.id
                 LEFT JOIN components c ON w.component_id = c.id
                 LEFT JOIN systems s ON w.system_id = s.id
                 LEFT JOIN lines l ON w.line_id = l.id
+                LEFT JOIN technicians t ON CAST(w.technician_id AS INTEGER) = t.id
                 ORDER BY w.id DESC LIMIT 50
             """)).fetchall()
-            ctx.append(f"\n=== ULTIMAS {len(all_ots)} OTs ===")
-            for ot in all_ots:
-                eq = f"{ot[10] or ''} {ot[9] or '-'}".strip()
-                comp = ot[11] or ''
-                sys = ot[12] or ''
-                ctx.append(f"  {ot[1]} | {ot[2] or '-'} | {ot[3]} | {eq} | {sys}/{comp} | {ot[4] or '-'} | Falla: {ot[6] or '-'} | Prog: {ot[5] or '-'}")
+            ctx.append(f"\n=== ULTIMAS {len(ots)} OTs ===")
+            for o in ots:
+                eq = f"{o[10] or ''} {o[9] or '-'}".strip()
+                tech = o[15] or '-'
+                ctx.append(f"  {o[1]} | {o[2] or '-'} | {o[3]} | {eq} | {o[12] or ''}/{o[11] or ''} | {o[4] or '-'} | Falla: {o[6] or '-'} | Tec: {tech} | Prog: {o[5] or '-'} | id:{o[0]}")
 
-            # ── Notices (last 30) ──
+            # Notices (last 30)
             notices = _db.session.execute(text("""
                 SELECT n.id, n.code, n.status, n.description, n.criticality, n.priority,
                        n.request_date, n.maintenance_type, n.reporter_name,
-                       e.name as eq_name, e.tag as eq_tag, l.name as line_name,
-                       c.name as comp_name
+                       e.name, e.tag, l.name, c.name
                 FROM maintenance_notices n
                 LEFT JOIN equipments e ON n.equipment_id = e.id
                 LEFT JOIN lines l ON n.line_id = l.id
@@ -104,60 +101,54 @@ def _get_cmms_context(app):
             ctx.append(f"\n=== ULTIMOS {len(notices)} AVISOS ===")
             for n in notices:
                 eq = f"{n[10] or ''} {n[9] or '-'}".strip()
-                ctx.append(f"  {n[1]} | {n[2]} | {eq} | {n[12] or '-'} | {n[3] or '-'} | Crit: {n[4] or '-'} | Prio: {n[5] or '-'} | Fecha: {n[6] or '-'}")
+                ctx.append(f"  {n[1]} | {n[2]} | {eq} | {n[12] or '-'} | {n[3] or '-'} | Crit: {n[4] or '-'} | id:{n[0]}")
 
-            # ── Rotative Assets ──
+            # Rotative Assets
             assets = _db.session.execute(text("""
                 SELECT ra.code, ra.name, ra.category, ra.brand, ra.model, ra.status,
-                       e.name as eq_name, c.name as comp_name
-                FROM rotative_assets ra
+                       e.name, c.name FROM rotative_assets ra
                 LEFT JOIN equipments e ON ra.equipment_id = e.id
                 LEFT JOIN components c ON ra.component_id = c.id
-                WHERE ra.is_active = true
-                ORDER BY ra.code LIMIT 50
+                WHERE ra.is_active = true ORDER BY ra.code LIMIT 50
             """)).fetchall()
             if assets:
                 ctx.append(f"\n=== ACTIVOS ROTATIVOS ({len(assets)}) ===")
                 for a in assets:
-                    ctx.append(f"  {a[0]} {a[1]} | {a[2] or '-'} | {a[3] or ''} {a[4] or ''} | Estado: {a[5]} | En: {a[6] or '-'}/{a[7] or '-'}")
+                    ctx.append(f"  {a[0]} {a[1]} | {a[2] or '-'} | {a[3] or ''} {a[4] or ''} | {a[5]} | En: {a[6] or '-'}/{a[7] or '-'}")
 
-            # ── Overdue preventive points ──
+            # Overdue points
             try:
-                lub_r = _db.session.execute(text("SELECT count(*) FROM lubrication_points WHERE is_active = true AND semaphore_status = 'ROJO'")).scalar()
-                insp_r = _db.session.execute(text("SELECT count(*) FROM inspection_routes WHERE is_active = true AND semaphore_status = 'ROJO'")).scalar()
-                mon_r = _db.session.execute(text("SELECT count(*) FROM monitoring_points WHERE is_active = true AND semaphore_status = 'ROJO'")).scalar()
-                ctx.append(f"\n=== PUNTOS PREVENTIVOS VENCIDOS (ROJO) ===")
-                ctx.append(f"  Lubricacion: {lub_r or 0} | Inspeccion: {insp_r or 0} | Monitoreo: {mon_r or 0}")
+                lub = _db.session.execute(text("SELECT count(*) FROM lubrication_points WHERE is_active = true AND semaphore_status = 'ROJO'")).scalar() or 0
+                insp = _db.session.execute(text("SELECT count(*) FROM inspection_routes WHERE is_active = true AND semaphore_status = 'ROJO'")).scalar() or 0
+                mon = _db.session.execute(text("SELECT count(*) FROM monitoring_points WHERE is_active = true AND semaphore_status = 'ROJO'")).scalar() or 0
+                ctx.append(f"\n=== PUNTOS VENCIDOS (ROJO) === Lub: {lub} | Insp: {insp} | Mon: {mon}")
             except Exception:
                 pass
 
-            # ── Technicians ──
+            # Technicians
             techs = _db.session.execute(text("SELECT id, name, specialty FROM technicians WHERE is_active = true ORDER BY name")).fetchall()
             if techs:
                 ctx.append(f"\n=== TECNICOS ({len(techs)}) ===")
                 for t in techs:
                     ctx.append(f"  {t[1]} | {t[2] or '-'} | id:{t[0]}")
 
-            # ── Warehouse items (low stock) ──
+            # Warehouse low stock
             try:
-                low_stock = _db.session.execute(text("""
-                    SELECT code, name, current_stock, min_stock, unit
-                    FROM warehouse_items
-                    WHERE is_active = true AND current_stock <= min_stock
-                    ORDER BY name LIMIT 20
+                low = _db.session.execute(text("""
+                    SELECT code, name, current_stock, min_stock, unit FROM warehouse_items
+                    WHERE is_active = true AND current_stock <= min_stock ORDER BY name LIMIT 20
                 """)).fetchall()
-                if low_stock:
-                    ctx.append(f"\n=== ALMACEN — STOCK BAJO ({len(low_stock)} items) ===")
-                    for w in low_stock:
+                if low:
+                    ctx.append(f"\n=== STOCK BAJO ({len(low)}) ===")
+                    for w in low:
                         ctx.append(f"  {w[0]} {w[1]} | Stock: {w[2]} {w[4] or ''} | Min: {w[3]}")
             except Exception:
                 pass
 
-            # ── Failure recurrence (top 10 components with most corrective OTs) ──
+            # Failure recurrence
             try:
-                recurrence = _db.session.execute(text("""
-                    SELECT c.name as comp, s.name as sys, e.name as equip, e.tag, l.name as linea,
-                           count(w.id) as cnt
+                rec = _db.session.execute(text("""
+                    SELECT c.name, s.name, e.name, e.tag, l.name, count(w.id)
                     FROM work_orders w
                     JOIN components c ON w.component_id = c.id
                     JOIN systems s ON c.system_id = s.id
@@ -165,11 +156,11 @@ def _get_cmms_context(app):
                     JOIN lines l ON e.line_id = l.id
                     WHERE w.maintenance_type = 'Correctivo'
                     GROUP BY c.name, s.name, e.name, e.tag, l.name
-                    ORDER BY cnt DESC LIMIT 10
+                    ORDER BY count(w.id) DESC LIMIT 10
                 """)).fetchall()
-                if recurrence:
-                    ctx.append(f"\n=== TOP FALLAS RECURRENTES (Correctivos) ===")
-                    for r in recurrence:
+                if rec:
+                    ctx.append(f"\n=== TOP FALLAS RECURRENTES ===")
+                    for r in rec:
                         ctx.append(f"  {r[0]} ({r[1]}) en {r[2]} [{r[3]}] {r[4]} — {r[5]} OTs")
             except Exception:
                 pass
@@ -185,127 +176,174 @@ def _get_cmms_context(app):
     return '\n'.join(ctx)
 
 
-# ── Actions: Create notices and work orders ──────────────────────────────────
+# ── Actions ──────────────────────────────────────────────────────────────────
+
+def _resolve_equipment(db, text_module, data):
+    """Resolve equipment/component IDs from tag or name."""
+    equipment_id = line_id = area_id = system_id = component_id = None
+
+    if data.get('equipment_tag'):
+        row = db.session.execute(text_module("SELECT id, line_id FROM equipments WHERE tag = :t"), {"t": data['equipment_tag']}).fetchone()
+        if row:
+            equipment_id, line_id = row[0], row[1]
+    elif data.get('equipment_name'):
+        row = db.session.execute(text_module("SELECT id, line_id FROM equipments WHERE LOWER(name) LIKE :n LIMIT 1"), {"n": f"%{data['equipment_name'].lower()}%"}).fetchone()
+        if row:
+            equipment_id, line_id = row[0], row[1]
+
+    if line_id:
+        r = db.session.execute(text_module("SELECT area_id FROM lines WHERE id = :id"), {"id": line_id}).fetchone()
+        if r:
+            area_id = r[0]
+
+    if equipment_id and data.get('component_name'):
+        r = db.session.execute(text_module("""
+            SELECT c.id, c.system_id FROM components c
+            JOIN systems s ON c.system_id = s.id
+            WHERE s.equipment_id = :eid AND LOWER(c.name) LIKE :n LIMIT 1
+        """), {"eid": equipment_id, "n": f"%{data['component_name'].lower()}%"}).fetchone()
+        if r:
+            component_id, system_id = r[0], r[1]
+
+    return equipment_id, line_id, area_id, system_id, component_id
+
 
 def _create_notice(app, data):
-    """Create a maintenance notice from bot data. Returns (notice_code, error)."""
     with app.app_context():
         from database import db as _db
         from sqlalchemy import text
         try:
-            # Get next code
             max_id = _db.session.execute(text("SELECT COALESCE(MAX(id), 0) FROM maintenance_notices")).scalar()
-            next_code = f"AV-{str(max_id + 1).zfill(4)}"
+            code = f"AV-{str(max_id + 1).zfill(4)}"
 
-            # Resolve equipment by tag or name
-            equipment_id = None
-            line_id = None
-            area_id = None
-            system_id = None
-            component_id = None
+            eq_id, ln_id, ar_id, sys_id, comp_id = _resolve_equipment(_db, text, data)
 
-            if data.get('equipment_tag'):
-                row = _db.session.execute(text("SELECT id, line_id FROM equipments WHERE tag = :t"), {"t": data['equipment_tag']}).fetchone()
-                if row:
-                    equipment_id = row[0]
-                    line_id = row[1]
-                    line_row = _db.session.execute(text("SELECT area_id FROM lines WHERE id = :id"), {"id": line_id}).fetchone()
-                    if line_row:
-                        area_id = line_row[0]
-            elif data.get('equipment_name'):
-                row = _db.session.execute(text("SELECT id, line_id FROM equipments WHERE LOWER(name) LIKE :n LIMIT 1"), {"n": f"%{data['equipment_name'].lower()}%"}).fetchone()
-                if row:
-                    equipment_id = row[0]
-                    line_id = row[1]
-                    line_row = _db.session.execute(text("SELECT area_id FROM lines WHERE id = :id"), {"id": line_id}).fetchone()
-                    if line_row:
-                        area_id = line_row[0]
-
-            if equipment_id and data.get('component_name'):
-                comp_row = _db.session.execute(text("""
-                    SELECT c.id, c.system_id FROM components c
-                    JOIN systems s ON c.system_id = s.id
-                    WHERE s.equipment_id = :eid AND LOWER(c.name) LIKE :n LIMIT 1
-                """), {"eid": equipment_id, "n": f"%{data['component_name'].lower()}%"}).fetchone()
-                if comp_row:
-                    component_id = comp_row[0]
-                    system_id = comp_row[1]
-
-            # Build enriched description with failure info
             desc_parts = [data.get('description', 'Reporte desde Telegram')]
             if data.get('failure_mode'):
                 desc_parts.append(f"[Modo de falla: {data['failure_mode']}]")
             if data.get('failure_category'):
                 desc_parts.append(f"[Tipo: {data['failure_category']}]")
-            full_desc = ' | '.join(desc_parts)
 
             _db.session.execute(text("""
                 INSERT INTO maintenance_notices (code, description, criticality, priority, request_date,
                     maintenance_type, status, reporter_name, reporter_type,
                     area_id, line_id, equipment_id, system_id, component_id, shift)
-                VALUES (:code, :desc, :crit, :prio, :rdate, :mtype, 'Pendiente', :reporter, :rtype,
-                    :area_id, :line_id, :eq_id, :sys_id, :comp_id, :shift)
+                VALUES (:code, :desc, :crit, :prio, :rdate, :mtype, 'Pendiente', :reporter, 'telegram',
+                    :ar, :ln, :eq, :sys, :comp, :shift)
             """), {
-                "code": next_code,
-                "desc": full_desc,
-                "crit": data.get('criticality', 'Media'),
-                "prio": data.get('priority', 'Normal'),
-                "rdate": date.today().isoformat(),
-                "mtype": data.get('maintenance_type', 'Correctivo'),
+                "code": code, "desc": ' | '.join(desc_parts),
+                "crit": data.get('criticality', 'Media'), "prio": data.get('priority', 'Normal'),
+                "rdate": date.today().isoformat(), "mtype": data.get('maintenance_type', 'Correctivo'),
                 "reporter": data.get('reporter_name', 'Bot Telegram'),
-                "rtype": "telegram",
-                "area_id": area_id,
-                "line_id": line_id,
-                "eq_id": equipment_id,
-                "sys_id": system_id,
-                "comp_id": component_id,
+                "ar": ar_id, "ln": ln_id, "eq": eq_id, "sys": sys_id, "comp": comp_id,
                 "shift": data.get('shift'),
             })
             _db.session.commit()
-
-            # Get the created notice id
-            notice_id = _db.session.execute(text("SELECT id FROM maintenance_notices WHERE code = :c"), {"c": next_code}).scalar()
+            nid = _db.session.execute(text("SELECT id FROM maintenance_notices WHERE code = :c"), {"c": code}).scalar()
             _db.session.remove()
-            return next_code, notice_id, None
+            return code, nid, None
         except Exception as e:
             _db.session.rollback()
             _db.session.remove()
             return None, None, str(e)
 
 
+def _close_ot(app, data):
+    with app.app_context():
+        from database import db as _db
+        from sqlalchemy import text
+        try:
+            ot_code = data.get('ot_code', '').upper()
+            row = _db.session.execute(text("SELECT id, status, notice_id FROM work_orders WHERE code = :c"), {"c": ot_code}).fetchone()
+            if not row:
+                return None, f"OT {ot_code} no encontrada"
+            if row[1] == 'Cerrada':
+                return None, f"OT {ot_code} ya esta cerrada"
+
+            now = datetime.utcnow().isoformat()[:19]
+            comments = data.get('comments', 'Cerrada desde Telegram')
+            _db.session.execute(text("""
+                UPDATE work_orders SET status = 'Cerrada', real_end_date = :now, execution_comments = :c WHERE code = :code
+            """), {"now": now, "c": comments, "code": ot_code})
+
+            # Close linked notice
+            if row[2]:
+                _db.session.execute(text("UPDATE maintenance_notices SET status = 'Cerrado' WHERE id = :id"), {"id": row[2]})
+
+            _db.session.commit()
+            _db.session.remove()
+            return ot_code, None
+        except Exception as e:
+            _db.session.rollback()
+            _db.session.remove()
+            return None, str(e)
+
+
+def _add_log_entry(app, data):
+    with app.app_context():
+        from database import db as _db
+        from sqlalchemy import text
+        try:
+            ot_code = data.get('ot_code', '').upper()
+            row = _db.session.execute(text("SELECT id FROM work_orders WHERE code = :c"), {"c": ot_code}).fetchone()
+            if not row:
+                return None, f"OT {ot_code} no encontrada"
+            ot_id = row[0]
+            _db.session.execute(text("""
+                INSERT INTO ot_bitacora (work_order_id, entry_date, comment, entry_type, created_at)
+                VALUES (:wid, :d, :c, :t, NOW())
+            """), {
+                "wid": ot_id, "d": date.today().isoformat(),
+                "c": data.get('comment', ''), "t": data.get('entry_type', 'NOTA'),
+            })
+            _db.session.commit()
+            _db.session.remove()
+            return ot_code, None
+        except Exception as e:
+            _db.session.rollback()
+            _db.session.remove()
+            return None, str(e)
+
+
+def _start_ot(app, data):
+    with app.app_context():
+        from database import db as _db
+        from sqlalchemy import text
+        try:
+            ot_code = data.get('ot_code', '').upper()
+            row = _db.session.execute(text("SELECT id, notice_id FROM work_orders WHERE code = :c"), {"c": ot_code}).fetchone()
+            if not row:
+                return None, f"OT {ot_code} no encontrada"
+            now = datetime.utcnow().isoformat()[:19]
+            _db.session.execute(text("UPDATE work_orders SET status = 'En Progreso', real_start_date = :now WHERE code = :c"), {"now": now, "c": ot_code})
+            if row[1]:
+                _db.session.execute(text("UPDATE maintenance_notices SET status = 'En Progreso', treatment_date = :d WHERE id = :id"), {"d": date.today().isoformat(), "id": row[1]})
+            _db.session.commit()
+            _db.session.remove()
+            return ot_code, None
+        except Exception as e:
+            _db.session.rollback()
+            _db.session.remove()
+            return None, str(e)
+
+
 def _upload_telegram_photo(app, file_id, entity_type, entity_id):
-    """Download photo from Telegram and upload to Supabase Storage."""
     try:
-        # Get file path from Telegram
-        file_info = _tg_api('getFile', file_id=file_id)
-        if not file_info.get('ok'):
+        fi = _tg_api('getFile', file_id=file_id)
+        if not fi.get('ok'):
             return None
-        file_path = file_info['result']['file_path']
-        download_url = f'https://api.telegram.org/file/bot{TELEGRAM_TOKEN}/{file_path}'
-
-        # Download the photo
-        photo_data = requests.get(download_url, timeout=30).content
-
-        # Compress and upload
+        fp = fi['result']['file_path']
+        photo_data = requests.get(f'https://api.telegram.org/file/bot{TELEGRAM_TOKEN}/{fp}', timeout=30).content
         from utils.photo_helpers import compress_photo, upload_to_supabase_storage
-        compressed, dimensions = compress_photo(photo_data)
+        compressed, _ = compress_photo(photo_data)
         url = upload_to_supabase_storage(compressed, f"telegram_{file_id}.jpg")
-
-        # Save to DB
         with app.app_context():
             from database import db as _db
             from sqlalchemy import text
             _db.session.execute(text("""
                 INSERT INTO photo_attachments (entity_type, entity_id, url, caption, original_size_kb, compressed_size_kb, created_at)
-                VALUES (:etype, :eid, :url, :caption, :orig, :comp, NOW())
-            """), {
-                "etype": entity_type,
-                "eid": entity_id,
-                "url": url,
-                "caption": "Foto desde Telegram",
-                "orig": len(photo_data) // 1024,
-                "comp": len(compressed) // 1024,
-            })
+                VALUES (:et, :eid, :url, 'Foto desde Telegram', :orig, :comp, NOW())
+            """), {"et": entity_type, "eid": entity_id, "url": url, "orig": len(photo_data)//1024, "comp": len(compressed)//1024})
             _db.session.commit()
             _db.session.remove()
         return url
@@ -314,90 +352,235 @@ def _upload_telegram_photo(app, file_id, entity_type, entity_id):
         return None
 
 
+# ── DeepSeek AI ──────────────────────────────────────────────────────────────
+
 def _ask_deepseek(question, cmms_context, is_action=False):
-    """Send question + CMMS context to DeepSeek and get response."""
-    headers = {
-        'Authorization': f'Bearer {DEEPSEEK_API_KEY}',
-        'Content-Type': 'application/json',
-    }
+    headers = {'Authorization': f'Bearer {DEEPSEEK_API_KEY}', 'Content-Type': 'application/json'}
 
     action_instructions = ""
     if is_action:
         action_instructions = """
 
-IMPORTANTE SOBRE ACCIONES — CREACION DE AVISOS:
-Cuando el usuario quiera reportar una falla o crear un aviso, responde UNICAMENTE con un JSON.
-Tu rol es INTERPRETAR el mensaje del usuario como un profesional de mantenimiento industrial y enriquecer los datos:
+ACCIONES DISPONIBLES — responde SOLO con JSON cuando el usuario quiera ejecutar una accion:
 
-1. **description**: Redacta una descripcion profesional orientada al MODO DE FALLA, no copies textual lo que dijo el usuario.
-   Ejemplos de buenas descripciones:
-   - Usuario dice "la faja del digestor 2 se rompio" → "Rotura de faja de transmision - requiere inspeccion y reemplazo"
-   - Usuario dice "el motor suena raro" → "Ruido anormal en motor electrico - posible falla en rodamientos"
-   - Usuario dice "se salio la cadena del TH3" → "Descarrilamiento de cadena de transmision - verificar tension y estado de sprockets"
-   - Usuario dice "el reductor bota aceite" → "Fuga de aceite en caja reductora - revisar retenes y nivel de aceite"
+1. CREAR AVISO (reportar falla):
+{"action": "create_notice", "data": {"description": "descripcion profesional orientada al modo de falla", "failure_mode": "Rotura|Desgaste|Fuga|Desalineacion|Sobrecalentamiento|Ruido anormal|Vibracion excesiva|Aflojamiento|Corrosion|Atascamiento|Descarrilamiento|Cortocircuito|Sobrecarga|Fatiga", "failure_category": "Mecanica|Electrica|Hidraulica|Neumatica|Instrumentacion|Lubricacion|Estructural", "equipment_tag": "D2", "equipment_name": "DIGESTOR #2", "component_name": "FAJA", "criticality": "Alta|Media|Baja", "priority": "Alta|Normal|Baja", "maintenance_type": "Correctivo"}}
 
-2. **failure_mode**: Clasifica el modo de falla usando terminologia estandar:
-   - Rotura | Desgaste | Fuga | Desalineacion | Desbalanceo | Sobrecalentamiento | Ruido anormal | Vibracion excesiva | Aflojamiento | Corrosion | Atascamiento | Descarrilamiento | Cortocircuito | Sobrecarga | Deformacion | Fatiga
+2. CERRAR OT:
+{"action": "close_ot", "data": {"ot_code": "OT-0034", "comments": "Trabajo completado - se reemplazo faja y se verifico alineacion"}}
 
-3. **failure_category**: Clasifica el tipo de falla:
-   - Mecanica | Electrica | Hidraulica | Neumatica | Instrumentacion | Lubricacion | Estructural
+3. INICIAR OT:
+{"action": "start_ot", "data": {"ot_code": "OT-0034"}}
 
-4. **criticality**: Deduce la criticidad segun el impacto:
-   - Alta: parada de linea, riesgo de seguridad, dano mayor
-   - Media: degradacion de rendimiento, falla parcial
-   - Baja: estetico, menor, no afecta produccion
+4. AGREGAR NOTA A BITACORA:
+{"action": "add_log", "data": {"ot_code": "OT-0034", "comment": "Se cambio faja y se alineo poleas", "entry_type": "NOTA|AVANCE|MATERIAL|PROVEEDOR|INFORME"}}
 
-5. **equipment_tag** / **equipment_name** / **component_name**: Identifica del arbol de equipos del CMMS.
-   Busca coincidencias con los datos proporcionados. Si el usuario dice "digestor 2" busca "DIGESTOR #2" con tag "D2".
-   Si dice "TH3" busca el equipo con tag "TH3". Si menciona "faja", "cadena", "motor", "reductor", busca el componente mas cercano.
+REGLAS para interpretar avisos:
+- description: Redacta profesionalmente orientado al modo de falla, NO copies textual al usuario.
+  Ej: usuario dice "la faja se rompio" → "Rotura de faja de transmision - requiere inspeccion y reemplazo"
+  Ej: "el motor suena raro" → "Ruido anormal en motor electrico - posible falla en rodamientos"
+  Ej: "el reductor bota aceite" → "Fuga de aceite en caja reductora - revisar retenes y nivel"
+- Busca el equipo en los DATOS del sistema por tag o nombre
+- Si no sabes el equipo, PREGUNTA antes de generar JSON
+- Si es consulta normal, responde con texto (NO JSON)"""
 
-Formato JSON de respuesta:
-{"action": "create_notice", "data": {"description": "...", "failure_mode": "Rotura|Desgaste|...", "failure_category": "Mecanica|Electrica|...", "equipment_tag": "D2", "equipment_name": "DIGESTOR #2", "component_name": "FAJA", "criticality": "Alta|Media|Baja", "priority": "Alta|Normal|Baja", "maintenance_type": "Correctivo"}}
+    system_prompt = f"""Eres el asistente de mantenimiento del CMMS Pro, sistema de gestion de mantenimiento industrial.
+Responde en español, conciso y profesional. Usa SOLO datos reales del sistema.
+NUNCA inventes datos ni confirmes acciones no realizadas.
+Si no tienes info, di: "No tengo esa informacion."
 
-Solo incluye los campos que puedas deducir. Si no sabes el equipo, PREGUNTA antes de generar el JSON.
-NO confirmes que creaste nada. Solo devuelve el JSON.
-Si es una consulta normal (no una accion), responde normalmente con texto."""
-
-    system_prompt = f"""Eres el asistente de mantenimiento del CMMS Pro, un sistema de gestion de mantenimiento industrial.
-Responde en español, de forma concisa y profesional.
-Usa UNICAMENTE los datos reales del sistema para responder.
-Si no tienes la informacion, dilo claramente: "No tengo esa informacion en el sistema."
-NUNCA inventes datos, codigos, ni confirmes acciones que no hayas realizado.
-NUNCA digas que creaste un aviso, OT, o cualquier registro — tu NO puedes crear registros directamente.
-Si el usuario pide crear algo, usa el formato JSON indicado.
+Cuando el usuario pida ANALISIS o RECOMENDACIONES, puedes:
+- Calcular % correctivo vs preventivo
+- Identificar equipos problematicos (mas OTs correctivas)
+- Sugerir preventivos basados en recurrencia de fallas
+- Comparar rendimiento entre equipos similares
+- Priorizar backlog de OTs por criticidad y recurrencia
+- Generar resumen ejecutivo para gerencia
+- Estimar consumo de repuestos basado en frecuencia de cambio
+- Sugerir plan semanal basado en OTs pendientes y puntos vencidos
 {action_instructions}
 
-DATOS ACTUALES DEL SISTEMA:
+DATOS ACTUALES:
 {cmms_context}
 """
 
     payload = {
         'model': 'deepseek-chat',
-        'messages': [
-            {'role': 'system', 'content': system_prompt},
-            {'role': 'user', 'content': question},
-        ],
-        'max_tokens': 1500,
-        'temperature': 0.2,
+        'messages': [{'role': 'system', 'content': system_prompt}, {'role': 'user', 'content': question}],
+        'max_tokens': 2000, 'temperature': 0.2,
     }
 
     try:
         r = requests.post(DEEPSEEK_URL, headers=headers, json=payload, timeout=30)
         if r.status_code != 200:
             return f"Error DeepSeek: {r.status_code} {r.text[:200]}"
-        data = r.json()
-        return data['choices'][0]['message']['content']
+        return r.json()['choices'][0]['message']['content']
     except Exception as e:
         return f"Error consultando IA: {e}"
 
 
-# ── Pending photo state per chat ──
-_pending_photos = {}  # chat_id -> {"entity_type": ..., "entity_id": ...}
+# ── Daily Alerts ─────────────────────────────────────────────────────────────
+
+def _generate_daily_summary(app):
+    """Generate and send daily summary to all known admin chats."""
+    if not _admin_chats:
+        return
+
+    with app.app_context():
+        from database import db as _db
+        from sqlalchemy import text
+        try:
+            wo_open = _db.session.execute(text("SELECT count(*) FROM work_orders WHERE status != 'Cerrada'")).scalar()
+            wo_progress = _db.session.execute(text("SELECT count(*) FROM work_orders WHERE status = 'En Progreso'")).scalar()
+            n_pending = _db.session.execute(text("SELECT count(*) FROM maintenance_notices WHERE status = 'Pendiente'")).scalar()
+
+            lub = _db.session.execute(text("SELECT count(*) FROM lubrication_points WHERE is_active = true AND semaphore_status = 'ROJO'")).scalar() or 0
+            insp = _db.session.execute(text("SELECT count(*) FROM inspection_routes WHERE is_active = true AND semaphore_status = 'ROJO'")).scalar() or 0
+            mon = _db.session.execute(text("SELECT count(*) FROM monitoring_points WHERE is_active = true AND semaphore_status = 'ROJO'")).scalar() or 0
+
+            # OTs overdue (scheduled but not started, past date)
+            overdue = _db.session.execute(text("""
+                SELECT code, description, scheduled_date FROM work_orders
+                WHERE status IN ('Abierta', 'Programada') AND scheduled_date IS NOT NULL AND scheduled_date < :today
+                ORDER BY scheduled_date LIMIT 10
+            """), {"today": date.today().isoformat()}).fetchall()
+
+            # Reports pending
+            reports_due = _db.session.execute(text("""
+                SELECT code, report_due_date FROM work_orders
+                WHERE report_required = true AND report_status = 'PENDIENTE'
+                AND report_due_date IS NOT NULL AND report_due_date < :today
+            """), {"today": date.today().isoformat()}).fetchall()
+
+            # Low stock
+            low_stock = _db.session.execute(text("""
+                SELECT count(*) FROM warehouse_items WHERE is_active = true AND current_stock <= min_stock
+            """)).scalar() or 0
+
+            _db.session.remove()
+
+            # Build message
+            msg = f"""📊 *Resumen Diario CMMS* — {date.today().isoformat()}
+
+📋 OTs abiertas: *{wo_open}* | En progreso: *{wo_progress}*
+🔔 Avisos pendientes: *{n_pending}*"""
+
+            if lub + insp + mon > 0:
+                msg += f"\n\n🔴 *Puntos vencidos:*\n  Lubricacion: {lub} | Inspeccion: {insp} | Monitoreo: {mon}"
+
+            if overdue:
+                msg += f"\n\n⏰ *OTs vencidas ({len(overdue)}):*"
+                for o in overdue:
+                    msg += f"\n  {o[0]} — prog: {o[2]} — {(o[1] or '-')[:50]}"
+
+            if reports_due:
+                msg += f"\n\n📄 *Informes vencidos ({len(reports_due)}):*"
+                for r in reports_due:
+                    msg += f"\n  {r[0]} — vencio: {r[1]}"
+
+            if low_stock:
+                msg += f"\n\n📦 *{low_stock} items con stock bajo*"
+
+            msg += "\n\n_Escribe cualquier pregunta para mas detalles._"
+
+            for cid in _admin_chats:
+                try:
+                    _send(cid, msg)
+                except Exception:
+                    pass
+
+        except Exception as e:
+            logger.error(f"Daily summary error: {e}")
+            try:
+                _db.session.remove()
+            except Exception:
+                pass
+
+
+def _check_recurring_alerts(app):
+    """Alert on components with high failure frequency."""
+    if not _admin_chats:
+        return
+
+    with app.app_context():
+        from database import db as _db
+        from sqlalchemy import text
+        try:
+            cutoff = (date.today() - timedelta(days=60)).isoformat()
+            rec = _db.session.execute(text("""
+                SELECT c.name, e.name, e.tag, l.name, count(w.id) as cnt
+                FROM work_orders w
+                JOIN components c ON w.component_id = c.id
+                JOIN systems s ON c.system_id = s.id
+                JOIN equipments e ON w.equipment_id = e.id
+                JOIN lines l ON e.line_id = l.id
+                WHERE w.maintenance_type = 'Correctivo' AND w.real_start_date >= :cutoff
+                GROUP BY c.name, e.name, e.tag, l.name
+                HAVING count(w.id) >= 3
+                ORDER BY cnt DESC LIMIT 5
+            """), {"cutoff": cutoff}).fetchall()
+
+            _db.session.remove()
+
+            if rec:
+                msg = "🚨 *Alerta: Fallas Recurrentes (ultimos 60 dias)*\n"
+                for r in rec:
+                    msg += f"\n⚠️ *{r[0]}* en {r[1]} [{r[2]}] ({r[3]}) — *{r[4]} correctivos*"
+                msg += "\n\n_Considera revision de causa raiz o cambio preventivo._"
+
+                for cid in _admin_chats:
+                    try:
+                        _send(cid, msg)
+                    except Exception:
+                        pass
+        except Exception as e:
+            logger.error(f"Recurring alerts error: {e}")
+            try:
+                _db.session.remove()
+            except Exception:
+                pass
+
+
+# ── Message Processing ───────────────────────────────────────────────────────
+
+_pending_photos = {}
+
+ACTION_KEYWORDS = ['reportar', 'crear aviso', 'falla', 'fallo', 'se rompio', 'roto', 'rota',
+                   'daño', 'dañ', 'parada', 'parado', 'generar aviso', 'registrar falla',
+                   'no funciona', 'no sirve', 'se salio', 'se solto', 'fuera de servicio',
+                   'cerrar ot', 'cierra ot', 'cerrar la ot', 'cierra la ot',
+                   'iniciar ot', 'inicia ot', 'iniciar la ot', 'empezar ot',
+                   'agregar nota', 'agregar bitacora', 'anotar en', 'registrar en ot',
+                   'nota a la ot', 'bitacora ot']
+
+
+def _extract_json(text):
+    """Extract JSON from AI response (handles markdown code blocks)."""
+    s = text.strip()
+    if '```' in s:
+        parts = s.split('```')
+        for p in parts:
+            p = p.strip()
+            if p.startswith('json'):
+                p = p[4:].strip()
+            if p.startswith('{'):
+                try:
+                    return json.loads(p)
+                except Exception:
+                    pass
+    if s.startswith('{'):
+        try:
+            return json.loads(s)
+        except Exception:
+            pass
+    return None
 
 
 def _process_message(app, chat_id, text, photos=None):
-    """Process an incoming Telegram message."""
     text = (text or '').strip()
+
+    # Track admin chats
+    _admin_chats.add(chat_id)
 
     # Handle photos
     if photos:
@@ -405,109 +588,111 @@ def _process_message(app, chat_id, text, photos=None):
         if pending:
             uploaded = 0
             for p in photos:
-                file_id = p[-1]['file_id']  # Largest size
-                url = _upload_telegram_photo(app, file_id, pending['entity_type'], pending['entity_id'])
-                if url:
+                fid = p[-1]['file_id']
+                if _upload_telegram_photo(app, fid, pending['entity_type'], pending['entity_id']):
                     uploaded += 1
-            if uploaded:
-                _send_message(chat_id, f"📷 {uploaded} foto(s) subida(s) al {pending['entity_type']} {pending.get('code', '')}.")
-            else:
-                _send_message(chat_id, "❌ Error subiendo la foto.")
-            return
+            _send(chat_id, f"📷 {uploaded} foto(s) subida(s) al {pending['entity_type']} {pending.get('code', '')}." if uploaded else "❌ Error subiendo foto.")
         else:
-            _send_message(chat_id, "📷 Foto recibida, pero no hay un aviso activo donde adjuntarla.\nPrimero reporta una falla y luego envia la foto.")
-            return
+            _send(chat_id, "📷 Foto recibida pero no hay aviso activo.\nPrimero reporta una falla y luego envia la foto.")
+        return
 
     if not text:
         return
 
-    # Simple commands
+    # Commands
     if text.lower() in ('/start', '/help', 'hola', 'ayuda'):
-        _send_message(chat_id, """*CMMS Pro Bot* 🏭
-
-Puedo responder consultas y crear reportes:
+        _send(chat_id, """*CMMS Pro Bot* 🏭
 
 *Consultas:*
 • _Cuantas OTs abiertas hay?_
 • _Estado del digestor #1_
 • _Que componentes fallan mas?_
-• _Hay puntos de lubricacion vencidos?_
-• _Resumen de la planta_
-• _Que activos rotativos hay instalados?_
-• _Items con stock bajo en almacen_
+• _Puntos de lubricacion vencidos?_
+• _Resumen de planta / resumen ejecutivo_
+• _Activos rotativos instalados_
+• _Items con stock bajo_
+• _Que tecnicos tienen mas carga?_
+• _Comparar digestor 1 vs 5_
+• _Plan de trabajo para esta semana_
 
-*Crear avisos:*
+*Acciones:*
 • _Reportar falla en faja del digestor #2_
-• _La cadena del TH3 esta rota_
-• Despues de crear el aviso, envia una foto para adjuntarla
+• _Cerrar OT-0034, trabajo completado_
+• _Iniciar OT-0034_
+• _Agregar nota a OT-0034: se cambio faja_
+• Despues de crear aviso, envia foto
 
-Solo escribe tu pregunta en lenguaje natural.""")
+*Analisis:*
+• _% correctivo vs preventivo_
+• _Que repuestos necesito stockear?_
+• _Resumen ejecutivo para gerencia_""")
         return
 
-    # Query AI with CMMS context
-    _send_message(chat_id, "⏳ Consultando datos...")
+    # Process
+    _send(chat_id, "⏳ Consultando datos...")
     context = _get_cmms_context(app)
-
-    # Check if this might be an action (create notice)
-    action_keywords = ['reportar', 'crear aviso', 'falla', 'fallo', 'se rompio', 'roto', 'rota',
-                       'daño', 'dañ', 'parada', 'parado', 'generar aviso', 'registrar',
-                       'no funciona', 'no sirve', 'se salio', 'se solto', 'fuera de servicio']
-    is_action = any(kw in text.lower() for kw in action_keywords)
-
+    is_action = any(kw in text.lower() for kw in ACTION_KEYWORDS)
     answer = _ask_deepseek(text, context, is_action=is_action)
 
-    # Check if AI returned a JSON action
-    if is_action and answer.strip().startswith('{'):
-        try:
-            # Extract JSON from response (might have markdown)
-            json_str = answer.strip()
-            if '```' in json_str:
-                json_str = json_str.split('```')[1]
-                if json_str.startswith('json'):
-                    json_str = json_str[4:]
-                json_str = json_str.strip()
+    # Handle JSON actions
+    if is_action:
+        action_data = _extract_json(answer)
+        if action_data and isinstance(action_data, dict):
+            action = action_data.get('action')
+            data = action_data.get('data', {})
 
-            action_data = json.loads(json_str)
-            if action_data.get('action') == 'create_notice':
-                data = action_data.get('data', {})
-                code, notice_id, err = _create_notice(app, data)
-                if code and notice_id:
-                    # Store pending photo state
-                    _pending_photos[chat_id] = {
-                        "entity_type": "notice",
-                        "entity_id": notice_id,
-                        "code": code
-                    }
+            if action == 'create_notice':
+                code, nid, err = _create_notice(app, data)
+                if code and nid:
+                    _pending_photos[chat_id] = {"entity_type": "notice", "entity_id": nid, "code": code}
+                    fm = data.get('failure_mode', '-')
+                    fc = data.get('failure_category', '-')
+                    eq = data.get('equipment_tag') or data.get('equipment_name') or '-'
+                    _send(chat_id, f"""✅ *Aviso creado: {code}*
 
-                    equip_info = data.get('equipment_tag') or data.get('equipment_name') or '-'
-                    comp_info = data.get('component_name') or ''
-                    desc = data.get('description', '-')
-                    fm = data.get('failure_mode', '')
-                    fc = data.get('failure_category', '')
-
-                    _send_message(chat_id, f"""✅ *Aviso creado: {code}*
-
-📋 {desc}
-⚙️ Equipo: {equip_info}
-🔧 Componente: {comp_info}
-⚠️ Modo de falla: {fm or '-'}
-🏷️ Tipo: {fc or '-'}
+📋 {data.get('description', '-')}
+⚙️ Equipo: {eq}
+🔧 Componente: {data.get('component_name', '-')}
+⚠️ Modo de falla: {fm}
+🏷️ Tipo: {fc}
 🔴 Criticidad: {data.get('criticality', 'Media')}
-📅 Fecha: {date.today().isoformat()}
+📅 {date.today().isoformat()}
 
-📷 _Puedes enviar una foto ahora para adjuntarla a este aviso._""")
-                    return
+📷 _Envia una foto para adjuntarla._""")
                 else:
-                    _send_message(chat_id, f"❌ Error creando aviso: {err}")
-                    return
-        except (json.JSONDecodeError, KeyError, IndexError):
-            pass  # Not valid JSON, treat as normal response
+                    _send(chat_id, f"❌ Error creando aviso: {err}")
+                return
 
-    _send_message(chat_id, answer)
+            elif action == 'close_ot':
+                code, err = _close_ot(app, data)
+                if code:
+                    _send(chat_id, f"✅ *{code} cerrada*\n📝 {data.get('comments', '-')}")
+                else:
+                    _send(chat_id, f"❌ {err}")
+                return
 
+            elif action == 'start_ot':
+                code, err = _start_ot(app, data)
+                if code:
+                    _send(chat_id, f"▶️ *{code} iniciada* — En Progreso")
+                else:
+                    _send(chat_id, f"❌ {err}")
+                return
+
+            elif action == 'add_log':
+                code, err = _add_log_entry(app, data)
+                if code:
+                    _send(chat_id, f"📝 Nota agregada a *{code}*\n_{data.get('comment', '')}_")
+                else:
+                    _send(chat_id, f"❌ {err}")
+                return
+
+    _send(chat_id, answer)
+
+
+# ── Bot Startup ──────────────────────────────────────────────────────────────
 
 def start_telegram_bot(app):
-    """Start the Telegram bot in a background thread."""
     if not TELEGRAM_TOKEN or not DEEPSEEK_API_KEY:
         logger.info("Telegram bot not started: TELEGRAM_TOKEN or DEEPSEEK_API_KEY not set.")
         return
@@ -523,21 +708,37 @@ def start_telegram_bot(app):
                         offset = update['update_id'] + 1
                         msg = update.get('message', {})
                         chat_id = msg.get('chat', {}).get('id')
-                        text = msg.get('text', '')
+                        txt = msg.get('text', '')
                         photos = msg.get('photo')
                         caption = msg.get('caption', '')
-
-                        if chat_id and (text or photos):
+                        if chat_id and (txt or photos):
                             try:
-                                _process_message(app, chat_id, text or caption, photos=[photos] if photos else None)
+                                _process_message(app, chat_id, txt or caption, photos=[photos] if photos else None)
                             except Exception as e:
                                 logger.error(f"Bot message error: {e}")
-                                _send_message(chat_id, f"Error procesando consulta: {e}")
+                                _send(chat_id, f"Error: {e}")
             except Exception as e:
                 logger.error(f"Bot poll error: {e}")
                 time.sleep(5)
             time.sleep(POLL_INTERVAL)
 
-    t = threading.Thread(target=poll, daemon=True)
-    t.start()
-    logger.info(f"Telegram bot thread started (polling every {POLL_INTERVAL}s)")
+    def daily_alerts():
+        """Run daily summary at 7:00 AM (local time)."""
+        logger.info("Daily alerts thread started.")
+        last_sent = None
+        while True:
+            now = datetime.now()
+            today_key = now.strftime('%Y-%m-%d')
+            if now.hour == 7 and now.minute < 5 and last_sent != today_key:
+                try:
+                    _generate_daily_summary(app)
+                    _check_recurring_alerts(app)
+                    last_sent = today_key
+                    logger.info("Daily summary sent.")
+                except Exception as e:
+                    logger.error(f"Daily alert error: {e}")
+            time.sleep(60)
+
+    threading.Thread(target=poll, daemon=True).start()
+    threading.Thread(target=daily_alerts, daemon=True).start()
+    logger.info("Telegram bot + daily alerts started.")
