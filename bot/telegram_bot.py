@@ -305,6 +305,8 @@ def _create_notice(app, data):
                 desc_parts.append(f"[Modo de falla: {data['failure_mode']}]")
             if data.get('failure_category'):
                 desc_parts.append(f"[Tipo: {data['failure_category']}]")
+            if data.get('free_location'):
+                desc_parts.append(f"[Ubicacion: {data['free_location']}]")
 
             _db.session.execute(text("""
                 INSERT INTO maintenance_notices (code, description, criticality, priority, request_date,
@@ -487,7 +489,10 @@ REGLAS para interpretar avisos:
   Ej: "el motor suena raro" → "Ruido anormal en motor electrico - posible falla en rodamientos"
   Ej: "el reductor bota aceite" → "Fuga de aceite en caja reductora - revisar retenes y nivel"
 - Busca el equipo en los DATOS del sistema por tag o nombre
-- Si no sabes el equipo, PREGUNTA antes de generar JSON
+- Si el usuario menciona un equipo que NO existe en el arbol, PREGUNTA si quiere crearlo sin equipo vinculado
+- Si el usuario EXPLICITAMENTE pide crear el aviso sin equipo, o dice "sin equipo", "sin vincular", "asi nomas", genera el JSON SIN los campos equipment_tag, equipment_name, component_name
+- SIEMPRE puedes crear un aviso sin equipo vinculado. El campo "free_location" permite texto libre para ubicacion
+  Ej: {"action": "create_notice", "data": {"description": "Fuga de vapor en tuberia zona calderas", "failure_mode": "Fuga", "failure_category": "Mecanica", "criticality": "Alta", "free_location": "Tuberia zona calderas - no mapeado en arbol"}}
 - Si es consulta normal, responde con texto (NO JSON)"""
 
     system_prompt = f"""Eres el asistente de mantenimiento del CMMS Pro, sistema de gestion de mantenimiento industrial.
@@ -852,12 +857,17 @@ def _process_message(app, chat_id, text, photos=None):
                     _pending_photos[chat_id] = {"entity_type": "notice", "entity_id": nid, "code": code}
                     fm = data.get('failure_mode', '-')
                     fc = data.get('failure_category', '-')
-                    eq = data.get('equipment_tag') or data.get('equipment_name') or '-'
+                    eq = data.get('equipment_tag') or data.get('equipment_name') or ''
+                    comp = data.get('component_name') or ''
+                    loc = data.get('free_location') or ''
+
+                    equip_line = f"⚙️ Equipo: {eq}" if eq else f"📍 Ubicacion: {loc}" if loc else "⚙️ Equipo: Sin vincular"
+                    comp_line = f"\n🔧 Componente: {comp}" if comp else ""
+
                     _send(chat_id, f"""✅ *Aviso creado: {code}*
 
 📋 {data.get('description', '-')}
-⚙️ Equipo: {eq}
-🔧 Componente: {data.get('component_name', '-')}
+{equip_line}{comp_line}
 ⚠️ Modo de falla: {fm}
 🏷️ Tipo: {fc}
 🔴 Criticidad: {data.get('criticality', 'Media')}
