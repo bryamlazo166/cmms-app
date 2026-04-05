@@ -421,6 +421,45 @@
                 <script src="/static/js/app.js"></script>
             </div>
         </section>
+
+        <!-- Specs & Docs Modal -->
+        <dialog id="specsModal" style="background:#1e1e1e;color:#ddd;border:1px solid #444;border-radius:10px;padding:0;width:600px;max-width:95vw;max-height:85vh">
+            <div style="padding:16px 20px;border-bottom:1px solid #333;display:flex;justify-content:space-between;align-items:center">
+                <h3 id="specsModalTitle" style="margin:0;font-size:1rem;color:#5AC8FA"></h3>
+                <button onclick="document.getElementById('specsModal').close()" style="background:none;border:none;color:#888;font-size:1.2rem;cursor:pointer">&times;</button>
+            </div>
+            <div style="padding:20px;overflow-y:auto;max-height:65vh">
+                <!-- Specs Section -->
+                <div style="margin-bottom:20px">
+                    <h4 style="margin:0 0 10px 0;color:#FF9F0A;font-size:.85rem"><i class="fas fa-sliders-h"></i> Especificaciones Tecnicas</h4>
+                    <div id="specsList" style="margin-bottom:10px"></div>
+                    <div style="display:grid;grid-template-columns:1fr 1fr auto auto;gap:6px;align-items:center">
+                        <input type="text" id="specKey" placeholder="Propiedad (ej: RPM)" style="height:30px;background:#2a2a2e;border:1px solid #444;border-radius:6px;color:#ddd;padding:0 8px;font-size:.80rem">
+                        <input type="text" id="specValue" placeholder="Valor (ej: 1750)" style="height:30px;background:#2a2a2e;border:1px solid #444;border-radius:6px;color:#ddd;padding:0 8px;font-size:.80rem">
+                        <input type="text" id="specUnit" placeholder="Unidad" style="height:30px;width:70px;background:#2a2a2e;border:1px solid #444;border-radius:6px;color:#ddd;padding:0 8px;font-size:.80rem">
+                        <button onclick="addSpec()" style="height:30px;padding:0 12px;background:#FF9F0A;border:none;border-radius:6px;color:#000;font-weight:600;cursor:pointer;font-size:.80rem"><i class="fas fa-plus"></i></button>
+                    </div>
+                </div>
+
+                <!-- Docs Section -->
+                <div>
+                    <h4 style="margin:0 0 10px 0;color:#30D158;font-size:.85rem"><i class="fas fa-link"></i> Documentos / Planos (Links)</h4>
+                    <div id="docsList" style="margin-bottom:10px"></div>
+                    <div style="display:grid;grid-template-columns:1fr 1fr auto auto;gap:6px;align-items:center">
+                        <input type="text" id="docTitle" placeholder="Titulo (ej: Plano bocina)" style="height:30px;background:#2a2a2e;border:1px solid #444;border-radius:6px;color:#ddd;padding:0 8px;font-size:.80rem">
+                        <input type="text" id="docUrl" placeholder="https://drive.google.com/..." style="height:30px;background:#2a2a2e;border:1px solid #444;border-radius:6px;color:#ddd;padding:0 8px;font-size:.80rem">
+                        <select id="docType" style="height:30px;width:90px;background:#2a2a2e;border:1px solid #444;border-radius:6px;color:#ddd;padding:0 4px;font-size:.75rem">
+                            <option value="plano">Plano</option>
+                            <option value="manual">Manual</option>
+                            <option value="informe">Informe</option>
+                            <option value="otro">Otro</option>
+                        </select>
+                        <button onclick="addDocLink()" style="height:30px;padding:0 12px;background:#30D158;border:none;border-radius:6px;color:#000;font-weight:600;cursor:pointer;font-size:.80rem"><i class="fas fa-plus"></i></button>
+                    </div>
+                </div>
+            </div>
+        </dialog>
+
         <script src="/static/js/sidebar.js?v={{ v }}"></script>
 </body>
 

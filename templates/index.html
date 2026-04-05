@@ -360,6 +360,33 @@
                 </div>
             </div>
 
+                <!-- Failure Recurrence -->
+                <div style="background:var(--bg-primary,#1C1C1E);border:1px solid rgba(255,255,255,.08);border-radius:14px;padding:12px;margin-top:10px">
+                    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px">
+                        <h3 style="color:rgba(255,255,255,.88);font-size:.92rem;margin:0"><i class="fas fa-exclamation-triangle" style="color:#FF453A"></i> Recurrencia de Fallas (Correctivos)</h3>
+                        <select id="recurrenceMonths" onchange="loadRecurrence()" style="background:#2C2C2E;border:1px solid #444;border-radius:6px;color:#ddd;padding:4px 8px;font-size:.78rem">
+                            <option value="3">3 meses</option>
+                            <option value="6" selected>6 meses</option>
+                            <option value="12">12 meses</option>
+                        </select>
+                    </div>
+                    <div style="overflow-x:auto;max-height:350px;border-radius:8px">
+                        <table style="width:100%;border-collapse:collapse;min-width:700px">
+                            <thead><tr style="background:#2C2C2E">
+                                <th style="padding:8px 10px;font-size:.72rem;color:rgba(255,255,255,.45);text-align:left">#</th>
+                                <th style="padding:8px 10px;font-size:.72rem;color:rgba(255,255,255,.45);text-align:left">Componente</th>
+                                <th style="padding:8px 10px;font-size:.72rem;color:rgba(255,255,255,.45);text-align:left">Sistema</th>
+                                <th style="padding:8px 10px;font-size:.72rem;color:rgba(255,255,255,.45);text-align:left">Equipo</th>
+                                <th style="padding:8px 10px;font-size:.72rem;color:rgba(255,255,255,.45);text-align:left">Linea</th>
+                                <th style="padding:8px 10px;font-size:.72rem;color:rgba(255,255,255,.45);text-align:center">OTs</th>
+                                <th style="padding:8px 10px;font-size:.72rem;color:rgba(255,255,255,.45);text-align:center">MTBF (dias)</th>
+                                <th style="padding:8px 10px;font-size:.72rem;color:rgba(255,255,255,.45);text-align:left">Ultima OT</th>
+                            </tr></thead>
+                            <tbody id="recurrenceBody"><tr><td colspan="8" style="text-align:center;color:rgba(255,255,255,.30);padding:20px">Cargando...</td></tr></tbody>
+                        </table>
+                    </div>
+                </div>
+
             <script src="/static/js/dashboard.js?v={{ v }}"></script>
         </div>
     </section>

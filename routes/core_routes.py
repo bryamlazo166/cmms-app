@@ -565,6 +565,141 @@ def register_core_routes(app, db, logger, app_build_tag,
         db.session.commit()
         return jsonify({"ok": True})
 
+    # ── Technical Specs (Equipment & Component) ──────────────────────────
+
+    @app.route('/api/specs/<entity_type>/<int:entity_id>', methods=['GET', 'POST'])
+    def handle_specs(entity_type, entity_id):
+        from models import EquipmentSpec, ComponentSpec
+        MODEL_MAP = {'equipment': EquipmentSpec, 'component': ComponentSpec}
+        FK_MAP = {'equipment': 'equipment_id', 'component': 'component_id'}
+
+        if entity_type not in MODEL_MAP:
+            return jsonify({"error": "entity_type debe ser equipment o component"}), 400
+
+        Model = MODEL_MAP[entity_type]
+        fk = FK_MAP[entity_type]
+
+        if request.method == 'POST':
+            data = request.get_json()
+            spec = Model(**{fk: entity_id, 'key_name': data['key_name'], 'value_text': data['value_text'], 'unit': data.get('unit', '')})
+            max_order = db.session.query(db.func.max(Model.order_index)).filter(getattr(Model, fk) == entity_id).scalar() or 0
+            spec.order_index = max_order + 1
+            db.session.add(spec)
+            db.session.commit()
+            return jsonify(spec.to_dict()), 201
+
+        specs = Model.query.filter(getattr(Model, fk) == entity_id).order_by(Model.order_index).all()
+        return jsonify([s.to_dict() for s in specs])
+
+    @app.route('/api/specs/<entity_type>/<int:spec_id>/delete', methods=['DELETE'])
+    def delete_spec(entity_type, spec_id):
+        from models import EquipmentSpec, ComponentSpec
+        MODEL_MAP = {'equipment': EquipmentSpec, 'component': ComponentSpec}
+        if entity_type not in MODEL_MAP:
+            return jsonify({"error": "entity_type invalido"}), 400
+        spec = MODEL_MAP[entity_type].query.get_or_404(spec_id)
+        db.session.delete(spec)
+        db.session.commit()
+        return jsonify({"ok": True})
+
+    # ── Document Links ──────────────────────────────────────────────────
+
+    @app.route('/api/doc-links/<entity_type>/<int:entity_id>', methods=['GET', 'POST'])
+    def handle_doc_links(entity_type, entity_id):
+        from models import DocumentLink
+        if entity_type not in ('equipment', 'component', 'rotative_asset'):
+            return jsonify({"error": "entity_type debe ser equipment, component o rotative_asset"}), 400
+
+        if request.method == 'POST':
+            data = request.get_json()
+            doc = DocumentLink(
+                entity_type=entity_type, entity_id=entity_id,
+                title=data['title'], url=data['url'],
+                doc_type=data.get('doc_type', 'otro')
+            )
+            db.session.add(doc)
+            db.session.commit()
+            return jsonify(doc.to_dict()), 201
+
+        docs = DocumentLink.query.filter_by(entity_type=entity_type, entity_id=entity_id).order_by(DocumentLink.id.desc()).all()
+        return jsonify([d.to_dict() for d in docs])
+
+    @app.route('/api/doc-links/<int:doc_id>', methods=['DELETE'])
+    def delete_doc_link(doc_id):
+        from models import DocumentLink
+        doc = DocumentLink.query.get_or_404(doc_id)
+        db.session.delete(doc)
+        db.session.commit()
+        return jsonify({"ok": True})
+
+    # ── Failure Recurrence Dashboard ────────────────────────────────────
+
+    @app.route('/api/failure-recurrence', methods=['GET'])
+    def failure_recurrence():
+        """Top components/equipment with most corrective WOs in a period."""
+        from sqlalchemy import func
+        months = int(request.args.get('months', 6))
+        limit_n = int(request.args.get('limit', 20))
+        cutoff = dt.datetime.utcnow() - dt.timedelta(days=months * 30)
+
+        # Top components by corrective OT count
+        results = db.session.query(
+            WorkOrder.component_id,
+            func.count(WorkOrder.id).label('wo_count'),
+            func.max(WorkOrder.created_at).label('last_wo'),
+        ).filter(
+            WorkOrder.maintenance_type == 'Correctivo',
+            WorkOrder.created_at >= cutoff,
+            WorkOrder.component_id.isnot(None),
+        ).group_by(WorkOrder.component_id).order_by(func.count(WorkOrder.id).desc()).limit(limit_n).all()
+
+        from models import Component as Comp, System as Sys, Equipment as Eq, Line as Ln
+        data = []
+        for comp_id, count, last_wo in results:
+            comp = Comp.query.get(comp_id)
+            if not comp:
+                continue
+            sys_obj = Sys.query.get(comp.system_id) if comp else None
+            eq_obj = Eq.query.get(sys_obj.equipment_id) if sys_obj else None
+            ln_obj = Ln.query.get(eq_obj.line_id) if eq_obj else None
+
+            days_span = (dt.datetime.utcnow() - cutoff).days
+            mtbf_days = round(days_span / count, 1) if count > 1 else None
+
+            data.append({
+                "component_id": comp_id,
+                "component_name": comp.name if comp else '?',
+                "system_name": sys_obj.name if sys_obj else '?',
+                "equipment_name": eq_obj.name if eq_obj else '?',
+                "equipment_tag": eq_obj.tag if eq_obj else '?',
+                "line_name": ln_obj.name if ln_obj else '?',
+                "wo_count": count,
+                "last_wo": last_wo.isoformat() if last_wo else None,
+                "mtbf_days": mtbf_days,
+            })
+
+        # Top equipment
+        eq_results = db.session.query(
+            WorkOrder.equipment_id,
+            func.count(WorkOrder.id).label('wo_count'),
+        ).filter(
+            WorkOrder.maintenance_type == 'Correctivo',
+            WorkOrder.created_at >= cutoff,
+            WorkOrder.equipment_id.isnot(None),
+        ).group_by(WorkOrder.equipment_id).order_by(func.count(WorkOrder.id).desc()).limit(10).all()
+
+        eq_data = []
+        for eq_id, count in eq_results:
+            eq = Eq.query.get(eq_id)
+            eq_data.append({
+                "equipment_id": eq_id,
+                "equipment_name": eq.name if eq else '?',
+                "equipment_tag": eq.tag if eq else '?',
+                "wo_count": count,
+            })
+
+        return jsonify({"by_component": data, "by_equipment": eq_data, "months": months})
+
     # ── KPI Trends + Costs ───────────────────────────────────────────────
 
     @app.route('/api/dashboard-trends', methods=['GET'])

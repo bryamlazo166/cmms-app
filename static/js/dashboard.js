@@ -486,6 +486,41 @@ async function loadTrends() {
     } catch (e) { console.error('Trends load error:', e); }
 }
 
+// ── Failure Recurrence ────────────────────────────────────────────────────
+async function loadRecurrence() {
+    const months = document.getElementById('recurrenceMonths')?.value || 6;
+    const tbody = document.getElementById('recurrenceBody');
+    if (!tbody) return;
+    try {
+        const res = await fetch(`/api/failure-recurrence?months=${months}&limit=15`);
+        const data = await res.json();
+        const items = data.by_component || [];
+        if (!items.length) {
+            tbody.innerHTML = '<tr><td colspan="8" style="text-align:center;color:rgba(255,255,255,.30);padding:20px">Sin datos de recurrencia en este periodo.</td></tr>';
+            return;
+        }
+        tbody.innerHTML = items.map((r, i) => {
+            const severity = r.wo_count >= 5 ? '#FF453A' : r.wo_count >= 3 ? '#FF9F0A' : '#30D158';
+            const mtbf = r.mtbf_days ? `${r.mtbf_days}` : '-';
+            const lastDate = r.last_wo ? r.last_wo.split('T')[0] : '-';
+            return `<tr style="border-bottom:1px solid rgba(255,255,255,.05)">
+                <td style="padding:7px 10px;font-size:.80rem;color:#888">${i + 1}</td>
+                <td style="padding:7px 10px;font-size:.80rem;color:#ddd;font-weight:600">${r.component_name}</td>
+                <td style="padding:7px 10px;font-size:.80rem;color:#aaa">${r.system_name}</td>
+                <td style="padding:7px 10px;font-size:.80rem;color:#aaa">${r.equipment_name} [${r.equipment_tag}]</td>
+                <td style="padding:7px 10px;font-size:.80rem;color:#aaa">${r.line_name}</td>
+                <td style="padding:7px 10px;font-size:.80rem;text-align:center"><span style="background:${severity};color:#fff;padding:2px 8px;border-radius:999px;font-weight:700;font-size:.75rem">${r.wo_count}</span></td>
+                <td style="padding:7px 10px;font-size:.80rem;text-align:center;color:${r.mtbf_days && r.mtbf_days < 30 ? '#FF453A' : '#ddd'}">${mtbf}</td>
+                <td style="padding:7px 10px;font-size:.80rem;color:#888">${lastDate}</td>
+            </tr>`;
+        }).join('');
+    } catch (e) {
+        console.error('Recurrence error:', e);
+        tbody.innerHTML = '<tr><td colspan="8" style="text-align:center;color:#FF6B61;padding:20px">Error cargando datos.</td></tr>';
+    }
+}
+
 document.addEventListener('DOMContentLoaded', () => {
     setTimeout(() => drillTo('area'), 500);
+    loadRecurrence();
 });

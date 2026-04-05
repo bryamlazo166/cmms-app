@@ -183,6 +183,54 @@ class SparePart(db.Model):
         }
 
 
+# ── Technical Specs (key-value) for Equipment & Component ────────────────────
+
+class EquipmentSpec(db.Model):
+    __tablename__ = 'equipment_specs'
+    id: Mapped[int] = mapped_column(primary_key=True)
+    equipment_id: Mapped[int] = mapped_column(ForeignKey('equipments.id'), nullable=False)
+    key_name: Mapped[str] = mapped_column(String(120), nullable=False)
+    value_text: Mapped[str] = mapped_column(String(250), nullable=False)
+    unit: Mapped[str | None] = mapped_column(String(30), nullable=True)
+    order_index: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+
+    equipment = relationship("Equipment", backref="specs")
+
+    def to_dict(self):
+        return {"id": self.id, "equipment_id": self.equipment_id, "key_name": self.key_name, "value_text": self.value_text, "unit": self.unit, "order_index": self.order_index}
+
+
+class ComponentSpec(db.Model):
+    __tablename__ = 'component_specs'
+    id: Mapped[int] = mapped_column(primary_key=True)
+    component_id: Mapped[int] = mapped_column(ForeignKey('components.id'), nullable=False)
+    key_name: Mapped[str] = mapped_column(String(120), nullable=False)
+    value_text: Mapped[str] = mapped_column(String(250), nullable=False)
+    unit: Mapped[str | None] = mapped_column(String(30), nullable=True)
+    order_index: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+
+    component = relationship("Component", backref="specs")
+
+    def to_dict(self):
+        return {"id": self.id, "component_id": self.component_id, "key_name": self.key_name, "value_text": self.value_text, "unit": self.unit, "order_index": self.order_index}
+
+
+# ── Document Links (Google Drive, etc) ───────────────────────────────────────
+
+class DocumentLink(db.Model):
+    __tablename__ = 'document_links'
+    id: Mapped[int] = mapped_column(primary_key=True)
+    entity_type: Mapped[str] = mapped_column(String(20), nullable=False)  # equipment, component, rotative_asset
+    entity_id: Mapped[int] = mapped_column(Integer, nullable=False)
+    title: Mapped[str] = mapped_column(String(150), nullable=False)
+    url: Mapped[str] = mapped_column(String(500), nullable=False)
+    doc_type: Mapped[str | None] = mapped_column(String(50), nullable=True)  # plano, manual, informe, otro
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+
+    def to_dict(self):
+        return {"id": self.id, "entity_type": self.entity_type, "entity_id": self.entity_id, "title": self.title, "url": self.url, "doc_type": self.doc_type, "created_at": self.created_at.isoformat() if self.created_at else None}
+
+
 class Provider(db.Model):
     __tablename__ = 'providers'
     id: Mapped[int] = mapped_column(primary_key=True)

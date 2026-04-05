@@ -172,6 +172,18 @@
             </table>
         </div>
 
+        <hr style="border-color:#333;margin:16px 0">
+        <h4 style="margin:0 0 10px 0;color:#30D158;font-size:.85rem"><i class="fas fa-link"></i> Documentos / Planos (Links)</h4>
+        <div id="raDocsList" style="margin-bottom:10px"><span style="color:#666;font-size:.80rem">Sin documentos.</span></div>
+        <div style="display:grid;grid-template-columns:1fr 1fr auto auto;gap:6px;align-items:center">
+            <input type="text" id="raDocTitle" placeholder="Titulo (ej: Manual SEW)" style="height:32px">
+            <input type="text" id="raDocUrl" placeholder="https://drive.google.com/..." style="height:32px">
+            <select id="raDocType" style="height:32px;width:90px">
+                <option value="plano">Plano</option><option value="manual">Manual</option><option value="informe">Informe</option><option value="otro">Otro</option>
+            </select>
+            <button type="button" onclick="addRADocLink()" class="btn-success" style="height:32px;padding:0 12px"><i class="fas fa-plus"></i></button>
+        </div>
+
         <div style="display:flex; justify-content:flex-end; margin-top:12px;">
             <button type="button" class="btn-secondary" onclick="closeDialog('specModal')">Cerrar</button>
         </div>

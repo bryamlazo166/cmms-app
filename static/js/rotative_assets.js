@@ -464,7 +464,7 @@ async function openSpecModal(id) {
     rQ('specId').value = '';
     rQ('specAssetLabel').textContent = `${a.code || ''} ${a.name || ''}`.trim();
 
-    await loadSpecs(id);
+    await Promise.all([loadSpecs(id), loadRADocLinks(id)]);
     rQ('specModal').showModal();
 }
 
@@ -525,6 +525,54 @@ async function saveSpec(e) {
     rQ('specValue').value = '';
     rQ('specUnit').value = '';
     await loadSpecs(assetId);
+}
+
+// ── Document Links for Rotative Assets ────────────────────────────────────
+
+async function loadRADocLinks(assetId) {
+    try {
+        const res = await rFetch(`/api/doc-links/rotative_asset/${assetId}`);
+        const docs = Array.isArray(res) ? res : [];
+        const container = rQ('raDocsList');
+        if (!docs.length) {
+            container.innerHTML = '<span style="color:#666;font-size:.80rem">Sin documentos.</span>';
+            return;
+        }
+        const typeIcons = { plano: 'fa-drafting-compass', manual: 'fa-book', informe: 'fa-file-alt', otro: 'fa-link' };
+        container.innerHTML = docs.map(d => `
+            <div style="display:flex;align-items:center;gap:8px;padding:5px 8px;background:#252526;border-radius:5px;margin-bottom:4px;font-size:.82rem">
+                <i class="fas ${typeIcons[d.doc_type] || 'fa-link'}" style="color:#30D158;width:16px"></i>
+                <a href="${d.url}" target="_blank" style="color:#5AC8FA;text-decoration:none;flex:1">${d.title}</a>
+                <span style="color:#666;font-size:.70rem;text-transform:uppercase">${d.doc_type || ''}</span>
+                <span onclick="deleteRADocLink(${d.id})" style="cursor:pointer;color:#FF453A;font-size:.70rem"><i class="fas fa-times"></i></span>
+            </div>
+        `).join('');
+    } catch (_) {
+        rQ('raDocsList').innerHTML = '<span style="color:#FF6B61;font-size:.80rem">Error.</span>';
+    }
+}
+
+async function addRADocLink() {
+    const assetId = rQ('specAssetId').value;
+    const title = (rQ('raDocTitle').value || '').trim();
+    const url = (rQ('raDocUrl').value || '').trim();
+    const docType = rQ('raDocType').value;
+    if (!title || !url) { alert('Ingresa titulo y URL.'); return; }
+    await rFetch(`/api/doc-links/rotative_asset/${assetId}`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ title, url, doc_type: docType })
+    });
+    rQ('raDocTitle').value = '';
+    rQ('raDocUrl').value = '';
+    await loadRADocLinks(assetId);
+}
+
+async function deleteRADocLink(docId) {
+    if (!confirm('Eliminar este documento?')) return;
+    const assetId = rQ('specAssetId').value;
+    await rFetch(`/api/doc-links/${docId}`, { method: 'DELETE' });
+    await loadRADocLinks(assetId);
 }
 
 async function initRotative() {

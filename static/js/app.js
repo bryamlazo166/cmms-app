@@ -651,6 +651,15 @@ function createNode(text, type, data, cfg, childCount) {
     btnDel.title = 'Eliminar';
     btnDel.onclick = (e) => { e.stopPropagation(); if (data && data.id) deleteItem(type, data.id, data.name); };
 
+    // Specs button (only for Equipment and Component)
+    if (type === 'Equipment' || type === 'Component') {
+        const btnSpecs = document.createElement('span');
+        btnSpecs.innerHTML = '<i class="fas fa-info-circle"></i>';
+        btnSpecs.title = 'Specs y Documentos';
+        btnSpecs.onclick = (e) => { e.stopPropagation(); if (data && data.id) openSpecsModal(type, data.id, data.name || text); };
+        actions.appendChild(btnSpecs);
+    }
+
     actions.appendChild(btnNotice);
     actions.appendChild(btnEdit);
     actions.appendChild(btnDel);
@@ -662,4 +671,118 @@ function createNode(text, type, data, cfg, childCount) {
     node.appendChild(actions);
 
     return node;
+}
+
+// ── Specs & Docs Modal ────────────────────────────────────────────────────
+
+let _specsCtx = { type: '', id: 0 };
+
+function _apiType(type) {
+    return type === 'Equipment' ? 'equipment' : 'component';
+}
+
+async function openSpecsModal(type, id, name) {
+    _specsCtx = { type, id };
+    document.getElementById('specsModalTitle').textContent = `${name}`;
+    document.getElementById('specKey').value = '';
+    document.getElementById('specValue').value = '';
+    document.getElementById('specUnit').value = '';
+    document.getElementById('docTitle').value = '';
+    document.getElementById('docUrl').value = '';
+    document.getElementById('specsModal').showModal();
+    await Promise.all([loadSpecs(), loadDocLinks()]);
+}
+
+async function loadSpecs() {
+    const { type, id } = _specsCtx;
+    const apiT = _apiType(type);
+    try {
+        const res = await fetch(`/api/specs/${apiT}/${id}`);
+        const specs = await res.json();
+        const container = document.getElementById('specsList');
+        if (!specs.length) {
+            container.innerHTML = '<span style="color:#666;font-size:.80rem">Sin especificaciones.</span>';
+            return;
+        }
+        container.innerHTML = specs.map(s => `
+            <div style="display:flex;align-items:center;gap:8px;padding:5px 8px;background:#252526;border-radius:5px;margin-bottom:4px;font-size:.82rem">
+                <span style="color:#FF9F0A;font-weight:600;min-width:120px">${s.key_name}</span>
+                <span style="color:#ddd;flex:1">${s.value_text}</span>
+                <span style="color:#888;font-size:.75rem">${s.unit || ''}</span>
+                <span onclick="deleteSpec('${apiT}',${s.id})" style="cursor:pointer;color:#FF453A;font-size:.70rem"><i class="fas fa-times"></i></span>
+            </div>
+        `).join('');
+    } catch (_) {
+        document.getElementById('specsList').innerHTML = '<span style="color:#FF6B61;font-size:.80rem">Error cargando specs.</span>';
+    }
+}
+
+async function addSpec() {
+    const { type, id } = _specsCtx;
+    const key = document.getElementById('specKey').value.trim();
+    const val = document.getElementById('specValue').value.trim();
+    const unit = document.getElementById('specUnit').value.trim();
+    if (!key || !val) { alert('Ingresa propiedad y valor.'); return; }
+    await fetch(`/api/specs/${_apiType(type)}/${id}`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ key_name: key, value_text: val, unit: unit })
+    });
+    document.getElementById('specKey').value = '';
+    document.getElementById('specValue').value = '';
+    document.getElementById('specUnit').value = '';
+    loadSpecs();
+}
+
+async function deleteSpec(apiType, specId) {
+    if (!confirm('Eliminar esta especificacion?')) return;
+    await fetch(`/api/specs/${apiType}/${specId}/delete`, { method: 'DELETE' });
+    loadSpecs();
+}
+
+async function loadDocLinks() {
+    const { type, id } = _specsCtx;
+    const apiT = _apiType(type);
+    try {
+        const res = await fetch(`/api/doc-links/${apiT}/${id}`);
+        const docs = await res.json();
+        const container = document.getElementById('docsList');
+        if (!docs.length) {
+            container.innerHTML = '<span style="color:#666;font-size:.80rem">Sin documentos.</span>';
+            return;
+        }
+        const typeIcons = { plano: 'fa-drafting-compass', manual: 'fa-book', informe: 'fa-file-alt', otro: 'fa-link' };
+        container.innerHTML = docs.map(d => `
+            <div style="display:flex;align-items:center;gap:8px;padding:5px 8px;background:#252526;border-radius:5px;margin-bottom:4px;font-size:.82rem">
+                <i class="fas ${typeIcons[d.doc_type] || 'fa-link'}" style="color:#30D158;width:16px"></i>
+                <a href="${d.url}" target="_blank" style="color:#5AC8FA;text-decoration:none;flex:1">${d.title}</a>
+                <span style="color:#666;font-size:.70rem;text-transform:uppercase">${d.doc_type || ''}</span>
+                <span onclick="deleteDocLink(${d.id})" style="cursor:pointer;color:#FF453A;font-size:.70rem"><i class="fas fa-times"></i></span>
+            </div>
+        `).join('');
+    } catch (_) {
+        document.getElementById('docsList').innerHTML = '<span style="color:#FF6B61;font-size:.80rem">Error cargando documentos.</span>';
+    }
+}
+
+async function addDocLink() {
+    const { type, id } = _specsCtx;
+    const title = document.getElementById('docTitle').value.trim();
+    const url = document.getElementById('docUrl').value.trim();
+    const docType = document.getElementById('docType').value;
+    if (!title || !url) { alert('Ingresa titulo y URL.'); return; }
+    await fetch(`/api/doc-links/${_apiType(type)}/${id}`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ title, url, doc_type: docType })
+    });
+    document.getElementById('docTitle').value = '';
+    document.getElementById('docUrl').value = '';
+    loadDocLinks();
+}
+
+async function deleteDocLink(docId) {
+    if (!confirm('Eliminar este documento?')) return;
+    await fetch(`/api/doc-links/${docId}`, { method: 'DELETE' });
+    loadDocLinks();
 }
