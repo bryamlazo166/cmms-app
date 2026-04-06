@@ -161,25 +161,9 @@
         <button class="btn btn-primary" onclick="withLoading(this, savePermissions)"><i class="fas fa-save"></i> Guardar Permisos</button>
     </div>
     <div class="panel" id="permPanel" style="overflow-x:auto">
-        <table style="width:100%;border-collapse:collapse;min-width:600px">
-            <thead>
-                <tr>
-                    <th style="text-align:left">Modulo</th>
-                    <th colspan="2" style="text-align:center;color:#5AC8FA">Supervisor</th>
-                    <th colspan="2" style="text-align:center;color:#5CD870">Tecnico</th>
-                    <th colspan="2" style="text-align:center;color:rgba(255,255,255,.50)">Solo Lectura</th>
-                </tr>
-                <tr>
-                    <th></th>
-                    <th style="text-align:center;font-size:.70rem;color:rgba(255,255,255,.40)">Ver</th>
-                    <th style="text-align:center;font-size:.70rem;color:rgba(255,255,255,.40)">Editar</th>
-                    <th style="text-align:center;font-size:.70rem;color:rgba(255,255,255,.40)">Ver</th>
-                    <th style="text-align:center;font-size:.70rem;color:rgba(255,255,255,.40)">Editar</th>
-                    <th style="text-align:center;font-size:.70rem;color:rgba(255,255,255,.40)">Ver</th>
-                    <th style="text-align:center;font-size:.70rem;color:rgba(255,255,255,.40)">Editar</th>
-                </tr>
-            </thead>
-            <tbody id="permBody"><tr><td colspan="7" class="empty-state">Cargando permisos...</td></tr></tbody>
+        <table style="width:100%;border-collapse:collapse;min-width:600px" id="permTable">
+            <thead id="permHead"><tr><th>Cargando...</th></tr></thead>
+            <tbody id="permBody"><tr><td class="empty-state">Cargando permisos...</td></tr></tbody>
         </table>
     </div>
 </div>
@@ -404,16 +388,42 @@ async function loadPermissions() {
 }
 
 function renderPermissions(data) {
+    const thead = document.getElementById('permHead');
     const tbody = document.getElementById('permBody');
     const roles = data.roles;
     const perms = data.permissions;
 
+    const ROLE_LABELS = {
+        jefe_mtto: 'Jefe Mtto', planner: 'Planner', supervisor: 'Supervisor',
+        tecnico: 'Tecnico', operador: 'Operador', almacenero: 'Almacenero', gerencia: 'Gerencia'
+    };
+    const ROLE_COLORS = {
+        jefe_mtto: '#FF9F0A', planner: '#5AC8FA', supervisor: '#BF5AF2',
+        tecnico: '#30D158', operador: '#FFD60A', almacenero: '#FF375F', gerencia: '#0A84FF'
+    };
+
+    // Header row 1: role names
+    let h1 = '<th style="text-align:left;padding:8px;font-size:.82rem">Modulo</th>';
+    roles.forEach(r => {
+        const label = ROLE_LABELS[r] || r;
+        const color = ROLE_COLORS[r] || '#888';
+        h1 += `<th colspan="2" style="text-align:center;color:${color};font-size:.78rem;padding:8px">${label}</th>`;
+    });
+    // Header row 2: ver/editar
+    let h2 = '<th></th>';
+    roles.forEach(() => {
+        h2 += '<th style="text-align:center;font-size:.65rem;color:rgba(255,255,255,.35);padding:4px">Ver</th>';
+        h2 += '<th style="text-align:center;font-size:.65rem;color:rgba(255,255,255,.35);padding:4px">Editar</th>';
+    });
+    thead.innerHTML = `<tr>${h1}</tr><tr>${h2}</tr>`;
+
+    // Body
     tbody.innerHTML = data.modules.map(mod => {
-        let row = `<td style="padding:8px 10px;font-size:.85rem;color:rgba(255,255,255,.82)">${mod.label}</td>`;
+        let row = `<td style="padding:8px 10px;font-size:.82rem;color:rgba(255,255,255,.82)">${mod.label}</td>`;
         roles.forEach(role => {
             const p = (perms[role] || {})[mod.key] || { view: false, edit: false };
-            row += `<td style="text-align:center"><input type="checkbox" data-role="${role}" data-mod="${mod.key}" data-perm="view" ${p.view ? 'checked' : ''}></td>`;
-            row += `<td style="text-align:center"><input type="checkbox" data-role="${role}" data-mod="${mod.key}" data-perm="edit" ${p.edit ? 'checked' : ''}></td>`;
+            row += `<td style="text-align:center;padding:6px"><input type="checkbox" data-role="${role}" data-mod="${mod.key}" data-perm="view" ${p.view ? 'checked' : ''}></td>`;
+            row += `<td style="text-align:center;padding:6px"><input type="checkbox" data-role="${role}" data-mod="${mod.key}" data-perm="edit" ${p.edit ? 'checked' : ''}></td>`;
         });
         return `<tr style="border-bottom:1px solid rgba(255,255,255,.05)">${row}</tr>`;
     }).join('');
