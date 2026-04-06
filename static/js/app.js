@@ -448,11 +448,16 @@ async function loadGlobalTree() {
                                         const { li: liComp, node: nodeComp } = buildTreeNode(comp.name, 'Component', comp, 0);
                                         // Show installed rotative asset for key components
                                         if (ROT_NAMES.includes(comp.name.toUpperCase())) {
-                                            const installed = (rotAssets || []).find(a => a.component_id === comp.id && a.status === 'Instalado');
+                                            const installed = (rotAssets || []).find(a =>
+                                                a.status === 'Instalado' && (
+                                                    a.component_id === comp.id ||
+                                                    (a.equipment_id === eq.id && a.name && a.name.toUpperCase().includes(comp.name.toUpperCase()))
+                                                )
+                                            );
                                             const tag = document.createElement('span');
                                             if (installed) {
-                                                tag.textContent = `← ${installed.code}`;
-                                                tag.style.cssText = 'font-size:.70rem;color:#30D158;margin-left:8px;font-weight:600;';
+                                                tag.innerHTML = `← <a href="/activos-rotativos" style="color:#30D158;text-decoration:none;font-weight:600" title="Ver activo ${installed.code}">${installed.code}</a>`;
+                                                tag.style.cssText = 'font-size:.72rem;margin-left:8px;';
                                             } else {
                                                 tag.textContent = '← sin activo';
                                                 tag.style.cssText = 'font-size:.70rem;color:#FF453A;margin-left:8px;opacity:.6;';
