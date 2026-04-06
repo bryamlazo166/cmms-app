@@ -1203,13 +1203,14 @@ class RotativeAssetBOM(db.Model):
 
     def to_dict(self):
         wi = self.warehouse_item
+        ft = getattr(self, 'free_text', None)
         return {
             "id": self.id,
             "asset_id": self.asset_id,
             "warehouse_item_id": self.warehouse_item_id,
-            "free_text": self.free_text,
+            "free_text": ft,
             "item_code": wi.code if wi else None,
-            "item_name": wi.name if wi else (self.free_text or None),
+            "item_name": wi.name if wi else (ft or None),
             "item_stock": wi.stock if wi else None,
             "item_unit": wi.unit if wi else None,
             "category": self.category,
