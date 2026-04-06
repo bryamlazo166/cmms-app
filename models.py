@@ -1191,7 +1191,8 @@ class RotativeAssetBOM(db.Model):
 
     id: Mapped[int] = mapped_column(primary_key=True)
     asset_id: Mapped[int] = mapped_column(ForeignKey('rotative_assets.id'), nullable=False)
-    warehouse_item_id: Mapped[int] = mapped_column(ForeignKey('warehouse_items.id'), nullable=False)
+    warehouse_item_id: Mapped[int | None] = mapped_column(ForeignKey('warehouse_items.id'), nullable=True)
+    free_text: Mapped[str | None] = mapped_column(String(200), nullable=True)  # When no warehouse item
     category: Mapped[str] = mapped_column(String(30), nullable=False, default='MECANICO')
     # MECANICO | ELECTRICO | CONSUMIBLE
     quantity: Mapped[float] = mapped_column(Float, nullable=False, default=1)
@@ -1206,13 +1207,15 @@ class RotativeAssetBOM(db.Model):
             "id": self.id,
             "asset_id": self.asset_id,
             "warehouse_item_id": self.warehouse_item_id,
+            "free_text": self.free_text,
             "item_code": wi.code if wi else None,
-            "item_name": wi.name if wi else None,
+            "item_name": wi.name if wi else (self.free_text or None),
             "item_stock": wi.stock if wi else None,
             "item_unit": wi.unit if wi else None,
             "category": self.category,
             "quantity": self.quantity,
             "notes": self.notes,
+            "is_linked": wi is not None,
         }
 
 

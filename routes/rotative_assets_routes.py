@@ -280,15 +280,21 @@ def register_rotative_assets_routes(
             try:
                 data = request.json or {}
                 wi_id = data.get('warehouse_item_id')
-                if not wi_id:
-                    return jsonify({"error": "Seleccione un repuesto del almacen."}), 400
-                existing = RotativeAssetBOM.query.filter_by(
-                    asset_id=asset_id, warehouse_item_id=wi_id).first()
-                if existing:
-                    return jsonify({"error": "Este repuesto ya esta en la lista."}), 409
+                free_text = (data.get('free_text') or '').strip()
+
+                if not wi_id and not free_text:
+                    return jsonify({"error": "Seleccione un repuesto o escriba el nombre."}), 400
+
+                if wi_id:
+                    existing = RotativeAssetBOM.query.filter_by(
+                        asset_id=asset_id, warehouse_item_id=wi_id).first()
+                    if existing:
+                        return jsonify({"error": "Este repuesto ya esta en la lista."}), 409
+
                 bom = RotativeAssetBOM(
                     asset_id=asset_id,
-                    warehouse_item_id=int(wi_id),
+                    warehouse_item_id=int(wi_id) if wi_id else None,
+                    free_text=free_text.upper() if free_text else None,
                     category=(data.get('category') or 'MECANICO').upper(),
                     quantity=float(data.get('quantity') or 1),
                     notes=data.get('notes'),

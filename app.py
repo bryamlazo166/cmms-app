@@ -589,6 +589,7 @@ _ENSURE_COLUMNS = [
     ("work_orders", "report_status", "VARCHAR(20)"),
     ("work_orders", "report_due_date", "VARCHAR(20)"),
     ("work_orders", "report_received_date", "VARCHAR(20)"),
+    ("rotative_asset_bom", "free_text", "VARCHAR(200)"),
 ]
 
 
@@ -614,6 +615,11 @@ def _init_schema_on_startup():
                     logger.info(f"Column {table}.{col} added.")
                 except Exception:
                     pass  # Column already exists
+            # Make warehouse_item_id nullable in BOM
+            try:
+                db.session.execute(text("ALTER TABLE rotative_asset_bom ALTER COLUMN warehouse_item_id DROP NOT NULL"))
+            except Exception:
+                pass
             db.session.commit()
         logger.info("Database schema and indexes checked/created on startup.")
     except Exception as e:

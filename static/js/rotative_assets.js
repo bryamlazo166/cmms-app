@@ -374,36 +374,56 @@ async function loadBomItems(assetId) {
         '<th style="padding:6px 8px;font-size:.72rem;color:rgba(255,255,255,.40)">Nota</th>' +
         '<th></th></tr></thead><tbody>' +
         items.map(b => {
+            const isLinked = b.is_linked;
             const stockColor = (b.item_stock || 0) > 0 ? '#30D158' : '#FF453A';
             const catColor = b.category === 'ELECTRICO' ? '#5AC8FA' : b.category === 'CONSUMIBLE' ? '#FF9F0A' : '#30D158';
+            const codeDisplay = isLinked ? (b.item_code || '-') : '<span style="color:#FF9F0A;font-size:.70rem">LIBRE</span>';
+            const stockDisplay = isLinked ? `<span style="color:${stockColor}">${b.item_stock || 0} ${b.item_unit || ''}</span>` : '<span style="color:rgba(255,255,255,.25)">-</span>';
             return `<tr style="border-bottom:1px solid rgba(255,255,255,.05)">
-                <td style="padding:6px 8px;font-size:.82rem;color:#0A84FF">${b.item_code || '-'}</td>
-                <td style="padding:6px 8px;font-size:.82rem;color:rgba(255,255,255,.80)">${b.item_name || '-'}</td>
+                <td style="padding:6px 8px;font-size:.82rem;color:#0A84FF">${codeDisplay}</td>
+                <td style="padding:6px 8px;font-size:.82rem;color:rgba(255,255,255,.80)">${b.item_name || b.free_text || '-'}</td>
                 <td style="padding:6px 8px;font-size:.72rem;text-align:center;color:${catColor}">${b.category}</td>
                 <td style="padding:6px 8px;font-size:.82rem;text-align:center">${b.quantity}</td>
-                <td style="padding:6px 8px;font-size:.82rem;text-align:center;color:${stockColor}">${b.item_stock || 0} ${b.item_unit || ''}</td>
+                <td style="padding:6px 8px;font-size:.82rem;text-align:center">${stockDisplay}</td>
                 <td style="padding:6px 8px;font-size:.78rem;color:rgba(255,255,255,.45)">${b.notes || '-'}</td>
                 <td><button onclick="removeBomItem(${b.id})" style="background:rgba(255,69,58,.12);border:none;border-radius:4px;color:#FF6B61;width:24px;height:24px;cursor:pointer;font-size:.72rem"><i class="fas fa-trash"></i></button></td>
             </tr>`;
         }).join('') + '</tbody></table>';
 }
 
+function toggleBomMode() {
+    const mode = document.querySelector('input[name="bomMode"]:checked').value;
+    document.getElementById('bomItemContainer').style.display = mode === 'warehouse' ? '' : 'none';
+    document.getElementById('bomFreeContainer').style.display = mode === 'free' ? '' : 'none';
+}
+
 async function addBomItem() {
     const assetId = document.getElementById('bomAssetId').value;
-    const wiId = document.getElementById('bomItem').value;
-    if (!wiId) { alert('Seleccione un repuesto.'); return; }
+    const mode = document.querySelector('input[name="bomMode"]:checked').value;
+    const payload = {
+        category: document.getElementById('bomCat').value,
+        quantity: Number(document.getElementById('bomQty').value || 1),
+        notes: document.getElementById('bomNote').value || null,
+    };
+
+    if (mode === 'warehouse') {
+        const wiId = document.getElementById('bomItem').value;
+        if (!wiId) { alert('Seleccione un repuesto.'); return; }
+        payload.warehouse_item_id = wiId;
+    } else {
+        const freeText = document.getElementById('bomFreeText').value.trim();
+        if (!freeText) { alert('Escriba el nombre del repuesto.'); return; }
+        payload.free_text = freeText;
+    }
+
     try {
         await rFetch(`/api/rotative-assets/${assetId}/bom`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({
-                warehouse_item_id: wiId,
-                category: document.getElementById('bomCat').value,
-                quantity: Number(document.getElementById('bomQty').value || 1),
-                notes: document.getElementById('bomNote').value || null,
-            })
+            body: JSON.stringify(payload)
         });
         document.getElementById('bomNote').value = '';
+        document.getElementById('bomFreeText').value = '';
         await loadBomItems(assetId);
     } catch (e) { alert(e.message); }
 }
