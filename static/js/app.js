@@ -755,17 +755,20 @@ async function addSpec() {
     const unit = document.getElementById('specUnit').value.trim();
     if (!key || !val) { alert('Ingresa propiedad y valor.'); return; }
 
-    // If editing, delete old and re-add
     if (_editingSpecId) {
-        await fetch(`/api/specs/${_editingSpecId.apiType}/${_editingSpecId.specId}/delete`, { method: 'DELETE' });
+        await fetch(`/api/specs/${_editingSpecId.apiType}/${_editingSpecId.specId}/update`, {
+            method: 'PUT',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ key_name: key, value_text: val, unit: unit })
+        });
         _editingSpecId = null;
+    } else {
+        await fetch(`/api/specs/${_apiType(type)}/${id}`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ key_name: key, value_text: val, unit: unit })
+        });
     }
-
-    await fetch(`/api/specs/${_apiType(type)}/${id}`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ key_name: key, value_text: val, unit: unit })
-    });
     document.getElementById('specKey').value = '';
     document.getElementById('specValue').value = '';
     document.getElementById('specUnit').value = '';

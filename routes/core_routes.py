@@ -592,6 +592,23 @@ def register_core_routes(app, db, logger, app_build_tag,
         specs = Model.query.filter(getattr(Model, fk) == entity_id).order_by(Model.order_index).all()
         return jsonify([s.to_dict() for s in specs])
 
+    @app.route('/api/specs/<entity_type>/<int:spec_id>/update', methods=['PUT'])
+    def update_spec(entity_type, spec_id):
+        from models import EquipmentSpec, ComponentSpec
+        MODEL_MAP = {'equipment': EquipmentSpec, 'component': ComponentSpec}
+        if entity_type not in MODEL_MAP:
+            return jsonify({"error": "entity_type invalido"}), 400
+        spec = MODEL_MAP[entity_type].query.get_or_404(spec_id)
+        data = request.get_json()
+        if data.get('key_name'):
+            spec.key_name = data['key_name']
+        if data.get('value_text'):
+            spec.value_text = data['value_text']
+        if 'unit' in data:
+            spec.unit = data['unit']
+        db.session.commit()
+        return jsonify(spec.to_dict())
+
     @app.route('/api/specs/<entity_type>/<int:spec_id>/delete', methods=['DELETE'])
     def delete_spec(entity_type, spec_id):
         from models import EquipmentSpec, ComponentSpec
