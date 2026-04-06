@@ -274,69 +274,62 @@ def register_rotative_assets_routes(
     def handle_asset_bom(asset_id):
         RotativeAsset.query.get_or_404(asset_id)
 
+        from sqlalchemy import text as sql_text
+
+        # Ensure free_text column exists
+        try:
+            db.session.execute(sql_text("ALTER TABLE rotative_asset_bom ADD COLUMN free_text VARCHAR(200)"))
+            db.session.execute(sql_text("ALTER TABLE rotative_asset_bom ALTER COLUMN warehouse_item_id DROP NOT NULL"))
+            db.session.commit()
+        except Exception:
+            db.session.rollback()
+
         if request.method == 'POST':
-            if not RotativeAssetBOM:
-                return jsonify({"error": "BOM no disponible"}), 500
             try:
                 data = request.json or {}
-                wi_id = data.get('warehouse_item_id')
-                free_text = (data.get('free_text') or '').strip()
+                wi_id = data.get('warehouse_item_id') or None
+                free_text = (data.get('free_text') or '').strip().upper() or None
 
                 if not wi_id and not free_text:
                     return jsonify({"error": "Seleccione un repuesto o escriba el nombre."}), 400
 
-                if wi_id:
-                    existing = RotativeAssetBOM.query.filter_by(
-                        asset_id=asset_id, warehouse_item_id=wi_id).first()
-                    if existing:
-                        return jsonify({"error": "Este repuesto ya esta en la lista."}), 409
+                category = (data.get('category') or 'MECANICO').upper()
+                quantity = float(data.get('quantity') or 1)
+                notes = data.get('notes') or None
 
-                bom = RotativeAssetBOM(
-                    asset_id=asset_id,
-                    warehouse_item_id=int(wi_id) if wi_id else None,
-                    free_text=free_text.upper() if free_text else None,
-                    category=(data.get('category') or 'MECANICO').upper(),
-                    quantity=float(data.get('quantity') or 1),
-                    notes=data.get('notes'),
-                )
-                db.session.add(bom)
+                db.session.execute(sql_text("""
+                    INSERT INTO rotative_asset_bom (asset_id, warehouse_item_id, free_text, category, quantity, notes)
+                    VALUES (:aid, :wid, :ft, :cat, :qty, :notes)
+                """), {"aid": asset_id, "wid": int(wi_id) if wi_id else None, "ft": free_text, "cat": category, "qty": quantity, "notes": notes})
                 db.session.commit()
-                return jsonify(bom.to_dict()), 201
+                return jsonify({"ok": True}), 201
             except Exception as exc:
                 db.session.rollback()
                 return jsonify({"error": str(exc)}), 500
 
-        if not RotativeAssetBOM:
-            return jsonify([])
+        # GET
         try:
-            items = RotativeAssetBOM.query.filter_by(asset_id=asset_id).all()
-            return jsonify([b.to_dict() for b in items])
+            rows = db.session.execute(sql_text("""
+                SELECT b.id, b.asset_id, b.warehouse_item_id, b.free_text, b.category, b.quantity, b.notes,
+                       w.code, w.name, w.stock, w.unit
+                FROM rotative_asset_bom b
+                LEFT JOIN warehouse_items w ON b.warehouse_item_id = w.id
+                WHERE b.asset_id = :aid
+            """), {"aid": asset_id}).fetchall()
+            result = []
+            for r in rows:
+                result.append({
+                    "id": r[0], "asset_id": r[1], "warehouse_item_id": r[2],
+                    "free_text": r[3], "item_code": r[7],
+                    "item_name": r[8] if r[8] else (r[3] or '-'),
+                    "item_stock": r[9], "item_unit": r[10],
+                    "category": r[4], "quantity": r[5], "notes": r[6],
+                    "is_linked": r[2] is not None,
+                })
+            return jsonify(result)
         except Exception as exc:
             db.session.rollback()
-            # Column may not exist yet — try raw SQL fallback
-            try:
-                from sqlalchemy import text
-                rows = db.session.execute(text("""
-                    SELECT b.id, b.asset_id, b.warehouse_item_id, b.category, b.quantity, b.notes,
-                           w.code, w.name, w.stock, w.unit
-                    FROM rotative_asset_bom b
-                    LEFT JOIN warehouse_items w ON b.warehouse_item_id = w.id
-                    WHERE b.asset_id = :aid
-                """), {"aid": asset_id}).fetchall()
-                result = []
-                for r in rows:
-                    result.append({
-                        "id": r[0], "asset_id": r[1], "warehouse_item_id": r[2],
-                        "free_text": None, "item_code": r[6], "item_name": r[7],
-                        "item_stock": r[8], "item_unit": r[9],
-                        "category": r[3], "quantity": r[4], "notes": r[5],
-                        "is_linked": r[2] is not None,
-                    })
-                db.session.remove()
-                return jsonify(result)
-            except Exception:
-                db.session.rollback()
-                return jsonify({"error": str(exc)}), 500
+            return jsonify({"error": str(exc)}), 500
 
     @app.route('/api/rotative-assets/bom/<int:bom_id>', methods=['DELETE'])
     def delete_asset_bom(bom_id):
