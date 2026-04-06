@@ -729,12 +729,23 @@ async function loadSpecs() {
                 <span style="color:#FF9F0A;font-weight:600;min-width:120px">${s.key_name}</span>
                 <span style="color:#ddd;flex:1">${s.value_text}</span>
                 <span style="color:#888;font-size:.75rem">${s.unit || ''}</span>
-                <span onclick="deleteSpec('${apiT}',${s.id})" style="cursor:pointer;color:#FF453A;font-size:.70rem"><i class="fas fa-times"></i></span>
+                <span onclick="editSpec('${apiT}',${s.id},'${s.key_name.replace(/'/g,"\\'")}','${s.value_text.replace(/'/g,"\\'")}','${(s.unit||'').replace(/'/g,"\\'")}')" style="cursor:pointer;color:#5AC8FA;font-size:.70rem;margin-right:2px" title="Editar"><i class="fas fa-pen"></i></span>
+                <span onclick="deleteSpec('${apiT}',${s.id})" style="cursor:pointer;color:#FF453A;font-size:.70rem" title="Eliminar"><i class="fas fa-times"></i></span>
             </div>
         `).join('');
     } catch (_) {
         document.getElementById('specsList').innerHTML = '<span style="color:#FF6B61;font-size:.80rem">Error cargando specs.</span>';
     }
+}
+
+let _editingSpecId = null;
+
+function editSpec(apiType, specId, key, value, unit) {
+    _editingSpecId = { apiType, specId };
+    document.getElementById('specKey').value = key;
+    document.getElementById('specValue').value = value;
+    document.getElementById('specUnit').value = unit;
+    document.getElementById('specKey').focus();
 }
 
 async function addSpec() {
@@ -743,6 +754,13 @@ async function addSpec() {
     const val = document.getElementById('specValue').value.trim();
     const unit = document.getElementById('specUnit').value.trim();
     if (!key || !val) { alert('Ingresa propiedad y valor.'); return; }
+
+    // If editing, delete old and re-add
+    if (_editingSpecId) {
+        await fetch(`/api/specs/${_editingSpecId.apiType}/${_editingSpecId.specId}/delete`, { method: 'DELETE' });
+        _editingSpecId = null;
+    }
+
     await fetch(`/api/specs/${_apiType(type)}/${id}`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
