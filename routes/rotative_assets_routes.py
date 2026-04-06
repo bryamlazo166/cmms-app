@@ -308,8 +308,35 @@ def register_rotative_assets_routes(
 
         if not RotativeAssetBOM:
             return jsonify([])
-        items = RotativeAssetBOM.query.filter_by(asset_id=asset_id).all()
-        return jsonify([b.to_dict() for b in items])
+        try:
+            items = RotativeAssetBOM.query.filter_by(asset_id=asset_id).all()
+            return jsonify([b.to_dict() for b in items])
+        except Exception as exc:
+            db.session.rollback()
+            # Column may not exist yet — try raw SQL fallback
+            try:
+                from sqlalchemy import text
+                rows = db.session.execute(text("""
+                    SELECT b.id, b.asset_id, b.warehouse_item_id, b.category, b.quantity, b.notes,
+                           w.code, w.name, w.stock, w.unit
+                    FROM rotative_asset_bom b
+                    LEFT JOIN warehouse_items w ON b.warehouse_item_id = w.id
+                    WHERE b.asset_id = :aid
+                """), {"aid": asset_id}).fetchall()
+                result = []
+                for r in rows:
+                    result.append({
+                        "id": r[0], "asset_id": r[1], "warehouse_item_id": r[2],
+                        "free_text": None, "item_code": r[6], "item_name": r[7],
+                        "item_stock": r[8], "item_unit": r[9],
+                        "category": r[3], "quantity": r[4], "notes": r[5],
+                        "is_linked": r[2] is not None,
+                    })
+                db.session.remove()
+                return jsonify(result)
+            except Exception:
+                db.session.rollback()
+                return jsonify({"error": str(exc)}), 500
 
     @app.route('/api/rotative-assets/bom/<int:bom_id>', methods=['DELETE'])
     def delete_asset_bom(bom_id):
