@@ -160,8 +160,14 @@ db.init_app(app)
 _ASSET_VERSION = datetime.now().strftime('%Y%m%d%H%M%S')
 
 @app.context_processor
-def inject_asset_version():
-    return dict(v=_ASSET_VERSION)
+def inject_globals():
+    role = getattr(current_user, 'role', 'viewer') if current_user.is_authenticated else 'viewer'
+    perms = _DEFAULT_PERMS.get(role, {}) if role != 'admin' else {}
+    def can_view(mod):
+        return role == 'admin' or perms.get(mod, {}).get('view', False)
+    def can_edit(mod):
+        return role == 'admin' or perms.get(mod, {}).get('edit', False)
+    return dict(v=_ASSET_VERSION, user_role=role, can_view=can_view, can_edit=can_edit)
 
 # ── Flask-Login setup ─────────────────────────────────────────────────────────
 login_manager = LoginManager()
@@ -198,28 +204,69 @@ _MODULE_ROUTES = {
 }
 
 # Default permissions (used when no DB config exists)
+# view=can see page/data, edit=can create/modify/delete
 _DEFAULT_PERMS = {
-    'supervisor': {
+    'jefe_mtto': {
         'avisos': {'view': True, 'edit': True}, 'ordenes': {'view': True, 'edit': True},
         'compras': {'view': True, 'edit': True}, 'almacen': {'view': True, 'edit': True},
         'herramientas': {'view': True, 'edit': True}, 'lubricacion': {'view': True, 'edit': True},
         'inspecciones': {'view': True, 'edit': True}, 'monitoreo': {'view': True, 'edit': True},
-        'seguimiento': {'view': True, 'edit': True}, 'reportes': {'view': True, 'edit': False},
-        'activos_rotativos': {'view': False, 'edit': False}, 'activos_config': {'view': False, 'edit': False},
-        'historial_equipo': {'view': False, 'edit': False}, 'exportar': {'view': False, 'edit': False},
+        'seguimiento': {'view': True, 'edit': True}, 'reportes': {'view': True, 'edit': True},
+        'activos_rotativos': {'view': True, 'edit': True}, 'activos_config': {'view': True, 'edit': False},
+        'historial_equipo': {'view': True, 'edit': False}, 'exportar': {'view': False, 'edit': False},
         'usuarios': {'view': False, 'edit': False},
     },
-    'tecnico': {
+    'planner': {
         'avisos': {'view': True, 'edit': True}, 'ordenes': {'view': True, 'edit': True},
-        'compras': {'view': True, 'edit': False}, 'almacen': {'view': True, 'edit': False},
-        'herramientas': {'view': True, 'edit': True}, 'lubricacion': {'view': True, 'edit': True},
+        'compras': {'view': True, 'edit': True}, 'almacen': {'view': True, 'edit': False},
+        'herramientas': {'view': True, 'edit': False}, 'lubricacion': {'view': True, 'edit': True},
         'inspecciones': {'view': True, 'edit': True}, 'monitoreo': {'view': True, 'edit': True},
         'seguimiento': {'view': True, 'edit': True}, 'reportes': {'view': True, 'edit': False},
         'activos_rotativos': {'view': True, 'edit': False}, 'activos_config': {'view': True, 'edit': False},
         'historial_equipo': {'view': True, 'edit': False}, 'exportar': {'view': False, 'edit': False},
         'usuarios': {'view': False, 'edit': False},
     },
-    'viewer': {
+    'supervisor': {
+        'avisos': {'view': True, 'edit': True}, 'ordenes': {'view': True, 'edit': False},
+        'compras': {'view': True, 'edit': False}, 'almacen': {'view': True, 'edit': False},
+        'herramientas': {'view': True, 'edit': False}, 'lubricacion': {'view': True, 'edit': True},
+        'inspecciones': {'view': True, 'edit': True}, 'monitoreo': {'view': True, 'edit': True},
+        'seguimiento': {'view': True, 'edit': True}, 'reportes': {'view': True, 'edit': False},
+        'activos_rotativos': {'view': True, 'edit': False}, 'activos_config': {'view': True, 'edit': False},
+        'historial_equipo': {'view': True, 'edit': False}, 'exportar': {'view': False, 'edit': False},
+        'usuarios': {'view': False, 'edit': False},
+    },
+    'tecnico': {
+        'avisos': {'view': True, 'edit': True}, 'ordenes': {'view': True, 'edit': True},
+        'compras': {'view': False, 'edit': False}, 'almacen': {'view': False, 'edit': False},
+        'herramientas': {'view': True, 'edit': False}, 'lubricacion': {'view': True, 'edit': True},
+        'inspecciones': {'view': True, 'edit': True}, 'monitoreo': {'view': True, 'edit': True},
+        'seguimiento': {'view': False, 'edit': False}, 'reportes': {'view': False, 'edit': False},
+        'activos_rotativos': {'view': False, 'edit': False}, 'activos_config': {'view': False, 'edit': False},
+        'historial_equipo': {'view': False, 'edit': False}, 'exportar': {'view': False, 'edit': False},
+        'usuarios': {'view': False, 'edit': False},
+    },
+    'operador': {
+        'avisos': {'view': True, 'edit': True}, 'ordenes': {'view': False, 'edit': False},
+        'compras': {'view': False, 'edit': False}, 'almacen': {'view': False, 'edit': False},
+        'herramientas': {'view': False, 'edit': False}, 'lubricacion': {'view': False, 'edit': False},
+        'inspecciones': {'view': False, 'edit': False}, 'monitoreo': {'view': False, 'edit': False},
+        'seguimiento': {'view': False, 'edit': False}, 'reportes': {'view': False, 'edit': False},
+        'activos_rotativos': {'view': False, 'edit': False}, 'activos_config': {'view': False, 'edit': False},
+        'historial_equipo': {'view': False, 'edit': False}, 'exportar': {'view': False, 'edit': False},
+        'usuarios': {'view': False, 'edit': False},
+    },
+    'almacenero': {
+        'avisos': {'view': False, 'edit': False}, 'ordenes': {'view': False, 'edit': False},
+        'compras': {'view': True, 'edit': True}, 'almacen': {'view': True, 'edit': True},
+        'herramientas': {'view': True, 'edit': True}, 'lubricacion': {'view': False, 'edit': False},
+        'inspecciones': {'view': False, 'edit': False}, 'monitoreo': {'view': False, 'edit': False},
+        'seguimiento': {'view': False, 'edit': False}, 'reportes': {'view': False, 'edit': False},
+        'activos_rotativos': {'view': False, 'edit': False}, 'activos_config': {'view': False, 'edit': False},
+        'historial_equipo': {'view': False, 'edit': False}, 'exportar': {'view': False, 'edit': False},
+        'usuarios': {'view': False, 'edit': False},
+    },
+    'gerencia': {
         'avisos': {'view': True, 'edit': False}, 'ordenes': {'view': True, 'edit': False},
         'compras': {'view': True, 'edit': False}, 'almacen': {'view': True, 'edit': False},
         'herramientas': {'view': True, 'edit': False}, 'lubricacion': {'view': True, 'edit': False},

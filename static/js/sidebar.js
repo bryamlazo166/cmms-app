@@ -22,7 +22,11 @@
         { href: '/mantenimiento-bd', icon: 'fas fa-database', label: 'Mant. BD', tip: 'Mantenimiento BD' }
     ];
 
-    const ROLE_LABELS = { admin: 'Administrador', supervisor: 'Supervisor', tecnico: 'Técnico', viewer: 'Solo Lectura' };
+    const ROLE_LABELS = {
+        admin: 'Administrador', jefe_mtto: 'Jefe de Mantenimiento', planner: 'Planner',
+        supervisor: 'Supervisor', tecnico: 'Técnico', operador: 'Operador',
+        almacenero: 'Almacenero', gerencia: 'Gerencia', viewer: 'Solo Lectura'
+    };
     const AVATAR_COLORS = ['#0A84FF', '#30D158', '#FF9F0A', '#BF5AF2', '#5AC8FA', '#FF375F', '#FF9F0A'];
 
     function avatarColor(name) {
