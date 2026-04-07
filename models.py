@@ -1,3 +1,4 @@
+from typing import Optional
 from sqlalchemy import String, Integer, ForeignKey, Text, Boolean, Float, Date, DateTime, Index
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 from database import db
