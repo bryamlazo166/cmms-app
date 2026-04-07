@@ -639,6 +639,10 @@ _ENSURE_COLUMNS = [
     ("rotative_asset_bom", "free_text", "VARCHAR(200)"),
     ("maintenance_notices", "scope", "VARCHAR(20) DEFAULT 'PLAN' NOT NULL"),
     ("maintenance_notices", "free_location", "VARCHAR(255)"),
+    ("ot_materials", "subtype", "VARCHAR(20)"),
+    ("ot_materials", "item_name_free", "VARCHAR(200)"),
+    ("ot_materials", "unit", "VARCHAR(20)"),
+    ("ot_materials", "is_installed", "BOOLEAN DEFAULT true"),
 ]
 
 

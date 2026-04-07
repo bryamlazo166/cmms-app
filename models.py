@@ -564,7 +564,7 @@ class OTLogEntry(db.Model):
 
 
 class OTMaterial(db.Model):
-    """Materials (spare parts or tools) assigned to a work order"""
+    """Materials (spare parts, consumibles or tools) assigned to a work order"""
     __tablename__ = 'ot_materials'
     __table_args__ = (
         Index('ix_otm_work_order_id', 'work_order_id'),
@@ -572,20 +572,29 @@ class OTMaterial(db.Model):
     )
     id: Mapped[int] = mapped_column(primary_key=True)
     work_order_id: Mapped[int] = mapped_column(ForeignKey('work_orders.id'), nullable=False)
-    item_type: Mapped[str] = mapped_column(String(20), nullable=False)  # 'tool' or 'warehouse'
-    item_id: Mapped[int] = mapped_column(Integer, nullable=False)  # ID of tool or warehouse item
+    item_type: Mapped[str] = mapped_column(String(20), nullable=False)  # 'tool', 'warehouse', 'free'
+    item_id: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)   # None for free-text items
     quantity: Mapped[int] = mapped_column(Integer, default=1)
-    
+    # New execution fields
+    subtype: Mapped[Optional[str]] = mapped_column(String(20), nullable=True)   # 'herramienta'|'consumible'|'repuesto'
+    item_name_free: Mapped[Optional[str]] = mapped_column(String(200), nullable=True)  # name for free-text items
+    unit: Mapped[Optional[str]] = mapped_column(String(20), nullable=True)
+    is_installed: Mapped[Optional[bool]] = mapped_column(Boolean, nullable=True, default=True)
+
     # Relationship
     work_order = relationship("WorkOrder", backref="assigned_materials")
-    
+
     def to_dict(self):
         return {
             "id": self.id,
             "work_order_id": self.work_order_id,
             "item_type": self.item_type,
             "item_id": self.item_id,
-            "quantity": self.quantity
+            "quantity": self.quantity,
+            "subtype": self.subtype,
+            "item_name_free": self.item_name_free,
+            "unit": self.unit,
+            "is_installed": self.is_installed if self.is_installed is not None else True,
         }
 
 

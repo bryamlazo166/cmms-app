@@ -1438,6 +1438,17 @@ async function handleCloseOTSubmit(e) {
         body: JSON.stringify(data)
     });
 
+    // Save hallazgos as log entry if filled
+    const findings = (document.getElementById('closeFindings').value || '').trim();
+    if (findings) {
+        const today = new Date().toISOString().split('T')[0];
+        await fetch(`/api/work_orders/${id}/logs`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ log_date: today, log_type: 'HALLAZGO', comment: findings })
+        }).catch(() => {});
+    }
+
     document.getElementById('closeOTModal').close();
     await loadWorkOrders();
 
@@ -2073,110 +2084,158 @@ async function checkFeedback(equipmentId) {
 
 // ... existing code ...
 
-// Open Add Material Modal
+// ── Add Material Modal ────────────────────────────────────────────────────────
 let modalMaterialCatalog = [];
+let currentMaterialSubtype = 'repuesto';
 
-function renderMaterialOptions(filterText = '') {
-    const select = document.getElementById('materialItemSelect');
-    if (!select) return;
-
+function renderMaterialSearchList(filterText = '') {
+    const list = document.getElementById('materialSearchList');
+    if (!list) return;
     const query = String(filterText || '').trim().toLowerCase();
     const filtered = modalMaterialCatalog.filter(item => {
         if (!query) return true;
-        const haystack = `${item.code || ''} ${item.name || ''} ${item.category || ''}`.toLowerCase();
-        return haystack.includes(query);
-    });
+        return `${item.code || ''} ${item.name || ''} ${item.category || ''}`.toLowerCase().includes(query);
+    }).slice(0, 30);
 
-    if (filtered.length === 0) {
-        select.innerHTML = '<option value="">Sin resultados</option>';
+    if (!filtered.length) {
+        list.innerHTML = '<div style="padding:8px 12px;color:#888;font-size:.82rem;">Sin resultados en catálogo</div>';
+        list.style.display = 'block';
         return;
     }
-
-    select.innerHTML = filtered.map(i => {
-        if (currentMaterialType === 'tool') {
-            const status = i.status || 'Disponible';
-            return `<option value="${i.id}">${i.code} - ${i.name} (${status})</option>`;
-        }
-        const stock = (i.stock !== undefined && i.stock !== null) ? i.stock : 'N/A';
-        return `<option value="${i.id}">${i.code} - ${i.name} (Stock: ${stock})</option>`;
+    list.innerHTML = filtered.map(i => {
+        const detail = currentMaterialType === 'tool'
+            ? `(${i.status || 'Disponible'})`
+            : `Stock: ${i.stock ?? 'N/A'}`;
+        return `<div onclick="selectMaterialItem(${i.id},'${(i.code||'').replace(/'/g,"\\'")}','${(i.name||'').replace(/'/g,"\\'")}',${i.stock ?? null})"
+            style="padding:8px 12px;cursor:pointer;font-size:.83rem;border-bottom:1px solid #333;"
+            onmouseover="this.style.background='#2a3a5a'" onmouseout="this.style.background=''">
+            <strong>${i.code || '-'}</strong> — ${i.name}
+            <span style="color:#888;font-size:.78rem;margin-left:6px;">${detail}</span>
+        </div>`;
     }).join('');
+    list.style.display = 'block';
 }
 
-async function loadItemsForMaterialSelect(type) {
-    const select = document.getElementById('materialItemSelect');
-    if (!select) return;
+window.selectMaterialItem = function(id, code, name, stock) {
+    document.getElementById('materialItemId').value = id;
+    document.getElementById('materialSelectedName').textContent = `${code} — ${name}${stock !== null ? ' (Stock: ' + stock + ')' : ''}`;
+    document.getElementById('materialSelectedDisplay').style.display = 'block';
+    document.getElementById('materialSearchInput').value = '';
+    document.getElementById('materialSearchList').style.display = 'none';
+};
 
-    select.innerHTML = '<option value="">Cargando...</option>';
+window.clearMaterialSelection = function() {
+    document.getElementById('materialItemId').value = '';
+    document.getElementById('materialSelectedDisplay').style.display = 'none';
+    document.getElementById('materialSearchInput').value = '';
+    document.getElementById('materialSearchInput').focus();
+};
 
+async function loadMaterialCatalog(type) {
     try {
         const endpoint = type === 'tool' ? '/api/tools' : '/api/warehouse';
         const res = await fetch(endpoint);
-        const items = await res.json();
-
-        modalMaterialCatalog = Array.isArray(items) ? items : [];
-        renderMaterialOptions('');
+        modalMaterialCatalog = await res.json() || [];
     } catch (e) {
-        select.innerHTML = '<option value="">Error cargando items</option>';
         modalMaterialCatalog = [];
-        console.error(e);
     }
 }
 
-window.openAddMaterialModal = async function (type) {
+window.openAddMaterialModal = async function (type, subtype) {
     const otId = document.getElementById('otId').value;
-    if (!otId) {
-        alert('Guarde la OT primero antes de agregar materiales');
-        return;
-    }
+    if (!otId) { alert('Guarde la OT primero antes de agregar materiales'); return; }
 
-    document.getElementById('materialType').value = type;
     currentMaterialType = type;
+    currentMaterialSubtype = subtype || (type === 'tool' ? 'herramienta' : 'repuesto');
+    document.getElementById('materialType').value = type;
+    document.getElementById('materialSubtype').value = currentMaterialSubtype;
+
+    // Title + icon
+    const cfg = {
+        repuesto:    { icon: 'cog',    color: '#30D158', label: 'Agregar Repuesto' },
+        consumible:  { icon: 'flask',  color: '#FF9F0A', label: 'Agregar Consumible' },
+        herramienta: { icon: 'wrench', color: '#5AC8FA', label: 'Agregar Herramienta' },
+    };
+    const c = cfg[currentMaterialSubtype] || cfg.repuesto;
+    document.getElementById('addMaterialTitle').innerHTML =
+        `<i class="fas fa-${c.icon}" style="color:${c.color}"></i> ${c.label}`;
+
+    // Reset fields
+    document.getElementById('materialItemId').value = '';
+    document.getElementById('materialSelectedDisplay').style.display = 'none';
+    document.getElementById('materialSearchInput').value = '';
+    document.getElementById('materialSearchList').style.display = 'none';
+    document.getElementById('materialFreeText').value = '';
     document.getElementById('materialQuantity').value = 1;
+    document.getElementById('materialUnit').value = '';
+    document.getElementById('materialInstalled').value = '1';
 
-    const title = type === 'tool' ? 'Agregar Herramienta (Catalogo)' : 'Agregar Repuesto / Material';
-    const icon = type === 'tool' ? 'wrench' : 'box';
-    document.getElementById('addMaterialTitle').innerHTML = `<i class="fas fa-${icon}"></i> ${title}`;
+    // Hide "Instalado?" for tools
+    document.getElementById('materialInstalledGroup').style.display =
+        currentMaterialSubtype === 'herramienta' ? 'none' : '';
 
+    // Show/hide catalog section
+    const hasCatalog = type !== 'free';
+    document.getElementById('materialCatalogSection').style.display = hasCatalog ? '' : 'none';
+    document.getElementById('materialFreeLabel').textContent =
+        hasCatalog ? 'Nombre (si no está en catálogo)' : 'Nombre';
+
+    // Load catalog
+    if (hasCatalog) await loadMaterialCatalog(type);
+
+    // Search handler
     const searchInput = document.getElementById('materialSearchInput');
-    if (searchInput) {
-        searchInput.value = '';
-        searchInput.placeholder = type === 'tool' ? 'Buscar herramienta por codigo o nombre...' : 'Buscar repuesto por codigo o nombre...';
-        searchInput.oninput = function () {
-            renderMaterialOptions(searchInput.value);
-        };
-    }
+    searchInput.oninput = function() {
+        if (searchInput.value.trim()) renderMaterialSearchList(searchInput.value);
+        else document.getElementById('materialSearchList').style.display = 'none';
+    };
+    searchInput.placeholder = type === 'tool' ? 'Buscar herramienta...' : 'Buscar por código o nombre...';
 
-    await loadItemsForMaterialSelect(type);
     document.getElementById('addMaterialModal').showModal();
+    searchInput.focus();
+};
 
-    if (searchInput) searchInput.focus();
-}
+// Close dropdown when clicking outside
+document.addEventListener('click', function(e) {
+    const list = document.getElementById('materialSearchList');
+    if (list && !list.contains(e.target) && e.target.id !== 'materialSearchInput') {
+        list.style.display = 'none';
+    }
+    const pList = document.getElementById('personnelSuggestions');
+    if (pList && !pList.contains(e.target) && e.target.id !== 'personnelSearchInput') {
+        pList.style.display = 'none';
+    }
+});
 
 async function confirmAddMaterial() {
     const otId = document.getElementById('otId').value;
-    const itemId = document.getElementById('materialItemSelect').value;
-    const quantity = document.getElementById('materialQuantity').value;
+    const itemId = document.getElementById('materialItemId').value;
+    const freeText = document.getElementById('materialFreeText').value.trim();
+    const quantity = parseFloat(document.getElementById('materialQuantity').value) || 1;
+    const unit = document.getElementById('materialUnit').value.trim();
+    const isInstalled = document.getElementById('materialInstalled').value === '1';
 
-    if (!itemId) {
-        alert('Por favor seleccione un item.');
+    if (!itemId && !freeText) {
+        alert('Seleccione del catálogo o escriba el nombre del item.');
         return;
     }
-    if (!quantity || parseInt(quantity, 10) <= 0) {
-        alert('Por favor ingrese una cantidad valida mayor a 0.');
-        return;
-    }
+
+    const payload = {
+        item_type: itemId ? currentMaterialType : 'free',
+        subtype: currentMaterialSubtype,
+        item_id: itemId ? parseInt(itemId, 10) : null,
+        item_name_free: freeText || null,
+        quantity: quantity,
+        unit: unit || null,
+        is_installed: isInstalled,
+    };
 
     try {
         const res = await fetch(`/api/work_orders/${otId}/materials`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({
-                item_type: currentMaterialType,
-                item_id: parseInt(itemId, 10),
-                quantity: parseInt(quantity, 10)
-            })
+            body: JSON.stringify(payload)
         });
-
         if (res.ok) {
             document.getElementById('addMaterialModal').close();
             loadOTMaterials(otId);
@@ -2184,9 +2243,7 @@ async function confirmAddMaterial() {
             const err = await res.json();
             alert('Error: ' + (err.error || 'Error desconocido'));
         }
-    } catch (e) {
-        console.error(e);
-    }
+    } catch (e) { console.error(e); }
 }
 
 // Remove Material
@@ -2363,31 +2420,47 @@ async function loadOTMaterials(otId) {
 function renderMaterialsTable() {
     const tbody = document.getElementById('materialsTableBody');
     const empty = document.getElementById('materialsEmpty');
-
     if (!tbody) return;
-
     tbody.innerHTML = '';
-
     if (currentOTMaterials.length === 0) {
         if (empty) empty.style.display = 'block';
         return;
     }
-
     if (empty) empty.style.display = 'none';
 
-    currentOTMaterials.forEach((m) => {
+    const subtypeCfg = {
+        repuesto:    { bg: '#30D15822', color: '#30D158', icon: 'fa-cog',    label: 'Repuesto' },
+        consumible:  { bg: '#FF9F0A22', color: '#FF9F0A', icon: 'fa-flask',  label: 'Consumible' },
+        herramienta: { bg: '#5AC8FA22', color: '#5AC8FA', icon: 'fa-wrench', label: 'Herramienta' },
+    };
+
+    currentOTMaterials.forEach(m => {
+        const sub = m.subtype || (m.item_type === 'tool' ? 'herramienta' : 'repuesto');
+        const cfg = subtypeCfg[sub] || subtypeCfg.repuesto;
+        const name = m.item_name_free || m.item_name || m.name || '-';
+        const code = m.item_code || m.code || (m.item_type === 'free' ? '—' : '-');
+        const installedBadge = sub !== 'herramienta'
+            ? (m.is_installed !== false
+                ? '<span style="color:#30D158;font-size:.8rem;"><i class="fas fa-check-circle"></i> Sí</span>'
+                : '<span style="color:#FF453A;font-size:.8rem;"><i class="fas fa-times-circle"></i> No</span>')
+            : '<span style="color:#888;font-size:.78rem;">N/A</span>';
+
         const tr = document.createElement('tr');
         tr.innerHTML = `
-            <td><span class="badge" style="background: ${m.item_type === 'tool' ? '#FF9F0A' : '#4caf50'};">${m.item_type === 'tool' ? 'Herramienta' : 'Repuesto'}</span></td>
-            <td>${m.code || '-'}</td>
-            <td>${m.name || m.item_name || 'N/A'}</td>
-            <td>${m.quantity || 1}</td>
+            <td><span style="display:inline-flex;align-items:center;gap:4px;padding:2px 8px;border-radius:10px;font-size:.78rem;font-weight:600;background:${cfg.bg};color:${cfg.color};border:1px solid ${cfg.color}55;">
+                <i class="fas ${cfg.icon}"></i> ${cfg.label}
+            </span></td>
+            <td style="font-family:monospace;font-size:.82rem;">${code}</td>
+            <td style="font-weight:500;">${name}</td>
+            <td style="text-align:center;">${m.quantity || 1}</td>
+            <td style="text-align:center;color:#aaa;">${m.unit || '-'}</td>
+            <td style="text-align:center;">${installedBadge}</td>
             <td>
-                <button type="button" class="btn-danger" onclick="removeMaterial(${m.id})" style="padding: 2px 8px;">
+                <button type="button" onclick="removeMaterial(${m.id})"
+                    style="padding:2px 8px;background:#FF453A22;border:1px solid #FF453A55;border-radius:4px;color:#FF453A;cursor:pointer;">
                     <i class="fas fa-trash"></i>
                 </button>
-            </td>
-        `;
+            </td>`;
         tbody.appendChild(tr);
     });
 }
@@ -2797,75 +2870,87 @@ if (pForm) {
     };
 }
 
-// Dynamic filter for personnel modal
-let modalPersonnelCatalog = [];
+// ── Personnel Typeahead ───────────────────────────────────────────────────────
+let _selectedPersonnelId   = null;
+let _selectedPersonnelName = null;
 
-function renderPersonnelOptions(filterText = '') {
-    const select = document.getElementById('personnelTechSelect');
-    if (!select) return;
+function renderPersonnelSuggestions(query) {
+    const list = document.getElementById('personnelSuggestions');
+    if (!list) return;
+    const q = (query || '').trim().toLowerCase();
+    const filtered = (Array.isArray(allTechnicians) ? allTechnicians : [])
+        .filter(t => {
+            if (!q) return true;
+            return `${t.name || ''} ${t.specialty || ''}`.toLowerCase().includes(q);
+        }).slice(0, 15);
 
-    const query = String(filterText || '').trim().toLowerCase();
-    const filtered = modalPersonnelCatalog.filter(tech => {
-        if (!query) return true;
-        const haystack = `${tech.name || ''} ${tech.specialty || ''} ${tech.contact_info || ''}`.toLowerCase();
-        return haystack.includes(query);
-    });
-
-    select.innerHTML = '<option value="">- Seleccione Tecnico -</option>';
-    filtered.forEach(tech => {
-        const opt = document.createElement('option');
-        opt.value = tech.id;
-        opt.textContent = `${tech.name}${tech.specialty ? ` (${tech.specialty})` : ''}`;
-        opt.dataset.specialty = tech.specialty || 'GENERAL';
-        opt.dataset.fullname = tech.name || '';
-        select.appendChild(opt);
-    });
+    if (!filtered.length) {
+        list.innerHTML = '<div style="padding:8px 12px;color:#888;font-size:.82rem;">Sin resultados</div>';
+        list.style.display = 'block';
+        return;
+    }
+    list.innerHTML = filtered.map(t => `
+        <div onclick="selectPersonnelItem(${t.id},'${(t.name||'').replace(/'/g,"\\'")}','${(t.specialty||'GENERAL').replace(/'/g,"\\'")}') "
+            style="padding:8px 12px;cursor:pointer;font-size:.83rem;border-bottom:1px solid #333;display:flex;align-items:center;gap:8px;"
+            onmouseover="this.style.background='#2a3a5a'" onmouseout="this.style.background=''">
+            <i class="fas fa-user" style="color:#5AC8FA;font-size:.75rem;"></i>
+            <span><strong>${t.name}</strong><span style="color:#888;font-size:.78rem;margin-left:6px;">${t.specialty||''}</span></span>
+        </div>`).join('');
+    list.style.display = 'block';
 }
 
-window.addPersonnelRow = function () {
-    const select = document.getElementById('personnelTechSelect');
-    if (!select) return alert('Modal de personal no encontrado');
+window.selectPersonnelItem = function(id, name, specialty) {
+    _selectedPersonnelId   = id;
+    _selectedPersonnelName = name;
+    document.getElementById('personnelTechId').value = id;
+    document.getElementById('personnelSelectedName').textContent = name;
+    document.getElementById('personnelSelectedDisplay').style.display = 'block';
+    document.getElementById('personnelSearchInput').value = '';
+    document.getElementById('personnelSuggestions').style.display = 'none';
+    // Auto-fill specialty
+    const specSelect = document.getElementById('personnelSpecialty');
+    if (specSelect && specialty) specSelect.value = specialty;
+};
 
-    modalPersonnelCatalog = Array.isArray(allTechnicians) ? allTechnicians.slice() : [];
+window.clearPersonnelSelection = function() {
+    _selectedPersonnelId   = null;
+    _selectedPersonnelName = null;
+    document.getElementById('personnelTechId').value = '';
+    document.getElementById('personnelSelectedDisplay').style.display = 'none';
+    document.getElementById('personnelSearchInput').value = '';
+    document.getElementById('personnelSearchInput').focus();
+};
+
+window.addPersonnelRow = function () {
+    _selectedPersonnelId   = null;
+    _selectedPersonnelName = null;
+    document.getElementById('personnelTechId').value = '';
+    document.getElementById('personnelSelectedDisplay').style.display = 'none';
+    document.getElementById('personnelSearchInput').value = '';
+    document.getElementById('personnelSuggestions').style.display = 'none';
+    document.getElementById('personnelHours').value = 8;
 
     const searchInput = document.getElementById('personnelSearchInput');
-    if (searchInput) {
-        searchInput.value = '';
-        searchInput.oninput = function () {
-            renderPersonnelOptions(searchInput.value);
-        };
-    }
-
-    renderPersonnelOptions('');
-
-    select.onchange = function () {
-        const selectedOpt = select.options[select.selectedIndex];
-        if (selectedOpt && selectedOpt.dataset.specialty) {
-            document.getElementById('personnelSpecialty').value = selectedOpt.dataset.specialty;
-        }
+    searchInput.oninput = function() {
+        if (searchInput.value.trim()) renderPersonnelSuggestions(searchInput.value);
+        else document.getElementById('personnelSuggestions').style.display = 'none';
     };
 
-    document.getElementById('personnelHours').value = 8;
     document.getElementById('addPersonnelModal').showModal();
-
-    if (searchInput) searchInput.focus();
+    searchInput.focus();
 };
 
 window.confirmAddPersonnel = function () {
-    const techSelect = document.getElementById('personnelTechSelect');
-    const techId = techSelect.value;
-    const selectedOption = techSelect.options[techSelect.selectedIndex];
+    const techId   = document.getElementById('personnelTechId').value || _selectedPersonnelId;
+    const techName = _selectedPersonnelName || document.getElementById('personnelSelectedName').textContent;
 
-    if (!techId || !selectedOption) {
-        return alert('Seleccione un tecnico');
-    }
+    if (!techId) return alert('Seleccione un técnico de la lista');
 
-    const techName = selectedOption.dataset.fullname || selectedOption.textContent || '';
     const specialty = document.getElementById('personnelSpecialty').value;
-    const hours = parseFloat(document.getElementById('personnelHours').value) || 8;
+    const hours     = parseFloat(document.getElementById('personnelHours').value) || 8;
 
     if (currentOTPersonnel.find(p => Number(p.technician_id) === Number(techId))) {
-        return alert('Este tecnico ya esta asignado a la OT');
+        return alert('Este técnico ya está asignado a la OT');
     }
 
     currentOTPersonnel.push({

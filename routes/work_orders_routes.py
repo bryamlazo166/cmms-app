@@ -454,12 +454,9 @@ def register_work_orders_routes(
         if request.method == 'POST':
             try:
                 data = request.json
-                data['work_order_id'] = ot_id
-
-                # Safety Checks
-                if not data.get('item_id'):
-                    return jsonify({"error": "Item ID is required"}), 400
-
+                item_type = data.get('item_type', 'free')
+                subtype   = data.get('subtype', 'repuesto')
+                item_id   = data.get('item_id')
                 try:
                     qty = int(data.get('quantity', 1))
                     if qty <= 0:
@@ -467,20 +464,14 @@ def register_work_orders_routes(
                 except Exception:
                     return jsonify({"error": "Quantity must be a positive integer"}), 400
 
-                # Inventory Logic
-                if data['item_type'] == 'warehouse':
-                    item = WarehouseItem.query.get(data['item_id'])
-
+                # Inventory Logic — only for catalog items
+                if item_type == 'warehouse' and item_id:
+                    item = WarehouseItem.query.get(item_id)
                     if not item:
                         return jsonify({"error": "Item not found"}), 404
-
                     if item.stock < qty:
                         return jsonify({"error": f"Stock insuficiente. Disponible: {item.stock}"}), 400
-
-                    # Deduct Stock
                     item.stock -= qty
-
-                    # Record Movement
                     move = WarehouseMovement(
                         item_id=item.id,
                         quantity=-qty,
@@ -490,14 +481,24 @@ def register_work_orders_routes(
                         reason=f"Uso en OT-{ot_id}",
                     )
                     db.session.add(move)
-
-                elif data['item_type'] == 'tool':
-                    # Validate tool from Tool catalog (no stock deduction)
-                    item = Tool.query.get(data['item_id'])
+                elif item_type == 'tool' and item_id:
+                    item = Tool.query.get(item_id)
                     if not item or not item.is_active:
                         return jsonify({"error": "Herramienta no encontrada o inactiva"}), 404
+                elif item_type == 'free':
+                    if not data.get('item_name_free', '').strip():
+                        return jsonify({"error": "Debe ingresar el nombre del item"}), 400
 
-                material = OTMaterial(**data)
+                material = OTMaterial(
+                    work_order_id=ot_id,
+                    item_type=item_type,
+                    item_id=item_id if item_id else None,
+                    quantity=qty,
+                    subtype=subtype,
+                    item_name_free=data.get('item_name_free'),
+                    unit=data.get('unit'),
+                    is_installed=data.get('is_installed', True),
+                )
                 db.session.add(material)
                 db.session.commit()
                 return jsonify(material.to_dict()), 201
@@ -508,27 +509,35 @@ def register_work_orders_routes(
         # GET - return materials for this OT
         materials = OTMaterial.query.filter_by(work_order_id=ot_id).all()
 
-        # Pre-load tools and warehouse items in bulk
-        tool_ids      = {m.item_id for m in materials if m.item_type == 'tool'}
-        wh_ids        = {m.item_id for m in materials if m.item_type != 'tool'}
-        tools_map     = {t.id: t for t in Tool.query.filter(Tool.id.in_(tool_ids)).all()}         if tool_ids else {}
-        wh_items_map  = {w.id: w for w in WarehouseItem.query.filter(WarehouseItem.id.in_(wh_ids)).all()} if wh_ids   else {}
+        # Pre-load catalog items in bulk (skip free-text items)
+        tool_ids     = {m.item_id for m in materials if m.item_type == 'tool' and m.item_id}
+        wh_ids       = {m.item_id for m in materials if m.item_type == 'warehouse' and m.item_id}
+        tools_map    = {t.id: t for t in Tool.query.filter(Tool.id.in_(tool_ids)).all()}          if tool_ids else {}
+        wh_items_map = {w.id: w for w in WarehouseItem.query.filter(WarehouseItem.id.in_(wh_ids)).all()} if wh_ids else {}
 
         result = []
         for m in materials:
             data = m.to_dict()
-            if m.item_type == 'tool':
+            if m.item_type == 'free' or not m.item_id:
+                data['item_name']     = m.item_name_free or '-'
+                data['item_code']     = ''
+                data['item_category'] = ''
+                data['item_status']   = None
+                data['item_stock']    = None
+            elif m.item_type == 'tool':
                 item = tools_map.get(m.item_id)
-                data['item_status'] = item.status if item else None
-                data['item_stock'] = None
+                data['item_name']     = item.name     if item else '-'
+                data['item_code']     = item.code     if item else ''
+                data['item_category'] = item.category if item else ''
+                data['item_status']   = item.status   if item else None
+                data['item_stock']    = None
             else:
                 item = wh_items_map.get(m.item_id)
-                data['item_status'] = None
-                data['item_stock'] = item.stock if item else None
-
-            data['item_name']     = item.name     if item else 'Unknown'
-            data['item_code']     = item.code     if item else ''
-            data['item_category'] = item.category if item else ''
+                data['item_name']     = item.name     if item else '-'
+                data['item_code']     = item.code     if item else ''
+                data['item_category'] = item.category if item else ''
+                data['item_status']   = None
+                data['item_stock']    = item.stock    if item else None
             result.append(data)
 
         return jsonify(result)

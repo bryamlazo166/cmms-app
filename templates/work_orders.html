@@ -414,7 +414,7 @@
                                 <div><label style="font-size:.70rem;color:#888;text-transform:uppercase">Fecha</label><input type="date" id="logDate" style="width:100%;height:32px;background:#2a2a2e;border:1px solid #444;border-radius:6px;color:#ddd;padding:0 6px;font-size:.82rem"></div>
                                 <div><label style="font-size:.70rem;color:#888;text-transform:uppercase">Comentario</label><input type="text" id="logComment" placeholder="Ej: Proveedor retira tripo a taller" style="width:100%;height:32px;background:#2a2a2e;border:1px solid #444;border-radius:6px;color:#ddd;padding:0 8px;font-size:.82rem"></div>
                                 <div><label style="font-size:.70rem;color:#888;text-transform:uppercase">Tipo</label><select id="logType" style="width:100%;height:32px;background:#2a2a2e;border:1px solid #444;border-radius:6px;color:#ddd;padding:0 6px;font-size:.82rem">
-                                    <option value="NOTA">Nota</option><option value="AVANCE">Avance</option><option value="MATERIAL">Material</option><option value="PROVEEDOR">Proveedor</option><option value="INFORME">Informe</option>
+                                    <option value="NOTA">Nota</option><option value="AVANCE">Avance</option><option value="HALLAZGO">Hallazgo</option><option value="MATERIAL">Material</option><option value="PROVEEDOR">Proveedor</option><option value="INFORME">Informe</option>
                                 </select></div>
                                 <button onclick="addLogEntry()" style="height:32px;padding:0 12px;background:#5AC8FA;border:none;border-radius:6px;color:#000;font-weight:600;cursor:pointer;font-size:.82rem"><i class="fas fa-plus"></i></button>
                             </div>
@@ -710,41 +710,43 @@
 
                 <!-- TAB: MATERIALS -->
                 <div id="ot-tab-materials" class="ot-tab-content" style="display: none;">
-                    <div
-                        style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 15px;">
-                        <h4 style="margin: 0; color: #0A84FF;"><i class="fas fa-tools"></i> Materiales y Herramientas
-                        </h4>
-                        <div>
-                            <button type="button" class="btn-primary" onclick="openAddMaterialModal('warehouse')"
-                                style="padding: 5px 15px;">
-                                <i class="fas fa-box"></i> Agregar Repuesto
+                    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:15px;flex-wrap:wrap;gap:6px;">
+                        <h4 style="margin:0;color:#0A84FF;"><i class="fas fa-tools"></i> Materiales y Herramientas</h4>
+                        <div style="display:flex;gap:6px;flex-wrap:wrap;">
+                            <button type="button" onclick="openAddMaterialModal('warehouse','repuesto')"
+                                style="padding:5px 12px;background:#30D158;border:none;border-radius:6px;color:#fff;cursor:pointer;font-size:.82rem;">
+                                <i class="fas fa-cog"></i> Repuesto
                             </button>
-                            <button type="button" class="btn-secondary" onclick="openAddMaterialModal('tool')"
-                                style="padding: 5px 15px; margin-left: 5px;">
-                                <i class="fas fa-wrench"></i> Agregar Herramienta
+                            <button type="button" onclick="openAddMaterialModal('warehouse','consumible')"
+                                style="padding:5px 12px;background:#FF9F0A;border:none;border-radius:6px;color:#000;cursor:pointer;font-size:.82rem;">
+                                <i class="fas fa-flask"></i> Consumible
                             </button>
-                            <button type="button" class="btn-primary" onclick="openPurchaseModal()"
-                                style="background: #FF9F0A; color: black; padding: 5px 15px; margin-left: 5px; border:none;">
+                            <button type="button" onclick="openAddMaterialModal('tool','herramienta')"
+                                style="padding:5px 12px;background:#5AC8FA;border:none;border-radius:6px;color:#000;cursor:pointer;font-size:.82rem;">
+                                <i class="fas fa-wrench"></i> Herramienta
+                            </button>
+                            <button type="button" onclick="openPurchaseModal()"
+                                style="padding:5px 12px;background:#6c757d;border:none;border-radius:6px;color:#fff;cursor:pointer;font-size:.82rem;">
                                 <i class="fas fa-shopping-cart"></i> Solicitar Compra
                             </button>
                         </div>
                     </div>
-                    <table class="data-table" id="otMaterialsTable" style="width: 100%;">
+                    <table class="data-table" id="otMaterialsTable" style="width:100%;">
                         <thead>
                             <tr>
-                                <th>Tipo</th>
-                                <th>Codigo</th>
+                                <th>Categoría</th>
+                                <th>Código</th>
                                 <th>Nombre</th>
-                                <th>Cantidad</th>
+                                <th>Cant.</th>
+                                <th>Unidad</th>
+                                <th>Instalado</th>
                                 <th>Acciones</th>
                             </tr>
                         </thead>
-                        <tbody id="materialsTableBody">
-                            <!-- Filled by JS -->
-                        </tbody>
+                        <tbody id="materialsTableBody"></tbody>
                     </table>
-                    <div id="materialsEmpty" style="text-align: center; color: #888; padding: 20px;">
-                        No hay materiales asignados. Use los botones para agregar.
+                    <div id="materialsEmpty" style="text-align:center;color:#888;padding:20px;">
+                        No hay materiales. Use los botones para agregar.
                     </div>
                 </div>
 
@@ -857,60 +859,122 @@
 
         <!-- MODAL: ADD MATERIAL -->
         <dialog id="addMaterialModal"
-            style="background: #252526; color: white; border: 1px solid #444; padding: 20px; border-radius: 8px; max-width: min(400px, 96vw); width: 96vw;">
+            style="background: #252526; color: white; border: 1px solid #444; padding: 20px; border-radius: 8px; max-width: min(480px, 96vw); width: 96vw;">
             <h3 id="addMaterialTitle"><i class="fas fa-box"></i> Agregar Material</h3>
             <input type="hidden" id="materialType">
-            <div class="form-group">
-                <label>Buscar Item</label>
-                <input type="text" id="materialSearchInput" placeholder="Escriba para filtrar..."
-                    style="width: 100%;" autocomplete="off">
-            </div>            <div class="form-group">
-                <label>Seleccionar Item</label>
-                <select id="materialItemSelect" style="width: 100%;"></select>
+            <input type="hidden" id="materialSubtype">
+
+            <!-- Búsqueda catálogo -->
+            <div id="materialCatalogSection">
+                <div class="form-group" style="position:relative;">
+                    <label>Buscar en catálogo</label>
+                    <input type="text" id="materialSearchInput" placeholder="Escriba código o nombre..."
+                        style="width:100%;" autocomplete="off">
+                    <div id="materialSearchList"
+                        style="display:none;position:absolute;top:100%;left:0;right:0;max-height:180px;overflow-y:auto;
+                               background:#1e1e1e;border:1px solid #0A84FF;border-radius:0 0 6px 6px;z-index:999;">
+                    </div>
+                </div>
+                <div id="materialSelectedDisplay" style="display:none;margin-bottom:8px;padding:6px 10px;background:#1a3a6b33;border-radius:6px;font-size:.85rem;">
+                    <i class="fas fa-check-circle" style="color:#30D158"></i>
+                    <span id="materialSelectedName" style="margin-left:6px;font-weight:600;"></span>
+                    <button type="button" onclick="clearMaterialSelection()"
+                        style="background:none;border:none;color:#FF453A;cursor:pointer;margin-left:8px;font-size:.8rem;">
+                        <i class="fas fa-times"></i> Quitar
+                    </button>
+                </div>
+                <input type="hidden" id="materialItemId">
+                <div style="text-align:center;margin:6px 0;color:#777;font-size:.8rem;">— o si no está en el catálogo —</div>
             </div>
+
+            <!-- Texto libre -->
             <div class="form-group">
-                <label>Cantidad</label>
-                <input type="number" id="materialQuantity" value="1" min="1" style="width: 100%;">
+                <label id="materialFreeLabel">Nombre (texto libre)</label>
+                <input type="text" id="materialFreeText" placeholder="Ej: Grasa SKF LGMT3, Llave francesa 12&quot;"
+                    style="width:100%;">
             </div>
-            <div style="display: flex; gap: 10px; margin-top: 15px;">
+
+            <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:8px;">
+                <div class="form-group">
+                    <label>Cantidad</label>
+                    <input type="number" id="materialQuantity" value="1" min="0.1" step="0.1" style="width:100%;">
+                </div>
+                <div class="form-group">
+                    <label>Unidad</label>
+                    <input type="text" id="materialUnit" placeholder="kg, und, m..." style="width:100%;">
+                </div>
+                <div class="form-group" id="materialInstalledGroup">
+                    <label>¿Instalado?</label>
+                    <select id="materialInstalled" style="width:100%;padding:6px;background:#333;color:white;border:1px solid #555;border-radius:4px;">
+                        <option value="1">Sí</option>
+                        <option value="0">No</option>
+                    </select>
+                </div>
+            </div>
+
+            <div style="display:flex;gap:10px;margin-top:15px;">
                 <button type="button" onclick="document.getElementById('addMaterialModal').close()"
                     class="btn-secondary">Cancelar</button>
-                <button type="button" onclick="confirmAddMaterial()" class="btn-primary">Agregar</button>
+                <button type="button" onclick="confirmAddMaterial()" class="btn-primary">
+                    <i class="fas fa-plus"></i> Agregar
+                </button>
             </div>
         </dialog>
 
         <!-- MODAL: ADD PERSONNEL -->
         <dialog id="addPersonnelModal"
-            style="background: #252526; color: white; border: 1px solid #444; padding: 20px; border-radius: 8px; max-width: min(400px, 96vw); width: 96vw;">
+            style="background:#252526;color:white;border:1px solid #444;padding:20px;border-radius:8px;max-width:min(420px,96vw);width:96vw;">
             <h3><i class="fas fa-user-plus"></i> Agregar Personal</h3>
-            <div class="form-group">
-                <label>Buscar Tecnico</label>
-                <input type="text" id="personnelSearchInput" placeholder="Escriba nombre o especialidad..."
-                    style="width: 100%;" autocomplete="off">
-            </div>            <div class="form-group">
-                <label>Tecnico</label>
-                <select id="personnelTechSelect" style="width: 100%;"></select>
+            <!-- Autocompletado typeahead -->
+            <div class="form-group" style="position:relative;">
+                <label>Buscar Técnico</label>
+                <input type="text" id="personnelSearchInput"
+                    placeholder="Escriba nombre o especialidad..."
+                    style="width:100%;padding:8px;background:#333;color:white;border:1px solid #555;border-radius:4px;box-sizing:border-box;"
+                    autocomplete="off">
+                <!-- Dropdown suggestions -->
+                <div id="personnelSuggestions"
+                    style="display:none;position:absolute;top:100%;left:0;right:0;max-height:200px;overflow-y:auto;
+                           background:#1e1e1e;border:1px solid #0A84FF;border-radius:0 0 6px 6px;z-index:1000;">
+                </div>
             </div>
-            <div class="form-group">
-                <label>Especialidad</label>
-                <select id="personnelSpecialty" style="width: 100%;">
-                    <option value="MECANICO">MECANICO</option>
-                    <option value="ELECTRICO">ELECTRICO</option>
-                    <option value="INSTRUMENTISTA">INSTRUMENTISTA</option>
-                    <option value="MULTIDISCIPLINARIO">MULTIDISCIPLINARIO</option>
-                    <option value="SOLDADOR">SOLDADOR</option>
-                    <option value="GENERAL">GENERAL</option>
-                </select>
+            <!-- Selected display -->
+            <div id="personnelSelectedDisplay" style="display:none;margin-bottom:10px;padding:7px 12px;background:#1a3a6b33;border-radius:6px;font-size:.85rem;">
+                <i class="fas fa-user-check" style="color:#30D158"></i>
+                <span id="personnelSelectedName" style="margin-left:6px;font-weight:600;"></span>
+                <button type="button" onclick="clearPersonnelSelection()"
+                    style="background:none;border:none;color:#FF453A;cursor:pointer;margin-left:8px;font-size:.8rem;">
+                    <i class="fas fa-times"></i>
+                </button>
             </div>
-            <div class="form-group">
-                <label>Horas Asignadas</label>
-                <input type="number" id="personnelHours" value="8" min="0.5" step="0.5" style="width: 100%;">
+            <input type="hidden" id="personnelTechId">
+            <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;">
+                <div class="form-group">
+                    <label>Especialidad</label>
+                    <select id="personnelSpecialty" style="width:100%;padding:6px;background:#333;color:white;border:1px solid #555;border-radius:4px;">
+                        <option value="MECANICO">MECANICO</option>
+                        <option value="ELECTRICO">ELECTRICO</option>
+                        <option value="INSTRUMENTISTA">INSTRUMENTISTA</option>
+                        <option value="MULTIDISCIPLINARIO">MULTIDISCIPLINARIO</option>
+                        <option value="SOLDADOR">SOLDADOR</option>
+                        <option value="GENERAL">GENERAL</option>
+                    </select>
+                </div>
+                <div class="form-group">
+                    <label>Horas Trabajadas</label>
+                    <input type="number" id="personnelHours" value="8" min="0.5" step="0.5"
+                        style="width:100%;padding:6px;background:#333;color:white;border:1px solid #555;border-radius:4px;">
+                </div>
             </div>
-            <div style="display: flex; gap: 10px; margin-top: 15px;">
+            <div style="display:flex;gap:10px;margin-top:15px;">
                 <button type="button" onclick="document.getElementById('addPersonnelModal').close()"
                     class="btn-secondary">Cancelar</button>
-                <button type="button" onclick="confirmAddPersonnel()" class="btn-primary">Agregar</button>
+                <button type="button" onclick="confirmAddPersonnel()" class="btn-primary">
+                    <i class="fas fa-plus"></i> Agregar
+                </button>
             </div>
+            <!-- Hidden legacy select for compatibility -->
+            <select id="personnelTechSelect" style="display:none;"></select>
         </dialog>
 
         <!-- MODAL: PROVIDER -->
@@ -975,8 +1039,13 @@
                 <input type="hidden" id="closeOtId">
 
                 <div class="form-group">
-                    <label>Comentarios de Ejecucion</label>
-                    <textarea id="closeComments" required placeholder="Describa el trabajo realizado..."></textarea>
+                    <label>Trabajo Realizado</label>
+                    <textarea id="closeComments" required placeholder="Describa el trabajo realizado..." style="height:70px;"></textarea>
+                </div>
+
+                <div class="form-group">
+                    <label style="color:#FF9F0A;"><i class="fas fa-search"></i> Hallazgos durante la intervención</label>
+                    <textarea id="closeFindings" placeholder="Ej: Se encontró rodamiento con pitting severo, fuga de aceite en retén, corrosión en carcasa..." style="height:70px;"></textarea>
                 </div>
 
                 <div class="form-row">
