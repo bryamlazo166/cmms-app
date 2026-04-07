@@ -137,8 +137,8 @@ function renderNotices() {
             <td>${n.equipment_id ? getName(allEquips, n.equipment_id) : (n.free_location ? `<span style="color:#888;font-style:italic">${n.free_location}</span>` : '-')}</td>
             <td>${getName(allSys, n.system_id)}</td>
             <td>${getName(allComps, n.component_id)}</td>
-            <td style="max-width:220px;">
-                <div style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap;max-width:220px;" title="${(n.description || '').replace(/"/g,'&quot;')}">${n.description || '-'}</div>
+            <td style="max-width:320px;min-width:260px;">
+                <div style="display:-webkit-box;-webkit-line-clamp:3;-webkit-box-orient:vertical;overflow:hidden;text-overflow:ellipsis;max-width:320px;line-height:1.3;white-space:normal;word-break:break-word;" title="${(n.description || '').replace(/"/g,'&quot;')}">${n.description || '-'}</div>
                 ${n.cancellation_reason ? `<small style="color:#FF453A;">(Anulado: ${n.cancellation_reason})</small>` : ''}
             </td>
             <td>${n.criticality || '-'}</td>
