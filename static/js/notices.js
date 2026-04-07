@@ -137,7 +137,10 @@ function renderNotices() {
             <td>${n.equipment_id ? getName(allEquips, n.equipment_id) : (n.free_location ? `<span style="color:#888;font-style:italic">${n.free_location}</span>` : '-')}</td>
             <td>${getName(allSys, n.system_id)}</td>
             <td>${getName(allComps, n.component_id)}</td>
-            <td>${n.description || '-'} <br> <small style="color:#FF453A;">${n.cancellation_reason ? '(Anulado: ' + n.cancellation_reason + ')' : ''}</small></td>
+            <td style="max-width:220px;">
+                <div style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap;max-width:220px;" title="${(n.description || '').replace(/"/g,'&quot;')}">${n.description || '-'}</div>
+                ${n.cancellation_reason ? `<small style="color:#FF453A;">(Anulado: ${n.cancellation_reason})</small>` : ''}
+            </td>
             <td>${n.criticality || '-'}</td>
             <td>${n.priority || '-'}</td>
             <td>${n.request_date || '-'}</td>
