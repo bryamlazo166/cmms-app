@@ -76,6 +76,12 @@ function currentExecutiveFilters() {
 }
 
 function currentWeeklyFilters() {
+    // Construir param scope como lista separada por comas
+    const scopes = [];
+    if (document.getElementById("scopePlan")?.checked)      scopes.push("PLAN");
+    if (document.getElementById("scopeFueraPlan")?.checked) scopes.push("FUERA_PLAN");
+    if (document.getElementById("scopeGeneral")?.checked)   scopes.push("GENERAL");
+
     return {
         window: document.getElementById("weeklyWindow").value || "current_week",
         start_date: document.getElementById("weeklyStartDate").value || null,
@@ -85,7 +91,8 @@ function currentWeeklyFilters() {
         status: document.getElementById("weeklyStatus").value || null,
         area_id: document.getElementById("filterArea").value || null,
         line_id: document.getElementById("filterLine").value || null,
-        equipment_id: document.getElementById("filterEquipment").value || null
+        equipment_id: document.getElementById("filterEquipment").value || null,
+        scope: scopes.length ? scopes.join(",") : "PLAN",
     };
 }
 
@@ -406,10 +413,16 @@ function drawWeeklySpecialty(summary) {
     });
 }
 
+function scopeBadgeReport(scope) {
+    if (scope === 'FUERA_PLAN') return '<span class="pill" style="background:#FF9F0A22;color:#FF9F0A;border:1px solid #FF9F0A55">🚧 F.Plan</span>';
+    if (scope === 'GENERAL')    return '<span class="pill" style="background:#BF5AF222;color:#BF5AF2;border:1px solid #BF5AF255">🛠️ General</span>';
+    return '<span class="pill pill-cyan">🏭 Plan</span>';
+}
+
 function renderWeeklyTable(items) {
     const tbody = document.getElementById("tableWeeklyBody");
     if (!items || items.length === 0) {
-        tbody.innerHTML = '<tr><td colspan="15" class="muted-cell">Sin actividades para el filtro seleccionado.</td></tr>';
+        tbody.innerHTML = '<tr><td colspan="16" class="muted-cell">Sin actividades para el filtro seleccionado.</td></tr>';
         return;
     }
 
@@ -427,6 +440,7 @@ function renderWeeklyTable(items) {
             <td><a class="weekly-ot-link" href="/ordenes">${i.code || "-"}</a></td>
             <td>${i.notice_code || "-"}</td>
             <td>${i.scheduled_date || "-"}</td>
+            <td>${scopeBadgeReport(i.scope)}</td>
             <td style="font-weight:600;color:#a8d8ff">${i.technician || "-"}</td>
             <td>${i.specialty || "-"}</td>
             <td>${i.maintenance_type || "-"}</td>
@@ -545,6 +559,10 @@ async function initReports() {
         document.getElementById("weeklySpecialty").value = "";
         document.getElementById("weeklyType").value = "";
         document.getElementById("weeklyStatus").value = "";
+        // Resetear scope al default (solo Plan)
+        document.getElementById("scopePlan").checked = true;
+        document.getElementById("scopeFueraPlan").checked = false;
+        document.getElementById("scopeGeneral").checked = false;
         loadWeeklyPlan();
     });
 

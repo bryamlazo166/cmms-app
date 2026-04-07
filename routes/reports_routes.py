@@ -653,6 +653,12 @@ def register_reports_routes(
         raw_mtto = (request.args.get('maintenance_type') or '').strip()
         wanted_mtto = _normalize_maintenance_type(raw_mtto) if raw_mtto else ''
 
+        # Scope filter — default: solo PLAN (para KPIs limpios)
+        raw_scope = (request.args.get('scope') or 'PLAN').strip()
+        wanted_scopes = [s.strip().upper() for s in raw_scope.split(',') if s.strip()]
+        if not wanted_scopes:
+            wanted_scopes = ['PLAN']
+
         lines = Line.query.all()
         systems = System.query.all()
         components = Component.query.all()
@@ -715,6 +721,11 @@ def register_reports_routes(
 
             specialty_value = _specialty_for_ot(ot)
             if wanted_specialty and specialty_value != wanted_specialty:
+                continue
+
+            # Resolver scope desde el aviso vinculado (sin campo propio en OT)
+            ot_scope = (ot.notice.scope if ot.notice and ot.notice.scope else 'PLAN').upper()
+            if wanted_scopes and ot_scope not in wanted_scopes:
                 continue
 
             req_total = 0
@@ -783,6 +794,7 @@ def register_reports_routes(
                 'req_codes': sorted(set(req_codes)),
                 'po_codes': sorted(set(po_codes)),
                 'technician': tech_map.get(str(ot.technician_id), ot.technician_id or '-'),
+                'scope': ot_scope,
             })
 
         items.sort(key=lambda row: (row['scheduled_date'], row['area'], row['line'], row['equipment'], row['code']))
@@ -841,6 +853,7 @@ def register_reports_routes(
                     'status': wanted_status or None,
                     'specialty': wanted_specialty or None,
                     'maintenance_type': wanted_mtto or None,
+                    'scope': wanted_scopes,
                 }
             },
             'summary': {
@@ -877,6 +890,7 @@ def register_reports_routes(
                         'Codigo OT': row.get('code'),
                         'Aviso': row.get('notice_code'),
                         'Fecha Plan': row.get('scheduled_date'),
+                        'Alcance': row.get('scope', 'PLAN'),
                         'Tecnico Asignado': row.get('technician', '-'),
                         'Cant Tecnicos': row.get('tech_count'),
                         'Especialidad': row.get('specialty'),
