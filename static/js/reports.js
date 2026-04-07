@@ -305,50 +305,85 @@ function renderWeeklySummary(summary, meta) {
 function printWeeklyPlan() {
     const period = document.getElementById("weeklyPeriod").textContent || '-';
     const kpis = [
-        ['Total OTs', document.getElementById('wkTotal').textContent],
-        ['Preventivas', document.getElementById('wkPreventive').textContent],
-        ['Correctivas', document.getElementById('wkCorrective').textContent],
-        ['Ejecutadas ✅', document.getElementById('wkClosed').textContent],
-        ['No Ejecutadas ❌', document.getElementById('wkNoEjecutada').textContent],
-        ['Cumplimiento', document.getElementById('wkCompliance').textContent],
+        ['Total OTs',       document.getElementById('wkTotal').textContent],
+        ['Preventivas',     document.getElementById('wkPreventive').textContent],
+        ['Correctivas',     document.getElementById('wkCorrective').textContent],
+        ['Ejecutadas',      document.getElementById('wkClosed').textContent],
+        ['No Ejecutadas',   document.getElementById('wkNoEjecutada').textContent],
+        ['Cumplimiento',    document.getElementById('wkCompliance').textContent],
     ];
 
-    const tableRows = Array.from(document.querySelectorAll('#tableWeeklyBody tr')).map(r => r.outerHTML).join('');
+    function scopeLabel(scope) {
+        if (scope === 'FUERA_PLAN') return 'Fuera Plan';
+        if (scope === 'GENERAL')    return 'General';
+        return 'Plan';
+    }
+    function statusLabel(status) { return status || '-'; }
+
+    const tableRows = (_lastWeeklyItems || []).map((i, idx) => {
+        const bg = idx % 2 === 1 ? 'background:#f7f9ff;' : '';
+        const statusStyle =
+            i.status === 'Cerrada'       ? 'background:#d4f4d4;color:#1a7a1a;'  :
+            i.status === 'En Progreso'   ? 'background:#d4f0ff;color:#0a5a80;'  :
+            i.status === 'Programada'    ? 'background:#fff6d4;color:#7a5a00;'  :
+            i.status === 'No Ejecutada'  ? 'background:#ffd4d4;color:#7a0000;'  :
+                                           'background:#eee;color:#555;';
+        const scopeStyle =
+            i.scope === 'FUERA_PLAN' ? 'background:#FF9F0A22;color:#b36a00;border:1px solid #FF9F0A55;' :
+            i.scope === 'GENERAL'    ? 'background:#BF5AF222;color:#6a0dab;border:1px solid #BF5AF255;' :
+                                       'background:#d4f0ff;color:#0a5a80;';
+        return `<tr>
+            <td style="${bg}font-weight:bold;color:#1a3a6b;">${i.code || '-'}</td>
+            <td style="${bg}">${i.notice_code || '-'}</td>
+            <td style="${bg}">${i.scheduled_date || '-'}</td>
+            <td style="${bg}font-weight:600;">${i.technician || '-'}</td>
+            <td style="${bg}">${i.specialty || '-'}</td>
+            <td style="${bg}">${i.maintenance_type || '-'}</td>
+            <td style="${bg}"><span style="display:inline-block;padding:1px 7px;border-radius:8px;font-weight:bold;font-size:10px;${statusStyle}">${statusLabel(i.status)}</span></td>
+            <td style="${bg}">${i.area || '-'}</td>
+            <td style="${bg}">${i.line || '-'}</td>
+            <td style="${bg}">${i.equipment_tag || '-'}</td>
+            <td style="${bg}">${i.equipment || '-'}</td>
+            <td style="${bg}">${i.priority || '-'}</td>
+            <td style="${bg}"><span style="display:inline-block;padding:1px 7px;border-radius:8px;font-size:10px;${scopeStyle}">${scopeLabel(i.scope)}</span></td>
+            <td style="${bg};color:#444;font-size:10px;">${i.description || '-'}</td>
+        </tr>`;
+    }).join('');
 
     const html = `<!DOCTYPE html>
 <html lang="es"><head><meta charset="UTF-8">
 <title>Plan Semanal de Mantenimiento</title>
 <style>
-    body { font-family: Arial, sans-serif; margin: 20px; color: #111; font-size: 12px; }
-    h1 { color: #1a3a6b; border-bottom: 2px solid #1a3a6b; padding-bottom: 6px; font-size: 18px; }
+    body { font-family: Arial, sans-serif; margin: 20px; color: #111; font-size: 11px; }
+    h1 { color: #1a3a6b; border-bottom: 2px solid #1a3a6b; padding-bottom: 6px; font-size: 17px; margin-bottom: 4px; }
     .period { color: #555; margin-bottom: 14px; font-size: 11px; }
     .kpi-grid { display: grid; grid-template-columns: repeat(6, 1fr); gap: 8px; margin-bottom: 16px; }
     .kpi-box { background: #f0f4ff; border: 1px solid #c0cfee; border-radius: 6px; padding: 8px; text-align: center; }
-    .kpi-label { font-size: 10px; color: #555; text-transform: uppercase; }
-    .kpi-value { font-size: 20px; font-weight: bold; color: #1a3a6b; margin-top: 4px; }
-    table { width: 100%; border-collapse: collapse; font-size: 11px; }
-    th { background: #1a3a6b; color: white; padding: 6px 5px; text-align: left; }
-    td { padding: 5px; border-bottom: 1px solid #dde; vertical-align: top; }
-    tr:nth-child(even) td { background: #f7f9ff; }
-    .pill { display: inline-block; padding: 1px 6px; border-radius: 8px; font-weight: bold; font-size: 10px; }
-    .pill-green  { background: #d4f4d4; color: #1a7a1a; }
-    .pill-cyan   { background: #d4f0ff; color: #0a5a80; }
-    .pill-yellow { background: #fff6d4; color: #7a5a00; }
-    .pill-red    { background: #ffd4d4; color: #7a0000; }
-    .pill-muted  { background: #eee; color: #555; }
-    .weekly-ot-link { color: #1a3a6b; font-weight: bold; text-decoration: none; }
-    @media print { body { margin: 10px; } }
+    .kpi-label { font-size: 9px; color: #555; text-transform: uppercase; letter-spacing: .3px; }
+    .kpi-value { font-size: 20px; font-weight: bold; color: #1a3a6b; margin-top: 3px; }
+    table { width: 100%; border-collapse: collapse; font-size: 10px; table-layout: auto; }
+    th { background: #1a3a6b; color: white; padding: 5px 4px; text-align: left; white-space: nowrap; }
+    td { padding: 4px 4px; border-bottom: 1px solid #dde; vertical-align: middle; }
+    .footer { margin-top: 16px; color: #888; font-size: 9px; }
+    @media print {
+        body { margin: 8px; }
+        @page { size: A4 landscape; margin: 12mm; }
+    }
 </style></head><body>
-<h1>📋 Plan Semanal de Mantenimiento</h1>
+<h1>Plan Semanal de Mantenimiento</h1>
 <div class="period">${period}</div>
 <div class="kpi-grid">
     ${kpis.map(([l, v]) => `<div class="kpi-box"><div class="kpi-label">${l}</div><div class="kpi-value">${v}</div></div>`).join('')}
 </div>
 <table>
-<thead><tr><th>OT</th><th>Aviso</th><th>Fecha</th><th>Técnico</th><th>Especialidad</th><th>Tipo</th><th>Estado</th><th>Área</th><th>Línea</th><th>TAG</th><th>Equipo</th><th>Prioridad</th><th>Descripción</th></tr></thead>
+<thead><tr>
+    <th>OT</th><th>Aviso</th><th>Fecha</th><th>Técnico</th><th>Especialidad</th>
+    <th>Tipo</th><th>Estado</th><th>Área</th><th>Línea</th>
+    <th>TAG</th><th>Equipo</th><th>Prioridad</th><th>Alcance</th><th>Descripción</th>
+</tr></thead>
 <tbody>${tableRows}</tbody>
 </table>
-<p style="margin-top:20px; color:#888; font-size:10px">Generado desde CMMS Industrial — ${new Date().toLocaleString('es-PE')}</p>
+<p class="footer">Generado desde CMMS Industrial — ${new Date().toLocaleString('es-PE')}</p>
 </body></html>`;
 
     const win = window.open('', '_blank');
@@ -441,7 +476,7 @@ function renderWeeklyTable(items) {
             <td>${i.notice_code || "-"}</td>
             <td>${i.scheduled_date || "-"}</td>
             <td>${scopeBadgeReport(i.scope)}</td>
-            <td style="font-weight:600;color:#a8d8ff">${i.technician || "-"}</td>
+            <td style="font-weight:600;">${i.technician || "-"}</td>
             <td>${i.specialty || "-"}</td>
             <td>${i.maintenance_type || "-"}</td>
             <td><span class="pill ${statusClass}">${i.status || "-"}</span></td>
@@ -457,13 +492,16 @@ function renderWeeklyTable(items) {
     }).join("");
 }
 
+let _lastWeeklyItems = [];
+
 async function loadWeeklyPlan() {
     try {
         const data = await getJson(`/api/reports/weekly-plan?${qs(currentWeeklyFilters())}`);
+        _lastWeeklyItems = data.items || [];
         renderWeeklySummary(data.summary || {}, data.meta || {});
         drawWeeklyLoad(data.daily || []);
         drawWeeklySpecialty(data.summary || {});
-        renderWeeklyTable(data.items || []);
+        renderWeeklyTable(_lastWeeklyItems);
     } catch (e) {
         alert(`Error cargando plan semanal: ${e.message}`);
     }
