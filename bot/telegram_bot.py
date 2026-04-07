@@ -107,18 +107,21 @@ def _get_cmms_context(app):
                 eq = f"{n[10] or ''} {n[9] or '-'}".strip()
                 ctx.append(f"  {n[1]} | {n[2]} | {eq} | {n[12] or '-'} | {n[3] or '-'} | Crit: {n[4] or '-'} | id:{n[0]}")
 
-            # Rotative Assets
+            # Rotative Assets — with id, equipment + component link
             assets = _db.session.execute(text("""
-                SELECT ra.code, ra.name, ra.category, ra.brand, ra.model, ra.status,
-                       e.name, c.name FROM rotative_assets ra
+                SELECT ra.id, ra.code, ra.name, ra.category, ra.brand, ra.model, ra.status,
+                       e.tag, e.name, c.id, c.name
+                FROM rotative_assets ra
                 LEFT JOIN equipments e ON ra.equipment_id = e.id
                 LEFT JOIN components c ON ra.component_id = c.id
-                WHERE ra.is_active = true ORDER BY ra.code LIMIT 50
+                WHERE ra.is_active = true ORDER BY e.tag, ra.code
             """)).fetchall()
             if assets:
                 ctx.append(f"\n=== ACTIVOS ROTATIVOS ({len(assets)}) ===")
                 for a in assets:
-                    ctx.append(f"  {a[0]} {a[1]} | {a[2] or '-'} | {a[3] or ''} {a[4] or ''} | {a[5]} | En: {a[6] or '-'}/{a[7] or '-'}")
+                    eq = f"[{a[7] or '-'}] {a[8] or '-'}"
+                    comp = f"comp_id:{a[9]} {a[10]}" if a[9] else "(sin componente)"
+                    ctx.append(f"  asset_id:{a[0]} {a[1] or '-'} {a[2]} | {a[3] or '-'} | {a[4] or ''} {a[5] or ''} | {a[6]} | {eq} | {comp}")
 
             # Overdue points
             try:
@@ -340,34 +343,180 @@ def _get_cmms_context(app):
 
 # ── Actions ──────────────────────────────────────────────────────────────────
 
+# Component name synonyms — when DeepSeek says X, also try Y
+_COMPONENT_SYNONYMS = {
+    'motor': ['motor electrico', 'motor', 'mtr'],
+    'motor electrico': ['motor electrico', 'motor', 'mtr'],
+    'motorreductor': ['motorreductor', 'motor reductor', 'mtr-red'],
+    'reductor': ['reductor', 'caja reductora', 'red'],
+    'caja reductora': ['caja reductora', 'reductor', 'red'],
+    'chumacera motriz': ['chumacera motriz', 'chumacera lado motriz', 'chum motriz'],
+    'chumacera conducida': ['chumacera conducida', 'chumacera lado conducido', 'chum conducida'],
+    'chumacera': ['chumacera'],
+    'faja': ['faja', 'banda', 'correa'],
+    'cadena': ['cadena'],
+    'rodamiento': ['rodamiento', 'cojinete', 'balinera'],
+    'valvula': ['valvula', 'vavula'],
+    'sello': ['sello', 'reten', 'oring'],
+    'acople': ['acople', 'acoplamiento', 'copla'],
+    'pinon': ['pinon', 'piñon', 'engranaje'],
+    'eje': ['eje', 'flecha'],
+    'rodillo': ['rodillo', 'polin'],
+    'transportador': ['transportador', 'faja transportadora'],
+}
+
+
+def _normalize_token(t):
+    """Strip accents and normalize masc/fem endings so 'conducido' ~ 'conducida'."""
+    import unicodedata
+    t = unicodedata.normalize('NFKD', t).encode('ascii', 'ignore').decode('ascii').lower()
+    # Stem common spanish gender/number endings
+    for end in ('idas', 'idos', 'ida', 'ido', 'as', 'os', 'a', 'o', 'es', 's'):
+        if len(t) > len(end) + 2 and t.endswith(end):
+            return t[:-len(end)]
+    return t
+
+
+def _smart_component_match(db, text_module, equipment_id, raw_name):
+    """Find the best matching component for an equipment given a free-text component name.
+    Uses token overlap with normalization (stems gender/number) + synonym expansion.
+    Returns (component_id, system_id) or None.
+    """
+    if not raw_name:
+        return None
+    name = raw_name.lower().strip()
+
+    # Build candidate search terms: original + synonyms whose KEY tokens are all in input
+    user_tokens_raw = set(name.split())
+    user_tokens_norm = {_normalize_token(t) for t in user_tokens_raw if len(t) > 2}
+
+    terms = {name}
+    for key, syns in _COMPONENT_SYNONYMS.items():
+        # Direction A: input contains all key tokens → expand with synonyms
+        key_tokens_norm = {_normalize_token(t) for t in key.split() if len(t) > 2}
+        if key_tokens_norm and key_tokens_norm.issubset(user_tokens_norm):
+            terms.update(syns)
+            terms.add(key)
+            continue
+        # Direction B: input matches one of the synonym phrases → also include the key + all syns
+        for syn in syns:
+            syn_tokens_norm = {_normalize_token(t) for t in syn.split() if len(t) > 2}
+            if syn_tokens_norm and syn_tokens_norm.issubset(user_tokens_norm):
+                terms.add(key)
+                terms.update(syns)
+                break
+
+    rows = db.session.execute(text_module("""
+        SELECT c.id, c.name, c.system_id FROM components c
+        JOIN systems s ON c.system_id = s.id
+        WHERE s.equipment_id = :eid
+    """), {"eid": equipment_id}).fetchall()
+    if not rows:
+        return None
+
+    best = None
+    best_score = 0
+    for cid, cname, sid in rows:
+        cname_low = (cname or '').lower()
+        comp_tokens_norm = {_normalize_token(t) for t in cname_low.split() if len(t) > 2}
+        score = 0
+        # Substring match per synonym term (weighted by length)
+        for term in terms:
+            if term and term in cname_low:
+                score += 10 + len(term)
+        # Normalized token overlap (catches 'conducido' vs 'conducida')
+        overlap = user_tokens_norm & comp_tokens_norm
+        score += len(overlap) * 5
+        # Bonus: every component token matched (component is fully described in input)
+        if comp_tokens_norm and comp_tokens_norm.issubset(user_tokens_norm):
+            score += 20
+        if score > best_score:
+            best_score = score
+            best = (cid, sid)
+
+    return best if best_score > 0 else None
+
+
 def _resolve_equipment(db, text_module, data):
-    """Resolve equipment/component IDs from tag or name."""
+    """Resolve equipment/component IDs.
+    Priority: explicit IDs from DeepSeek > tag/name fuzzy lookup.
+    Also resolves rotative_asset_id and back-fills missing levels from it.
+    """
     equipment_id = line_id = area_id = system_id = component_id = None
+    rotative_asset_id = None
 
-    if data.get('equipment_tag'):
-        row = db.session.execute(text_module("SELECT id, line_id FROM equipments WHERE tag = :t"), {"t": data['equipment_tag']}).fetchone()
-        if row:
-            equipment_id, line_id = row[0], row[1]
-    elif data.get('equipment_name'):
-        row = db.session.execute(text_module("SELECT id, line_id FROM equipments WHERE LOWER(name) LIKE :n LIMIT 1"), {"n": f"%{data['equipment_name'].lower()}%"}).fetchone()
-        if row:
-            equipment_id, line_id = row[0], row[1]
+    # 1) Direct IDs (preferred — DeepSeek picks them from context listings)
+    if data.get('equipment_id'):
+        equipment_id = int(data['equipment_id'])
+    if data.get('component_id'):
+        component_id = int(data['component_id'])
+    if data.get('system_id'):
+        system_id = int(data['system_id'])
+    if data.get('rotative_asset_id'):
+        rotative_asset_id = int(data['rotative_asset_id'])
 
+    # 2) Fuzzy fallbacks if no direct ids
+    if not equipment_id:
+        if data.get('equipment_tag'):
+            row = db.session.execute(text_module("SELECT id, line_id FROM equipments WHERE tag = :t"), {"t": data['equipment_tag']}).fetchone()
+            if row:
+                equipment_id, line_id = row[0], row[1]
+        elif data.get('equipment_name'):
+            row = db.session.execute(text_module("SELECT id, line_id FROM equipments WHERE LOWER(name) LIKE :n LIMIT 1"), {"n": f"%{data['equipment_name'].lower()}%"}).fetchone()
+            if row:
+                equipment_id, line_id = row[0], row[1]
+
+    # 3) If we have a rotative asset, derive equipment/component from it
+    if rotative_asset_id:
+        r = db.session.execute(text_module("""
+            SELECT equipment_id, component_id FROM rotative_assets WHERE id = :id
+        """), {"id": rotative_asset_id}).fetchone()
+        if r:
+            equipment_id = equipment_id or r[0]
+            component_id = component_id or r[1]
+
+    # 4) If we have a component but no equipment, derive equipment from component
+    if component_id and not equipment_id:
+        r = db.session.execute(text_module("""
+            SELECT s.equipment_id, c.system_id FROM components c
+            JOIN systems s ON c.system_id = s.id
+            WHERE c.id = :cid
+        """), {"cid": component_id}).fetchone()
+        if r:
+            equipment_id = r[0]
+            system_id = system_id or r[1]
+
+    # 5) Get line_id from equipment if missing
+    if equipment_id and not line_id:
+        r = db.session.execute(text_module("SELECT line_id FROM equipments WHERE id = :id"), {"id": equipment_id}).fetchone()
+        if r:
+            line_id = r[0]
+
+    # 6) Get area_id from line
     if line_id:
         r = db.session.execute(text_module("SELECT area_id FROM lines WHERE id = :id"), {"id": line_id}).fetchone()
         if r:
             area_id = r[0]
 
-    if equipment_id and data.get('component_name'):
-        r = db.session.execute(text_module("""
-            SELECT c.id, c.system_id FROM components c
-            JOIN systems s ON c.system_id = s.id
-            WHERE s.equipment_id = :eid AND LOWER(c.name) LIKE :n LIMIT 1
-        """), {"eid": equipment_id, "n": f"%{data['component_name'].lower()}%"}).fetchone()
-        if r:
-            component_id, system_id = r[0], r[1]
+    # 7) Component fuzzy fallback (when DeepSeek only sent component_name)
+    if equipment_id and not component_id and data.get('component_name'):
+        component_id, system_id = _smart_component_match(db, text_module, equipment_id, data['component_name']) or (None, None)
+        # Try also resolving an asset attached to that component
+        if component_id and not rotative_asset_id:
+            r = db.session.execute(text_module("""
+                SELECT id FROM rotative_assets
+                WHERE component_id = :c AND is_active = true LIMIT 1
+            """), {"c": component_id}).fetchone()
+            if r:
+                rotative_asset_id = r[0]
 
-    return equipment_id, line_id, area_id, system_id, component_id
+    # 8) Get system_id from component if missing
+    if component_id and not system_id:
+        r = db.session.execute(text_module("SELECT system_id FROM components WHERE id = :id"), {"id": component_id}).fetchone()
+        if r:
+            system_id = r[0]
+
+    return equipment_id, line_id, area_id, system_id, component_id, rotative_asset_id
 
 
 def _create_notice(app, data):
@@ -378,7 +527,7 @@ def _create_notice(app, data):
             max_id = _db.session.execute(text("SELECT COALESCE(MAX(id), 0) FROM maintenance_notices")).scalar()
             code = f"AV-{str(max_id + 1).zfill(4)}"
 
-            eq_id, ln_id, ar_id, sys_id, comp_id = _resolve_equipment(_db, text, data)
+            eq_id, ln_id, ar_id, sys_id, comp_id, ra_id = _resolve_equipment(_db, text, data)
 
             desc_parts = [data.get('description', 'Reporte desde Telegram')]
             if data.get('failure_mode'):
@@ -391,15 +540,15 @@ def _create_notice(app, data):
             _db.session.execute(text("""
                 INSERT INTO maintenance_notices (code, description, criticality, priority, request_date,
                     maintenance_type, status, reporter_name, reporter_type,
-                    area_id, line_id, equipment_id, system_id, component_id, shift)
+                    area_id, line_id, equipment_id, system_id, component_id, rotative_asset_id, shift)
                 VALUES (:code, :desc, :crit, :prio, :rdate, :mtype, 'Pendiente', :reporter, 'telegram',
-                    :ar, :ln, :eq, :sys, :comp, :shift)
+                    :ar, :ln, :eq, :sys, :comp, :ra, :shift)
             """), {
                 "code": code, "desc": ' | '.join(desc_parts),
                 "crit": data.get('criticality', 'Media'), "prio": data.get('priority', 'Normal'),
                 "rdate": date.today().isoformat(), "mtype": data.get('maintenance_type', 'Correctivo'),
                 "reporter": data.get('reporter_name', 'Bot Telegram'),
-                "ar": ar_id, "ln": ln_id, "eq": eq_id, "sys": sys_id, "comp": comp_id,
+                "ar": ar_id, "ln": ln_id, "eq": eq_id, "sys": sys_id, "comp": comp_id, "ra": ra_id,
                 "shift": data.get('shift'),
             })
             _db.session.commit()
@@ -812,7 +961,29 @@ REGLA CRITICA: Si el usuario reporta una falla, pide crear/editar/cerrar algo, N
 ACCIONES DISPONIBLES:
 
 1. CREAR AVISO (reportar falla):
-{"action": "create_notice", "data": {"description": "descripcion profesional orientada al modo de falla", "failure_mode": "Rotura|Desgaste|Fuga|Desalineacion|Sobrecalentamiento|Ruido anormal|Vibracion excesiva|Aflojamiento|Corrosion|Atascamiento|Descarrilamiento|Cortocircuito|Sobrecarga|Fatiga", "failure_category": "Mecanica|Electrica|Hidraulica|Neumatica|Instrumentacion|Lubricacion|Estructural", "equipment_tag": "D2", "equipment_name": "DIGESTOR #2", "component_name": "FAJA", "criticality": "Alta|Media|Baja", "priority": "Alta|Normal|Baja", "maintenance_type": "Correctivo"}}
+{"action": "create_notice", "data": {"description": "...", "failure_mode": "Rotura|Desgaste|Fuga|Desalineacion|Sobrecalentamiento|Ruido anormal|Vibracion excesiva|Aflojamiento|Corrosion|Atascamiento|Descarrilamiento|Cortocircuito|Sobrecarga|Fatiga", "failure_category": "Mecanica|Electrica|Hidraulica|Neumatica|Instrumentacion|Lubricacion|Estructural", "equipment_tag": "D8", "component_name": "motor electrico", "criticality": "Alta|Media|Baja", "priority": "Alta|Normal|Baja", "maintenance_type": "Correctivo"}}
+
+REGLAS CRITICAS PARA IDENTIFICAR equipo Y componente:
+1. SIEMPRE incluye `equipment_tag` (D1..D9, TH1..TH3, etc.) tomado de la lista EQUIPOS. NUNCA dejes el aviso sin equipo si el usuario menciona uno.
+2. SIEMPRE intenta incluir `component_name` con el nombre del componente especifico. NO te quedes solo en el equipo. El sistema tiene un matcher inteligente con sinonimos que resolvera el componente real.
+   - "motor del D8", "motor electrico del digestor 8" → component_name: "motor electrico"
+   - "reductor del D5", "caja reductora del digestor 5" → component_name: "reductor"
+   - "motorreductor del TH2", "motor-reductor del transportador 2" → component_name: "motorreductor"
+   - "chumacera lado conducido del D3" → component_name: "chumacera conducida"
+   - "chumacera motriz del D1" → component_name: "chumacera motriz"
+   - "faja del D3", "banda del digestor 3" → component_name: "faja"
+   - "rodamiento del motor del TH2" → component_name: "motor electrico" (porque el rodamiento vive dentro del motor)
+   - "valvula de la reductora" → component_name: "reductor" (la valvula vive dentro)
+   - "rodillo de salida del transportador 2" → component_name: "rodillo"
+3. Si el usuario menciona un activo rotativo especifico por codigo (ej: "MTR-D8", "RED-TH2-01") busca ese codigo en la lista ACTIVOS ROTATIVOS y usa rotative_asset_id con el asset_id correspondiente. El sistema deducira solo el equipo y componente desde ese asset.
+4. Si NO mencionas un asset por codigo, NO pongas rotative_asset_id — el codigo lo deducira automaticamente del componente si hay un asset instalado.
+5. Si no hay equipo claro, omite equipment_tag y usa free_location.
+
+Ejemplos:
+- "el motor del digestor 8 esta sobrecalentando" → {"action":"create_notice","data":{"description":"Sobrecalentamiento en motor electrico del Digestor #8 - revisar bobinado y rodamientos","failure_mode":"Sobrecalentamiento","failure_category":"Electrica","equipment_tag":"D8","component_name":"motor electrico","criticality":"Alta"}}
+- "rodamiento de la caja reductora del TH2 hace ruido" → {"action":"create_notice","data":{"description":"Ruido anormal en rodamiento de caja reductora del TH2","failure_mode":"Ruido anormal","failure_category":"Mecanica","equipment_tag":"TH2","component_name":"reductor","criticality":"Media"}}
+- "se rompio la chumacera conducida del D3" → {"action":"create_notice","data":{"description":"Rotura de chumacera lado conducido del Digestor #3","failure_mode":"Rotura","failure_category":"Mecanica","equipment_tag":"D3","component_name":"chumacera conducida","criticality":"Alta"}}
+- "fuga de aceite en el motorreductor del TH1" → component_name:"motorreductor"
 
 2. CERRAR OT:
 {"action": "close_ot", "data": {"ot_code": "OT-0034", "comments": "Trabajo completado - se reemplazo faja y se verifico alineacion"}}
