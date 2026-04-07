@@ -1014,10 +1014,11 @@
         <!-- MODAL: DETALLE DE AVISO (NUEVO) -->
         <dialog id="noticeDetailModal" class="modal">
             <div class="modal-content" style="max-width: 800px; width: 90%;">
-                <div class="modal-header">
-                    <h3 id="detailNoticeTitle">Detalle del Aviso</h3>
-                    <button class="close-modal"
-                        onclick="document.getElementById('noticeDetailModal').close()"></button>
+                <div class="modal-header" style="display:flex; align-items:center; justify-content:space-between; margin-bottom:14px;">
+                    <h3 id="detailNoticeTitle" style="margin:0">Detalle del Aviso</h3>
+                    <button onclick="document.getElementById('noticeDetailModal').close()"
+                        style="background:transparent; border:none; color:#888; font-size:1.3rem; cursor:pointer; line-height:1; padding:4px 8px;"
+                        title="Cerrar">✕</button>
                 </div>
                 <div class="modal-body">
                     <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 15px;">
@@ -1042,6 +1043,12 @@
                         <div>
                             <strong style="color: #0A84FF;">Tipo Mtto:</strong> <span id="detail-maint-type">-</span>
                         </div>
+                    </div>
+
+                    <!-- Fotos de evidencia del aviso -->
+                    <div id="detail-photos-section" style="display:none; margin-top:14px; border-top:1px solid #333; padding-top:12px;">
+                        <strong style="color:#5AC8FA; font-size:.88em;"><i class="fas fa-camera"></i> Fotos de evidencia</strong>
+                        <div id="detail-photos-gallery" style="display:flex; flex-wrap:wrap; gap:8px; margin-top:8px;"></div>
                     </div>
 
                     <div style="margin-top: 15px; border-top: 1px solid #444; padding-top: 10px;">

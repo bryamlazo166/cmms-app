@@ -1707,6 +1707,25 @@ window.viewNoticeDetails = async function (id) {
             }
         }
 
+        // Cargar fotos del aviso
+        const photosSection  = document.getElementById('detail-photos-section');
+        const photosGallery  = document.getElementById('detail-photos-gallery');
+        photosSection.style.display = 'none';
+        photosGallery.innerHTML = '';
+        try {
+            const photosRes = await fetch(`/api/photos/notice/${id}`);
+            const photos = await photosRes.json();
+            if (Array.isArray(photos) && photos.length > 0) {
+                photosSection.style.display = '';
+                photosGallery.innerHTML = photos.map(p => `
+                    <div style="width:90px; height:90px; border-radius:8px; overflow:hidden; border:1px solid #444; cursor:pointer;"
+                         onclick="window.open('${p.url}','_blank')" title="${p.caption || 'Ver foto'}">
+                        <img src="${p.url}" style="width:100%; height:100%; object-fit:cover;">
+                    </div>
+                `).join('');
+            }
+        } catch (_) {}
+
         document.getElementById('noticeDetailModal').showModal();
 
     } catch (e) { console.error(e); alert("Error cargando detalles"); }
