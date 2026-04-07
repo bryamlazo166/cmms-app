@@ -2,8 +2,33 @@
 
 
 // DATA CACHE
-// DATA CACHE
 let allAreas = [], allLines = [], allEquips = [], allSys = [], allComps = [], allProviders = [];
+let allNotices = [];
+let currentScopeFilter = 'ALL';
+let _treeSelectionCallback = null; // when set, tree node clicks call this instead of selectHierarchy
+let _promotingNoticeId = null;
+
+// ── Scope helpers ────────────────────────────────────────────────────────────
+function scopeLabel(scope) {
+    if (scope === 'FUERA_PLAN') return '🚧 Fuera de Plan';
+    if (scope === 'GENERAL')    return '🛠️ General';
+    return '🏭 Plan';
+}
+function scopeBadge(scope) {
+    if (scope === 'FUERA_PLAN')
+        return `<span class="scope-badge scope-badge-fuera_plan">🚧 F.Plan</span>`;
+    if (scope === 'GENERAL')
+        return `<span class="scope-badge scope-badge-general">🛠️ General</span>`;
+    return `<span class="scope-badge scope-badge-plan">🏭 Plan</span>`;
+}
+
+function filterByScopeTab(scope) {
+    currentScopeFilter = scope;
+    document.querySelectorAll('.scope-tab').forEach(btn => {
+        btn.classList.toggle('active', btn.dataset.scope === scope);
+    });
+    renderNotices();
+}
 
 async function loadDropdowns() {
     try {
@@ -44,86 +69,97 @@ async function loadDropdowns() {
 async function loadNotices() {
     try {
         const res = await fetch('/api/notices');
-        const notices = await res.json();
-        const tbody = document.querySelector('#noticesTable tbody');
-        tbody.innerHTML = '';
-
-        notices.forEach(n => {
-            // Helper to find provider name
-            const foundProvider = allProviders.find(p => p.id === n.provider_id);
-            const provName = (foundProvider && foundProvider.name) ? foundProvider.name : '-';
-
-            const tr = document.createElement('tr');
-
-            // Visual check for Anulado
-            if (n.status === 'Anulado') {
-                tr.style.opacity = "0.6";
-                tr.style.background = "#2a2a2a"; // Slightly darker
-            }
-
-            // Show convert to OT button only if status is not Cerrado/Anulado and no OT yet
-            const canConvert = n.status !== 'Cerrado' && n.status !== 'Anulado' && !n.ot_number;
-            const convertBtn = canConvert
-                ? `<button onclick="convertToOT(${n.id})" style="padding:2px 5px; background: transparent; border: none; cursor: pointer;" title="Convertir a OT">🔧</button>`
-                : '';
-
-            // Anulled/Locked logic
-            const isLocked = n.status === 'Cerrado' || n.status === 'Anulado';
-            const actionBtns = isLocked
-                ? `<button style="padding:2px 5px; opacity:0.3; cursor:default;">🚫</button>` // Placeholder for alignment
-                : `<button onclick="annulNotice(${n.id})" style="padding:2px 5px; background: transparent; border: none; cursor: pointer; color: #FF453A;" title="Anular Aviso">🚫</button>`;
-
-            const editBtn = `<button onclick="editNotice(${n.id})" style="padding:2px 5px; background: transparent; border: none; cursor: pointer;" title="Editar">✏️</button>`;
-
-            // Status Badge
-            let statusColor = '#FF9F0A'; // Default Pendiente
-            if (n.status === 'En Tratamiento') statusColor = '#2196f3';
-            if (n.status === 'En Progreso') statusColor = '#00bcd4';
-            if (n.status === 'Cerrado') statusColor = '#4caf50';
-            if (n.status === 'Anulado') statusColor = '#757575';
-            if (n.status === 'Duplicado') statusColor = '#ff5722';
-
-            const statusBadge = `<span style="background-color: ${statusColor}; color: white; padding: 2px 8px; border-radius: 4px; font-size: 0.85em;">${n.status || 'Pendiente'}</span>`;
-
-            // Match all columns from HTML header
-            tr.innerHTML = `
-                <td>${n.code || n.id}</td>
-                <td>
-                    <span style="background-color: ${n.failure_count > 0 ? '#FF453A' : '#0A84FF'}; color: ${n.failure_count > 0 ? 'white' : 'black'}; padding: 2px 6px; border-radius: 12px; font-weight: bold; font-size: 0.9em;">
-                        ${n.failure_count || 0}
-                    </span>
-                </td>
-                <td>${n.reporter_type || '-'}</td>
-                <td>${provName}</td>
-                <td>${n.specialty || '-'}</td>
-                <td>${n.shift || '-'}</td>
-                <td>${getName(allAreas, n.area_id)}</td>
-                <td>${getName(allLines, n.line_id)}</td>
-                <td>${getName(allEquips, n.equipment_id)}</td>
-                <td>${getName(allSys, n.system_id)}</td>
-                <td>${getName(allComps, n.component_id)}</td>
-                <td>${n.description || '-'} <br> <small style="color:#FF453A;">${n.cancellation_reason ? '(Anulado: ' + n.cancellation_reason + ')' : ''}</small></td>
-                <td>${n.criticality || '-'}</td>
-                <td>${n.priority || '-'}</td>
-                <td>${n.request_date || '-'}</td>
-                <td>${n.treatment_date || '-'}</td>
-                <td>${n.planning_date || '-'}</td>
-                <td>${n.failure_mode || '-'}</td>
-                <td>${n.maintenance_type || '-'}</td>
-                <td>${n.ot_number || '-'}</td>
-                <td>${statusBadge}</td>
-                <td>
-                    ${convertBtn}
-                    ${editBtn}
-                    ${actionBtns}
-                </td>
-            `;
-            tbody.appendChild(tr);
-        });
-
-        // Update KPI Indicators
-        updateKPIIndicators(notices);
+        allNotices = await res.json();
+        renderNotices();
     } catch (e) { console.error(e); }
+}
+
+function renderNotices() {
+    const filtered = currentScopeFilter === 'ALL'
+        ? allNotices
+        : allNotices.filter(n => (n.scope || 'PLAN') === currentScopeFilter);
+
+    const tbody = document.querySelector('#noticesTable tbody');
+    tbody.innerHTML = '';
+
+    filtered.forEach(n => {
+        const foundProvider = allProviders.find(p => p.id === n.provider_id);
+        const provName = (foundProvider && foundProvider.name) ? foundProvider.name : '-';
+        const scope = n.scope || 'PLAN';
+
+        const tr = document.createElement('tr');
+
+        if (n.status === 'Anulado') {
+            tr.style.opacity = "0.6";
+            tr.style.background = "#2a2a2a";
+        }
+
+        const canConvert = n.status !== 'Cerrado' && n.status !== 'Anulado' && !n.ot_number;
+        const convertBtn = canConvert
+            ? `<button onclick="convertToOT(${n.id})" style="padding:2px 5px; background: transparent; border: none; cursor: pointer;" title="Convertir a OT">🔧</button>`
+            : '';
+
+        const isLocked = n.status === 'Cerrado' || n.status === 'Anulado';
+        const actionBtns = isLocked
+            ? `<button style="padding:2px 5px; opacity:0.3; cursor:default;">🚫</button>`
+            : `<button onclick="annulNotice(${n.id})" style="padding:2px 5px; background: transparent; border: none; cursor: pointer; color: #FF453A;" title="Anular Aviso">🚫</button>`;
+
+        const editBtn = `<button onclick="editNotice(${n.id})" style="padding:2px 5px; background: transparent; border: none; cursor: pointer;" title="Editar">✏️</button>`;
+
+        // Promover button for non-PLAN or for PLAN with missing equipment
+        const canPromote = !isLocked;
+        const promoteBtn = canPromote
+            ? `<button onclick="openPromoteModal(${n.id})" style="padding:2px 5px; background: transparent; border: none; cursor: pointer;" title="Promover / Reclasificar alcance">📐</button>`
+            : '';
+
+        let statusColor = '#FF9F0A';
+        if (n.status === 'En Tratamiento') statusColor = '#2196f3';
+        if (n.status === 'En Progreso') statusColor = '#00bcd4';
+        if (n.status === 'Cerrado') statusColor = '#4caf50';
+        if (n.status === 'Anulado') statusColor = '#757575';
+        if (n.status === 'Duplicado') statusColor = '#ff5722';
+
+        const statusBadge = `<span style="background-color: ${statusColor}; color: white; padding: 2px 8px; border-radius: 4px; font-size: 0.85em;">${n.status || 'Pendiente'}</span>`;
+
+        tr.innerHTML = `
+            <td>${n.code || n.id}</td>
+            <td>
+                <span style="background-color: ${n.failure_count > 0 ? '#FF453A' : '#0A84FF'}; color: ${n.failure_count > 0 ? 'white' : 'black'}; padding: 2px 6px; border-radius: 12px; font-weight: bold; font-size: 0.9em;">
+                    ${n.failure_count || 0}
+                </span>
+            </td>
+            <td>${n.reporter_type || '-'}</td>
+            <td>${provName}</td>
+            <td>${n.specialty || '-'}</td>
+            <td>${n.shift || '-'}</td>
+            <td>${getName(allAreas, n.area_id)}</td>
+            <td>${getName(allLines, n.line_id)}</td>
+            <td>${n.equipment_id ? getName(allEquips, n.equipment_id) : (n.free_location ? `<span style="color:#888;font-style:italic">${n.free_location}</span>` : '-')}</td>
+            <td>${getName(allSys, n.system_id)}</td>
+            <td>${getName(allComps, n.component_id)}</td>
+            <td>${n.description || '-'} <br> <small style="color:#FF453A;">${n.cancellation_reason ? '(Anulado: ' + n.cancellation_reason + ')' : ''}</small></td>
+            <td>${n.criticality || '-'}</td>
+            <td>${n.priority || '-'}</td>
+            <td>${n.request_date || '-'}</td>
+            <td>${n.treatment_date || '-'}</td>
+            <td>${n.planning_date || '-'}</td>
+            <td>${n.failure_mode || '-'}</td>
+            <td>${n.maintenance_type || '-'}</td>
+            <td>${n.ot_number || '-'}</td>
+            <td>${scopeBadge(scope)}</td>
+            <td>${statusBadge}</td>
+            <td>
+                ${convertBtn}
+                ${editBtn}
+                ${promoteBtn}
+                ${actionBtns}
+            </td>
+        `;
+        tbody.appendChild(tr);
+    });
+
+    // KPIs always based on full dataset
+    updateKPIIndicators(allNotices);
 }
 
 // KPI Indicators Function
@@ -169,7 +205,6 @@ function updateKPIIndicators(notices) {
         reporterAreaCounts[reporterArea] = (reporterAreaCounts[reporterArea] || 0) + 1;
     });
 
-    // Sort by count descending
     const sortedReporterAreas = Object.entries(reporterAreaCounts).sort((a, b) => b[1] - a[1]);
 
     const areaEl = document.getElementById('kpiAreaBreakdown');
@@ -180,6 +215,42 @@ function updateKPIIndicators(notices) {
                 <span style="color: #ccc; font-size: 0.85em;">${area}</span>
             </div>
         `).join('');
+    }
+
+    // Scope Breakdown
+    const scopeCounts = { PLAN: 0, FUERA_PLAN: 0, GENERAL: 0 };
+    notices.forEach(n => {
+        const s = n.scope || 'PLAN';
+        if (scopeCounts[s] !== undefined) scopeCounts[s]++;
+        else scopeCounts['PLAN']++;
+    });
+    const total = notices.length || 1;
+
+    const scopeEl = document.getElementById('kpiScopeBreakdown');
+    if (scopeEl) {
+        scopeEl.innerHTML = `
+            <div onclick="filterByScopeTab('PLAN')" style="cursor:pointer; display:flex; align-items:center; gap:8px; background:#0A84FF18; padding:8px 14px; border-radius:20px; border:1px solid #0A84FF44;">
+                <span style="font-size:1.2em; font-weight:bold; color:#5AC8FA">${scopeCounts.PLAN}</span>
+                <div>
+                    <div style="font-size:0.78em; color:#5AC8FA;">🏭 Plan</div>
+                    <div style="font-size:0.72em; color:#3a7ab0">${Math.round(scopeCounts.PLAN/total*100)}%</div>
+                </div>
+            </div>
+            <div onclick="filterByScopeTab('FUERA_PLAN')" style="cursor:pointer; display:flex; align-items:center; gap:8px; background:#FF9F0A18; padding:8px 14px; border-radius:20px; border:1px solid #FF9F0A44;">
+                <span style="font-size:1.2em; font-weight:bold; color:#FF9F0A">${scopeCounts.FUERA_PLAN}</span>
+                <div>
+                    <div style="font-size:0.78em; color:#FF9F0A;">🚧 Fuera Plan</div>
+                    <div style="font-size:0.72em; color:#8a6020">${Math.round(scopeCounts.FUERA_PLAN/total*100)}%</div>
+                </div>
+            </div>
+            <div onclick="filterByScopeTab('GENERAL')" style="cursor:pointer; display:flex; align-items:center; gap:8px; background:#BF5AF218; padding:8px 14px; border-radius:20px; border:1px solid #BF5AF244;">
+                <span style="font-size:1.2em; font-weight:bold; color:#BF5AF2">${scopeCounts.GENERAL}</span>
+                <div>
+                    <div style="font-size:0.78em; color:#BF5AF2;">🛠️ General</div>
+                    <div style="font-size:0.72em; color:#7a3ab0">${Math.round(scopeCounts.GENERAL/total*100)}%</div>
+                </div>
+            </div>
+        `;
     }
 }
 
@@ -353,8 +424,8 @@ function prefillFromTree(type, id) {
 
 window.editNotice = async (id) => {
     try {
-        const notices = await fetch('/api/notices').then(r => r.json());
-        const n = notices.find(x => x.id === id);
+        const n = allNotices.find(x => x.id === id) ||
+                  await fetch(`/api/notices/${id}`).then(r => r.json());
         if (!n) return;
 
         document.getElementById('noticeId').value = n.id;
@@ -392,7 +463,8 @@ window.editNotice = async (id) => {
 
 
 // TREE SELECTION LOGIC
-window.openTreeSelection = () => {
+window.openTreeSelection = (callback = null) => {
+    _treeSelectionCallback = callback || null;
     console.log("Opening Tree Selection with Expansion Logic");
     const treeContainer = document.getElementById('selectionTree');
     treeContainer.innerHTML = ''; // Clear
@@ -480,7 +552,13 @@ function createTreeNode(item, type, parents = {}) {
 
     const selectNode = (e) => {
         e.stopPropagation();
-        selectHierarchy(item, type, parents);
+        if (_treeSelectionCallback) {
+            const cb = _treeSelectionCallback;
+            _treeSelectionCallback = null;
+            cb(item, type, parents);
+        } else {
+            selectHierarchy(item, type, parents);
+        }
         document.getElementById('treeModal').close();
     };
 
@@ -598,6 +676,142 @@ function getName(list, id) {
     return item ? item.name : id;
 }
 
+// ── Promote / Reclassify Modal ───────────────────────────────────────────────
+
+window.openPromoteModal = (id) => {
+    _promotingNoticeId = id;
+    const notice = allNotices.find(n => n.id === id);
+    if (!notice) return;
+
+    document.getElementById('promoteNoticeCode').textContent = notice.code || `AV-${id}`;
+    document.getElementById('promoteCurrentScope').textContent = scopeLabel(notice.scope || 'PLAN');
+    document.getElementById('promoteCurrentScope').style.color =
+        notice.scope === 'FUERA_PLAN' ? '#FF9F0A' :
+        notice.scope === 'GENERAL'    ? '#BF5AF2' : '#5AC8FA';
+
+    document.getElementById('promoteNewScope').value = notice.scope || 'PLAN';
+    document.getElementById('promoteFreeLocation').value = notice.free_location || '';
+
+    // Reset hierarchy
+    ['promoteAreaId','promoteLineId','promoteEquipId','promoteSysId','promoteCompId'].forEach(f => {
+        document.getElementById(f).value = notice[f.replace('promote','').replace(/Id$/,'_id').toLowerCase()] || '';
+    });
+    _updatePromoteHierarchyDisplay();
+    onPromoteScopeChange();
+    document.getElementById('promoteModal').showModal();
+};
+
+function onPromoteScopeChange() {
+    const scope = document.getElementById('promoteNewScope').value;
+    const planSec = document.getElementById('promotePlanSection');
+    const genSec  = document.getElementById('promoteGeneralSection');
+    if (scope === 'PLAN') {
+        planSec.style.display = '';
+        genSec.style.display = 'none';
+    } else {
+        planSec.style.display = 'none';
+        genSec.style.display = '';
+    }
+}
+
+window.openTreeForPromotion = () => {
+    openTreeSelection((item, type, parents) => {
+        // Set hidden promote hierarchy fields
+        document.getElementById('promoteAreaId').value  = '';
+        document.getElementById('promoteLineId').value  = '';
+        document.getElementById('promoteEquipId').value = '';
+        document.getElementById('promoteSysId').value   = '';
+        document.getElementById('promoteCompId').value  = '';
+
+        if (type === 'Area') {
+            document.getElementById('promoteAreaId').value = item.id;
+        } else if (type === 'Line') {
+            document.getElementById('promoteAreaId').value = parents.area?.id || '';
+            document.getElementById('promoteLineId').value = item.id;
+        } else if (type === 'Equipment') {
+            document.getElementById('promoteAreaId').value  = parents.area?.id || '';
+            document.getElementById('promoteLineId').value  = parents.line?.id || '';
+            document.getElementById('promoteEquipId').value = item.id;
+        } else if (type === 'System') {
+            document.getElementById('promoteAreaId').value  = parents.area?.id || '';
+            document.getElementById('promoteLineId').value  = parents.line?.id || '';
+            document.getElementById('promoteEquipId').value = parents.equipment?.id || '';
+            document.getElementById('promoteSysId').value   = item.id;
+        } else if (type === 'Component') {
+            document.getElementById('promoteAreaId').value  = parents.area?.id || '';
+            document.getElementById('promoteLineId').value  = parents.line?.id || '';
+            document.getElementById('promoteEquipId').value = parents.equipment?.id || '';
+            document.getElementById('promoteSysId').value   = parents.system?.id || '';
+            document.getElementById('promoteCompId').value  = item.id;
+        }
+        _updatePromoteHierarchyDisplay();
+        // Re-open promote modal (tree modal closed it)
+        document.getElementById('promoteModal').showModal();
+    });
+};
+
+function _updatePromoteHierarchyDisplay() {
+    const aId = parseInt(document.getElementById('promoteAreaId').value);
+    const lId = parseInt(document.getElementById('promoteLineId').value);
+    const eId = parseInt(document.getElementById('promoteEquipId').value);
+    const sId = parseInt(document.getElementById('promoteSysId').value);
+    const cId = parseInt(document.getElementById('promoteCompId').value);
+
+    const safeName = (list, id) => { const i = list.find(x => x.id === id); return i ? i.name : '—'; };
+
+    const parts = [];
+    if (aId) parts.push(`Área: ${safeName(allAreas, aId)}`);
+    if (lId) parts.push(`Línea: ${safeName(allLines, lId)}`);
+    if (eId) parts.push(`Equipo: ${safeName(allEquips, eId)}`);
+    if (sId) parts.push(`Sistema: ${safeName(allSys, sId)}`);
+    if (cId) parts.push(`Comp.: ${safeName(allComps, cId)}`);
+
+    document.getElementById('promoteHierarchyDisplay').textContent =
+        parts.length ? parts.join(' | ') : 'No seleccionado';
+}
+
+window.savePromotion = async () => {
+    const id = _promotingNoticeId;
+    if (!id) return;
+
+    const newScope = document.getElementById('promoteNewScope').value;
+    const data = { scope: newScope };
+
+    if (newScope === 'PLAN') {
+        const aId = document.getElementById('promoteAreaId').value;
+        const lId = document.getElementById('promoteLineId').value;
+        const eId = document.getElementById('promoteEquipId').value;
+        const sId = document.getElementById('promoteSysId').value;
+        const cId = document.getElementById('promoteCompId').value;
+        if (aId) data.area_id       = aId;
+        if (lId) data.line_id       = lId;
+        if (eId) data.equipment_id  = eId;
+        if (sId) data.system_id     = sId;
+        if (cId) data.component_id  = cId;
+        data.free_location = null;
+    } else {
+        const fl = document.getElementById('promoteFreeLocation').value.trim();
+        if (fl) data.free_location = fl;
+    }
+
+    try {
+        const res = await fetch(`/api/notices/${id}`, {
+            method: 'PUT',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(data)
+        });
+        if (res.ok) {
+            document.getElementById('promoteModal').close();
+            await loadNotices();
+        } else {
+            const err = await res.json().catch(() => ({}));
+            alert('Error al promover: ' + (err.error || res.status));
+        }
+    } catch (e) {
+        alert('Error de red: ' + e);
+    }
+};
+
 window.annulNotice = async (id) => {
     const reason = prompt("Motivo de la anulación (Requerido):");
     if (reason === null) return; // Cancelled
@@ -636,8 +850,8 @@ window.convertToOT = async (noticeId) => {
 
     try {
         // Get notice data
-        const notices = await fetch('/api/notices').then(r => r.json());
-        const notice = notices.find(n => n.id === noticeId);
+        const notice = allNotices.find(n => n.id === noticeId) ||
+                       await fetch(`/api/notices/${noticeId}`).then(r => r.json());
         if (!notice) {
             alert("Aviso no encontrado");
             return;

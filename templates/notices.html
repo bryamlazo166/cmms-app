@@ -156,6 +156,23 @@
             border-left: 1px dashed #3a5576;
         }
     
+        /* SCOPE FILTER TABS */
+        .scope-tabs { display: flex; gap: 8px; flex-wrap: wrap; margin-bottom: 16px; }
+        .scope-tab {
+            padding: 7px 16px; border-radius: 20px; border: 1px solid #444;
+            background: #2c2c2e; color: #aaa; cursor: pointer; font-size: 0.88em;
+            transition: all .15s;
+        }
+        .scope-tab:hover { border-color: #666; color: #ddd; }
+        .scope-tab.active[data-scope="ALL"]        { background:#3a3a3e; border-color:#666; color:#fff; }
+        .scope-tab.active[data-scope="PLAN"]       { background:#0A84FF22; border-color:#0A84FF; color:#0A84FF; }
+        .scope-tab.active[data-scope="FUERA_PLAN"] { background:#FF9F0A22; border-color:#FF9F0A; color:#FF9F0A; }
+        .scope-tab.active[data-scope="GENERAL"]    { background:#BF5AF222; border-color:#BF5AF2; color:#BF5AF2; }
+        .scope-badge { display:inline-block; padding:2px 7px; border-radius:10px; font-size:0.78em; font-weight:600; white-space:nowrap; }
+        .scope-badge-plan       { background:#0A84FF22; color:#5AC8FA; border:1px solid #0A84FF44; }
+        .scope-badge-fuera_plan { background:#FF9F0A22; color:#FF9F0A; border:1px solid #FF9F0A44; }
+        .scope-badge-general    { background:#BF5AF222; color:#BF5AF2; border:1px solid #BF5AF244; }
+
         /* RESPONSIVE MOBILE - NOTICES */
         @media (max-width: 768px) {
             .home-section {
@@ -247,8 +264,16 @@
             </div>
             <div class="main-container">
 
-                <div class="toolbar" style="margin-bottom: 20px;">
+                <div class="toolbar" style="margin-bottom: 12px;">
                     <button id="newNoticeBtn" class="btn-primary"><i class="fas fa-plus"></i> Nuevo Aviso</button>
+                </div>
+
+                <!-- SCOPE FILTER TABS -->
+                <div class="scope-tabs">
+                    <button class="scope-tab active" data-scope="ALL"        onclick="filterByScopeTab('ALL')">Todos</button>
+                    <button class="scope-tab"         data-scope="PLAN"       onclick="filterByScopeTab('PLAN')">🏭 Mantenimiento Plan</button>
+                    <button class="scope-tab"         data-scope="FUERA_PLAN" onclick="filterByScopeTab('FUERA_PLAN')">🚧 Fuera de Plan</button>
+                    <button class="scope-tab"         data-scope="GENERAL"    onclick="filterByScopeTab('GENERAL')">🛠️ Servicios Generales</button>
                 </div>
 
                 <!-- KPI Indicators Section -->
@@ -292,6 +317,18 @@
                             <!-- Area badges will be injected here -->
                         </div>
                     </div>
+
+                    <!-- Scope Breakdown Card -->
+                    <div class="kpi-card"
+                        style="background: linear-gradient(135deg, #1a1a2e 0%, #16213e 100%); border-radius: 12px; padding: 20px; min-width: 260px; flex: 2; box-shadow: 0 4px 15px rgba(0,0,0,0.3); border: 1px solid #2a3a5a;">
+                        <div style="display: flex; align-items: center; gap: 10px; margin-bottom: 15px;">
+                            <span style="font-size: 1.5em;">📐</span>
+                            <span style="color: #5AC8FA; font-size: 0.9em; text-transform: uppercase; font-weight: 600;">Por Alcance</span>
+                        </div>
+                        <div id="kpiScopeBreakdown" style="display: flex; flex-wrap: wrap; gap: 10px;">
+                            <!-- Scope badges injected by JS -->
+                        </div>
+                    </div>
                 </div>
 
                 <div class="grid-container">
@@ -318,6 +355,7 @@
                                 <th>Modo de Falla</th>
                                 <th>Tipo Mtto</th>
                                 <th>OT</th>
+                                <th>Alcance</th>
                                 <th>Estado</th>
                                 <th>Acciones</th>
                             </tr>
@@ -485,6 +523,59 @@
                         <button type="submit" style="background: #0A84FF; color: black;">Guardar Aviso</button>
                     </div>
                 </form>
+            </dialog>
+
+            <!-- PROMOTE NOTICE MODAL -->
+            <dialog id="promoteModal" class="modal"
+                style="background:#1e2535; color:white; border:1px solid #2a3a5a; padding:20px; border-radius:10px; max-width:680px; width:95%">
+                <h3 style="margin:0 0 6px; color:#5AC8FA"><i class="fas fa-level-up-alt"></i> Promover / Reclasificar Aviso</h3>
+                <p style="color:#8a9dc0; font-size:.87em; margin:0 0 16px">
+                    Aviso: <strong id="promoteNoticeCode" style="color:#fff"></strong> &nbsp;|&nbsp;
+                    Alcance actual: <span id="promoteCurrentScope" style="font-weight:600"></span>
+                </p>
+
+                <div class="form-grid" style="gap:12px">
+                    <div class="form-group">
+                        <label style="color:#8a9dc0">Nuevo Alcance</label>
+                        <select id="promoteNewScope" onchange="onPromoteScopeChange()" style="background:#0d1320;border:1px solid #2f4563;color:#e6f0ff;border-radius:6px;padding:6px 10px;width:100%">
+                            <option value="PLAN">🏭 Mantenimiento Plan</option>
+                            <option value="FUERA_PLAN">🚧 Fuera de Plan</option>
+                            <option value="GENERAL">🛠️ Servicio General</option>
+                        </select>
+                    </div>
+
+                    <!-- Equipment tree picker — shown only when scope = PLAN -->
+                    <div id="promotePlanSection" style="border:1px solid #2f4563;border-radius:8px;padding:12px">
+                        <label style="color:#9ed1ff; font-size:.87em; display:block; margin-bottom:8px">
+                            Ubicación técnica en el árbol <small style="color:#5a7aa0">(opcional si ya está asignado)</small>
+                        </label>
+                        <button type="button" onclick="openTreeForPromotion()" style="width:100%;margin-bottom:8px;background:#0A84FF22;border:1px solid #0A84FF66;color:#5AC8FA;border-radius:6px;padding:6px 12px;cursor:pointer">
+                            📍 Seleccionar del Árbol de Equipos
+                        </button>
+                        <div id="promoteHierarchyDisplay" style="font-size:.83em; color:#5a7aa0">No seleccionado</div>
+                        <input type="hidden" id="promoteAreaId">
+                        <input type="hidden" id="promoteLineId">
+                        <input type="hidden" id="promoteEquipId">
+                        <input type="hidden" id="promoteSysId">
+                        <input type="hidden" id="promoteCompId">
+                    </div>
+
+                    <!-- Free location — shown when scope = FUERA_PLAN or GENERAL -->
+                    <div id="promoteGeneralSection" style="display:none">
+                        <label style="color:#8a9dc0;font-size:.87em">Ubicación libre <small style="color:#5a7aa0">(texto libre, ej: "Taller externo")</small></label>
+                        <input type="text" id="promoteFreeLocation" placeholder="Ej: Planta Norte — no inventariado"
+                            style="width:100%;background:#0d1320;border:1px solid #2f4563;color:#e6f0ff;border-radius:6px;padding:6px 10px;box-sizing:border-box">
+                    </div>
+                </div>
+
+                <div style="margin-top:20px; display:flex; justify-content:flex-end; gap:10px">
+                    <button type="button" onclick="document.getElementById('promoteModal').close()"
+                        style="background:transparent;color:#888;border:1px solid #888;border-radius:6px;padding:7px 18px;cursor:pointer">Cancelar</button>
+                    <button type="button" onclick="savePromotion()"
+                        style="background:#0A84FF;color:#fff;border:none;border-radius:6px;padding:7px 18px;cursor:pointer;font-weight:600">
+                        <i class="fas fa-check"></i> Confirmar
+                    </button>
+                </div>
             </dialog>
 
             <!-- TREE SELECTION MODAL -->
