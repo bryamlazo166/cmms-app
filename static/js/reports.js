@@ -290,8 +290,65 @@ function renderWeeklySummary(summary, meta) {
     setText("wkPreventive", num(summary.preventive));
     setText("wkCorrective", num(summary.corrective));
     setText("wkClosed", num(summary.closed));
+    setText("wkNoEjecutada", num(summary.no_ejecutada || 0));
     setText("wkBlocked", num(summary.blocked));
     setText("wkCompliance", `${num(summary.completion_percent, 1)}%`);
+}
+
+function printWeeklyPlan() {
+    const period = document.getElementById("weeklyPeriod").textContent || '-';
+    const kpis = [
+        ['Total OTs', document.getElementById('wkTotal').textContent],
+        ['Preventivas', document.getElementById('wkPreventive').textContent],
+        ['Correctivas', document.getElementById('wkCorrective').textContent],
+        ['Ejecutadas ✅', document.getElementById('wkClosed').textContent],
+        ['No Ejecutadas ❌', document.getElementById('wkNoEjecutada').textContent],
+        ['Cumplimiento', document.getElementById('wkCompliance').textContent],
+    ];
+
+    const tableRows = Array.from(document.querySelectorAll('#tableWeeklyBody tr')).map(r => r.outerHTML).join('');
+
+    const html = `<!DOCTYPE html>
+<html lang="es"><head><meta charset="UTF-8">
+<title>Plan Semanal de Mantenimiento</title>
+<style>
+    body { font-family: Arial, sans-serif; margin: 20px; color: #111; font-size: 12px; }
+    h1 { color: #1a3a6b; border-bottom: 2px solid #1a3a6b; padding-bottom: 6px; font-size: 18px; }
+    .period { color: #555; margin-bottom: 14px; font-size: 11px; }
+    .kpi-grid { display: grid; grid-template-columns: repeat(6, 1fr); gap: 8px; margin-bottom: 16px; }
+    .kpi-box { background: #f0f4ff; border: 1px solid #c0cfee; border-radius: 6px; padding: 8px; text-align: center; }
+    .kpi-label { font-size: 10px; color: #555; text-transform: uppercase; }
+    .kpi-value { font-size: 20px; font-weight: bold; color: #1a3a6b; margin-top: 4px; }
+    table { width: 100%; border-collapse: collapse; font-size: 11px; }
+    th { background: #1a3a6b; color: white; padding: 6px 5px; text-align: left; }
+    td { padding: 5px; border-bottom: 1px solid #dde; vertical-align: top; }
+    tr:nth-child(even) td { background: #f7f9ff; }
+    .pill { display: inline-block; padding: 1px 6px; border-radius: 8px; font-weight: bold; font-size: 10px; }
+    .pill-green  { background: #d4f4d4; color: #1a7a1a; }
+    .pill-cyan   { background: #d4f0ff; color: #0a5a80; }
+    .pill-yellow { background: #fff6d4; color: #7a5a00; }
+    .pill-red    { background: #ffd4d4; color: #7a0000; }
+    .pill-muted  { background: #eee; color: #555; }
+    .weekly-ot-link { color: #1a3a6b; font-weight: bold; text-decoration: none; }
+    @media print { body { margin: 10px; } }
+</style></head><body>
+<h1>📋 Plan Semanal de Mantenimiento</h1>
+<div class="period">${period}</div>
+<div class="kpi-grid">
+    ${kpis.map(([l, v]) => `<div class="kpi-box"><div class="kpi-label">${l}</div><div class="kpi-value">${v}</div></div>`).join('')}
+</div>
+<table>
+<thead><tr><th>OT</th><th>Aviso</th><th>Fecha</th><th>Técnico</th><th>Especialidad</th><th>Tipo</th><th>Estado</th><th>Área</th><th>Línea</th><th>TAG</th><th>Equipo</th><th>Prioridad</th><th>Descripción</th></tr></thead>
+<tbody>${tableRows}</tbody>
+</table>
+<p style="margin-top:20px; color:#888; font-size:10px">Generado desde CMMS Industrial — ${new Date().toLocaleString('es-PE')}</p>
+</body></html>`;
+
+    const win = window.open('', '_blank');
+    win.document.write(html);
+    win.document.close();
+    win.focus();
+    setTimeout(() => win.print(), 600);
 }
 
 function drawWeeklyLoad(dailyRows) {
@@ -352,7 +409,7 @@ function drawWeeklySpecialty(summary) {
 function renderWeeklyTable(items) {
     const tbody = document.getElementById("tableWeeklyBody");
     if (!items || items.length === 0) {
-        tbody.innerHTML = '<tr><td colspan="14" class="muted-cell">Sin actividades para el filtro seleccionado.</td></tr>';
+        tbody.innerHTML = '<tr><td colspan="15" class="muted-cell">Sin actividades para el filtro seleccionado.</td></tr>';
         return;
     }
 
@@ -360,14 +417,20 @@ function renderWeeklyTable(items) {
         const logisticsClass = i.req_pending > 0 ? "pill-red" : (i.req_total > 0 ? "pill-green" : "pill-muted");
         const reqInfo = i.req_codes && i.req_codes.length ? i.req_codes.slice(0, 3).join(", ") : "-";
         const poInfo = i.po_codes && i.po_codes.length ? i.po_codes.slice(0, 3).join(", ") : "-";
+        const statusClass =
+            i.status === 'Cerrada'      ? 'pill-green' :
+            i.status === 'En Progreso'  ? 'pill-cyan'  :
+            i.status === 'Programada'   ? 'pill-yellow':
+            i.status === 'No Ejecutada' ? 'pill-red'   : 'pill-muted';
         return `
         <tr>
             <td><a class="weekly-ot-link" href="/ordenes">${i.code || "-"}</a></td>
             <td>${i.notice_code || "-"}</td>
             <td>${i.scheduled_date || "-"}</td>
+            <td style="font-weight:600;color:#a8d8ff">${i.technician || "-"}</td>
             <td>${i.specialty || "-"}</td>
             <td>${i.maintenance_type || "-"}</td>
-            <td>${i.status || "-"}</td>
+            <td><span class="pill ${statusClass}">${i.status || "-"}</span></td>
             <td>${i.area || "-"}</td>
             <td>${i.line || "-"}</td>
             <td>${i.equipment_tag || "-"}</td>
@@ -475,6 +538,7 @@ async function initReports() {
     document.getElementById("weeklyStatus").addEventListener("change", loadWeeklyPlan);
     document.getElementById("btnWeeklyRefresh").addEventListener("click", loadWeeklyPlan);
     document.getElementById("btnWeeklyExport").addEventListener("click", exportWeeklyPlan);
+    document.getElementById("btnWeeklyPrint").addEventListener("click", printWeeklyPlan);
     document.getElementById("btnWeeklyClear").addEventListener("click", () => {
         document.getElementById("weeklyWindow").value = "current_week";
         setWeeklyWindowDates("current_week");

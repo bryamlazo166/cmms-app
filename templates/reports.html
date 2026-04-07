@@ -123,8 +123,8 @@
             <div class="filter-block"><label>Fin</label><input type="date" id="weeklyEndDate"></div>
             <div class="filter-block"><label>Especialidad</label><select id="weeklySpecialty"><option value="">Todas</option><option value="MECANICO">Mecanico</option><option value="ELECTRICO">Electrico</option><option value="MIXTO">Mixto</option><option value="SIN ASIGNAR">Sin asignar</option></select></div>
             <div class="filter-block"><label>Tipo</label><select id="weeklyType"><option value="">Todos</option><option value="Preventivo">Preventivo</option><option value="Correctivo">Correctivo</option></select></div>
-            <div class="filter-block"><label>Estado</label><select id="weeklyStatus"><option value="">Todos</option><option value="Abierta">Abierta</option><option value="Programada">Programada</option><option value="En Progreso">En Progreso</option><option value="Cerrada">Cerrada</option></select></div>
-            <div class="toolbar-actions"><button id="btnWeeklyRefresh" class="rpt-btn"><i class="fas fa-calendar-check"></i> Actualizar</button><button id="btnWeeklyExport" class="rpt-btn"><i class="fas fa-file-excel"></i> Exportar</button><button id="btnWeeklyClear" class="rpt-btn secondary"><i class="fas fa-broom"></i> Limpiar</button></div>
+            <div class="filter-block"><label>Estado</label><select id="weeklyStatus"><option value="">Todos</option><option value="Abierta">Abierta</option><option value="Programada">Programada</option><option value="En Progreso">En Progreso</option><option value="Cerrada">Cerrada</option><option value="No Ejecutada">No Ejecutada</option></select></div>
+            <div class="toolbar-actions"><button id="btnWeeklyRefresh" class="rpt-btn"><i class="fas fa-calendar-check"></i> Actualizar</button><button id="btnWeeklyExport" class="rpt-btn" style="background:linear-gradient(145deg,#1d6b35,#217a3e);border-color:#2a9d4e;color:#c8ffd4"><i class="fas fa-file-excel"></i> Excel</button><button id="btnWeeklyPrint" class="rpt-btn" style="background:linear-gradient(145deg,#1a3a6b,#1e4a8e);border-color:#2a5ab0;color:#c4dcff"><i class="fas fa-print"></i> Imprimir PDF</button><button id="btnWeeklyClear" class="rpt-btn secondary"><i class="fas fa-broom"></i> Limpiar</button></div>
         </div>
 
         <div class="period-chip" id="weeklyPeriod">-</div>
@@ -133,9 +133,10 @@
             <article class="weekly-kpi"><div class="label">Total</div><div class="value" id="wkTotal">-</div></article>
             <article class="weekly-kpi"><div class="label">Preventivo</div><div class="value" id="wkPreventive">-</div></article>
             <article class="weekly-kpi"><div class="label">Correctivo</div><div class="value" id="wkCorrective">-</div></article>
-            <article class="weekly-kpi"><div class="label">Cerradas</div><div class="value" id="wkClosed">-</div></article>
-            <article class="weekly-kpi"><div class="label">Bloqueadas</div><div class="value" id="wkBlocked">-</div></article>
-            <article class="weekly-kpi"><div class="label">Cumplimiento</div><div class="value" id="wkCompliance">-</div></article>
+            <article class="weekly-kpi"><div class="label">Ejecutadas ✅</div><div class="value" id="wkClosed">-</div></article>
+            <article class="weekly-kpi"><div class="label">No Ejecutadas ❌</div><div class="value" id="wkNoEjecutada" style="color:#ff6b6b">-</div></article>
+            <article class="weekly-kpi"><div class="label">Bloqueadas 🔒</div><div class="value" id="wkBlocked">-</div></article>
+            <article class="weekly-kpi"><div class="label">Cumplimiento 📊</div><div class="value" id="wkCompliance">-</div></article>
         </div>
 
         <section class="chart-grid weekly-chart-grid">
@@ -143,7 +144,7 @@
             <article class="panel"><h3>Distribucion por especialidad</h3><canvas id="chartWeeklySpecialty"></canvas></article>
         </section>
 
-        <div class="table-wrap" style="max-height:420px;"><table><thead><tr><th>OT</th><th>Aviso</th><th>Fecha Plan</th><th>Especialidad</th><th>Tipo</th><th>Estado</th><th>Area</th><th>Linea</th><th>TAG</th><th>Equipo</th><th>Prioridad</th><th>Logistica</th><th>REQ</th><th>OC</th></tr></thead><tbody id="tableWeeklyBody"><tr><td colspan="14" class="muted-cell">Cargando plan semanal...</td></tr></tbody></table></div>
+        <div class="table-wrap" style="max-height:420px;"><table><thead><tr><th>OT</th><th>Aviso</th><th>Fecha Plan</th><th>Técnico</th><th>Especialidad</th><th>Tipo</th><th>Estado</th><th>Area</th><th>Linea</th><th>TAG</th><th>Equipo</th><th>Prioridad</th><th>Logistica</th><th>REQ</th><th>OC</th></tr></thead><tbody id="tableWeeklyBody"><tr><td colspan="15" class="muted-cell">Cargando plan semanal...</td></tr></tbody></table></div>
     </section>
 
     <section class="table-panel">

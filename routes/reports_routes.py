@@ -664,6 +664,7 @@ def register_reports_routes(
         component_map = {c.id: c for c in components}
         equipment_map = {e.id: e for e in equipments}
         area_map = {a.id: a for a in areas}
+        tech_map = {str(t.id): t.name for t in Technician.query.all()}
 
         def resolve_equipment_id(ot):
             eq_id = ot.equipment_id
@@ -781,6 +782,7 @@ def register_reports_routes(
                 'logistics': logistics,
                 'req_codes': sorted(set(req_codes)),
                 'po_codes': sorted(set(po_codes)),
+                'technician': tech_map.get(str(ot.technician_id), ot.technician_id or '-'),
             })
 
         items.sort(key=lambda row: (row['scheduled_date'], row['area'], row['line'], row['equipment'], row['code']))
@@ -789,6 +791,7 @@ def register_reports_routes(
         preventive_count = len([i for i in items if (i['maintenance_type'] or '').lower() == 'preventivo'])
         corrective_count = len([i for i in items if (i['maintenance_type'] or '').lower() == 'correctivo'])
         closed_count = len([i for i in items if (i['status'] or '').strip().lower() == 'cerrada'])
+        no_ejecutada_count = len([i for i in items if (i['status'] or '').strip().lower() == 'no ejecutada'])
         blocked_count = len([i for i in items if i.get('req_pending', 0) > 0])
         completion_percent = round((closed_count / total * 100), 1) if total else 0.0
 
@@ -845,6 +848,7 @@ def register_reports_routes(
                 'preventive': preventive_count,
                 'corrective': corrective_count,
                 'closed': closed_count,
+                'no_ejecutada': no_ejecutada_count,
                 'blocked': blocked_count,
                 'completion_percent': completion_percent,
                 'specialty_counts': dict(specialty_counts),
@@ -873,6 +877,8 @@ def register_reports_routes(
                         'Codigo OT': row.get('code'),
                         'Aviso': row.get('notice_code'),
                         'Fecha Plan': row.get('scheduled_date'),
+                        'Tecnico Asignado': row.get('technician', '-'),
+                        'Cant Tecnicos': row.get('tech_count'),
                         'Especialidad': row.get('specialty'),
                         'Tipo Mtto': row.get('maintenance_type'),
                         'Estado': row.get('status'),
@@ -928,9 +934,10 @@ def register_reports_routes(
                 {'Indicador': 'Total actividades', 'Valor': summary.get('total', 0), 'Detalle': ''},
                 {'Indicador': 'Preventivos', 'Valor': summary.get('preventive', 0), 'Detalle': ''},
                 {'Indicador': 'Correctivos', 'Valor': summary.get('corrective', 0), 'Detalle': ''},
-                {'Indicador': 'Cerradas', 'Valor': summary.get('closed', 0), 'Detalle': ''},
+                {'Indicador': 'Cerradas (Ejecutadas)', 'Valor': summary.get('closed', 0), 'Detalle': ''},
+                {'Indicador': 'No Ejecutadas', 'Valor': summary.get('no_ejecutada', 0), 'Detalle': 'Marcadas explicitamente como no ejecutadas'},
                 {'Indicador': 'Bloqueadas por logistica', 'Valor': summary.get('blocked', 0), 'Detalle': ''},
-                {'Indicador': 'Cumplimiento %', 'Valor': summary.get('completion_percent', 0), 'Detalle': ''},
+                {'Indicador': 'Cumplimiento %', 'Valor': summary.get('completion_percent', 0), 'Detalle': 'Cerradas / Total programadas'},
             ]
 
             output = BytesIO()

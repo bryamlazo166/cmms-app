@@ -350,6 +350,7 @@ function renderPlanningTable(data = null) {
         let statusClass = 'status-open';
         if (ot.status === 'En Progreso') statusClass = 'status-progress';
         if (ot.status === 'Cerrada') statusClass = 'status-closed';
+        if (ot.status === 'No Ejecutada') statusClass = 'status-cancelled';
 
         let priorityClass = 'priority-medium';
         if (ot.priority === 'Alta' || ot.priority === 'Emergencia') priorityClass = 'priority-high';
@@ -869,18 +870,18 @@ async function updateOTDate(id, newDate) {
 
 function renderKanban() {
     // Clear columns
-    ['Abierta', 'Programada', 'En Progreso', 'Cerrada'].forEach(status => {
+    ['Abierta', 'Programada', 'En Progreso', 'Cerrada', 'No Ejecutada'].forEach(status => {
         const colId = status === 'En Progreso' ? 'col-En Progreso' : `col-${status}`;
         const container = document.getElementById(colId);
         if (container) container.innerHTML = '';
 
-        const countId = status === 'En Progreso' ? 'count-En_Progreso' : `count-${status}`;
+        const countId = status === 'En Progreso' ? 'count-En_Progreso' : `count-${status.replace(' ', '_')}`;
         const badge = document.getElementById(countId);
         if (badge) badge.innerText = 0;
     });
 
     // Distribute OTs
-    const counts = { 'Abierta': 0, 'Programada': 0, 'En Progreso': 0, 'Cerrada': 0 };
+    const counts = { 'Abierta': 0, 'Programada': 0, 'En Progreso': 0, 'Cerrada': 0, 'No Ejecutada': 0 };
 
     // We use global var "allWorkOrders" which should check if exists
     if (typeof allWorkOrders === 'undefined') return;
