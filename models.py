@@ -319,6 +319,13 @@ class MaintenanceNotice(db.Model):
     status: Mapped[str] = mapped_column(String(50), default='Pendiente') # Pendiente, En Progreso, Cerrado, Anulado
     cancellation_reason: Mapped[str | None] = mapped_column(Text, nullable=True) # Reason for annulment
 
+    # Scope: classifies whether this notice belongs to the inventoried plant tree
+    # PLAN        = work on a tree-inventoried equipment, counts in equipment KPIs
+    # FUERA_PLAN  = work on real equipment not yet added to the tree (promotable later)
+    # GENERAL     = generic activity (painting, cleaning, support, etc.) — never an equipment
+    scope: Mapped[str] = mapped_column(String(20), default='PLAN', nullable=False)
+    free_location: Mapped[str | None] = mapped_column(String(255), nullable=True)
+
     # Link to preventive source (lubrication/inspection/monitoring point)
     source_type: Mapped[str | None] = mapped_column(String(20), nullable=True)
     source_id: Mapped[int | None] = mapped_column(Integer, nullable=True)

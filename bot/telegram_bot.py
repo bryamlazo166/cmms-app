@@ -47,12 +47,19 @@ def _get_cmms_context(app):
             wo_closed = _db.session.execute(text("SELECT count(*) FROM work_orders WHERE status = 'Cerrada'")).scalar()
             wo_progress = _db.session.execute(text("SELECT count(*) FROM work_orders WHERE status = 'En Progreso'")).scalar()
             wo_prog = _db.session.execute(text("SELECT count(*) FROM work_orders WHERE status = 'Programada'")).scalar()
+            # Counts by scope (so the bot can answer accurately)
             n_total = _db.session.execute(text("SELECT count(*) FROM maintenance_notices")).scalar()
             n_pending = _db.session.execute(text("SELECT count(*) FROM maintenance_notices WHERE status = 'Pendiente'")).scalar()
+            try:
+                n_plan = _db.session.execute(text("SELECT count(*) FROM maintenance_notices WHERE scope = 'PLAN'")).scalar() or 0
+                n_fuera = _db.session.execute(text("SELECT count(*) FROM maintenance_notices WHERE scope = 'FUERA_PLAN'")).scalar() or 0
+                n_general = _db.session.execute(text("SELECT count(*) FROM maintenance_notices WHERE scope = 'GENERAL'")).scalar() or 0
+            except Exception:
+                n_plan = n_fuera = n_general = 0
 
             ctx.append("=== RESUMEN CMMS ===")
             ctx.append(f"OTs totales: {wo_total} | Abiertas: {wo_open} | En Progreso: {wo_progress} | Programadas: {wo_prog} | Cerradas: {wo_closed}")
-            ctx.append(f"Avisos totales: {n_total} | Pendientes: {n_pending}")
+            ctx.append(f"Avisos totales: {n_total} | Pendientes: {n_pending} | PLAN: {n_plan} | FUERA_PLAN: {n_fuera} | GENERAL: {n_general}")
 
             # Areas + Lines
             areas = _db.session.execute(text("SELECT id, name FROM areas ORDER BY name")).fetchall()
@@ -91,21 +98,39 @@ def _get_cmms_context(app):
                 tech = o[15] or '-'
                 ctx.append(f"  {o[1]} | {o[2] or '-'} | {o[3]} | {eq} | {o[12] or ''}/{o[11] or ''} | {o[4] or '-'} | Falla: {o[6] or '-'} | Tec: {tech} | Prog: {o[5] or '-'} | id:{o[0]}")
 
-            # Notices (last 30)
-            notices = _db.session.execute(text("""
-                SELECT n.id, n.code, n.status, n.description, n.criticality, n.priority,
-                       n.request_date, n.maintenance_type, n.reporter_name,
-                       e.name, e.tag, l.name, c.name
-                FROM maintenance_notices n
-                LEFT JOIN equipments e ON n.equipment_id = e.id
-                LEFT JOIN lines l ON n.line_id = l.id
-                LEFT JOIN components c ON n.component_id = c.id
-                ORDER BY n.id DESC LIMIT 30
-            """)).fetchall()
+            # Notices (last 30) — include scope and free_location for FUERA_PLAN/GENERAL
+            try:
+                notices = _db.session.execute(text("""
+                    SELECT n.id, n.code, n.status, n.description, n.criticality, n.priority,
+                           n.request_date, n.maintenance_type, n.reporter_name,
+                           e.name, e.tag, l.name, c.name, n.scope, n.free_location
+                    FROM maintenance_notices n
+                    LEFT JOIN equipments e ON n.equipment_id = e.id
+                    LEFT JOIN lines l ON n.line_id = l.id
+                    LEFT JOIN components c ON n.component_id = c.id
+                    ORDER BY n.id DESC LIMIT 30
+                """)).fetchall()
+            except Exception:
+                notices = _db.session.execute(text("""
+                    SELECT n.id, n.code, n.status, n.description, n.criticality, n.priority,
+                           n.request_date, n.maintenance_type, n.reporter_name,
+                           e.name, e.tag, l.name, c.name
+                    FROM maintenance_notices n
+                    LEFT JOIN equipments e ON n.equipment_id = e.id
+                    LEFT JOIN lines l ON n.line_id = l.id
+                    LEFT JOIN components c ON n.component_id = c.id
+                    ORDER BY n.id DESC LIMIT 30
+                """)).fetchall()
             ctx.append(f"\n=== ULTIMOS {len(notices)} AVISOS ===")
             for n in notices:
-                eq = f"{n[10] or ''} {n[9] or '-'}".strip()
-                ctx.append(f"  {n[1]} | {n[2]} | {eq} | {n[12] or '-'} | {n[3] or '-'} | Crit: {n[4] or '-'} | id:{n[0]}")
+                scope = n[13] if len(n) > 13 else 'PLAN'
+                if scope == 'PLAN':
+                    eq = f"{n[10] or ''} {n[9] or '-'}".strip()
+                    where = f"{eq} | {n[12] or '-'}"
+                else:
+                    floc = (n[14] if len(n) > 14 else None) or '(sin ubicacion)'
+                    where = f"{scope}: {floc}"
+                ctx.append(f"  {n[1]} | {n[2]} | {where} | {n[3] or '-'} | Crit: {n[4] or '-'} | id:{n[0]}")
 
             # Rotative Assets — with id, equipment + component link
             assets = _db.session.execute(text("""
@@ -319,13 +344,23 @@ def _get_cmms_context(app):
             except Exception:
                 pass
 
-            # KPI: corrective vs preventive ratio
+            # KPI: corrective vs preventive ratio (only PLAN — exclude GENERAL/FUERA_PLAN noise)
             try:
-                corr = _db.session.execute(text("SELECT count(*) FROM work_orders WHERE maintenance_type = 'Correctivo'")).scalar() or 0
-                prev = _db.session.execute(text("SELECT count(*) FROM work_orders WHERE maintenance_type = 'Preventivo'")).scalar() or 0
+                corr = _db.session.execute(text("""
+                    SELECT count(*) FROM work_orders w
+                    LEFT JOIN maintenance_notices n ON w.notice_id = n.id
+                    WHERE w.maintenance_type = 'Correctivo'
+                      AND COALESCE(n.scope, 'PLAN') = 'PLAN'
+                """)).scalar() or 0
+                prev = _db.session.execute(text("""
+                    SELECT count(*) FROM work_orders w
+                    LEFT JOIN maintenance_notices n ON w.notice_id = n.id
+                    WHERE w.maintenance_type = 'Preventivo'
+                      AND COALESCE(n.scope, 'PLAN') = 'PLAN'
+                """)).scalar() or 0
                 total_mt = corr + prev
                 if total_mt > 0:
-                    ctx.append(f"\n=== KPI MANTENIMIENTO ===")
+                    ctx.append(f"\n=== KPI MANTENIMIENTO (solo PLAN) ===")
                     ctx.append(f"  Correctivo: {corr} ({round(corr/total_mt*100)}%) | Preventivo: {prev} ({round(prev/total_mt*100)}%)")
             except Exception:
                 pass
@@ -529,20 +564,31 @@ def _create_notice(app, data):
 
             eq_id, ln_id, ar_id, sys_id, comp_id, ra_id = _resolve_equipment(_db, text, data)
 
+            # Determine scope: explicit > inferred. PLAN requires a real equipment.
+            scope = (data.get('scope') or '').strip().upper() or None
+            if scope not in {'PLAN', 'FUERA_PLAN', 'GENERAL'}:
+                scope = None
+            if not scope:
+                scope = 'PLAN' if eq_id else 'FUERA_PLAN'
+            # Safety: PLAN without equipment makes no sense — downgrade
+            if scope == 'PLAN' and not eq_id:
+                scope = 'FUERA_PLAN'
+
             desc_parts = [data.get('description', 'Reporte desde Telegram')]
             if data.get('failure_mode'):
                 desc_parts.append(f"[Modo de falla: {data['failure_mode']}]")
             if data.get('failure_category'):
                 desc_parts.append(f"[Tipo: {data['failure_category']}]")
-            if data.get('free_location'):
-                desc_parts.append(f"[Ubicacion: {data['free_location']}]")
+
+            free_loc = data.get('free_location')
 
             _db.session.execute(text("""
                 INSERT INTO maintenance_notices (code, description, criticality, priority, request_date,
                     maintenance_type, status, reporter_name, reporter_type,
-                    area_id, line_id, equipment_id, system_id, component_id, rotative_asset_id, shift)
+                    area_id, line_id, equipment_id, system_id, component_id, rotative_asset_id, shift,
+                    scope, free_location)
                 VALUES (:code, :desc, :crit, :prio, :rdate, :mtype, 'Pendiente', :reporter, 'telegram',
-                    :ar, :ln, :eq, :sys, :comp, :ra, :shift)
+                    :ar, :ln, :eq, :sys, :comp, :ra, :shift, :scope, :loc)
             """), {
                 "code": code, "desc": ' | '.join(desc_parts),
                 "crit": data.get('criticality', 'Media'), "prio": data.get('priority', 'Normal'),
@@ -550,11 +596,94 @@ def _create_notice(app, data):
                 "reporter": data.get('reporter_name', 'Bot Telegram'),
                 "ar": ar_id, "ln": ln_id, "eq": eq_id, "sys": sys_id, "comp": comp_id, "ra": ra_id,
                 "shift": data.get('shift'),
+                "scope": scope, "loc": free_loc,
             })
             _db.session.commit()
             nid = _db.session.execute(text("SELECT id FROM maintenance_notices WHERE code = :c"), {"c": code}).scalar()
             _db.session.remove()
+            # Mutate data so dispatcher can show the final scope it ended up with
+            data['_resolved_scope'] = scope
             return code, nid, None
+        except Exception as e:
+            _db.session.rollback()
+            _db.session.remove()
+            return None, None, str(e)
+
+
+def _promote_notice(app, data):
+    """Change the scope of an existing notice and (optionally) link it to a tree equipment.
+    When promoting to PLAN, also propagates equipment hierarchy to all linked work orders.
+    Reversible: can degrade PLAN -> FUERA_PLAN/GENERAL by passing target_scope only.
+    """
+    with app.app_context():
+        from database import db as _db
+        from sqlalchemy import text
+        try:
+            code = (data.get('notice_code') or data.get('code') or '').upper()
+            if not code:
+                return None, None, "Falta notice_code"
+            row = _db.session.execute(text("""
+                SELECT id, scope FROM maintenance_notices WHERE code = :c
+            """), {"c": code}).fetchone()
+            if not row:
+                return None, None, f"Aviso {code} no encontrado"
+            nid, current_scope = row[0], row[1]
+
+            target_scope = (data.get('target_scope') or '').strip().upper() or 'PLAN'
+            if target_scope not in {'PLAN', 'FUERA_PLAN', 'GENERAL'}:
+                return None, None, f"Scope invalido: {target_scope}"
+
+            # Resolve equipment from the same data shape used by create_notice
+            eq_id, ln_id, ar_id, sys_id, comp_id, ra_id = _resolve_equipment(_db, text, data)
+
+            # PLAN requires an equipment — refuse if user did not provide one
+            if target_scope == 'PLAN' and not eq_id:
+                return None, None, "Para promover a PLAN debes indicar un equipo (equipment_tag o equipment_id)"
+
+            updates = {"scope": target_scope}
+            if target_scope == 'PLAN':
+                # Set the resolved hierarchy on the notice
+                updates.update({
+                    "area_id": ar_id, "line_id": ln_id, "equipment_id": eq_id,
+                    "system_id": sys_id, "component_id": comp_id, "rotative_asset_id": ra_id,
+                    "free_location": None,
+                })
+            elif target_scope == 'GENERAL':
+                # Detach from any equipment — generic activity
+                updates.update({
+                    "area_id": None, "line_id": None, "equipment_id": None,
+                    "system_id": None, "component_id": None, "rotative_asset_id": None,
+                })
+                if data.get('free_location'):
+                    updates["free_location"] = data['free_location']
+            else:  # FUERA_PLAN
+                # Keep existing free_location unless overridden; clear FK hierarchy
+                updates.update({
+                    "area_id": None, "line_id": None, "equipment_id": None,
+                    "system_id": None, "component_id": None, "rotative_asset_id": None,
+                })
+                if data.get('free_location'):
+                    updates["free_location"] = data['free_location']
+
+            set_clause = ', '.join(f"{k} = :{k}" for k in updates)
+            params = dict(updates)
+            params['nid'] = nid
+            _db.session.execute(text(f"UPDATE maintenance_notices SET {set_clause} WHERE id = :nid"), params)
+
+            # Propagate hierarchy to linked work orders
+            wo_updates = {k: v for k, v in updates.items() if k in {
+                'area_id', 'line_id', 'equipment_id', 'system_id', 'component_id', 'rotative_asset_id'
+            }}
+            if wo_updates:
+                wo_set = ', '.join(f"{k} = :{k}" for k in wo_updates)
+                wo_params = dict(wo_updates)
+                wo_params['nid'] = nid
+                _db.session.execute(text(f"UPDATE work_orders SET {wo_set} WHERE notice_id = :nid"), wo_params)
+
+            _db.session.commit()
+            n_ots = _db.session.execute(text("SELECT count(*) FROM work_orders WHERE notice_id = :nid"), {"nid": nid}).scalar() or 0
+            _db.session.remove()
+            return code, (current_scope, target_scope, n_ots), None
         except Exception as e:
             _db.session.rollback()
             _db.session.remove()
@@ -960,8 +1089,23 @@ REGLA CRITICA: Si el usuario reporta una falla, pide crear/editar/cerrar algo, N
 
 ACCIONES DISPONIBLES:
 
-1. CREAR AVISO (reportar falla):
-{"action": "create_notice", "data": {"description": "...", "failure_mode": "Rotura|Desgaste|Fuga|Desalineacion|Sobrecalentamiento|Ruido anormal|Vibracion excesiva|Aflojamiento|Corrosion|Atascamiento|Descarrilamiento|Cortocircuito|Sobrecarga|Fatiga", "failure_category": "Mecanica|Electrica|Hidraulica|Neumatica|Instrumentacion|Lubricacion|Estructural", "equipment_tag": "D8", "component_name": "motor electrico", "criticality": "Alta|Media|Baja", "priority": "Alta|Normal|Baja", "maintenance_type": "Correctivo"}}
+1. CREAR AVISO (reportar falla o registrar actividad):
+{"action": "create_notice", "data": {"description": "...", "scope": "PLAN|FUERA_PLAN|GENERAL", "failure_mode": "Rotura|Desgaste|Fuga|Desalineacion|Sobrecalentamiento|Ruido anormal|Vibracion excesiva|Aflojamiento|Corrosion|Atascamiento|Descarrilamiento|Cortocircuito|Sobrecarga|Fatiga", "failure_category": "Mecanica|Electrica|Hidraulica|Neumatica|Instrumentacion|Lubricacion|Estructural", "equipment_tag": "D8", "component_name": "motor electrico", "free_location": "texto libre si no hay equipo", "criticality": "Alta|Media|Baja", "priority": "Alta|Normal|Baja", "maintenance_type": "Correctivo|Preventivo|Mejora"}}
+
+REGLAS PARA EL CAMPO scope (CRITICO):
+- "PLAN" = falla/trabajo sobre un equipo que SI esta en el arbol (lista EQUIPOS del contexto). REQUIERE equipment_tag valido. Es el caso por defecto y mas comun.
+- "FUERA_PLAN" = trabajo sobre un equipo REAL pero todavia NO inventariado en el arbol. Usalo cuando el usuario diga "no esta en el sistema", "todavia no lo tengo", "sin inventariar", "no esta en el arbol", o cuando mencione un equipo que NO existe en la lista EQUIPOS. Incluye SIEMPRE free_location describiendo donde esta fisicamente.
+- "GENERAL" = actividad generica de mantenimiento que NO es sobre un equipo del arbol y nunca lo sera. Ejemplos: pintar barandas, limpiar canaletas, fabricar soporte, instalar luminarias en oficina, traslado de chatarra, capacitacion, soporte a otra area, obra civil, jardineria. NO pongas equipment_tag ni component_name. Pon free_location si tiene sentido (ej: "area coccion - barandas perimetrales").
+- Si el usuario dice "no es de equipos", "es trabajo general", "no es falla", usa GENERAL.
+- Cuando es scope GENERAL o FUERA_PLAN, los campos failure_mode y failure_category son opcionales (puedes omitirlos si no aplica).
+- Si dudas entre PLAN y FUERA_PLAN: si encuentras el equipo en la lista EQUIPOS por tag o nombre, usa PLAN. Si NO lo encuentras, usa FUERA_PLAN automaticamente.
+
+Ejemplos de scope:
+- "el digestor 8 vibra" → scope:"PLAN", equipment_tag:"D8"
+- "hay una bomba en el sotano de calderas que esta goteando, todavia no la tenemos en el arbol" → scope:"FUERA_PLAN", free_location:"sotano calderas - bomba sin inventariar"
+- "FAPMETAL pinto las barandas del area de coccion hoy" → scope:"GENERAL", free_location:"area coccion - barandas", maintenance_type:"Mejora"
+- "se hizo limpieza profunda del piso de la sala electrica" → scope:"GENERAL", free_location:"sala electrica - piso"
+- "fabricamos un soporte para la nueva tuberia" → scope:"GENERAL"
 
 REGLAS CRITICAS PARA IDENTIFICAR equipo Y componente:
 1. SIEMPRE incluye `equipment_tag` (D1..D9, TH1..TH3, etc.) tomado de la lista EQUIPOS. NUNCA dejes el aviso sin equipo si el usuario menciona uno.
@@ -1029,6 +1173,17 @@ Ejemplos:
 {"action": "delete_lubrication", "data": {"exec_id": 123}}
 - Usalo cuando el usuario diga "elimina", "borra", "anula", "ese registro estaba mal", "fue duplicado".
 - Igual que edit, busca el exec_id en EJECUCIONES por contexto. Si hay ambiguedad, pregunta primero con action:none.
+
+8. PROMOVER / DEGRADAR AVISO (cambiar scope y vincular o desvincular equipo):
+{"action": "promote_notice", "data": {"notice_code": "AV-0010", "target_scope": "PLAN|FUERA_PLAN|GENERAL", "equipment_tag": "D8", "component_name": "motor electrico", "free_location": "opcional"}}
+- Usalo cuando el usuario diga frases como "vincula el AV-0010 al equipo D8", "promueve el AV-0010 al digestor 9", "el AV-0010 ya tiene equipo, es la bomba BMB-01", "ese aviso era general, marca como tal", "el AV-0007 ya no es del D5, era servicio general".
+- target_scope:"PLAN" REQUIERE equipment_tag (y opcionalmente component_name). El sistema resuelve el componente con sinonimos como en create_notice.
+- target_scope:"FUERA_PLAN" o "GENERAL" desvinculan el aviso de cualquier equipo del arbol. Para FUERA_PLAN incluye free_location si la conoces.
+- IMPORTANTE: cuando promueves a PLAN, las OTs vinculadas al aviso TAMBIEN se actualizan automaticamente al nuevo equipo. No tienes que hacer nada extra para eso.
+- Ejemplos:
+  * "vincula el AV-0012 al motor del digestor 8" → {"action":"promote_notice","data":{"notice_code":"AV-0012","target_scope":"PLAN","equipment_tag":"D8","component_name":"motor electrico"}}
+  * "el AV-0007 era trabajo general, no es de equipos" → {"action":"promote_notice","data":{"notice_code":"AV-0007","target_scope":"GENERAL"}}
+  * "marca el AV-0009 como fuera de plan, es una bomba que aun no inventariamos" → {"action":"promote_notice","data":{"notice_code":"AV-0009","target_scope":"FUERA_PLAN","free_location":"bomba sin inventariar"}}
 
 7. EDITAR OT (modificar campos de una OT existente):
 {"action": "edit_ot", "data": {"ot_code": "OT-0034", "fields": {"description": "...", "technician_id": "CARLOS LUQUE", "estimated_duration": 4, "tech_count": 2, "scheduled_date": "2026-04-10", "execution_comments": "...", "caused_downtime": true, "downtime_hours": 1.5}}}
@@ -1429,21 +1584,32 @@ def _process_message(app, chat_id, text, photos=None):
         code, nid, err = _create_notice(app, data)
         if code and nid:
             _pending_photos[chat_id] = {"entity_type": "notice", "entity_id": nid, "code": code}
+            scope = data.get('_resolved_scope', 'PLAN')
+            scope_emoji = {'PLAN': '🏭', 'FUERA_PLAN': '🚧', 'GENERAL': '🛠️'}.get(scope, '🏭')
+            scope_label = {'PLAN': 'PLAN', 'FUERA_PLAN': 'Fuera de Plan', 'GENERAL': 'General'}.get(scope, scope)
+
             fm = data.get('failure_mode', '-')
             fc = data.get('failure_category', '-')
             eq = data.get('equipment_tag') or data.get('equipment_name') or ''
             comp = data.get('component_name') or ''
             loc = data.get('free_location') or ''
 
-            equip_line = f"⚙️ Equipo: {eq}" if eq else f"📍 Ubicacion: {loc}" if loc else "⚙️ Equipo: Sin vincular"
-            comp_line = f"\n🔧 Componente: {comp}" if comp else ""
+            if scope == 'PLAN':
+                equip_line = f"⚙️ Equipo: {eq}"
+                comp_line = f"\n🔧 Componente: {comp}" if comp else ""
+            else:
+                equip_line = f"📍 Ubicacion: {loc or '(no especificada)'}"
+                comp_line = ""
+
+            failure_block = ""
+            if scope == 'PLAN' or fm != '-' or fc != '-':
+                failure_block = f"\n⚠️ Modo de falla: {fm}\n🏷️ Tipo: {fc}"
 
             _send(chat_id, f"""✅ *Aviso creado: {code}*
+{scope_emoji} _{scope_label}_
 
 📋 {data.get('description', '-')}
-{equip_line}{comp_line}
-⚠️ Modo de falla: {fm}
-🏷️ Tipo: {fc}
+{equip_line}{comp_line}{failure_block}
 🔴 Criticidad: {data.get('criticality', 'Media')}
 📅 {date.today().isoformat()}
 
@@ -1490,6 +1656,24 @@ def _process_message(app, chat_id, text, photos=None):
             fields = data.get('fields') or {}
             lines = '\n'.join(f"• *{k}:* {fields.get(k)}" for k in (changed or []))
             _send(chat_id, f"✏️ *Aviso {code} actualizado*\n{lines}")
+        else:
+            _send(chat_id, f"❌ {err}")
+        return
+
+    elif action == 'promote_notice':
+        code, info, err = _promote_notice(app, data)
+        if code:
+            from_scope, to_scope, n_ots = info
+            scope_label = {'PLAN': 'PLAN 🏭', 'FUERA_PLAN': 'Fuera de Plan 🚧', 'GENERAL': 'General 🛠️'}
+            arrow = f"{scope_label.get(from_scope, from_scope)} → {scope_label.get(to_scope, to_scope)}"
+            extra = ""
+            if to_scope == 'PLAN':
+                eq = data.get('equipment_tag') or data.get('equipment_name') or '-'
+                comp = data.get('component_name')
+                extra = f"\n⚙️ Vinculado a: {eq}" + (f" / {comp}" if comp else "")
+            if n_ots:
+                extra += f"\n📋 OTs propagadas: {n_ots}"
+            _send(chat_id, f"🔄 *Aviso {code}*\n{arrow}{extra}")
         else:
             _send(chat_id, f"❌ {err}")
         return
