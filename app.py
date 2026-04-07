@@ -643,6 +643,7 @@ _ENSURE_COLUMNS = [
     ("ot_materials", "item_name_free", "VARCHAR(200)"),
     ("ot_materials", "unit", "VARCHAR(20)"),
     ("ot_materials", "is_installed", "BOOLEAN DEFAULT true"),
+    ("technicians", "user_id", "INTEGER"),
 ]
 
 

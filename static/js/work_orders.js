@@ -7,6 +7,9 @@ let allPendingNotices = [];
 let allAreas = [], allLines = [], allEquips = [], allSystems = [], allComponents = [];
 let currentTab = 'tab-planning';
 let _closePersonnelList = []; // personal en modal de cierre
+let _currentUser = null;       // usuario logueado
+let _myOTsMode = false;        // modo "Mis OTs"
+let _myOTsIds = new Set();     // IDs de OTs del técnico logueado
 
 async function handleProviderSubmit(e) {
     // This function needs to be bound to the form
@@ -19,6 +22,7 @@ document.addEventListener('DOMContentLoaded', () => {
     loadWorkOrders();
     loadPendingNotices();
     loadHierarchyData();
+    loadCurrentUser();
 
     // Provider Form Submit
     const provForm = document.getElementById('providerForm');
@@ -194,6 +198,55 @@ async function loadProviders() {
     } catch (e) { console.error(e); }
 }
 
+async function loadCurrentUser() {
+    try {
+        const res = await fetch('/api/auth/me');
+        if (!res.ok) return;
+        _currentUser = await res.json();
+        // Cargar IDs de mis OTs
+        const mineRes = await fetch('/api/work-orders/mine');
+        if (mineRes.ok) {
+            const data = await mineRes.json();
+            _myOTsIds = new Set((data.ot_ids || []).map(String));
+            const badge = document.getElementById('myOTsCount');
+            if (badge && _myOTsIds.size > 0) {
+                badge.textContent = _myOTsIds.size;
+                badge.style.display = 'inline';
+            }
+        }
+    } catch (e) { console.error('loadCurrentUser:', e); }
+}
+
+function toggleMyOTs() {
+    _myOTsMode = !_myOTsMode;
+    const btn = document.getElementById('btnMisOTs');
+    if (btn) {
+        btn.style.background = _myOTsMode ? 'rgba(10,132,255,0.35)' : 'rgba(10,132,255,0.12)';
+        btn.style.borderColor = _myOTsMode ? '#0A84FF' : '#0A84FF';
+    }
+    applyFilters();
+}
+
+async function createOrOpenDailyRound() {
+    try {
+        // Ver si ya existe
+        const chk = await fetch('/api/work-orders/daily-round');
+        const data = await chk.json();
+        if (data.id) {
+            // Ya existe — abrir en ejecución
+            await loadWorkOrders();
+            openOTInExecution(data.id);
+            return;
+        }
+        // Crear nueva
+        const res = await fetch('/api/work-orders/daily-round', { method: 'POST' });
+        if (!res.ok) { alert('Error al crear Ronda del Día'); return; }
+        const wo = await res.json();
+        await loadWorkOrders();
+        openOTInExecution(wo.id);
+    } catch (e) { console.error('daily-round:', e); alert('Error al abrir Ronda del Día'); }
+}
+
 async function loadWorkOrders() {
     try {
         const res = await fetch('/api/work-orders');
@@ -280,6 +333,9 @@ window.applyFilters = () => {
     const reportFilter = reportSelect ? reportSelect.value : 'all';
 
     const filtered = allWorkOrders.filter(ot => {
+        // Filtro "Mis OTs"
+        if (_myOTsMode && !_myOTsIds.has(String(ot.id))) return false;
+
         const otArea = ot.area_name || '(Sin Area)';
         const otLine = ot.line_name || '(Sin Linea)';
         const otEquip = ot.equipment_name || '(Sin Equipo)';

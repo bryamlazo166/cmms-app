@@ -576,6 +576,93 @@ def register_work_orders_routes(
         db.session.commit()
         return jsonify({"message": "Material removed"})
 
+    @app.route('/api/work-orders/mine', methods=['GET'])
+    def handle_my_work_orders():
+        """Retorna IDs de OTs asignadas al usuario logueado (por technician_id o ot_personnel)."""
+        try:
+            from flask_login import current_user
+            if not current_user.is_authenticated:
+                return jsonify({"tech_id": None, "ot_ids": []})
+            full_name = (current_user.full_name or '').strip()
+            # Buscar técnico por user_id o por nombre
+            tech = Technician.query.filter_by(user_id=current_user.id).first()
+            if not tech and full_name:
+                tech = Technician.query.filter(
+                    db.func.upper(Technician.name) == full_name.upper()
+                ).first()
+            if not tech:
+                return jsonify({"tech_id": None, "ot_ids": [], "user_name": full_name})
+            # OTs donde es técnico principal
+            principal_ids = {str(wo.id) for wo in WorkOrder.query.filter(
+                WorkOrder.technician_id == str(tech.id)
+            ).all()}
+            # OTs donde aparece en ot_personnel
+            personnel_ids = {str(op.work_order_id) for op in OTPersonnel.query.filter_by(
+                technician_id=tech.id
+            ).all()}
+            all_ids = list(principal_ids | personnel_ids)
+            return jsonify({"tech_id": tech.id, "tech_name": tech.name, "ot_ids": all_ids})
+        except Exception as e:
+            logger.error(f"Error in /mine: {e}")
+            return jsonify({"tech_id": None, "ot_ids": []}), 200
+
+    @app.route('/api/work-orders/daily-round', methods=['GET', 'POST'])
+    def handle_daily_round():
+        """Obtiene o crea la OT de Ronda Diaria del técnico logueado para hoy."""
+        try:
+            from flask_login import current_user
+            from datetime import date as _date
+            if not current_user.is_authenticated:
+                return jsonify({"error": "No autenticado"}), 401
+            full_name = (current_user.full_name or '').strip()
+            tech = Technician.query.filter_by(user_id=current_user.id).first()
+            if not tech and full_name:
+                tech = Technician.query.filter(
+                    db.func.upper(Technician.name) == full_name.upper()
+                ).first()
+            tech_name = tech.name if tech else (full_name or current_user.username)
+            tech_id = str(tech.id) if tech else None
+            today = _date.today().isoformat()
+            # Buscar si ya existe ronda del día
+            existing = WorkOrder.query.filter(
+                WorkOrder.scheduled_date == today,
+                WorkOrder.maintenance_type == 'Ronda Diaria',
+                WorkOrder.technician_id == tech_id
+            ).first()
+            if existing:
+                return jsonify(existing.to_dict()), 200
+            if request.method == 'GET':
+                return jsonify({"exists": False, "today": today}), 200
+            # POST: crear nueva ronda
+            wo = WorkOrder(
+                description=f"Ronda Diaria — {tech_name} — {today}",
+                maintenance_type='Ronda Diaria',
+                status='En Progreso',
+                scheduled_date=today,
+                real_start_date=today,
+                technician_id=tech_id,
+                priority='Media',
+                scope='GENERAL',
+            )
+            db.session.add(wo)
+            db.session.flush()
+            wo.code = f"OT-{wo.id:04d}"
+            # Agregar al técnico en ot_personnel si existe
+            if tech:
+                person = OTPersonnel(
+                    work_order_id=wo.id,
+                    technician_id=tech.id,
+                    specialty=tech.specialty or 'GENERAL',
+                    hours_assigned=8,
+                )
+                db.session.add(person)
+            db.session.commit()
+            return jsonify(wo.to_dict()), 201
+        except Exception as e:
+            db.session.rollback()
+            logger.error(f"Error in daily-round: {e}")
+            return jsonify({"error": str(e)}), 500
+
     @app.route('/api/work-orders', methods=['GET', 'POST'])
     def handle_work_orders():
         if request.method == 'POST':

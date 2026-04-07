@@ -277,9 +277,10 @@ class Technician(db.Model):
     specialty: Mapped[str | None] = mapped_column(String(100), nullable=True)  # MECANICO, ELECTRICO
     contact_info: Mapped[str | None] = mapped_column(String(100), nullable=True)
     is_active: Mapped[bool] = mapped_column(Boolean, default=True)  # Soft Delete (Baja/Alta)
-    
+    user_id: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)  # Vinculado a User
+
     def to_dict(self):
-        return {"id": self.id, "name": self.name, "specialty": self.specialty, "contact_info": self.contact_info, "is_active": self.is_active}
+        return {"id": self.id, "name": self.name, "specialty": self.specialty, "contact_info": self.contact_info, "is_active": self.is_active, "user_id": self.user_id}
 
 class MaintenanceNotice(db.Model):
     __tablename__ = 'maintenance_notices'

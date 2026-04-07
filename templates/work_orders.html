@@ -107,6 +107,15 @@
                     <div class="toolbar planning-toolbar">
                         <button class="btn-primary" onclick="openCreateOTModal()"><i class="fas fa-plus"></i> Nueva OT
                             (Manual)</button>
+                        <button id="btnMisOTs" onclick="toggleMyOTs()"
+                            style="padding:8px 16px;border-radius:8px;border:1px solid #0A84FF;background:rgba(10,132,255,0.12);color:#0A84FF;cursor:pointer;font-size:0.9em;display:flex;align-items:center;gap:6px;">
+                            <i class="fas fa-user-hard-hat"></i> Mis OTs
+                            <span id="myOTsCount" style="background:#0A84FF;color:#fff;border-radius:999px;padding:1px 7px;font-size:0.8em;display:none;">0</span>
+                        </button>
+                        <button onclick="createOrOpenDailyRound()"
+                            style="padding:8px 16px;border-radius:8px;border:1px solid #30D158;background:rgba(48,209,88,0.12);color:#30D158;cursor:pointer;font-size:0.9em;">
+                            <i class="fas fa-clipboard-check"></i> Ronda del Día
+                        </button>
                         <a href="/api/export-ots" target="_blank" style="text-decoration:none;">
                             <button class="btn-secondary"
                                 style="background:#30D158; color:white; border:none; padding: 10px 20px;">
