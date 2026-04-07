@@ -695,7 +695,8 @@
                             <tr>
                                 <th>Tecnico</th>
                                 <th>Especialidad</th>
-                                <th>Horas Asignadas</th>
+                                <th style="text-align:center;">H. Plan</th>
+                                <th style="text-align:center;">H. Reales</th>
                                 <th>Acciones</th>
                             </tr>
                         </thead>
@@ -1046,6 +1047,29 @@
                 <div class="form-group">
                     <label style="color:#FF9F0A;"><i class="fas fa-search"></i> Hallazgos durante la intervención</label>
                     <textarea id="closeFindings" placeholder="Ej: Se encontró rodamiento con pitting severo, fuga de aceite en retén, corrosión en carcasa..." style="height:70px;"></textarea>
+                </div>
+
+                <!-- Personal que ejecutó -->
+                <div class="form-group" style="margin-top:6px;">
+                    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px;">
+                        <label style="margin:0;color:#30D158;font-weight:600;"><i class="fas fa-users"></i> Personal que ejecutó</label>
+                        <button type="button" onclick="addCloseExtraPersonnel()" style="font-size:0.8em;padding:3px 10px;background:rgba(48,209,88,0.12);border:1px solid rgba(48,209,88,0.4);color:#30D158;border-radius:5px;cursor:pointer;">
+                            <i class="fas fa-plus"></i> Técnico de apoyo
+                        </button>
+                    </div>
+                    <table style="width:100%;border-collapse:collapse;font-size:0.85em;">
+                        <thead>
+                            <tr style="color:#888;border-bottom:1px solid rgba(255,255,255,0.08);">
+                                <th style="padding:3px 5px;text-align:left;">Técnico</th>
+                                <th style="padding:3px 5px;text-align:left;">Especialidad</th>
+                                <th style="padding:3px 5px;text-align:center;width:65px;">H. Plan</th>
+                                <th style="padding:3px 5px;text-align:center;width:75px;">H. Reales</th>
+                                <th style="width:28px;"></th>
+                            </tr>
+                        </thead>
+                        <tbody id="closePersonnelBody"></tbody>
+                    </table>
+                    <div id="closePersonnelEmpty" style="color:#666;font-size:0.82em;padding:6px 0;text-align:center;display:none;">Sin personal planificado — use "Técnico de apoyo" para agregar</div>
                 </div>
 
                 <div class="form-row">

@@ -6,6 +6,7 @@ let allTechnicians = [];
 let allPendingNotices = [];
 let allAreas = [], allLines = [], allEquips = [], allSystems = [], allComponents = [];
 let currentTab = 'tab-planning';
+let _closePersonnelList = []; // personal en modal de cierre
 
 async function handleProviderSubmit(e) {
     // This function needs to be bound to the form
@@ -1184,8 +1185,13 @@ function renderExecutionPersonnel(personnel) {
     container.innerHTML = personnel.map(p => {
         const name = p.technician_name || p.technician_id || 'Tecnico';
         const spec = p.specialty || 'GENERAL';
-        const hrs = p.hours_assigned !== undefined ? p.hours_assigned : (p.hours || 0);
-        return `<span style="display:inline-block; margin:3px 6px 3px 0; padding:4px 8px; border-radius:999px; background:#1f3551; color:#d9ecff; border:1px solid #365d85;">${name} | ${spec} | ${hrs} h</span>`;
+        const hPlan = p.hours_assigned || 0;
+        const hReal = p.hours_worked;
+        const hoursLabel = hReal != null
+            ? `${hReal}h reales / ${hPlan}h plan`
+            : `${hPlan}h plan`;
+        const color = hReal != null && hReal > hPlan ? '#ff9f0a' : '#d9ecff';
+        return `<span style="display:inline-block; margin:3px 6px 3px 0; padding:4px 8px; border-radius:999px; background:#1f3551; color:${color}; border:1px solid #365d85;">${name} | ${spec} | ${hoursLabel}</span>`;
     }).join('');
 }
 
@@ -1378,14 +1384,11 @@ function openCloseModal() {
     const now = getLocalISOString();
     const start = activeExecutionOT.real_start_date || now;
 
-    // Pre-fill
     const startInput = document.getElementById('realStart');
     const endInput = document.getElementById('realEnd');
-
     startInput.value = start;
     endInput.value = now;
 
-    // Lock start date if it comes from server
     if (activeExecutionOT.real_start_date) {
         startInput.readOnly = true;
         startInput.style.backgroundColor = "#444";
@@ -1393,12 +1396,84 @@ function openCloseModal() {
         startInput.readOnly = false;
         startInput.style.backgroundColor = "";
     }
-
-    // Always lock end date as it should be system time
     endInput.readOnly = true;
     endInput.style.backgroundColor = "#444";
 
+    // Cargar personal planificado en la lista de cierre
+    _closePersonnelList = (currentOTPersonnel || []).map(p => ({
+        id: p.id,
+        technician_id: p.technician_id,
+        technician_name: p.technician_name || 'Sin nombre',
+        specialty: p.specialty || '',
+        hours_assigned: p.hours_assigned || 0,
+        hours_worked: p.hours_worked != null ? p.hours_worked : (p.hours_assigned || 0),
+        is_extra: false
+    }));
+    renderClosePersonnelTable();
+
     document.getElementById('closeOTModal').showModal();
+}
+
+function renderClosePersonnelTable() {
+    const tbody = document.getElementById('closePersonnelBody');
+    const empty = document.getElementById('closePersonnelEmpty');
+    if (!tbody) return;
+    tbody.innerHTML = '';
+    if (_closePersonnelList.length === 0) {
+        if (empty) empty.style.display = 'block';
+        return;
+    }
+    if (empty) empty.style.display = 'none';
+    const inputStyle = 'width:60px;background:rgba(255,255,255,.08);border:1px solid rgba(48,209,88,0.5);color:#fff;border-radius:4px;padding:2px 4px;text-align:center;';
+    const selStyle = 'background:rgba(255,255,255,.08);border:1px solid rgba(255,255,255,.15);color:#fff;border-radius:4px;padding:2px 4px;width:100%;font-size:0.85em;';
+    _closePersonnelList.forEach((p, idx) => {
+        const tr = document.createElement('tr');
+        tr.style.borderBottom = '1px solid rgba(255,255,255,0.05)';
+        if (p.is_extra) {
+            const opts = allTechnicians.filter(t => t.is_active).map(t =>
+                `<option value="${t.id}" ${String(t.id) === String(p.technician_id) ? 'selected' : ''}>${t.name}</option>`
+            ).join('');
+            const specOpts = ['MECANICO','ELECTRICO','INSTRUMENTACION','GENERAL'].map(s =>
+                `<option value="${s}" ${p.specialty === s ? 'selected' : ''}>${s}</option>`
+            ).join('');
+            tr.innerHTML = `
+                <td style="padding:3px 5px;"><select onchange="updateClosePersonnel(${idx},'technician_id',this.value)" style="${selStyle}"><option value="">-- Técnico --</option>${opts}</select></td>
+                <td style="padding:3px 5px;"><select onchange="updateClosePersonnel(${idx},'specialty',this.value)" style="${selStyle}">${specOpts}</select></td>
+                <td style="padding:3px 5px;text-align:center;color:#666;">-</td>
+                <td style="padding:3px 5px;text-align:center;"><input type="number" min="0" step="0.5" value="${p.hours_worked}" onchange="updateClosePersonnel(${idx},'hours_worked',parseFloat(this.value)||0)" style="${inputStyle}"></td>
+                <td style="padding:3px 5px;text-align:center;"><button type="button" onclick="removeClosePersonnel(${idx})" style="background:none;border:none;color:#ff453a;cursor:pointer;"><i class="fas fa-times"></i></button></td>`;
+        } else {
+            tr.innerHTML = `
+                <td style="padding:3px 5px;">${p.technician_name}</td>
+                <td style="padding:3px 5px;color:#aaa;font-size:0.85em;">${p.specialty || '-'}</td>
+                <td style="padding:3px 5px;text-align:center;color:#888;">${p.hours_assigned}h</td>
+                <td style="padding:3px 5px;text-align:center;"><input type="number" min="0" step="0.5" value="${p.hours_worked}" onchange="updateClosePersonnel(${idx},'hours_worked',parseFloat(this.value)||0)" style="${inputStyle}"></td>
+                <td></td>`;
+        }
+        tbody.appendChild(tr);
+    });
+}
+
+function updateClosePersonnel(idx, field, value) {
+    if (!_closePersonnelList[idx]) return;
+    _closePersonnelList[idx][field] = value;
+    if (field === 'technician_id') {
+        const t = allTechnicians.find(x => String(x.id) === String(value));
+        if (t) {
+            _closePersonnelList[idx].technician_name = t.name;
+            if (!_closePersonnelList[idx].specialty) _closePersonnelList[idx].specialty = t.specialty || 'GENERAL';
+        }
+    }
+}
+
+function addCloseExtraPersonnel() {
+    _closePersonnelList.push({ id: null, technician_id: null, technician_name: '', specialty: 'MECANICO', hours_assigned: 0, hours_worked: 0, is_extra: true });
+    renderClosePersonnelTable();
+}
+
+function removeClosePersonnel(idx) {
+    _closePersonnelList.splice(idx, 1);
+    renderClosePersonnelTable();
 }
 
 async function handleCloseOTSubmit(e) {
@@ -1438,6 +1513,31 @@ async function handleCloseOTSubmit(e) {
         body: JSON.stringify(data)
     });
 
+    // Guardar horas reales por técnico
+    for (const p of _closePersonnelList) {
+        if (!p.technician_id) continue;
+        if (p.id && !p.is_extra) {
+            // Personal planificado: actualizar hours_worked
+            await fetch(`/api/work_orders/${id}/personnel/${p.id}`, {
+                method: 'PUT',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ hours_worked: p.hours_worked })
+            }).catch(() => {});
+        } else if (p.is_extra) {
+            // Técnico de apoyo extra: agregar nuevo registro
+            await fetch(`/api/work_orders/${id}/personnel`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    technician_id: parseInt(p.technician_id),
+                    specialty: p.specialty,
+                    hours_assigned: p.hours_worked,
+                    hours_worked: p.hours_worked
+                })
+            }).catch(() => {});
+        }
+    }
+
     // Save hallazgos as log entry if filled
     const findings = (document.getElementById('closeFindings').value || '').trim();
     if (findings) {
@@ -1456,7 +1556,7 @@ async function handleCloseOTSubmit(e) {
     document.getElementById('execution-details').classList.add('hidden');
     document.getElementById('executionSearch').value = '';
 
-    alert(`âœ… Orden Cerrada Correctamente.\n\nTiempo Total: ${hours} horas y ${minutes} minutos.`);
+    alert(`✅ Orden Cerrada Correctamente.\n\nTiempo Total: ${hours} horas y ${minutes} minutos.`);
 }
 
 /* --- TECHNICIAN MANAGEMENT --- */
@@ -1879,11 +1979,15 @@ function renderPersonnelTable() {
     emptyMsg.style.display = 'none';
 
     currentOTPersonnel.forEach(p => {
+        const hReal = p.hours_worked != null ? p.hours_worked : '-';
+        const hPlan = p.hours_assigned || 0;
+        const realColor = p.hours_worked != null && p.hours_worked > hPlan ? '#ff9f0a' : '#30D158';
         const tr = document.createElement('tr');
         tr.innerHTML = `
             <td>${p.technician_name || 'Sin asignar'}</td>
             <td>${p.specialty || '-'}</td>
-            <td>${p.hours_assigned || 0} hrs</td>
+            <td style="text-align:center;">${hPlan} h</td>
+            <td style="text-align:center;color:${p.hours_worked != null ? realColor : '#666'};">${hReal !== '-' ? hReal + ' h' : '-'}</td>
             <td>
                 <button type="button" onclick="removePersonnel(${p.id})" style="padding: 3px 8px; background: #f44336; border: none; color: white; border-radius: 3px;">
                     <i class="fas fa-trash"></i>
