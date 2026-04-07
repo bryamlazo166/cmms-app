@@ -129,6 +129,64 @@ def _get_cmms_context(app):
             except Exception:
                 pass
 
+            # Lubrication points (active) — needed for register_lubrication action
+            try:
+                lub_points = _db.session.execute(text("""
+                    SELECT lp.id, lp.code, lp.name, lp.lubricant_name, lp.quantity_nominal, lp.quantity_unit,
+                           lp.frequency_days, lp.last_service_date, lp.next_due_date, lp.semaphore_status,
+                           e.tag, e.name, l.name
+                    FROM lubrication_points lp
+                    LEFT JOIN equipments e ON lp.equipment_id = e.id
+                    LEFT JOIN lines l ON lp.line_id = l.id
+                    WHERE lp.is_active = true
+                    ORDER BY l.name, e.tag, lp.name
+                """)).fetchall()
+                if lub_points:
+                    ctx.append(f"\n=== PUNTOS DE LUBRICACION ({len(lub_points)}) ===")
+                    for p in lub_points:
+                        eq = f"[{p[10] or '-'}] {p[11] or '-'}"
+                        qty = f"{p[4] or '-'} {p[5] or ''}".strip()
+                        ctx.append(f"  id:{p[0]} | {p[1] or '-'} | {p[2]} | {eq} | {p[12] or '-'} | Lub:{p[3] or '-'} {qty} | cada {p[6]}d | Ult:{p[7] or '-'} | Prox:{p[8] or '-'} | {p[9]}")
+            except Exception as e:
+                ctx.append(f"(error puntos lubricacion: {e})")
+
+            # Inspection routes (active)
+            try:
+                insp_routes = _db.session.execute(text("""
+                    SELECT ir.id, ir.code, ir.name, ir.frequency_days, ir.last_execution_date,
+                           ir.next_due_date, ir.semaphore_status, e.tag, e.name, l.name
+                    FROM inspection_routes ir
+                    LEFT JOIN equipments e ON ir.equipment_id = e.id
+                    LEFT JOIN lines l ON ir.line_id = l.id
+                    WHERE ir.is_active = true
+                    ORDER BY l.name, e.tag, ir.name
+                """)).fetchall()
+                if insp_routes:
+                    ctx.append(f"\n=== RUTAS DE INSPECCION ({len(insp_routes)}) ===")
+                    for r in insp_routes:
+                        eq = f"[{r[7] or '-'}] {r[8] or '-'}"
+                        ctx.append(f"  id:{r[0]} | {r[1] or '-'} | {r[2]} | {eq} | {r[9] or '-'} | cada {r[3]}d | Ult:{r[4] or '-'} | Prox:{r[5] or '-'} | {r[6]}")
+            except Exception:
+                pass
+
+            # Monitoring points (active)
+            try:
+                mon_points = _db.session.execute(text("""
+                    SELECT mp.id, mp.code, mp.name, mp.frequency_days, mp.last_measurement_date,
+                           mp.next_due_date, mp.semaphore_status, e.tag, e.name
+                    FROM monitoring_points mp
+                    LEFT JOIN equipments e ON mp.equipment_id = e.id
+                    WHERE mp.is_active = true
+                    ORDER BY e.tag, mp.name
+                """)).fetchall()
+                if mon_points:
+                    ctx.append(f"\n=== PUNTOS DE MONITOREO ({len(mon_points)}) ===")
+                    for m in mon_points:
+                        eq = f"[{m[7] or '-'}] {m[8] or '-'}"
+                        ctx.append(f"  id:{m[0]} | {m[1] or '-'} | {m[2]} | {eq} | cada {m[3]}d | Ult:{m[4] or '-'} | Prox:{m[5] or '-'} | {m[6]}")
+            except Exception:
+                pass
+
             # Technicians
             techs = _db.session.execute(text("SELECT id, name, specialty FROM technicians WHERE is_active = true ORDER BY name")).fetchall()
             if techs:
@@ -431,6 +489,161 @@ def _reschedule_ot(app, data):
             return None, str(e)
 
 
+# Whitelist of editable fields per entity — keep FKs out to avoid integrity issues via bot
+_NOTICE_EDITABLE = {'description', 'criticality', 'priority', 'maintenance_type',
+                    'cancellation_reason', 'status', 'failure_mode', 'failure_category'}
+_OT_EDITABLE = {'description', 'failure_mode', 'maintenance_type', 'technician_id',
+                'scheduled_date', 'estimated_duration', 'tech_count',
+                'execution_comments', 'caused_downtime', 'downtime_hours',
+                'report_required', 'report_due_date', 'status'}
+
+
+def _edit_notice(app, data):
+    """Edit whitelisted fields of an existing maintenance notice."""
+    with app.app_context():
+        from database import db as _db
+        from sqlalchemy import text
+        try:
+            code = (data.get('notice_code') or data.get('code') or '').upper()
+            if not code:
+                return None, None, "Falta notice_code"
+            row = _db.session.execute(text("SELECT id FROM maintenance_notices WHERE code = :c"), {"c": code}).fetchone()
+            if not row:
+                return None, None, f"Aviso {code} no encontrado"
+
+            fields = data.get('fields') or {}
+            updates = {k: v for k, v in fields.items() if k in _NOTICE_EDITABLE and v is not None}
+            if not updates:
+                return None, None, "No hay campos validos para actualizar"
+
+            set_clause = ', '.join(f"{k} = :{k}" for k in updates)
+            params = dict(updates)
+            params['c'] = code
+            _db.session.execute(text(f"UPDATE maintenance_notices SET {set_clause} WHERE code = :c"), params)
+            _db.session.commit()
+            _db.session.remove()
+            return code, list(updates.keys()), None
+        except Exception as e:
+            _db.session.rollback()
+            _db.session.remove()
+            return None, None, str(e)
+
+
+def _register_lubrication(app, data):
+    """Register a lubrication execution for a point. Replicates POST /api/lubrication/executions."""
+    with app.app_context():
+        from database import db as _db
+        from sqlalchemy import text
+        from utils.schedule_helpers import _calculate_lubrication_schedule
+        try:
+            point_id = data.get('point_id')
+            point_code = (data.get('point_code') or '').strip()
+            point_query = (data.get('point_query') or '').strip()  # fuzzy fallback
+
+            # Resolve point
+            row = None
+            if point_id:
+                row = _db.session.execute(text("""
+                    SELECT id, code, name, frequency_days, warning_days, quantity_unit
+                    FROM lubrication_points WHERE id = :id AND is_active = true
+                """), {"id": point_id}).fetchone()
+            elif point_code:
+                row = _db.session.execute(text("""
+                    SELECT id, code, name, frequency_days, warning_days, quantity_unit
+                    FROM lubrication_points WHERE code = :c AND is_active = true
+                """), {"c": point_code}).fetchone()
+            elif point_query:
+                # Loose ILIKE match across name + code
+                q = f"%{point_query}%"
+                rows = _db.session.execute(text("""
+                    SELECT lp.id, lp.code, lp.name, lp.frequency_days, lp.warning_days, lp.quantity_unit
+                    FROM lubrication_points lp
+                    LEFT JOIN equipments e ON lp.equipment_id = e.id
+                    WHERE lp.is_active = true AND (
+                        lp.name ILIKE :q OR lp.code ILIKE :q OR e.name ILIKE :q OR e.tag ILIKE :q
+                    )
+                    LIMIT 5
+                """), {"q": q}).fetchall()
+                if len(rows) == 1:
+                    row = rows[0]
+                elif len(rows) > 1:
+                    options = ', '.join(f"{r[1] or r[0]} ({r[2]})" for r in rows)
+                    return None, None, f"Varios puntos coinciden con '{point_query}': {options}. Especifica el codigo."
+
+            if not row:
+                return None, None, "Punto de lubricacion no encontrado. Especifica point_id, point_code o point_query mas claro."
+
+            pid, pcode, pname, freq_days, warn_days, qty_unit = row
+
+            execution_date = data.get('execution_date') or date.today().isoformat()
+            executed_by = data.get('executed_by') or 'MANTENIMIENTO'
+            quantity_used = data.get('quantity_used')
+            comments = data.get('comments')
+            leak = bool(data.get('leak_detected', False))
+            anomaly = bool(data.get('anomaly_detected', False))
+            action_type = data.get('action_type') or 'SERVICIO'
+
+            # Insert execution
+            _db.session.execute(text("""
+                INSERT INTO lubrication_executions
+                (point_id, execution_date, action_type, quantity_used, quantity_unit,
+                 executed_by, leak_detected, anomaly_detected, comments, created_at)
+                VALUES (:pid, :ed, :at, :qu, :unit, :eb, :leak, :anom, :com, :now)
+            """), {
+                "pid": pid, "ed": execution_date, "at": action_type,
+                "qu": quantity_used, "unit": data.get('quantity_unit') or qty_unit or 'L',
+                "eb": executed_by, "leak": leak, "anom": anomaly, "com": comments,
+                "now": datetime.utcnow()
+            })
+
+            # Recalculate schedule and update point
+            next_due, semaphore = _calculate_lubrication_schedule(execution_date, freq_days, warn_days)
+            _db.session.execute(text("""
+                UPDATE lubrication_points
+                SET last_service_date = :lsd, next_due_date = :nd, semaphore_status = :ss
+                WHERE id = :id
+            """), {"lsd": execution_date, "nd": next_due, "ss": semaphore, "id": pid})
+
+            _db.session.commit()
+            _db.session.remove()
+            return pcode or f"id:{pid}", pname, None
+        except Exception as e:
+            _db.session.rollback()
+            _db.session.remove()
+            return None, None, str(e)
+
+
+def _edit_ot(app, data):
+    """Edit whitelisted fields of an existing work order."""
+    with app.app_context():
+        from database import db as _db
+        from sqlalchemy import text
+        try:
+            code = (data.get('ot_code') or data.get('code') or '').upper()
+            if not code:
+                return None, None, "Falta ot_code"
+            row = _db.session.execute(text("SELECT id FROM work_orders WHERE code = :c"), {"c": code}).fetchone()
+            if not row:
+                return None, None, f"OT {code} no encontrada"
+
+            fields = data.get('fields') or {}
+            updates = {k: v for k, v in fields.items() if k in _OT_EDITABLE and v is not None}
+            if not updates:
+                return None, None, "No hay campos validos para actualizar"
+
+            set_clause = ', '.join(f"{k} = :{k}" for k in updates)
+            params = dict(updates)
+            params['c'] = code
+            _db.session.execute(text(f"UPDATE work_orders SET {set_clause} WHERE code = :c"), params)
+            _db.session.commit()
+            _db.session.remove()
+            return code, list(updates.keys()), None
+        except Exception as e:
+            _db.session.rollback()
+            _db.session.remove()
+            return None, None, str(e)
+
+
 def _upload_telegram_photo(app, file_id, entity_type, entity_id):
     try:
         fi = _tg_api('getFile', file_id=file_id)
@@ -461,11 +674,21 @@ def _upload_telegram_photo(app, file_id, entity_type, entity_id):
 def _ask_deepseek(question, cmms_context, is_action=False):
     headers = {'Authorization': f'Bearer {DEEPSEEK_API_KEY}', 'Content-Type': 'application/json'}
 
-    action_instructions = ""
-    if is_action:
-        action_instructions = """
+    action_instructions = """
 
-ACCIONES DISPONIBLES — responde SOLO con JSON cuando el usuario quiera ejecutar una accion:
+FORMATO DE RESPUESTA OBLIGATORIO — SIEMPRE respondes con un UNICO objeto JSON valido, NUNCA texto plano.
+
+Hay dos formas posibles:
+
+A) CONSULTA / RESPUESTA DE TEXTO (cuando NO hay accion que ejecutar):
+{"action": "none", "reply": "aqui va el texto que quieres mostrar al usuario"}
+
+B) ACCION (cuando el usuario quiere crear/modificar algo — ver lista abajo):
+{"action": "<nombre_accion>", "data": {...}}
+
+REGLA CRITICA: Si el usuario reporta una falla, pide crear/editar/cerrar algo, NO uses action:"none" con reply describiendo la accion. Devuelve la accion real. El campo "reply" NUNCA debe contener frases como "aviso creado", "AV-XXXX generado", "OT cerrada", "accion registrada" — eso solo lo hace el sistema despues de ejecutar la accion real.
+
+ACCIONES DISPONIBLES:
 
 1. CREAR AVISO (reportar falla):
 {"action": "create_notice", "data": {"description": "descripcion profesional orientada al modo de falla", "failure_mode": "Rotura|Desgaste|Fuga|Desalineacion|Sobrecalentamiento|Ruido anormal|Vibracion excesiva|Aflojamiento|Corrosion|Atascamiento|Descarrilamiento|Cortocircuito|Sobrecarga|Fatiga", "failure_category": "Mecanica|Electrica|Hidraulica|Neumatica|Instrumentacion|Lubricacion|Estructural", "equipment_tag": "D2", "equipment_name": "DIGESTOR #2", "component_name": "FAJA", "criticality": "Alta|Media|Baja", "priority": "Alta|Normal|Baja", "maintenance_type": "Correctivo"}}
@@ -483,6 +706,35 @@ ACCIONES DISPONIBLES — responde SOLO con JSON cuando el usuario quiera ejecuta
 {"action": "reschedule_ot", "data": {"ot_code": "OT-0034", "new_date": "2026-04-10"}}
 Convierte fechas relativas: "lunes" = proximo lunes, "mañana" = fecha de mañana. Hoy es """ + date.today().isoformat() + """.
 
+6. EDITAR AVISO (modificar campos de un aviso existente):
+{"action": "edit_notice", "data": {"notice_code": "AV-0003", "fields": {"description": "nueva descripcion", "criticality": "Alta", "priority": "Alta", "maintenance_type": "Correctivo", "status": "Pendiente|Anulado", "cancellation_reason": "texto si status=Anulado"}}}
+Campos editables permitidos: description, criticality, priority, maintenance_type, status, cancellation_reason, failure_mode, failure_category.
+Solo incluye en "fields" los campos que el usuario pide cambiar. No inventes valores.
+Ejemplos:
+- "cambia la criticidad del AV-0003 a alta" → {"action":"edit_notice","data":{"notice_code":"AV-0003","fields":{"criticality":"Alta"}}}
+- "corrige la descripcion del AV-0005: ahora es fuga de aceite en reductor" → {"action":"edit_notice","data":{"notice_code":"AV-0005","fields":{"description":"Fuga de aceite en reductor - revisar retenes"}}}
+- "anula el AV-0002, era duplicado" → {"action":"edit_notice","data":{"notice_code":"AV-0002","fields":{"status":"Anulado","cancellation_reason":"Duplicado"}}}
+
+7b. REGISTRAR LUBRICACION (cuando el usuario reporta que se lubrico un punto):
+{"action": "register_lubrication", "data": {"point_id": 12, "execution_date": "2026-03-30", "executed_by": "MANTENIMIENTO|FAPMETAL|nombre tecnico", "quantity_used": 0.5, "comments": "opcional", "leak_detected": false, "anomaly_detected": false}}
+- Busca el punto en la lista PUNTOS DE LUBRICACION del contexto. Usa el `id` que aparece como `id:NN`. Tambien puedes usar `point_code` si lo conoces.
+- Si no encuentras un id exacto, usa `point_query` con texto fuzzy: {"point_query": "chumacera motriz digestor 8"}
+- execution_date: convierte fechas relativas o textos como "30-marzo", "ayer", "hoy" a formato ISO YYYY-MM-DD. Si dicen una hora, ignorala (solo fecha). Hoy es """ + date.today().isoformat() + """.
+- executed_by: por defecto "MANTENIMIENTO". Si el usuario menciona "FAPMETAL" o "fap metal" usa "FAPMETAL". Si menciona un nombre, usalo.
+- leak_detected/anomaly_detected: solo true si el usuario lo menciona explicitamente. Si los marca true, se creara automaticamente un aviso de mantenimiento.
+- Ejemplos:
+  * "Se lubrico la chumacera motriz del digestor 8 el 30 de marzo" → busca en PUNTOS DE LUBRICACION uno que matchee "chumacera motriz" + "DIGESTOR #8" o tag D8 → {"action":"register_lubrication","data":{"point_id":<el id que veas>,"execution_date":"2026-03-30","executed_by":"MANTENIMIENTO"}}
+  * "FAPMETAL lubrico hoy todos los puntos del D5" → si hay varios puntos del D5 NO uses register_lubrication multiple veces en una sola respuesta (solo se ejecuta una accion). En su lugar responde con action:none y reply pidiendo que el usuario confirme uno por uno o liste los puntos.
+
+7. EDITAR OT (modificar campos de una OT existente):
+{"action": "edit_ot", "data": {"ot_code": "OT-0034", "fields": {"description": "...", "technician_id": "CARLOS LUQUE", "estimated_duration": 4, "tech_count": 2, "scheduled_date": "2026-04-10", "execution_comments": "...", "caused_downtime": true, "downtime_hours": 1.5}}}
+Campos editables permitidos: description, failure_mode, maintenance_type, technician_id, scheduled_date, estimated_duration, tech_count, execution_comments, caused_downtime, downtime_hours, report_required, report_due_date, status.
+Ejemplos:
+- "asigna la OT-0034 a Carlos Luque" → {"action":"edit_ot","data":{"ot_code":"OT-0034","fields":{"technician_id":"CARLOS LUQUE CCOLQUE"}}}
+- "la OT-0034 duro 3 horas y paro la linea 1 hora" → {"action":"edit_ot","data":{"ot_code":"OT-0034","fields":{"caused_downtime":true,"downtime_hours":1}}}
+- "cambia la duracion estimada de la OT-0034 a 6 horas y asigna 2 tecnicos" → {"action":"edit_ot","data":{"ot_code":"OT-0034","fields":{"estimated_duration":6,"tech_count":2}}}
+Nota: para cambiar SOLO la fecha programada, prefiere reschedule_ot. Para cerrar/iniciar OT usa close_ot/start_ot.
+
 REGLAS para interpretar avisos:
 - description: Redacta profesionalmente orientado al modo de falla, NO copies textual al usuario.
   Ej: usuario dice "la faja se rompio" → "Rotura de faja de transmision - requiere inspeccion y reemplazo"
@@ -493,12 +745,13 @@ REGLAS para interpretar avisos:
 - Si el usuario EXPLICITAMENTE pide crear el aviso sin equipo, o dice "sin equipo", "sin vincular", "asi nomas", genera el JSON SIN los campos equipment_tag, equipment_name, component_name
 - SIEMPRE puedes crear un aviso sin equipo vinculado. El campo "free_location" permite texto libre para ubicacion
   Ej: {"action": "create_notice", "data": {"description": "Fuga de vapor en tuberia zona calderas", "failure_mode": "Fuga", "failure_category": "Mecanica", "criticality": "Alta", "free_location": "Tuberia zona calderas - no mapeado en arbol"}}
-- Si es consulta normal, responde con texto (NO JSON)"""
+- Si es consulta normal (ej: "cuantas OTs abiertas hay?"), usa {"action":"none","reply":"..."} con la respuesta en reply."""
 
     system_prompt = f"""Eres el asistente de mantenimiento del CMMS Pro, sistema de gestion de mantenimiento industrial.
-Responde en español, conciso y profesional. Usa SOLO datos reales del sistema.
+SIEMPRE respondes con un objeto JSON valido (ver FORMATO DE RESPUESTA OBLIGATORIO abajo). NUNCA texto plano fuera de JSON.
+Dentro del campo "reply" responde en español, conciso y profesional. Usa SOLO datos reales del sistema.
 NUNCA inventes datos ni confirmes acciones no realizadas.
-Si no tienes info, di: "No tengo esa informacion."
+Si no tienes info, responde {{"action":"none","reply":"No tengo esa informacion."}}.
 
 Cuando el usuario pida ANALISIS o RECOMENDACIONES, puedes:
 - Calcular % correctivo vs preventivo
@@ -519,6 +772,7 @@ DATOS ACTUALES:
         'model': 'deepseek-chat',
         'messages': [{'role': 'system', 'content': system_prompt}, {'role': 'user', 'content': question}],
         'max_tokens': 2000, 'temperature': 0.2,
+        'response_format': {'type': 'json_object'},
     }
 
     try:
@@ -830,6 +1084,13 @@ def _process_message(app, chat_id, text, photos=None):
 • _Cerrar OT-0034, trabajo completado_
 • _Iniciar OT-0034_
 • _Agregar nota a OT-0034: se cambio faja_
+• _Cambiar criticidad del AV-0003 a alta_
+• _Corrige la descripcion del AV-0005: ..._
+• _Anula el AV-0002, era duplicado_
+• _Asigna la OT-0034 a Carlos Luque, 6 horas, 2 tecnicos_
+• _La OT-0034 paro la linea 1 hora_
+• _Se lubrico chumacera motriz del D8 el 30-marzo, FAPMETAL_
+• _Lubrique hoy el punto LUB-D5-CHM-MOT_
 • Despues de crear aviso, envia foto
 
 *Analisis:*
@@ -841,30 +1102,39 @@ def _process_message(app, chat_id, text, photos=None):
     # Process
     _send(chat_id, "⏳ Consultando datos...")
     context = _get_cmms_context(app)
-    is_action = any(kw in text.lower() for kw in ACTION_KEYWORDS)
-    answer = _ask_deepseek(text, context, is_action=is_action)
+    answer = _ask_deepseek(text, context, is_action=True)
 
-    # Handle JSON actions
-    if is_action:
-        action_data = _extract_json(answer)
-        if action_data and isinstance(action_data, dict):
-            action = action_data.get('action')
-            data = action_data.get('data', {})
+    # DeepSeek is forced to return JSON via response_format. Parse it.
+    action_data = _extract_json(answer)
+    if not (action_data and isinstance(action_data, dict)):
+        # Safety net: if parsing failed, don't dump raw JSON/garbage to user
+        logger.warning(f"Bot: failed to parse JSON from DeepSeek. Raw: {answer[:200]}")
+        _send(chat_id, "⚠️ No pude procesar la respuesta. Intenta reformular tu mensaje.")
+        return
 
-            if action == 'create_notice':
-                code, nid, err = _create_notice(app, data)
-                if code and nid:
-                    _pending_photos[chat_id] = {"entity_type": "notice", "entity_id": nid, "code": code}
-                    fm = data.get('failure_mode', '-')
-                    fc = data.get('failure_category', '-')
-                    eq = data.get('equipment_tag') or data.get('equipment_name') or ''
-                    comp = data.get('component_name') or ''
-                    loc = data.get('free_location') or ''
+    action = action_data.get('action')
+    data = action_data.get('data', {})
 
-                    equip_line = f"⚙️ Equipo: {eq}" if eq else f"📍 Ubicacion: {loc}" if loc else "⚙️ Equipo: Sin vincular"
-                    comp_line = f"\n🔧 Componente: {comp}" if comp else ""
+    # Plain query/response — just show the reply text
+    if action == 'none' or not action:
+        reply = action_data.get('reply') or "No tengo esa informacion."
+        _send(chat_id, reply)
+        return
 
-                    _send(chat_id, f"""✅ *Aviso creado: {code}*
+    if action == 'create_notice':
+        code, nid, err = _create_notice(app, data)
+        if code and nid:
+            _pending_photos[chat_id] = {"entity_type": "notice", "entity_id": nid, "code": code}
+            fm = data.get('failure_mode', '-')
+            fc = data.get('failure_category', '-')
+            eq = data.get('equipment_tag') or data.get('equipment_name') or ''
+            comp = data.get('component_name') or ''
+            loc = data.get('free_location') or ''
+
+            equip_line = f"⚙️ Equipo: {eq}" if eq else f"📍 Ubicacion: {loc}" if loc else "⚙️ Equipo: Sin vincular"
+            comp_line = f"\n🔧 Componente: {comp}" if comp else ""
+
+            _send(chat_id, f"""✅ *Aviso creado: {code}*
 
 📋 {data.get('description', '-')}
 {equip_line}{comp_line}
@@ -874,43 +1144,80 @@ def _process_message(app, chat_id, text, photos=None):
 📅 {date.today().isoformat()}
 
 📷 _Envia una foto para adjuntarla._""")
-                else:
-                    _send(chat_id, f"❌ Error creando aviso: {err}")
-                return
+        else:
+            _send(chat_id, f"❌ Error creando aviso: {err}")
+        return
 
-            elif action == 'close_ot':
-                code, err = _close_ot(app, data)
-                if code:
-                    _send(chat_id, f"✅ *{code} cerrada*\n📝 {data.get('comments', '-')}")
-                else:
-                    _send(chat_id, f"❌ {err}")
-                return
+    elif action == 'close_ot':
+        code, err = _close_ot(app, data)
+        if code:
+            _send(chat_id, f"✅ *{code} cerrada*\n📝 {data.get('comments', '-')}")
+        else:
+            _send(chat_id, f"❌ {err}")
+        return
 
-            elif action == 'start_ot':
-                code, err = _start_ot(app, data)
-                if code:
-                    _send(chat_id, f"▶️ *{code} iniciada* — En Progreso")
-                else:
-                    _send(chat_id, f"❌ {err}")
-                return
+    elif action == 'start_ot':
+        code, err = _start_ot(app, data)
+        if code:
+            _send(chat_id, f"▶️ *{code} iniciada* — En Progreso")
+        else:
+            _send(chat_id, f"❌ {err}")
+        return
 
-            elif action == 'add_log':
-                code, err = _add_log_entry(app, data)
-                if code:
-                    _send(chat_id, f"📝 Nota agregada a *{code}*\n_{data.get('comment', '')}_")
-                else:
-                    _send(chat_id, f"❌ {err}")
-                return
+    elif action == 'add_log':
+        code, err = _add_log_entry(app, data)
+        if code:
+            _send(chat_id, f"📝 Nota agregada a *{code}*\n_{data.get('comment', '')}_")
+        else:
+            _send(chat_id, f"❌ {err}")
+        return
 
-            elif action == 'reschedule_ot':
-                code, err = _reschedule_ot(app, data)
-                if code:
-                    _send(chat_id, f"📅 *{code}* reprogramada para *{data.get('new_date', '-')}*")
-                else:
-                    _send(chat_id, f"❌ {err}")
-                return
+    elif action == 'reschedule_ot':
+        code, err = _reschedule_ot(app, data)
+        if code:
+            _send(chat_id, f"📅 *{code}* reprogramada para *{data.get('new_date', '-')}*")
+        else:
+            _send(chat_id, f"❌ {err}")
+        return
 
-    _send(chat_id, answer)
+    elif action == 'edit_notice':
+        code, changed, err = _edit_notice(app, data)
+        if code:
+            fields = data.get('fields') or {}
+            lines = '\n'.join(f"• *{k}:* {fields.get(k)}" for k in (changed or []))
+            _send(chat_id, f"✏️ *Aviso {code} actualizado*\n{lines}")
+        else:
+            _send(chat_id, f"❌ {err}")
+        return
+
+    elif action == 'edit_ot':
+        code, changed, err = _edit_ot(app, data)
+        if code:
+            fields = data.get('fields') or {}
+            lines = '\n'.join(f"• *{k}:* {fields.get(k)}" for k in (changed or []))
+            _send(chat_id, f"✏️ *OT {code} actualizada*\n{lines}")
+        else:
+            _send(chat_id, f"❌ {err}")
+        return
+
+    elif action == 'register_lubrication':
+        code, pname, err = _register_lubrication(app, data)
+        if code:
+            ed = data.get('execution_date') or date.today().isoformat()
+            eb = data.get('executed_by') or 'MANTENIMIENTO'
+            qty = data.get('quantity_used')
+            qty_line = f"\n💧 Cantidad: {qty}" if qty else ""
+            extra = ""
+            if data.get('leak_detected') or data.get('anomaly_detected'):
+                extra = "\n⚠️ Anomalia/fuga reportada — se creo aviso vinculado"
+            _send(chat_id, f"✅ *Lubricacion registrada*\n🔧 Punto: {code} — {pname}\n📅 Fecha: {ed}\n👤 Por: {eb}{qty_line}{extra}")
+        else:
+            _send(chat_id, f"❌ {err}")
+        return
+
+    # Unknown action — fall back to reply field if present
+    reply = action_data.get('reply') or f"⚠️ Accion desconocida: {action}"
+    _send(chat_id, reply)
 
 
 # ── Bot Startup ──────────────────────────────────────────────────────────────
