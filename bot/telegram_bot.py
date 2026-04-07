@@ -187,6 +187,28 @@ def _get_cmms_context(app):
             except Exception:
                 pass
 
+            # Recent lubrication executions (last 30) — needed for edit/delete
+            try:
+                lub_execs = _db.session.execute(text("""
+                    SELECT le.id, le.point_id, lp.code, lp.name, le.execution_date,
+                           le.executed_by, le.quantity_used, le.quantity_unit, le.comments,
+                           le.leak_detected, le.anomaly_detected
+                    FROM lubrication_executions le
+                    JOIN lubrication_points lp ON le.point_id = lp.id
+                    ORDER BY le.id DESC LIMIT 30
+                """)).fetchall()
+                if lub_execs:
+                    ctx.append(f"\n=== ULTIMAS {len(lub_execs)} EJECUCIONES DE LUBRICACION ===")
+                    for x in lub_execs:
+                        flags = ''
+                        if x[9]: flags += ' [FUGA]'
+                        if x[10]: flags += ' [ANOMALIA]'
+                        qty = f" {x[6]}{x[7] or ''}" if x[6] else ''
+                        com = f" — {x[8]}" if x[8] else ''
+                        ctx.append(f"  exec_id:{x[0]} | {x[2] or f'pt:{x[1]}'} {x[3]} | {x[4]} | por:{x[5] or '-'}{qty}{flags}{com}")
+            except Exception:
+                pass
+
             # Technicians
             techs = _db.session.execute(text("SELECT id, name, specialty FROM technicians WHERE is_active = true ORDER BY name")).fetchall()
             if techs:
@@ -613,6 +635,105 @@ def _register_lubrication(app, data):
             return None, None, str(e)
 
 
+_LUB_EXEC_EDITABLE = {'execution_date', 'executed_by', 'quantity_used', 'quantity_unit',
+                      'comments', 'leak_detected', 'anomaly_detected', 'action_type'}
+
+
+def _refresh_lub_point_from_executions(_db, text, point_id):
+    """Recalculate lubrication_points.last_service_date / next_due_date / semaphore
+    based on the latest remaining execution after an edit or delete."""
+    from utils.schedule_helpers import _calculate_lubrication_schedule
+    point = _db.session.execute(text("""
+        SELECT id, frequency_days, warning_days FROM lubrication_points WHERE id = :id
+    """), {"id": point_id}).fetchone()
+    if not point:
+        return
+    latest = _db.session.execute(text("""
+        SELECT execution_date FROM lubrication_executions
+        WHERE point_id = :id ORDER BY execution_date DESC, id DESC LIMIT 1
+    """), {"id": point_id}).fetchone()
+    if latest:
+        next_due, semaphore = _calculate_lubrication_schedule(latest[0], point[1], point[2])
+        _db.session.execute(text("""
+            UPDATE lubrication_points
+            SET last_service_date = :lsd, next_due_date = :nd, semaphore_status = :ss
+            WHERE id = :id
+        """), {"lsd": latest[0], "nd": next_due, "ss": semaphore, "id": point_id})
+    else:
+        _db.session.execute(text("""
+            UPDATE lubrication_points
+            SET last_service_date = NULL, next_due_date = NULL, semaphore_status = 'PENDIENTE'
+            WHERE id = :id
+        """), {"id": point_id})
+
+
+def _edit_lubrication(app, data):
+    """Edit fields of an existing lubrication execution."""
+    with app.app_context():
+        from database import db as _db
+        from sqlalchemy import text
+        try:
+            exec_id = data.get('exec_id') or data.get('execution_id')
+            if not exec_id:
+                return None, None, "Falta exec_id"
+            row = _db.session.execute(text("""
+                SELECT le.id, le.point_id, lp.code, lp.name
+                FROM lubrication_executions le
+                JOIN lubrication_points lp ON le.point_id = lp.id
+                WHERE le.id = :id
+            """), {"id": exec_id}).fetchone()
+            if not row:
+                return None, None, f"Ejecucion exec_id:{exec_id} no encontrada"
+
+            fields = data.get('fields') or {}
+            updates = {k: v for k, v in fields.items() if k in _LUB_EXEC_EDITABLE and v is not None}
+            if not updates:
+                return None, None, "No hay campos validos para actualizar"
+
+            set_clause = ', '.join(f"{k} = :{k}" for k in updates)
+            params = dict(updates)
+            params['id'] = exec_id
+            _db.session.execute(text(f"UPDATE lubrication_executions SET {set_clause} WHERE id = :id"), params)
+
+            _refresh_lub_point_from_executions(_db, text, row[1])
+            _db.session.commit()
+            _db.session.remove()
+            return row[2] or f"id:{row[1]}", row[3], None
+        except Exception as e:
+            _db.session.rollback()
+            _db.session.remove()
+            return None, None, str(e)
+
+
+def _delete_lubrication(app, data):
+    """Delete a lubrication execution by id."""
+    with app.app_context():
+        from database import db as _db
+        from sqlalchemy import text
+        try:
+            exec_id = data.get('exec_id') or data.get('execution_id')
+            if not exec_id:
+                return None, None, "Falta exec_id"
+            row = _db.session.execute(text("""
+                SELECT le.id, le.point_id, lp.code, lp.name
+                FROM lubrication_executions le
+                JOIN lubrication_points lp ON le.point_id = lp.id
+                WHERE le.id = :id
+            """), {"id": exec_id}).fetchone()
+            if not row:
+                return None, None, f"Ejecucion exec_id:{exec_id} no encontrada"
+
+            _db.session.execute(text("DELETE FROM lubrication_executions WHERE id = :id"), {"id": exec_id})
+            _refresh_lub_point_from_executions(_db, text, row[1])
+            _db.session.commit()
+            _db.session.remove()
+            return row[2] or f"id:{row[1]}", row[3], None
+        except Exception as e:
+            _db.session.rollback()
+            _db.session.remove()
+            return None, None, str(e)
+
+
 def _edit_ot(app, data):
     """Edit whitelisted fields of an existing work order."""
     with app.app_context():
@@ -715,16 +836,28 @@ Ejemplos:
 - "corrige la descripcion del AV-0005: ahora es fuga de aceite en reductor" → {"action":"edit_notice","data":{"notice_code":"AV-0005","fields":{"description":"Fuga de aceite en reductor - revisar retenes"}}}
 - "anula el AV-0002, era duplicado" → {"action":"edit_notice","data":{"notice_code":"AV-0002","fields":{"status":"Anulado","cancellation_reason":"Duplicado"}}}
 
-7b. REGISTRAR LUBRICACION (cuando el usuario reporta que se lubrico un punto):
+7b. REGISTRAR LUBRICACION (cuando el usuario reporta que se lubrico un punto POR PRIMERA VEZ):
 {"action": "register_lubrication", "data": {"point_id": 12, "execution_date": "2026-03-30", "executed_by": "MANTENIMIENTO|FAPMETAL|nombre tecnico", "quantity_used": 0.5, "comments": "opcional", "leak_detected": false, "anomaly_detected": false}}
 - Busca el punto en la lista PUNTOS DE LUBRICACION del contexto. Usa el `id` que aparece como `id:NN`. Tambien puedes usar `point_code` si lo conoces.
 - Si no encuentras un id exacto, usa `point_query` con texto fuzzy: {"point_query": "chumacera motriz digestor 8"}
 - execution_date: convierte fechas relativas o textos como "30-marzo", "ayer", "hoy" a formato ISO YYYY-MM-DD. Si dicen una hora, ignorala (solo fecha). Hoy es """ + date.today().isoformat() + """.
 - executed_by: por defecto "MANTENIMIENTO". Si el usuario menciona "FAPMETAL" o "fap metal" usa "FAPMETAL". Si menciona un nombre, usalo.
 - leak_detected/anomaly_detected: solo true si el usuario lo menciona explicitamente. Si los marca true, se creara automaticamente un aviso de mantenimiento.
-- Ejemplos:
-  * "Se lubrico la chumacera motriz del digestor 8 el 30 de marzo" → busca en PUNTOS DE LUBRICACION uno que matchee "chumacera motriz" + "DIGESTOR #8" o tag D8 → {"action":"register_lubrication","data":{"point_id":<el id que veas>,"execution_date":"2026-03-30","executed_by":"MANTENIMIENTO"}}
-  * "FAPMETAL lubrico hoy todos los puntos del D5" → si hay varios puntos del D5 NO uses register_lubrication multiple veces en una sola respuesta (solo se ejecuta una accion). En su lugar responde con action:none y reply pidiendo que el usuario confirme uno por uno o liste los puntos.
+- IMPORTANTE: NO uses esta accion si el usuario dice "corrige", "cambia", "actualiza", "estaba mal", "era ayer", "era el ...", "no era ese tecnico" sobre una ejecucion ya registrada. En esos casos usa edit_lubrication.
+- IMPORTANTE: NO uses esta accion si el usuario dice "elimina", "borra", "anula" una ejecucion. Usa delete_lubrication.
+
+7c. EDITAR LUBRICACION (corregir una ejecucion ya registrada):
+{"action": "edit_lubrication", "data": {"exec_id": 123, "fields": {"execution_date": "2026-04-06", "executed_by": "FAPMETAL", "quantity_used": 0.3, "comments": "...", "leak_detected": true}}}
+- Busca el exec_id en ULTIMAS EJECUCIONES DE LUBRICACION del contexto. Identifica cual ejecucion es por el punto + fecha + ejecutor que mencione el usuario.
+- Si hay mas de una ejecucion candidata, responde con action:none y un reply listando las opciones para que el usuario aclare cual.
+- Solo incluye en "fields" los campos que el usuario quiere cambiar. Campos editables: execution_date, executed_by, quantity_used, quantity_unit, comments, leak_detected, anomaly_detected, action_type.
+- Ejemplo: usuario dice "corrige la lubricacion de la chumacera conducida del D9, fue ayer no hoy". Buscas en EJECUCIONES la mas reciente del LUB-D9-CHM-CON, tomas su exec_id, y devuelves: {"action":"edit_lubrication","data":{"exec_id":<el id>,"fields":{"execution_date":"<ayer en ISO>"}}}
+- Ejemplo: "la del D5 chumacera motriz no fue mantenimiento, fue FAPMETAL" → {"action":"edit_lubrication","data":{"exec_id":<id>,"fields":{"executed_by":"FAPMETAL"}}}
+
+7d. ELIMINAR LUBRICACION (borrar una ejecucion mal registrada):
+{"action": "delete_lubrication", "data": {"exec_id": 123}}
+- Usalo cuando el usuario diga "elimina", "borra", "anula", "ese registro estaba mal", "fue duplicado".
+- Igual que edit, busca el exec_id en EJECUCIONES por contexto. Si hay ambiguedad, pregunta primero con action:none.
 
 7. EDITAR OT (modificar campos de una OT existente):
 {"action": "edit_ot", "data": {"ot_code": "OT-0034", "fields": {"description": "...", "technician_id": "CARLOS LUQUE", "estimated_duration": 4, "tech_count": 2, "scheduled_date": "2026-04-10", "execution_comments": "...", "caused_downtime": true, "downtime_hours": 1.5}}}
@@ -1211,6 +1344,24 @@ def _process_message(app, chat_id, text, photos=None):
             if data.get('leak_detected') or data.get('anomaly_detected'):
                 extra = "\n⚠️ Anomalia/fuga reportada — se creo aviso vinculado"
             _send(chat_id, f"✅ *Lubricacion registrada*\n🔧 Punto: {code} — {pname}\n📅 Fecha: {ed}\n👤 Por: {eb}{qty_line}{extra}")
+        else:
+            _send(chat_id, f"❌ {err}")
+        return
+
+    elif action == 'edit_lubrication':
+        code, pname, err = _edit_lubrication(app, data)
+        if code:
+            fields = data.get('fields') or {}
+            lines = '\n'.join(f"• *{k}:* {v}" for k, v in fields.items())
+            _send(chat_id, f"✏️ *Lubricacion corregida*\n🔧 {code} — {pname}\n{lines}")
+        else:
+            _send(chat_id, f"❌ {err}")
+        return
+
+    elif action == 'delete_lubrication':
+        code, pname, err = _delete_lubrication(app, data)
+        if code:
+            _send(chat_id, f"🗑️ *Ejecucion eliminada*\n🔧 {code} — {pname}\n_(semaforo del punto recalculado)_")
         else:
             _send(chat_id, f"❌ {err}")
         return
