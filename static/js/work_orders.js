@@ -67,9 +67,33 @@ document.addEventListener('DOMContentLoaded', () => {
         downtimeSelect.addEventListener('change', function() {
             document.getElementById('downtimeHoursGroup').style.display =
                 this.value === '1' ? '' : 'none';
+            checkDowntimeVsDuration();
         });
     }
+    const dtHoursInput = document.getElementById('closeDowntimeHours');
+    if (dtHoursInput) {
+        dtHoursInput.addEventListener('input', checkDowntimeVsDuration);
+    }
 });
+
+function checkDowntimeVsDuration() {
+    const warn = document.getElementById('durationVsDowntimeWarning');
+    const warnText = document.getElementById('durationVsDowntimeWarningText');
+    if (!warn || !warnText) return;
+    const caused = document.getElementById('closeCausedDowntime').value === '1';
+    if (!caused) { warn.style.display = 'none'; return; }
+    const start = document.getElementById('realStart').value;
+    const end = document.getElementById('realEnd').value;
+    const dt = parseFloat(document.getElementById('closeDowntimeHours').value);
+    if (!start || !end || isNaN(dt)) { warn.style.display = 'none'; return; }
+    const calHrs = (new Date(end) - new Date(start)) / 3600000;
+    if (dt < calHrs - 0.1) {
+        warnText.textContent = `Las horas de parada (${dt}h) son MENORES que el tiempo entre inicio y fin (${calHrs.toFixed(1)}h). Verifique: si el equipo estuvo parado todo ese tiempo, debe coincidir.`;
+        warn.style.display = 'block';
+    } else {
+        warn.style.display = 'none';
+    }
+}
 
 async function loadHierarchyData() {
     try {
@@ -1185,13 +1209,16 @@ async function searchForExecution() {
     refreshExecutionLogisticsAlert(parts, reqs);
 
     const btnStart = document.getElementById('btn-start-job');
+    const btnPause = document.getElementById('btn-pause-job');
     const btnEnd = document.getElementById('btn-finish-job');
     btnStart.classList.add('hidden');
+    if (btnPause) btnPause.classList.add('hidden');
     btnEnd.classList.add('hidden');
 
     if (ot.status === 'Abierta' || ot.status === 'Programada') {
         btnStart.classList.remove('hidden');
     } else if (ot.status === 'En Progreso') {
+        if (btnPause) btnPause.classList.remove('hidden');
         btnEnd.classList.remove('hidden');
     }
 
@@ -1433,6 +1460,46 @@ async function startJob() {
     }
 }
 
+function openPauseModal() {
+    if (!activeExecutionOT) return;
+    document.getElementById('pauseOtId').value = activeExecutionOT.id;
+    document.getElementById('pauseAvance').value = '';
+    document.getElementById('pausePendiente').value = '';
+    document.getElementById('pauseOTModal').showModal();
+}
+
+async function handlePauseSubmit() {
+    const id = document.getElementById('pauseOtId').value;
+    const avance = document.getElementById('pauseAvance').value.trim();
+    const pendiente = document.getElementById('pausePendiente').value.trim();
+    if (!avance) {
+        alert('Debe describir el avance realizado.');
+        return;
+    }
+    let comment = `[PAUSA] ${avance}`;
+    if (pendiente) comment += `\nPendiente: ${pendiente}`;
+    const today = new Date().toISOString().split('T')[0];
+    try {
+        const res = await fetch(`/api/work_orders/${id}/log`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ log_date: today, log_type: 'AVANCE', comment })
+        });
+        if (!res.ok) {
+            alert('Error al registrar la pausa');
+            return;
+        }
+        document.getElementById('pauseOTModal').close();
+        await loadOTLog(id);
+        alert('✅ Pausa registrada. La OT permanece En Progreso para continuar en el siguiente turno.');
+    } catch (e) {
+        console.error('pause:', e);
+        alert('Error al registrar la pausa');
+    }
+}
+window.openPauseModal = openPauseModal;
+window.handlePauseSubmit = handlePauseSubmit;
+
 function openCloseModal() {
     if (!activeExecutionOT) return;
     document.getElementById('closeOtId').value = activeExecutionOT.id;
@@ -1454,6 +1521,18 @@ function openCloseModal() {
     }
     endInput.readOnly = true;
     endInput.style.backgroundColor = "#444";
+
+    // Pre-llenar horas de parada con la duración calendario como sugerencia
+    try {
+        const dt0 = new Date(start);
+        const dt1 = new Date(now);
+        const calHrs = Math.max(0, (dt1 - dt0) / 3600000);
+        const dtInput = document.getElementById('closeDowntimeHours');
+        if (dtInput) dtInput.value = calHrs.toFixed(2);
+    } catch (e) { /* ignore */ }
+    // Reset warning
+    const warn = document.getElementById('durationVsDowntimeWarning');
+    if (warn) warn.style.display = 'none';
 
     // Cargar personal planificado en la lista de cierre
     _closePersonnelList = (currentOTPersonnel || []).map(p => ({
@@ -1598,7 +1677,7 @@ async function handleCloseOTSubmit(e) {
     const findings = (document.getElementById('closeFindings').value || '').trim();
     if (findings) {
         const today = new Date().toISOString().split('T')[0];
-        await fetch(`/api/work_orders/${id}/logs`, {
+        await fetch(`/api/work_orders/${id}/log`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ log_date: today, log_type: 'HALLAZGO', comment: findings })
