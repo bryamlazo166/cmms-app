@@ -35,6 +35,84 @@ def _send(chat_id, text):
 
 # ── Data Context ─────────────────────────────────────────────────────────────
 
+def _get_focused_equipment_context(app, message):
+    """Si el mensaje menciona un equipo (tag o nombre), devuelve su info completa.
+
+    Esto se inyecta al inicio del contexto para que el LLM no tenga que buscar.
+    """
+    import re
+    msg_upper = (message or '').upper()
+    if not msg_upper:
+        return ''
+    lines = []
+    with app.app_context():
+        from database import db as _db
+        from sqlalchemy import text
+        try:
+            # Buscar todos los equipos para hacer match
+            equips = _db.session.execute(text(
+                "SELECT id, tag, name FROM equipments"
+            )).fetchall()
+            matched_ids = set()
+            for e in equips:
+                eq_tag = (e[1] or '').upper()
+                eq_name = (e[2] or '').upper()
+                # Match por tag completo (SEC2-TH10)
+                if eq_tag and eq_tag in msg_upper:
+                    matched_ids.add(e[0])
+                    continue
+                # Match por nombre como palabra (TH10, D5, etc.)
+                if eq_name and re.search(r'\b' + re.escape(eq_name) + r'\b', msg_upper):
+                    matched_ids.add(e[0])
+            if not matched_ids:
+                return ''
+            # Para cada equipo encontrado, traer arbol completo + specs
+            for eq_id in list(matched_ids)[:3]:  # max 3 equipos para no saturar
+                eq = _db.session.execute(text(
+                    "SELECT e.id, e.tag, e.name, l.name AS line_name, a.name AS area_name "
+                    "FROM equipments e LEFT JOIN lines l ON e.line_id = l.id "
+                    "LEFT JOIN areas a ON l.area_id = a.id WHERE e.id = :id"
+                ), {"id": eq_id}).fetchone()
+                if not eq:
+                    continue
+                lines.append(f"\n>>> EQUIPO ENCONTRADO: [{eq[1]}] {eq[2]}")
+                lines.append(f"    Linea: {eq[3]} | Area: {eq[4]}")
+                # Specs del equipo
+                especs = _db.session.execute(text(
+                    "SELECT key_name, value_text, unit FROM equipment_specs "
+                    "WHERE equipment_id = :id ORDER BY order_index"
+                ), {"id": eq_id}).fetchall()
+                if especs:
+                    lines.append(f"    SPECS DEL EQUIPO:")
+                    for s in especs:
+                        lines.append(f"      - {s[0]}: {s[1]} {s[2] or ''}")
+                # Sistemas y componentes con specs
+                syscomps = _db.session.execute(text(
+                    "SELECT s.name AS sys_name, c.id AS comp_id, c.name AS comp_name "
+                    "FROM systems s LEFT JOIN components c ON c.system_id = s.id "
+                    "WHERE s.equipment_id = :id ORDER BY s.name, c.name"
+                ), {"id": eq_id}).fetchall()
+                cur_sys = None
+                for r in syscomps:
+                    if r[0] != cur_sys:
+                        lines.append(f"    SISTEMA: {r[0]}")
+                        cur_sys = r[0]
+                    if r[1]:
+                        lines.append(f"      COMPONENTE: {r[2]}")
+                        cspecs = _db.session.execute(text(
+                            "SELECT key_name, value_text, unit FROM component_specs "
+                            "WHERE component_id = :cid ORDER BY order_index"
+                        ), {"cid": r[1]}).fetchall()
+                        for cs in cspecs:
+                            lines.append(f"        * {cs[0]}: {cs[1]} {cs[2] or ''}")
+        except Exception as e:
+            logger.warning(f"_get_focused_equipment_context error: {e}")
+            return ''
+    if not lines:
+        return ''
+    return "=== FOCO DE CONSULTA — DATOS DETALLADOS DEL EQUIPO MENCIONADO ===\n" + "\n".join(lines) + "\n\n"
+
+
 def _get_cmms_context(app):
     ctx = []
     with app.app_context():
@@ -1581,7 +1659,10 @@ def _process_message(app, chat_id, text, photos=None):
 
     # Process
     _send(chat_id, "⏳ Consultando datos...")
+    focus = _get_focused_equipment_context(app, text)
     context = _get_cmms_context(app)
+    if focus:
+        context = focus + context
     answer = _ask_deepseek(text, context, is_action=True)
 
     # DeepSeek is forced to return JSON via response_format. Parse it.
