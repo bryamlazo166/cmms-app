@@ -641,8 +641,6 @@ def register_work_orders_routes(
                 scheduled_date=today,
                 real_start_date=today,
                 technician_id=tech_id,
-                priority='Media',
-                scope='GENERAL',
             )
             db.session.add(wo)
             db.session.flush()
