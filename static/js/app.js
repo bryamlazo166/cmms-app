@@ -358,8 +358,8 @@ async function loadGlobalTree() {
         fetchData('/api/rotative-assets'),
     ]);
 
-    // SORTING HELPERS
-    const sortByName = (a, b) => a.name.localeCompare(b.name);
+    // SORTING HELPERS — orden natural (TH1, TH2, ..., TH9, TH10)
+    const sortByName = (a, b) => (a.name || '').localeCompare(b.name || '', undefined, { numeric: true, sensitivity: 'base' });
 
     areas.sort(sortByName);
     lines.sort(sortByName);
