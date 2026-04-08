@@ -300,7 +300,7 @@ window.editProvider = (id) => {
 }
 
 window.deleteProvider = async (id) => {
-    if (!confirm("Â¿Eliminar este proveedor?")) return;
+    if (!confirm("¿Eliminar este proveedor?")) return;
     await fetch(`/api/providers/${id}`, { method: 'DELETE' });
     loadProviders();
 }
@@ -573,14 +573,14 @@ async function editOT(id) {
             if (notice) {
                 document.getElementById('otReporterName').value = notice.reporter_name || '';
                 document.getElementById('otSpecialty').value = notice.specialty || '';
-                document.getElementById('otShift').value = notice.shift || 'DÃ­a';
+                document.getElementById('otShift').value = notice.shift || 'Día';
                 document.getElementById('otCriticality').value = notice.criticality || 'Baja';
             }
         } catch (e) { console.error(e); }
     } else {
         document.getElementById('otReporterName').value = '';
         document.getElementById('otSpecialty').value = '';
-        document.getElementById('otShift').value = 'DÃ­a';
+        document.getElementById('otShift').value = 'Día';
         document.getElementById('otCriticality').value = 'Baja';
     }
 
@@ -634,16 +634,16 @@ async function checkSuggestions() {
         if (data.found) {
             const msg = `âœ¨ Historial Encontrado (OT: ${data.last_ot_code})\n\n` +
                 `Fecha: ${data.last_date}\n` +
-                `DuraciÃ³n: ${data.duration} hrs\n` +
+                `Duración: ${data.duration} hrs\n` +
                 `Herramientas: ${data.tools.length}\n` +
                 `Repuestos: ${data.parts.length}\n\n` +
-                `Â¿Desea aplicar estos valores?`;
+                `¿Desea aplicar estos valores?`;
 
             if (confirm(msg)) {
                 applySuggestion(data);
             }
         } else {
-            alert("No se encontrÃ³ historial similar.");
+            alert("No se encontró historial similar.");
         }
     } catch (e) {
         console.error(e);
@@ -854,7 +854,7 @@ function renderCalendar() {
                 openEditOTModal(info.event.id);
             },
             eventDrop: function (info) {
-                if (confirm("Â¿Reprogramar OT para " + info.event.start.toLocaleDateString() + "?")) {
+                if (confirm("¿Reprogramar OT para " + info.event.start.toLocaleDateString() + "?")) {
                     updateOTDate(info.event.id, info.event.start);
                 } else {
                     info.revert();
@@ -921,7 +921,7 @@ async function updateOTDate(id, newDate) {
         }
     } catch (error) {
         console.error("Error updating date:", error);
-        alert("Error de conexiÃ³n");
+        alert("Error de conexión");
     }
 }
 
@@ -967,7 +967,7 @@ function renderKanban() {
                 <span>${ot.code}</span>
                 <span style="font-size:0.8em; opacity:0.7;">${ot.scheduled_date || ''}</span>
             </div>
-            <div class="kanban-card-title">${ot.description || 'Sin descripciÃ³n'}</div>
+            <div class="kanban-card-title">${ot.description || 'Sin descripción'}</div>
             <div class="kanban-card-desc" style="font-size: 0.85em; color: #aaa;">
                 ${ot.equipment_name || ot.component_name || 'Sin Equipo'}
             </div>
@@ -1041,7 +1041,7 @@ async function updateOTStatusKanban(id, status) {
         }
     } catch (e) {
         console.error(e);
-        alert("Error de conexiÃ³n");
+        alert("Error de conexión");
     }
 }
 
@@ -1395,7 +1395,7 @@ function getLocalISOString() {
 
 async function startJob() {
     if (!activeExecutionOT) return;
-    if (!confirm("Â¿Iniciar trabajo ahora? Se guardarÃ¡ fecha/hora segÃºn sistema.")) return;
+    if (!confirm("¿Iniciar trabajo ahora? Se guardará fecha/hora según sistema.")) return;
 
     const now = getLocalISOString();
     const today = now.slice(0, 10);
@@ -1662,7 +1662,7 @@ function openTechnicianModal() {
     document.getElementById('techName').value = '';
     document.getElementById('techSpecialty').value = '';
     document.getElementById('techContact').value = '';
-    document.getElementById('techModalTitle').textContent = 'Nuevo TÃ©cnico';
+    document.getElementById('techModalTitle').textContent = 'Nuevo Técnico';
     document.getElementById('technicianModal').showModal();
 }
 
@@ -1674,14 +1674,14 @@ window.editTechnician = (id) => {
     document.getElementById('techName').value = t.name;
     document.getElementById('techSpecialty').value = t.specialty || '';
     document.getElementById('techContact').value = t.contact_info || '';
-    document.getElementById('techModalTitle').textContent = 'Editar TÃ©cnico';
+    document.getElementById('techModalTitle').textContent = 'Editar Técnico';
     document.getElementById('technicianModal').showModal();
 }
 
 window.toggleTechnician = async (id) => {
     const t = allTechnicians.find(x => x.id === id);
     const action = (t && t.is_active) ? 'dar de baja' : 'dar de alta';
-    if (!confirm(`Â¿Desea ${action} a este tÃ©cnico?`)) return;
+    if (!confirm(`¿Desea ${action} a este técnico?`)) return;
 
     await fetch(`/api/technicians/${id}`, { method: 'DELETE' });
     loadTechnicians();
@@ -1840,7 +1840,7 @@ window.viewNoticeDetails = async function (id) {
         document.getElementById('detail-description').textContent = n.description || '-';
 
         // Hierarchy
-        let hText = `Area: ${getNameFromList(allAreas, n.area_id)} | LÃ­nea: ${getNameFromList(allLines, n.line_id)} | Equipo: ${getNameFromList(allEquips, n.equipment_id)}`;
+        let hText = `Area: ${getNameFromList(allAreas, n.area_id)} | Línea: ${getNameFromList(allLines, n.line_id)} | Equipo: ${getNameFromList(allEquips, n.equipment_id)}`;
         document.getElementById('detail-hierarchy').textContent = hText;
 
         // Reset & Actions
@@ -1928,7 +1928,7 @@ async function annulNotice(noticeId) {
 
 // Convert Notice to OT
 async function convertNoticeToOT(noticeId) {
-    if (!confirm('Â¿Desea crear una Orden de Trabajo a partir de este aviso?')) return;
+    if (!confirm('¿Desea crear una Orden de Trabajo a partir de este aviso?')) return;
 
     try {
         // Get the notice data
@@ -2065,7 +2065,7 @@ window.openAddPersonnelModal = function () {
     // Filter active technicians
     const techSelect = allTechnicians.filter(t => t.is_active);
     if (techSelect.length === 0) {
-        alert('No hay tÃ©cnicos disponibles. Agregue tÃ©cnicos primero.');
+        alert('No hay técnicos disponibles. Agregue técnicos primero.');
         return;
     }
 
@@ -2229,7 +2229,7 @@ async function checkFeedback(equipmentId) {
                 <div style="border-bottom: 1px solid #666; padding: 5px 0; margin-bottom: 5px;">
                     <div style="font-weight: bold; color: #ffd700;">${item.date.split('T')[0]} - ${item.ot_code} (${item.maintenance_type})</div>
                     <div style="color: #eee;">"${item.comments}"</div>
-                    <div style="font-size: 0.8em; color: #aaa;">TÃ©c: ${item.tech_name}</div>
+                    <div style="font-size: 0.8em; color: #aaa;">Téc: ${item.tech_name}</div>
                 </div>
             `).join('');
             container.style.display = 'block';
@@ -2408,7 +2408,7 @@ async function confirmAddMaterial() {
 
 // Remove Material
 window.removeMaterial = async function (id) {
-    if (!confirm('Â¿Eliminar este material de la OT?')) return;
+    if (!confirm('¿Eliminar este material de la OT?')) return;
 
     const otId = document.getElementById('otId').value;
     try {
@@ -2475,7 +2475,7 @@ window.addPersonnelRow = function () {
     const select = document.getElementById('personnelTechSelect');
     if (!select) return alert('Modal de personal no encontrado');
 
-    select.innerHTML = '<option value="">- Seleccione TÃ©cnico -</option>';
+    select.innerHTML = '<option value="">- Seleccione Técnico -</option>';
     allTechnicians.forEach(tech => {
         const opt = document.createElement('option');
         opt.value = tech.id;
@@ -2506,7 +2506,7 @@ window.confirmAddPersonnel = function () {
     const techName = selectedOption ? selectedOption.text : '';
 
     if (!techId) {
-        return alert('Seleccione un tÃ©cnico');
+        return alert('Seleccione un técnico');
     }
 
     const specialty = document.getElementById('personnelSpecialty').value;
@@ -2514,7 +2514,7 @@ window.confirmAddPersonnel = function () {
 
     // Check if already added
     if (currentOTPersonnel.find(p => p.technician_id == techId)) {
-        return alert('Este tÃ©cnico ya estÃ¡ asignado a la OT');
+        return alert('Este técnico ya está asignado a la OT');
     }
 
     currentOTPersonnel.push({
@@ -2535,7 +2535,7 @@ window.confirmAddPersonnel = function () {
 }
 
 window.removePersonnel = function (idx) {
-    if (!confirm('Â¿Eliminar este personal de la OT?')) return;
+    if (!confirm('¿Eliminar este personal de la OT?')) return;
 
     currentOTPersonnel.splice(idx, 1);
     renderPersonnelTable();
@@ -2626,7 +2626,7 @@ function renderMaterialsTable() {
 }
 
 window.removeMaterial = async function (id) {
-    if (!confirm('Â¿Eliminar este material de la OT?')) return;
+    if (!confirm('¿Eliminar este material de la OT?')) return;
     const otId = document.getElementById('otId').value;
     try {
         await fetch(`/api/work_orders/${otId}/materials/${id}`, { method: 'DELETE' });
@@ -2685,7 +2685,7 @@ function renderPersonnelTable() {
 window.addPersonnelRow = function () {
     const select = document.getElementById('personnelTechSelect');
     if (!select) return alert('Modal de personal no encontrado');
-    select.innerHTML = '<option value="">- Seleccione TÃ©cnico -</option>';
+    select.innerHTML = '<option value="">- Seleccione Técnico -</option>';
 
     if (typeof allTechnicians !== 'undefined') {
         allTechnicians.forEach(tech => {
@@ -2712,13 +2712,13 @@ window.confirmAddPersonnel = function () {
     const techId = techSelect.value;
     const selectedOption = techSelect.options[techSelect.selectedIndex];
     const techName = selectedOption ? selectedOption.text : '';
-    if (!techId) return alert('Seleccione un tÃ©cnico');
+    if (!techId) return alert('Seleccione un técnico');
 
     const specialty = document.getElementById('personnelSpecialty').value;
     const hours = parseFloat(document.getElementById('personnelHours').value) || 8;
 
     if (currentOTPersonnel.find(p => p.technician_id == techId)) {
-        return alert('Este tÃ©cnico ya estÃ¡ asignado a la OT');
+        return alert('Este técnico ya está asignado a la OT');
     }
 
     currentOTPersonnel.push({
@@ -2736,7 +2736,7 @@ window.confirmAddPersonnel = function () {
 }
 
 window.removePersonnel = function (idx) {
-    if (!confirm('Â¿Eliminar este personal de la OT?')) return;
+    if (!confirm('¿Eliminar este personal de la OT?')) return;
     currentOTPersonnel.splice(idx, 1);
     renderPersonnelTable();
     const otId = document.getElementById('otId').value;
@@ -2797,7 +2797,7 @@ async function loadSparesForReq(force = false) {
     // Visual feedback for refresh
     const searchInput = document.getElementById('reqSpareSearch');
     if (force && searchInput) {
-        searchInput.placeholder = "ðŸ”„ Cargando catÃ¡logo...";
+        searchInput.placeholder = "ðŸ”„ Cargando catálogo...";
         searchInput.disabled = true;
     }
 
@@ -2806,11 +2806,11 @@ async function loadSparesForReq(force = false) {
         if (res.ok) {
             allSparesList = await res.json();
             console.log("Spares loaded:", allSparesList.length);
-            if (force) alert("CatÃ¡logo actualizado: " + allSparesList.length + " items.");
+            if (force) alert("Catálogo actualizado: " + allSparesList.length + " items.");
         }
     } catch (e) {
         console.error("Error loading spares:", e);
-        if (force) alert("Error al actualizar catÃ¡logo");
+        if (force) alert("Error al actualizar catálogo");
     } finally {
         if (force && searchInput) {
             searchInput.placeholder = "ðŸ” Escriba para buscar repuesto...";
@@ -2911,7 +2911,7 @@ window.addToPurchaseCart = function () {
     const type = document.getElementById('reqType').value;
     const qty = parseFloat(document.getElementById('reqQty').value);
 
-    if (!qty || qty <= 0) return alert("Cantidad invÃ¡lida");
+    if (!qty || qty <= 0) return alert("Cantidad inválida");
 
     let item = {
         item_type: type,
@@ -2928,7 +2928,7 @@ window.addToPurchaseCart = function () {
         item.detail = spareText; // For display
     } else {
         const desc = document.getElementById('reqDesc').value;
-        if (!desc.trim()) return alert("Ingrese descripciÃ³n del servicio");
+        if (!desc.trim()) return alert("Ingrese descripción del servicio");
         item.description = desc;
         item.detail = desc;
     }
@@ -2950,7 +2950,7 @@ window.renderPurchaseCart = function () {
     const btn = document.getElementById('btnSubmitPurchase');
 
     if (purchaseCart.length === 0) {
-        tbody.innerHTML = '<tr><td colspan="4" style="text-align:center; padding:10px; color:#666;">Lista vacÃ­a</td></tr>';
+        tbody.innerHTML = '<tr><td colspan="4" style="text-align:center; padding:10px; color:#666;">Lista vacía</td></tr>';
         if (btn) btn.disabled = true;
         return;
     }
@@ -2985,7 +2985,7 @@ if (pForm) {
     pForm.onsubmit = async (e) => {
         e.preventDefault();
 
-        if (purchaseCart.length === 0) return alert("La lista estÃ¡ vacÃ­a");
+        if (purchaseCart.length === 0) return alert("La lista está vacía");
 
         const otId = document.getElementById('reqOtId').value;
         const btn = e.submitter;
