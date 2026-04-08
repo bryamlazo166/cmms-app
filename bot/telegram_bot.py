@@ -297,7 +297,28 @@ def _get_cmms_context(app):
             except Exception:
                 pass
 
-            # Component specs
+            # Componentes por equipo (lista completa para que el LLM sepa qué existe)
+            try:
+                comps = _db.session.execute(text("""
+                    SELECT e.tag, e.name, s.name AS sys_name, c.name AS comp_name, c.id AS comp_id
+                    FROM components c
+                    JOIN systems s ON c.system_id = s.id
+                    JOIN equipments e ON s.equipment_id = e.id
+                    ORDER BY e.tag, s.name, c.name
+                """)).fetchall()
+                if comps:
+                    ctx.append(f"\n=== COMPONENTES POR EQUIPO ===")
+                    cur_eq = None
+                    for c in comps:
+                        eq_lbl = f"[{c[0]}] {c[1]}"
+                        if eq_lbl != cur_eq:
+                            ctx.append(f"  {eq_lbl}:")
+                            cur_eq = eq_lbl
+                        ctx.append(f"    - {c[2]} > {c[3]} (comp_id={c[4]})")
+            except Exception:
+                pass
+
+            # Component specs (sin LIMIT — necesario para responder consultas técnicas)
             try:
                 cspecs = _db.session.execute(text("""
                     SELECT e.tag, c.name, cs.key_name, cs.value_text, cs.unit
@@ -305,7 +326,7 @@ def _get_cmms_context(app):
                     JOIN components c ON cs.component_id = c.id
                     JOIN systems s ON c.system_id = s.id
                     JOIN equipments e ON s.equipment_id = e.id
-                    ORDER BY e.tag, c.name, cs.order_index LIMIT 100
+                    ORDER BY e.tag, c.name, cs.order_index
                 """)).fetchall()
                 if cspecs:
                     ctx.append(f"\n=== SPECS DE COMPONENTES ===")
