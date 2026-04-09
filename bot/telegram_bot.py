@@ -1159,6 +1159,18 @@ def _upload_telegram_photo(app, file_id, entity_type, entity_id):
                 INSERT INTO photo_attachments (entity_type, entity_id, url, caption, original_size_kb, compressed_size_kb, created_at)
                 VALUES (:et, :eid, :url, 'Foto desde Telegram', :orig, :comp, NOW())
             """), {"et": entity_type, "eid": entity_id, "url": url, "orig": len(photo_data)//1024, "comp": len(compressed)//1024})
+            # Si es inspección UT y aún no tiene pdf_url, asignar esta foto como evidencia
+            if entity_type == 'thickness_inspection':
+                try:
+                    existing = _db.session.execute(text(
+                        "SELECT pdf_url FROM thickness_inspections WHERE id = :id"
+                    ), {"id": entity_id}).fetchone()
+                    if existing and not existing[0]:
+                        _db.session.execute(text(
+                            "UPDATE thickness_inspections SET pdf_url = :url WHERE id = :id"
+                        ), {"url": url, "id": entity_id})
+                except Exception as ue:
+                    logger.warning(f"thickness_inspection pdf_url update skipped: {ue}")
             _db.session.commit()
             _db.session.remove()
         return url
@@ -1641,6 +1653,81 @@ def _process_message(app, chat_id, text, photos=None):
     if not text:
         return
 
+    # Comando: vincular PDF a última inspección UT del equipo
+    # Uso: /ut_pdf D7 https://drive.google.com/...
+    if text.lower().startswith('/ut_pdf'):
+        parts = text.split(maxsplit=2)
+        if len(parts) < 3:
+            _send(chat_id, "Uso: `/ut_pdf <TAG_EQUIPO> <URL_PDF>`\nEj: `/ut_pdf D7 https://drive.google.com/...`")
+            return
+        eq_tag = parts[1].strip().upper()
+        pdf_url = parts[2].strip()
+        try:
+            with app.app_context():
+                from database import db as _db
+                from sqlalchemy import text as _t
+                # Buscar equipo
+                eq = _db.session.execute(_t(
+                    "SELECT id, name FROM equipments WHERE UPPER(tag) = :tag"
+                ), {"tag": eq_tag}).fetchone()
+                if not eq:
+                    _send(chat_id, f"❌ No encontré el equipo con tag *{eq_tag}*.")
+                    return
+                # Buscar última inspección UT
+                insp = _db.session.execute(_t(
+                    "SELECT id, inspection_date FROM thickness_inspections "
+                    "WHERE equipment_id = :eid ORDER BY inspection_date DESC, id DESC LIMIT 1"
+                ), {"eid": eq[0]}).fetchone()
+                if not insp:
+                    _send(chat_id, f"❌ No hay inspecciones UT registradas para *{eq_tag}* ({eq[1]}).")
+                    return
+                # Actualizar
+                _db.session.execute(_t(
+                    "UPDATE thickness_inspections SET pdf_url = :url WHERE id = :id"
+                ), {"url": pdf_url, "id": insp[0]})
+                _db.session.commit()
+                _send(chat_id, f"✅ PDF vinculado a la inspección UT del *{eq_tag}* del *{insp[1]}*.\n📎 {pdf_url}")
+        except Exception as e:
+            logger.error(f"/ut_pdf error: {e}")
+            _send(chat_id, f"❌ Error: {e}")
+        return
+
+    # Comando: subir foto del formato UT a la última inspección
+    # Uso: /ut_foto D7  → luego enviar la foto
+    if text.lower().startswith('/ut_foto'):
+        parts = text.split()
+        if len(parts) < 2:
+            _send(chat_id, "Uso: `/ut_foto <TAG_EQUIPO>` y luego envía la foto del formato.")
+            return
+        eq_tag = parts[1].strip().upper()
+        try:
+            with app.app_context():
+                from database import db as _db
+                from sqlalchemy import text as _t
+                eq = _db.session.execute(_t(
+                    "SELECT id, name FROM equipments WHERE UPPER(tag) = :tag"
+                ), {"tag": eq_tag}).fetchone()
+                if not eq:
+                    _send(chat_id, f"❌ No encontré el equipo con tag *{eq_tag}*.")
+                    return
+                insp = _db.session.execute(_t(
+                    "SELECT id, inspection_date FROM thickness_inspections "
+                    "WHERE equipment_id = :eid ORDER BY inspection_date DESC, id DESC LIMIT 1"
+                ), {"eid": eq[0]}).fetchone()
+                if not insp:
+                    _send(chat_id, f"❌ No hay inspecciones UT para *{eq_tag}*. Crea primero la inspección desde el CMMS.")
+                    return
+                _pending_photos[chat_id] = {
+                    "entity_type": "thickness_inspection",
+                    "entity_id": insp[0],
+                    "code": f"UT-{eq_tag}-{insp[1]}",
+                }
+                _send(chat_id, f"📷 Listo. Envía ahora la(s) foto(s) del formato UT del *{eq_tag}* del *{insp[1]}*.")
+        except Exception as e:
+            logger.error(f"/ut_foto error: {e}")
+            _send(chat_id, f"❌ Error: {e}")
+        return
+
     # Commands
     if text.lower() in ('/start', '/help', 'hola', 'ayuda'):
         _send(chat_id, """*CMMS Pro Bot* 🏭
@@ -1670,6 +1757,10 @@ def _process_message(app, chat_id, text, photos=None):
 • _Se lubrico chumacera motriz del D8 el 30-marzo, FAPMETAL_
 • _Lubrique hoy el punto LUB-D5-CHM-MOT_
 • Despues de crear aviso, envia foto
+
+*Inspeccion de Espesores (UT):*
+• `/ut_pdf D7 https://drive.google.com/...` — vincular PDF a la ultima inspeccion del equipo
+• `/ut_foto D7` — luego envia la(s) foto(s) del formato fisico
 
 *Analisis:*
 • _% correctivo vs preventivo_

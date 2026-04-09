@@ -104,6 +104,17 @@
                 <textarea id="capObservations" rows="3" style="width:100%;background:#0f1319;color:#d5e2f5;border:1px solid #344964;border-radius:8px;padding:8px;font-family:inherit;font-size:.88rem;" placeholder="Comentarios sobre la inspección, condiciones del equipo, etc."></textarea>
             </div>
 
+            <div class="panel">
+                <h4><i class="fas fa-paperclip"></i> Documento adjunto (PDF escaneado)</h4>
+                <div style="display:flex;gap:8px;align-items:center;">
+                    <input type="url" id="capPdfUrl" placeholder="https://drive.google.com/file/d/..." style="flex:1;background:#0f1319;color:#d5e2f5;border:1px solid #344964;border-radius:8px;padding:8px;font-size:.88rem;">
+                    <button type="button" class="btn" onclick="window.open('https://drive.google.com','_blank')" title="Abrir Google Drive"><i class="fab fa-google-drive"></i> Drive</button>
+                </div>
+                <small style="display:block;color:#9ab0cb;font-size:.75rem;margin-top:6px;line-height:1.4;">
+                    Sube primero el PDF a tu Google Drive (carpeta CMMS_DRIVE / 04. INFORMES DE MANTENIMIENTO / 2026 / INSPECCIONES UT) y pega aquí el enlace para compartir. También puedes adjuntarlo después desde el bot de Telegram con <code style="color:#5ac8fa;">/ut_pdf TAG_EQUIPO URL</code>.
+                </small>
+            </div>
+
             <div class="summary-bar" id="summaryBar">
                 <span class="item">Total puntos: <strong id="sumTotal">0</strong></span>
                 <span class="item">Llenados: <strong id="sumFilled" style="color:#5ac8fa;">0</strong></span>

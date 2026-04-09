@@ -1358,6 +1358,8 @@ class ThicknessInspection(db.Model):
     critical_points: Mapped[int] = mapped_column(Integer, default=0)
     alert_points: Mapped[int] = mapped_column(Integer, default=0)
     observations: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    pdf_url: Mapped[Optional[str]] = mapped_column(String(500), nullable=True)
+    # Link al PDF escaneado en Drive o storage externo
     created_by: Mapped[Optional[str]] = mapped_column(String(120), nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
 
@@ -1379,6 +1381,7 @@ class ThicknessInspection(db.Model):
             "critical_points": self.critical_points,
             "alert_points": self.alert_points,
             "observations": self.observations,
+            "pdf_url": self.pdf_url,
             "created_by": self.created_by,
             "created_at": self.created_at.isoformat() if self.created_at else None,
         }

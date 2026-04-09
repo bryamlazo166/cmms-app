@@ -118,6 +118,7 @@ def register_thickness_routes(
                     inspector_name=inspector,
                     status='COMPLETA',
                     observations=observations,
+                    pdf_url=(data.get('pdf_url') or None),
                 )
                 db.session.add(inspection)
                 db.session.flush()  # obtener id
@@ -211,6 +212,21 @@ def register_thickness_routes(
             q = q.filter_by(equipment_id=equipment_id)
         inspections = q.order_by(ThicknessInspection.inspection_date.desc()).limit(100).all()
         return jsonify([i.to_dict() for i in inspections])
+
+    @app.route('/api/thickness/inspections/<int:inspection_id>/pdf', methods=['PUT'])
+    def update_thickness_pdf_url(inspection_id):
+        try:
+            inspection = ThicknessInspection.query.get_or_404(inspection_id)
+            data = request.json or {}
+            url = (data.get('pdf_url') or '').strip()
+            if not url:
+                return jsonify({"error": "pdf_url requerido"}), 400
+            inspection.pdf_url = url
+            db.session.commit()
+            return jsonify(inspection.to_dict())
+        except Exception as e:
+            db.session.rollback()
+            return jsonify({"error": str(e)}), 500
 
     @app.route('/api/thickness/inspections/<int:inspection_id>', methods=['GET', 'DELETE'])
     def handle_thickness_inspection_detail(inspection_id):

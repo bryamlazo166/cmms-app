@@ -665,6 +665,7 @@ _ENSURE_COLUMNS = [
     ("ot_materials", "unit", "VARCHAR(20)"),
     ("ot_materials", "is_installed", "BOOLEAN DEFAULT true"),
     ("technicians", "user_id", "INTEGER"),
+    ("thickness_inspections", "pdf_url", "VARCHAR(500)"),
 ]
 
 

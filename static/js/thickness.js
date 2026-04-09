@@ -83,6 +83,8 @@ async function openInspectionFor(equipmentId) {
         document.getElementById('capInspDate').value = new Date().toISOString().slice(0, 10);
         document.getElementById('capInspector').value = '';
         document.getElementById('capObservations').value = '';
+        const pdfInp = document.getElementById('capPdfUrl');
+        if (pdfInp) pdfInp.value = '';
         renderCaptureSections();
         updateSummary();
     } catch (e) {
@@ -256,6 +258,7 @@ async function saveInspection() {
     const date = document.getElementById('capInspDate').value;
     const inspector = document.getElementById('capInspector').value.trim();
     const observations = document.getElementById('capObservations').value.trim();
+    const pdfUrl = (document.getElementById('capPdfUrl').value || '').trim();
     if (!date) { alert('Seleccione la fecha de inspección.'); return; }
     if (!inspector) { alert('Ingrese el nombre del inspector.'); return; }
     const filled = Object.keys(_thkValues).length;
@@ -279,6 +282,7 @@ async function saveInspection() {
                 inspection_date: date,
                 inspector_name: inspector,
                 observations: observations,
+                pdf_url: pdfUrl || null,
                 frequency_days: 60,
                 readings: readings,
             })
@@ -329,6 +333,7 @@ async function openHistoryFor(equipmentId) {
                     <th>Alertas</th>
                     <th>Estado</th>
                     <th>Próxima</th>
+                    <th>PDF</th>
                 </tr>
             </thead>
             <tbody>
@@ -341,6 +346,10 @@ async function openHistoryFor(equipmentId) {
                         <td style="color:${i.alert_points > 0 ? '#ffd966' : '#bfd2ec'};">${i.alert_points || 0}</td>
                         <td><span class="pill ${i.semaphore_status}">${i.semaphore_status}</span></td>
                         <td>${i.next_due_date || '-'}</td>
+                        <td>${i.pdf_url
+                            ? `<a href="${i.pdf_url}" target="_blank" style="color:#5ac8fa;font-size:1.1rem;" title="Abrir PDF"><i class="fas fa-file-pdf"></i></a>`
+                            : `<button class="btn" style="font-size:.7rem;height:24px;padding:0 8px;" onclick="attachPdfToInspection(${i.id})">+</button>`
+                        }</td>
                     </tr>
                 `).join('')}
             </tbody>
@@ -350,8 +359,31 @@ async function openHistoryFor(equipmentId) {
     }
 }
 
+async function attachPdfToInspection(inspectionId) {
+    const url = prompt('Pega el enlace del PDF en Google Drive:');
+    if (!url || !url.trim()) return;
+    try {
+        const res = await fetch(`/api/thickness/inspections/${inspectionId}/pdf`, {
+            method: 'PUT',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ pdf_url: url.trim() })
+        });
+        if (!res.ok) {
+            const err = await res.json();
+            alert('Error: ' + (err.error || 'No se pudo guardar'));
+            return;
+        }
+        // Recargar histórico del equipo activo
+        const eq = _thkActiveEquipment;
+        if (eq) openHistoryFor(eq.equipment_id);
+    } catch (e) {
+        console.error('attachPdf error:', e);
+    }
+}
+
 window.reloadDashboard = reloadDashboard;
 window.openInspectionFor = openInspectionFor;
 window.openHistoryFor = openHistoryFor;
 window.backToDashboard = backToDashboard;
 window.saveInspection = saveInspection;
+window.attachPdfToInspection = attachPdfToInspection;
