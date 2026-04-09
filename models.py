@@ -1285,3 +1285,128 @@ class RotativeAssetHistory(db.Model):
         }
 
 
+# ── Thickness Inspection / Inspección de Espesores por Ultrasonido ───────────
+
+class ThicknessPoint(db.Model):
+    """Catálogo de puntos de medición de espesor para cada equipo.
+
+    Cada equipo tiene ~90 puntos catalogados (paletas, refuerzos, ejes, chaqueta, tapas).
+    Se crea 1 sola vez por equipo y luego se reutiliza en cada inspección.
+    """
+    __tablename__ = 'thickness_points'
+    __table_args__ = (
+        Index('ix_thk_pt_equip', 'equipment_id'),
+        Index('ix_thk_pt_group', 'equipment_id', 'group_name'),
+    )
+    id: Mapped[int] = mapped_column(primary_key=True)
+    equipment_id: Mapped[int] = mapped_column(ForeignKey('equipments.id'), nullable=False)
+    component_id: Mapped[Optional[int]] = mapped_column(ForeignKey('components.id'), nullable=True)
+    group_name: Mapped[str] = mapped_column(String(40), nullable=False)
+    # PALETA, REFUERZO, EJE, CHAQUETA, TAPA_MOTRIZ, TAPA_CONDUCIDA
+    section: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)  # 1..5
+    position: Mapped[str] = mapped_column(String(30), nullable=False)
+    # A/B/C, X/Y/Z, EJE_CENTRAL, SUPERIOR/DERECHO/INFERIOR/IZQUIERDO, P1..P10
+    nominal_thickness: Mapped[float] = mapped_column(Float, nullable=False, default=25.4)
+    alarm_thickness: Mapped[float] = mapped_column(Float, nullable=False, default=10.0)
+    scrap_thickness: Mapped[float] = mapped_column(Float, nullable=False, default=8.0)
+    last_value: Mapped[Optional[float]] = mapped_column(Float, nullable=True)
+    last_date: Mapped[Optional[str]] = mapped_column(String(20), nullable=True)
+    status: Mapped[str] = mapped_column(String(20), default='NORMAL')
+    # NORMAL, ALERTA, CRITICO
+    is_active: Mapped[bool] = mapped_column(Boolean, default=True)
+    order_index: Mapped[int] = mapped_column(Integer, default=0)
+
+    equipment = relationship("Equipment")
+    component = relationship("Component")
+
+    def to_dict(self):
+        return {
+            "id": self.id,
+            "equipment_id": self.equipment_id,
+            "component_id": self.component_id,
+            "group_name": self.group_name,
+            "section": self.section,
+            "position": self.position,
+            "nominal_thickness": self.nominal_thickness,
+            "alarm_thickness": self.alarm_thickness,
+            "scrap_thickness": self.scrap_thickness,
+            "last_value": self.last_value,
+            "last_date": self.last_date,
+            "status": self.status,
+            "is_active": self.is_active,
+            "order_index": self.order_index,
+        }
+
+
+class ThicknessInspection(db.Model):
+    """Inspección completa de espesores para un equipo en una fecha determinada."""
+    __tablename__ = 'thickness_inspections'
+    __table_args__ = (
+        Index('ix_thk_insp_equip', 'equipment_id'),
+        Index('ix_thk_insp_date', 'inspection_date'),
+    )
+    id: Mapped[int] = mapped_column(primary_key=True)
+    equipment_id: Mapped[int] = mapped_column(ForeignKey('equipments.id'), nullable=False)
+    inspection_date: Mapped[str] = mapped_column(String(20), nullable=False)
+    next_due_date: Mapped[Optional[str]] = mapped_column(String(20), nullable=True)
+    frequency_days: Mapped[int] = mapped_column(Integer, default=60)
+    inspector_name: Mapped[Optional[str]] = mapped_column(String(120), nullable=True)
+    status: Mapped[str] = mapped_column(String(20), default='COMPLETA')
+    # PROGRAMADA, EN_CURSO, COMPLETA
+    semaphore_status: Mapped[str] = mapped_column(String(20), default='VERDE')
+    total_points: Mapped[int] = mapped_column(Integer, default=0)
+    critical_points: Mapped[int] = mapped_column(Integer, default=0)
+    alert_points: Mapped[int] = mapped_column(Integer, default=0)
+    observations: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    created_by: Mapped[Optional[str]] = mapped_column(String(120), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+
+    equipment = relationship("Equipment")
+
+    def to_dict(self):
+        return {
+            "id": self.id,
+            "equipment_id": self.equipment_id,
+            "equipment_name": self.equipment.name if self.equipment else None,
+            "equipment_tag": self.equipment.tag if self.equipment else None,
+            "inspection_date": self.inspection_date,
+            "next_due_date": self.next_due_date,
+            "frequency_days": self.frequency_days,
+            "inspector_name": self.inspector_name,
+            "status": self.status,
+            "semaphore_status": self.semaphore_status,
+            "total_points": self.total_points,
+            "critical_points": self.critical_points,
+            "alert_points": self.alert_points,
+            "observations": self.observations,
+            "created_by": self.created_by,
+            "created_at": self.created_at.isoformat() if self.created_at else None,
+        }
+
+
+class ThicknessReading(db.Model):
+    """Lectura individual de un punto en una inspección."""
+    __tablename__ = 'thickness_readings'
+    __table_args__ = (
+        Index('ix_thk_rd_insp', 'inspection_id'),
+        Index('ix_thk_rd_pt', 'point_id'),
+    )
+    id: Mapped[int] = mapped_column(primary_key=True)
+    inspection_id: Mapped[int] = mapped_column(ForeignKey('thickness_inspections.id'), nullable=False)
+    point_id: Mapped[int] = mapped_column(ForeignKey('thickness_points.id'), nullable=False)
+    value_mm: Mapped[float] = mapped_column(Float, nullable=False)
+    is_critical: Mapped[bool] = mapped_column(Boolean, default=False)
+    is_alert: Mapped[bool] = mapped_column(Boolean, default=False)
+
+    inspection = relationship("ThicknessInspection", backref="readings")
+    point = relationship("ThicknessPoint")
+
+    def to_dict(self):
+        return {
+            "id": self.id,
+            "inspection_id": self.inspection_id,
+            "point_id": self.point_id,
+            "value_mm": self.value_mm,
+            "is_critical": self.is_critical,
+            "is_alert": self.is_alert,
+        }

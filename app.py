@@ -20,7 +20,8 @@ from models import (
     RotativeAsset, RotativeAssetHistory, RotativeAssetSpec, RotativeAssetBOM,
     InspectionRoute, InspectionItem, InspectionExecution, InspectionResult,
     Activity, Milestone, Notification, RolePermission,
-    FailureCatalog
+    FailureCatalog,
+    ThicknessPoint, ThicknessInspection, ThicknessReading,
 )
 from utils.crud_helpers import create_entry, get_entries, update_entry, delete_entry
 from utils.reporting_helpers import (
@@ -44,6 +45,7 @@ from routes.data_import_routes import register_data_import_routes
 from routes.master_data_routes import register_master_data_routes
 from routes.lubrication_routes import register_lubrication_routes
 from routes.monitoring_routes import register_monitoring_routes
+from routes.thickness_routes import register_thickness_routes
 from routes.notices_routes import register_notices_routes
 from routes.reports_routes import register_reports_routes
 from routes.rotative_assets_routes import register_rotative_assets_routes
@@ -196,6 +198,7 @@ _MODULE_ROUTES = {
     'monitoreo':        {'pages': ['/monitoreo'], 'api': ['/api/monitoring']},
     'lubricacion':      {'pages': ['/lubricacion'], 'api': ['/api/lubrication']},
     'inspecciones':     {'pages': ['/inspecciones'], 'api': ['/api/inspection']},
+    'espesores':        {'pages': ['/espesores'], 'api': ['/api/thickness']},
     'seguimiento':      {'pages': ['/seguimiento'], 'api': ['/api/activities', '/api/milestones']},
     'reportes':         {'pages': ['/reportes'], 'api': ['/api/reports']},
     'historial_equipo': {'pages': ['/equipo-historial'], 'api': ['/api/equipment/']},
@@ -211,6 +214,7 @@ _DEFAULT_PERMS = {
         'compras': {'view': True, 'edit': True}, 'almacen': {'view': True, 'edit': True},
         'herramientas': {'view': True, 'edit': True}, 'lubricacion': {'view': True, 'edit': True},
         'inspecciones': {'view': True, 'edit': True}, 'monitoreo': {'view': True, 'edit': True},
+        'espesores': {'view': True, 'edit': True},
         'seguimiento': {'view': True, 'edit': True}, 'reportes': {'view': True, 'edit': True},
         'activos_rotativos': {'view': True, 'edit': True}, 'activos_config': {'view': True, 'edit': False},
         'historial_equipo': {'view': True, 'edit': False}, 'exportar': {'view': False, 'edit': False},
@@ -221,6 +225,7 @@ _DEFAULT_PERMS = {
         'compras': {'view': True, 'edit': True}, 'almacen': {'view': True, 'edit': False},
         'herramientas': {'view': True, 'edit': False}, 'lubricacion': {'view': True, 'edit': True},
         'inspecciones': {'view': True, 'edit': True}, 'monitoreo': {'view': True, 'edit': True},
+        'espesores': {'view': True, 'edit': True},
         'seguimiento': {'view': True, 'edit': True}, 'reportes': {'view': True, 'edit': False},
         'activos_rotativos': {'view': True, 'edit': False}, 'activos_config': {'view': True, 'edit': False},
         'historial_equipo': {'view': True, 'edit': False}, 'exportar': {'view': False, 'edit': False},
@@ -231,6 +236,7 @@ _DEFAULT_PERMS = {
         'compras': {'view': True, 'edit': False}, 'almacen': {'view': True, 'edit': False},
         'herramientas': {'view': True, 'edit': False}, 'lubricacion': {'view': True, 'edit': True},
         'inspecciones': {'view': True, 'edit': True}, 'monitoreo': {'view': True, 'edit': True},
+        'espesores': {'view': True, 'edit': True},
         'seguimiento': {'view': True, 'edit': True}, 'reportes': {'view': True, 'edit': False},
         'activos_rotativos': {'view': True, 'edit': False}, 'activos_config': {'view': True, 'edit': False},
         'historial_equipo': {'view': True, 'edit': False}, 'exportar': {'view': False, 'edit': False},
@@ -241,6 +247,7 @@ _DEFAULT_PERMS = {
         'compras': {'view': False, 'edit': False}, 'almacen': {'view': False, 'edit': False},
         'herramientas': {'view': True, 'edit': False}, 'lubricacion': {'view': True, 'edit': True},
         'inspecciones': {'view': True, 'edit': True}, 'monitoreo': {'view': True, 'edit': True},
+        'espesores': {'view': True, 'edit': True},
         'seguimiento': {'view': False, 'edit': False}, 'reportes': {'view': False, 'edit': False},
         'activos_rotativos': {'view': False, 'edit': False}, 'activos_config': {'view': False, 'edit': False},
         'historial_equipo': {'view': False, 'edit': False}, 'exportar': {'view': False, 'edit': False},
@@ -251,6 +258,7 @@ _DEFAULT_PERMS = {
         'compras': {'view': False, 'edit': False}, 'almacen': {'view': False, 'edit': False},
         'herramientas': {'view': False, 'edit': False}, 'lubricacion': {'view': False, 'edit': False},
         'inspecciones': {'view': False, 'edit': False}, 'monitoreo': {'view': False, 'edit': False},
+        'espesores': {'view': False, 'edit': False},
         'seguimiento': {'view': False, 'edit': False}, 'reportes': {'view': False, 'edit': False},
         'activos_rotativos': {'view': False, 'edit': False}, 'activos_config': {'view': False, 'edit': False},
         'historial_equipo': {'view': False, 'edit': False}, 'exportar': {'view': False, 'edit': False},
@@ -261,6 +269,7 @@ _DEFAULT_PERMS = {
         'compras': {'view': True, 'edit': True}, 'almacen': {'view': True, 'edit': True},
         'herramientas': {'view': True, 'edit': True}, 'lubricacion': {'view': False, 'edit': False},
         'inspecciones': {'view': False, 'edit': False}, 'monitoreo': {'view': False, 'edit': False},
+        'espesores': {'view': False, 'edit': False},
         'seguimiento': {'view': False, 'edit': False}, 'reportes': {'view': False, 'edit': False},
         'activos_rotativos': {'view': False, 'edit': False}, 'activos_config': {'view': False, 'edit': False},
         'historial_equipo': {'view': False, 'edit': False}, 'exportar': {'view': False, 'edit': False},
@@ -271,6 +280,7 @@ _DEFAULT_PERMS = {
         'compras': {'view': True, 'edit': False}, 'almacen': {'view': True, 'edit': False},
         'herramientas': {'view': True, 'edit': False}, 'lubricacion': {'view': True, 'edit': False},
         'inspecciones': {'view': True, 'edit': False}, 'monitoreo': {'view': True, 'edit': False},
+        'espesores': {'view': True, 'edit': False},
         'seguimiento': {'view': True, 'edit': False}, 'reportes': {'view': True, 'edit': False},
         'activos_rotativos': {'view': True, 'edit': False}, 'activos_config': {'view': True, 'edit': False},
         'historial_equipo': {'view': True, 'edit': False}, 'exportar': {'view': False, 'edit': False},
@@ -533,6 +543,17 @@ register_monitoring_routes(
     _monitoring_semaphore_for_value=_monitoring_semaphore_for_value,
     _nice_axis_step=_nice_axis_step,
     _parse_date_flexible=_parse_date_flexible,
+)
+
+register_thickness_routes(
+    app=app,
+    db=db,
+    logger=logger,
+    ThicknessPoint=ThicknessPoint,
+    ThicknessInspection=ThicknessInspection,
+    ThicknessReading=ThicknessReading,
+    Equipment=Equipment,
+    MaintenanceNotice=MaintenanceNotice,
 )
 
 register_rotative_assets_routes(

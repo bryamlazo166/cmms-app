@@ -12,6 +12,7 @@
         { href: '/monitoreo', icon: 'fas fa-wave-square', label: 'Monitoreo', tip: 'Monitoreo' },
         { href: '/lubricacion', icon: 'fas fa-oil-can', label: 'Lubricacion', tip: 'Lubricacion' },
         { href: '/inspecciones', icon: 'fas fa-clipboard-check', label: 'Inspecciones', tip: 'Inspecciones' },
+        { href: '/espesores', icon: 'fas fa-ruler-vertical', label: 'Espesores', tip: 'Espesores UT' },
         { href: '/seguimiento', icon: 'fas fa-tasks', label: 'Seguimiento', tip: 'Seguimiento' },
         { href: '/calendario', icon: 'fas fa-calendar-alt', label: 'Calendario', tip: 'Plan Mtto' },
         { href: '/reportes', icon: 'fas fa-file-contract', label: 'Reportes', tip: 'Reportes' }
@@ -97,7 +98,8 @@
         'almacen': '/almacen', 'herramientas': '/herramientas',
         'activos_rotativos': '/activos-rotativos', 'activos_config': '/configuracion',
         'monitoreo': '/monitoreo', 'lubricacion': '/lubricacion',
-        'inspecciones': '/inspecciones', 'seguimiento': '/seguimiento',
+        'inspecciones': '/inspecciones', 'espesores': '/espesores',
+        'seguimiento': '/seguimiento',
         'reportes': '/reportes', 'historial_equipo': '/equipo-historial',
     };
 

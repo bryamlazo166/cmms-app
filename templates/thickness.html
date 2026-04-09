@@ -1,0 +1,138 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <link rel="icon" type="image/svg+xml" href="/static/favicon.svg">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Inspección de Espesores - CMMS</title>
+    <link rel="stylesheet" href="/static/css/style.css?v={{ v }}">
+    <link rel="stylesheet" href="/static/css/sidebar.css?v={{ v }}">
+    <link href="https://fonts.googleapis.com/css2?family=Roboto:wght@300;400;500;700&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css">
+    <style>
+        .wrap{max-width:1500px;margin:0 auto;padding:16px;}
+        .header{background:linear-gradient(120deg,#1e2430,#151b24);border:1px solid #2d3f56;border-radius:12px;padding:16px;margin-bottom:12px;}
+        .header h1{margin:0;color:#5ac8fa;font-size:1.4rem;}
+        .header p{margin:6px 0 0;color:#9ab0cb;font-size:.85rem;}
+        .toolbar{display:flex;gap:10px;align-items:center;margin-bottom:14px;flex-wrap:wrap;}
+        .toolbar select, .toolbar input{height:38px;background:#0f1319;color:#d5e2f5;border:1px solid #344964;border-radius:8px;padding:6px 10px;font-size:.9rem;}
+        .btn{height:38px;border:1px solid #385273;border-radius:8px;background:#193451;color:#d7e9ff;padding:0 16px;font-weight:600;cursor:pointer;font-size:.88rem;}
+        .btn:hover{background:#234870;}
+        .btn.primary{background:#0a84ff;border-color:#0a84ff;color:#fff;}
+        .btn.primary:hover{background:#1f95ff;}
+        .btn.success{background:#30D158;border-color:#30D158;color:#fff;}
+        .btn.danger{background:#FF453A;border-color:#FF453A;color:#fff;}
+        .dashboard-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(280px,1fr));gap:12px;margin-bottom:16px;}
+        .eq-card{background:#181d24;border:1px solid #2f4257;border-radius:12px;padding:12px;cursor:pointer;transition:transform 0.15s, border-color 0.15s;}
+        .eq-card:hover{transform:translateY(-2px);border-color:#5ac8fa;}
+        .eq-card .tag{font-weight:700;color:#5ac8fa;font-size:1.05rem;}
+        .eq-card .name{color:#bfd2ec;font-size:.85rem;margin-top:2px;}
+        .eq-card .row{display:flex;justify-content:space-between;align-items:center;margin-top:8px;font-size:.78rem;color:#9ab0cb;}
+        .eq-card .pill{padding:3px 10px;border-radius:999px;font-weight:700;font-size:.75rem;}
+        .pill.VERDE{background:rgba(48,209,88,.18);color:#30D158;}
+        .pill.AMARILLO{background:rgba(255,193,7,.22);color:#ffd966;}
+        .pill.ROJO{background:rgba(244,67,54,.24);color:#ff9690;}
+        .pill.PENDIENTE{background:rgba(255,255,255,.1);color:#bdc7d8;}
+        .panel{background:#181d24;border:1px solid #2f4257;border-radius:12px;padding:14px;margin-bottom:12px;}
+        .panel h3{margin:0 0 12px;color:#5ac8fa;font-size:1rem;border-bottom:1px solid #2f4257;padding-bottom:8px;}
+        .panel h4{margin:14px 0 8px;color:#9ab0cb;font-size:.85rem;text-transform:uppercase;letter-spacing:0.5px;}
+        .thk-table{width:100%;border-collapse:collapse;margin-bottom:8px;}
+        .thk-table th{background:#243047;color:#9fe5ff;text-align:center;padding:8px;font-size:.8rem;border:1px solid #3a4f68;}
+        .thk-table td{padding:6px;border:1px solid rgba(255,255,255,.08);text-align:center;}
+        .thk-table td.label{background:#1e2530;color:#9ab0cb;font-weight:700;font-size:.78rem;text-align:center;}
+        .thk-table input{width:64px;background:#0f1319;color:#d5e2f5;border:1px solid #344964;border-radius:6px;padding:4px 6px;font-size:.85rem;text-align:center;font-weight:600;}
+        .thk-table input.normal{border-color:#30D158;}
+        .thk-table input.alert{border-color:#FF9F0A;background:rgba(255,159,10,0.08);color:#ffcb70;}
+        .thk-table input.critical{border-color:#FF453A;background:rgba(255,69,58,0.12);color:#ff9690;animation:pulse 1.5s infinite;}
+        @keyframes pulse{0%,100%{box-shadow:0 0 0 0 rgba(255,69,58,0.5);}50%{box-shadow:0 0 0 4px rgba(255,69,58,0);}}
+        .summary-bar{background:#1e2530;border:1px solid #344964;border-radius:8px;padding:10px 14px;margin-top:10px;display:flex;gap:14px;align-items:center;font-size:.85rem;}
+        .summary-bar .item{color:#bfd2ec;}
+        .summary-bar .item strong{color:#fff;}
+        .hidden{display:none !important;}
+        .actions-row{display:flex;gap:10px;justify-content:flex-end;margin-top:14px;}
+        .empty-msg{padding:40px;text-align:center;color:#666;font-size:.95rem;}
+    </style>
+</head>
+<body>
+<nav class="sidebar">
+    <div class="logo-details"><i class="fas fa-industry icon"></i><div class="logo_name">CMMS Pro</div><i class="fas fa-bars" id="btn_toggle"></i></div>
+    <ul class="nav-list">
+        <li><a href="/"><i class="fas fa-chart-line"></i><span class="links_name">Dashboard</span></a></li>
+        <li><a href="/avisos"><i class="fas fa-bell"></i><span class="links_name">Avisos</span></a></li>
+        <li><a href="/ordenes"><i class="fas fa-tools"></i><span class="links_name">Ordenes</span></a></li>
+        <li><a href="/configuracion"><i class="fas fa-sitemap"></i><span class="links_name">Activos</span></a></li>
+        <li><a href="/lubricacion"><i class="fas fa-oil-can"></i><span class="links_name">Lubricacion</span></a></li>
+        <li><a href="/inspecciones"><i class="fas fa-clipboard-check"></i><span class="links_name">Inspecciones</span></a></li>
+        <li><a href="/espesores" class="active"><i class="fas fa-ruler-vertical"></i><span class="links_name">Espesores</span></a></li>
+        <li><a href="/reportes"><i class="fas fa-file-contract"></i><span class="links_name">Reportes</span></a></li>
+    </ul>
+</nav>
+
+<section class="home-section">
+    <div class="wrap">
+        <div class="header">
+            <h1><i class="fas fa-ruler-vertical"></i> Inspección de Espesores por Ultrasonido</h1>
+            <p>Control de calibración de espesores en digestores. Frecuencia mínima: cada 60 días.</p>
+        </div>
+
+        <!-- Dashboard de equipos -->
+        <div id="thkDashboard">
+            <div class="toolbar">
+                <button class="btn primary" onclick="reloadDashboard()"><i class="fas fa-sync"></i> Actualizar</button>
+                <span style="color:#9ab0cb;font-size:.85rem;">Selecciona un equipo para ver detalles o iniciar nueva inspección</span>
+            </div>
+            <div id="thkDashGrid" class="dashboard-grid"></div>
+        </div>
+
+        <!-- Vista de captura de inspección -->
+        <div id="thkCapture" class="hidden">
+            <div class="toolbar">
+                <button class="btn" onclick="backToDashboard()"><i class="fas fa-arrow-left"></i> Volver</button>
+                <span id="captureTitle" style="color:#5ac8fa;font-weight:700;font-size:1.05rem;"></span>
+                <div style="margin-left:auto;display:flex;gap:10px;align-items:center;">
+                    <label style="color:#9ab0cb;font-size:.85rem;">Fecha:</label>
+                    <input type="date" id="capInspDate">
+                    <label style="color:#9ab0cb;font-size:.85rem;">Inspector:</label>
+                    <input type="text" id="capInspector" placeholder="Nombre" style="width:160px;">
+                </div>
+            </div>
+
+            <div id="thkSections"></div>
+
+            <div class="panel">
+                <h4>Observaciones generales</h4>
+                <textarea id="capObservations" rows="3" style="width:100%;background:#0f1319;color:#d5e2f5;border:1px solid #344964;border-radius:8px;padding:8px;font-family:inherit;font-size:.88rem;" placeholder="Comentarios sobre la inspección, condiciones del equipo, etc."></textarea>
+            </div>
+
+            <div class="summary-bar" id="summaryBar">
+                <span class="item">Total puntos: <strong id="sumTotal">0</strong></span>
+                <span class="item">Llenados: <strong id="sumFilled" style="color:#5ac8fa;">0</strong></span>
+                <span class="item">Normales: <strong id="sumNormal" style="color:#30D158;">0</strong></span>
+                <span class="item">Alertas: <strong id="sumAlert" style="color:#FF9F0A;">0</strong></span>
+                <span class="item">Críticos: <strong id="sumCritical" style="color:#FF453A;">0</strong></span>
+            </div>
+
+            <div class="actions-row">
+                <button class="btn" onclick="backToDashboard()">Cancelar</button>
+                <button class="btn success" onclick="saveInspection()"><i class="fas fa-save"></i> Guardar Inspección</button>
+            </div>
+        </div>
+
+        <!-- Vista de histórico -->
+        <div id="thkHistory" class="hidden">
+            <div class="toolbar">
+                <button class="btn" onclick="backToDashboard()"><i class="fas fa-arrow-left"></i> Volver</button>
+                <span id="historyTitle" style="color:#5ac8fa;font-weight:700;font-size:1.05rem;"></span>
+            </div>
+            <div class="panel">
+                <h3>Histórico de inspecciones</h3>
+                <div id="historyList"></div>
+            </div>
+        </div>
+    </div>
+</section>
+
+<script src="/static/js/sidebar.js?v={{ v }}"></script>
+<script src="/static/js/thickness.js?v={{ v }}"></script>
+</body>
+</html>
