@@ -13,6 +13,7 @@
         { href: '/lubricacion', icon: 'fas fa-oil-can', label: 'Lubricacion', tip: 'Lubricacion' },
         { href: '/inspecciones', icon: 'fas fa-clipboard-check', label: 'Inspecciones', tip: 'Inspecciones' },
         { href: '/espesores', icon: 'fas fa-ruler-vertical', label: 'Espesores', tip: 'Espesores UT' },
+        { href: '/paradas', icon: 'fas fa-hard-hat', label: 'Paradas', tip: 'Parada de Planta' },
         { href: '/cockpit', icon: 'fas fa-chart-pie', label: 'Cockpit Gerencial', tip: 'Cockpit Gerencial', restricted: true },
         { href: '/seguimiento', icon: 'fas fa-tasks', label: 'Seguimiento', tip: 'Seguimiento' },
         { href: '/calendario', icon: 'fas fa-calendar-alt', label: 'Calendario', tip: 'Plan Mtto' },
@@ -100,7 +101,7 @@
         'activos_rotativos': '/activos-rotativos', 'activos_config': '/configuracion',
         'monitoreo': '/monitoreo', 'lubricacion': '/lubricacion',
         'inspecciones': '/inspecciones', 'espesores': '/espesores',
-        'cockpit': '/cockpit',
+        'paradas': '/paradas', 'cockpit': '/cockpit',
         'seguimiento': '/seguimiento',
         'reportes': '/reportes', 'historial_equipo': '/equipo-historial',
     };

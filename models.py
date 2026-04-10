@@ -393,6 +393,9 @@ class WorkOrder(db.Model):
     # Link to rotative asset (the physical device being worked on)
     rotative_asset_id: Mapped[int | None] = mapped_column(Integer, nullable=True)
 
+    # Shutdown / Parada de planta
+    shutdown_id: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)
+
     # Report tracking
     report_required: Mapped[bool] = mapped_column(Boolean, default=False)
     report_status: Mapped[str | None] = mapped_column(String(20), nullable=True)
@@ -1412,4 +1415,66 @@ class ThicknessReading(db.Model):
             "value_mm": self.value_mm,
             "is_critical": self.is_critical,
             "is_alert": self.is_alert,
+        }
+
+
+# ── Shutdown / Parada de Planta ───────────────────────────────────────────────
+
+class Shutdown(db.Model):
+    """Programa de parada de planta (generalmente domingos)."""
+    __tablename__ = 'shutdowns'
+    __table_args__ = (
+        Index('ix_shutdown_date', 'shutdown_date'),
+    )
+    id: Mapped[int] = mapped_column(primary_key=True)
+    name: Mapped[str] = mapped_column(String(200), nullable=False)
+    shutdown_date: Mapped[str] = mapped_column(String(20), nullable=False)
+    shutdown_type: Mapped[str] = mapped_column(String(20), default='TOTAL')
+    # TOTAL, PARCIAL
+    start_time: Mapped[str] = mapped_column(String(10), default='07:00')
+    end_time: Mapped[str] = mapped_column(String(10), default='19:00')
+    overtime: Mapped[bool] = mapped_column(Boolean, default=False)
+    status: Mapped[str] = mapped_column(String(20), default='PLANIFICADA')
+    # PLANIFICADA, EN_CURSO, COMPLETADA, CANCELADA
+    production_requirements: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    # Requerimientos a producción (equipo limpio, retirar pallets, etc.)
+    observations: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    created_by: Mapped[Optional[str]] = mapped_column(String(120), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+
+    areas = relationship("ShutdownArea", backref="shutdown", cascade="all, delete-orphan")
+
+    def to_dict(self):
+        return {
+            "id": self.id,
+            "name": self.name,
+            "shutdown_date": self.shutdown_date,
+            "shutdown_type": self.shutdown_type,
+            "start_time": self.start_time,
+            "end_time": self.end_time,
+            "overtime": self.overtime,
+            "status": self.status,
+            "production_requirements": self.production_requirements,
+            "observations": self.observations,
+            "created_by": self.created_by,
+            "created_at": self.created_at.isoformat() if self.created_at else None,
+            "areas": [a.to_dict() for a in self.areas] if self.areas else [],
+        }
+
+
+class ShutdownArea(db.Model):
+    """Áreas involucradas en una parada."""
+    __tablename__ = 'shutdown_areas'
+    id: Mapped[int] = mapped_column(primary_key=True)
+    shutdown_id: Mapped[int] = mapped_column(ForeignKey('shutdowns.id'), nullable=False)
+    area_id: Mapped[int] = mapped_column(ForeignKey('areas.id'), nullable=False)
+
+    area = relationship("Area")
+
+    def to_dict(self):
+        return {
+            "id": self.id,
+            "shutdown_id": self.shutdown_id,
+            "area_id": self.area_id,
+            "area_name": self.area.name if self.area else None,
         }

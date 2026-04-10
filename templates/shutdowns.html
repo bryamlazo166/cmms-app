@@ -1,0 +1,180 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <link rel="icon" type="image/svg+xml" href="/static/favicon.svg">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Paradas de Planta - CMMS</title>
+    <link rel="stylesheet" href="/static/css/style.css?v={{ v }}">
+    <link rel="stylesheet" href="/static/css/sidebar.css?v={{ v }}">
+    <link href="https://fonts.googleapis.com/css2?family=Roboto:wght@300;400;500;700&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css">
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
+    <style>
+        .wrap{max-width:1500px;margin:0 auto;padding:16px;}
+        .header{background:linear-gradient(120deg,#1e2430,#151b24);border:1px solid #2d3f56;border-radius:12px;padding:16px;margin-bottom:14px;}
+        .header h1{margin:0;color:#FF9F0A;font-size:1.4rem;}
+        .header p{margin:4px 0 0;color:#9ab0cb;font-size:.85rem;}
+        .toolbar{display:flex;gap:10px;align-items:center;margin-bottom:14px;flex-wrap:wrap;}
+        .toolbar select,.toolbar input{height:38px;background:#0f1319;color:#d5e2f5;border:1px solid #344964;border-radius:8px;padding:6px 10px;}
+        .btn{height:38px;border-radius:8px;padding:0 16px;font-weight:600;cursor:pointer;font-size:.88rem;border:none;display:inline-flex;align-items:center;gap:6px;}
+        .btn.primary{background:#0a84ff;color:#fff;}.btn.primary:hover{background:#1f95ff;}
+        .btn.success{background:#30D158;color:#fff;}.btn.danger{background:#FF453A;color:#fff;}
+        .btn.secondary{background:#2a2d35;color:#d6d8de;border:1px solid #4a5361;}
+        .btn.warning{background:#FF9F0A;color:#fff;}
+        .panel{background:#181d24;border:1px solid #2f4257;border-radius:12px;padding:14px;margin-bottom:14px;}
+        .panel h3{margin:0 0 12px;color:#FF9F0A;font-size:1rem;border-bottom:1px solid #2f4257;padding-bottom:8px;}
+        .shutdown-card{background:#1b212b;border:1px solid #344964;border-radius:10px;padding:14px;margin-bottom:10px;cursor:pointer;transition:transform .15s;}
+        .shutdown-card:hover{transform:translateY(-2px);border-color:#FF9F0A;}
+        .shutdown-card .title{font-weight:700;color:#eff6ff;font-size:1rem;}
+        .shutdown-card .meta{font-size:.82rem;color:#9ab0cb;margin-top:4px;}
+        .shutdown-card .stats{display:flex;gap:14px;margin-top:10px;font-size:.85rem;}
+        .shutdown-card .stats .item strong{color:#fff;}
+        .pill{display:inline-block;padding:2px 10px;border-radius:999px;font-size:.78rem;font-weight:700;}
+        .pill.PLANIFICADA{background:rgba(10,132,255,.2);color:#5ac8fa;}
+        .pill.EN_CURSO{background:rgba(255,159,10,.2);color:#FF9F0A;}
+        .pill.COMPLETADA{background:rgba(48,209,88,.2);color:#30D158;}
+        .pill.CANCELADA{background:rgba(255,69,58,.2);color:#ff9690;}
+        .area-badge{display:inline-block;padding:2px 8px;border-radius:6px;background:rgba(48,209,88,.12);color:#30D158;font-size:.75rem;margin:2px;}
+        .ot-row{display:grid;grid-template-columns:80px 90px 1fr 120px 60px 80px;gap:8px;padding:8px;border-bottom:1px solid rgba(255,255,255,.06);font-size:.85rem;align-items:center;}
+        .ot-row.head{color:#9ab0cb;font-weight:700;font-size:.78rem;text-transform:uppercase;border-bottom:1px solid #344964;}
+        dialog{background:#1c1c1e;color:#eff6ff;border:1px solid rgba(255,255,255,.12);border-radius:14px;padding:24px;max-width:700px;width:95%;}
+        dialog::backdrop{background:rgba(0,0,0,.7);}
+        dialog h2{margin:0 0 16px;color:#FF9F0A;}
+        .form-row{display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:12px;}
+        .form-group{margin-bottom:12px;}
+        .form-group label{display:block;font-size:.78rem;color:#9ab0cb;margin-bottom:4px;text-transform:uppercase;}
+        .form-group input,.form-group select,.form-group textarea{width:100%;padding:8px 10px;border-radius:8px;background:rgba(255,255,255,.06);border:1px solid rgba(255,255,255,.12);color:rgba(255,255,255,.85);font-family:inherit;font-size:.88rem;}
+        .area-checks{display:flex;flex-wrap:wrap;gap:8px;}
+        .area-checks label{display:flex;align-items:center;gap:6px;padding:6px 12px;border:1px solid #344964;border-radius:8px;cursor:pointer;font-size:.85rem;transition:all .15s;}
+        .area-checks label:has(input:checked){background:rgba(48,209,88,.15);border-color:#30D158;color:#30D158;}
+        .area-checks input{accent-color:#30D158;}
+        .hidden{display:none !important;}
+        .empty{text-align:center;color:#666;padding:30px;font-size:.9rem;}
+        #printArea{background:#181d24;border-radius:12px;padding:20px;}
+        @media print{
+            body{background:#fff !important;color:#000 !important;}
+            .sidebar{display:none !important;}.home-section{margin-left:0 !important;}
+            .toolbar,.btn{display:none !important;}
+            .panel,.shutdown-card{background:#fff !important;border:1px solid #ccc !important;color:#000 !important;break-inside:avoid;}
+            @page{size:A4 landscape;margin:10mm;}
+        }
+    </style>
+</head>
+<body>
+<nav class="sidebar"><div class="logo-details"><i class="fas fa-industry icon"></i><div class="logo_name">CMMS Pro</div><i class="fas fa-bars" id="btn_toggle"></i></div><ul class="nav-list"></ul></nav>
+<section class="home-section">
+    <div class="wrap">
+        <div class="header">
+            <h1><i class="fas fa-hard-hat"></i> Paradas de Planta</h1>
+            <p>Programa de mantenimiento para domingos y paradas programadas. Horario base: 07:00 — 19:00.</p>
+        </div>
+
+        <!-- LISTA DE PARADAS -->
+        <div id="viewList">
+            <div class="toolbar">
+                <button class="btn primary" onclick="openCreateModal()"><i class="fas fa-plus"></i> Nueva Parada</button>
+                <select id="filterYear" onchange="loadShutdowns()"></select>
+                <select id="filterStatus" onchange="loadShutdowns()">
+                    <option value="">Todos</option>
+                    <option value="PLANIFICADA">Planificada</option>
+                    <option value="EN_CURSO">En Curso</option>
+                    <option value="COMPLETADA">Completada</option>
+                </select>
+            </div>
+            <div id="shutdownList"></div>
+        </div>
+
+        <!-- DETALLE DE UNA PARADA -->
+        <div id="viewDetail" class="hidden">
+            <div class="toolbar">
+                <button class="btn secondary" onclick="backToList()"><i class="fas fa-arrow-left"></i> Volver</button>
+                <span id="detailTitle" style="color:#FF9F0A;font-weight:700;font-size:1.1rem;"></span>
+                <div style="margin-left:auto;display:flex;gap:8px;">
+                    <button class="btn success" onclick="exportShutdownPdf()"><i class="fas fa-file-pdf"></i> Exportar PDF</button>
+                    <button class="btn warning" onclick="openAddOTModal()"><i class="fas fa-plus"></i> Agregar OTs</button>
+                    <button class="btn primary" onclick="editCurrentShutdown()"><i class="fas fa-edit"></i> Editar</button>
+                </div>
+            </div>
+
+            <div id="printArea">
+                <!-- Info general -->
+                <div class="panel" id="detailInfo"></div>
+
+                <!-- Requerimientos a producción -->
+                <div class="panel" id="detailProdReq" style="display:none;">
+                    <h3><i class="fas fa-clipboard-list"></i> Requerimientos a Producción</h3>
+                    <div id="prodReqContent" style="white-space:pre-wrap;font-size:.9rem;color:#d5e2f5;line-height:1.5;"></div>
+                </div>
+
+                <!-- OTs por área -->
+                <div id="detailOTsByArea"></div>
+
+                <!-- Resumen -->
+                <div class="panel" id="detailSummary"></div>
+            </div>
+        </div>
+    </div>
+
+    <!-- MODAL CREAR/EDITAR PARADA -->
+    <dialog id="shutdownModal">
+        <h2 id="modalTitle">Nueva Parada</h2>
+        <input type="hidden" id="modalId">
+        <div class="form-row">
+            <div class="form-group">
+                <label>Fecha</label>
+                <input type="date" id="modalDate" required>
+            </div>
+            <div class="form-group">
+                <label>Tipo</label>
+                <select id="modalType" onchange="toggleAreaChecks()">
+                    <option value="TOTAL">Parada Total</option>
+                    <option value="PARCIAL">Parada Parcial</option>
+                </select>
+            </div>
+        </div>
+        <div class="form-row">
+            <div class="form-group">
+                <label>Hora inicio</label>
+                <input type="time" id="modalStart" value="07:00">
+            </div>
+            <div class="form-group">
+                <label>Hora fin</label>
+                <input type="time" id="modalEnd" value="19:00">
+            </div>
+        </div>
+        <div class="form-group" id="areaChecksGroup">
+            <label>Areas que paran</label>
+            <div class="area-checks" id="areaCheckboxes"></div>
+        </div>
+        <div class="form-group">
+            <label><i class="fas fa-clipboard-list"></i> Requerimientos a Producción</label>
+            <textarea id="modalProdReq" rows="4" placeholder="Ej:&#10;- Equipo D5 limpio y vaciado&#10;- Retirar pallets de zona secador&#10;- Zona de molino despejada&#10;- Cortar vapor a las 06:00"></textarea>
+        </div>
+        <div class="form-group">
+            <label>Observaciones</label>
+            <textarea id="modalObs" rows="2" placeholder="Observaciones generales..."></textarea>
+        </div>
+        <div style="display:flex;gap:10px;justify-content:flex-end;margin-top:16px;">
+            <button class="btn secondary" onclick="document.getElementById('shutdownModal').close()">Cancelar</button>
+            <button class="btn primary" onclick="saveShutdown()"><i class="fas fa-save"></i> Guardar</button>
+        </div>
+    </dialog>
+
+    <!-- MODAL AGREGAR OTs -->
+    <dialog id="addOTModal" style="max-width:800px;">
+        <h2>Agregar OTs a la Parada</h2>
+        <p style="color:#9ab0cb;font-size:.85rem;">OTs abiertas/programadas sin parada asignada. Marque las que desea incluir.</p>
+        <div id="suggestedOTs" style="max-height:400px;overflow-y:auto;"></div>
+        <div style="display:flex;gap:10px;justify-content:flex-end;margin-top:16px;">
+            <button class="btn secondary" onclick="document.getElementById('addOTModal').close()">Cancelar</button>
+            <button class="btn primary" onclick="confirmAddOTs()"><i class="fas fa-plus"></i> Agregar Seleccionadas</button>
+        </div>
+    </dialog>
+</section>
+
+<script src="/static/js/sidebar.js?v={{ v }}"></script>
+<script src="/static/js/shutdowns.js?v={{ v }}"></script>
+</body>
+</html>

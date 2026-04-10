@@ -22,6 +22,7 @@ from models import (
     Activity, Milestone, Notification, RolePermission,
     FailureCatalog,
     ThicknessPoint, ThicknessInspection, ThicknessReading,
+    Shutdown, ShutdownArea,
 )
 from utils.crud_helpers import create_entry, get_entries, update_entry, delete_entry
 from utils.reporting_helpers import (
@@ -46,6 +47,7 @@ from routes.master_data_routes import register_master_data_routes
 from routes.lubrication_routes import register_lubrication_routes
 from routes.monitoring_routes import register_monitoring_routes
 from routes.thickness_routes import register_thickness_routes
+from routes.shutdown_routes import register_shutdown_routes
 from routes.notices_routes import register_notices_routes
 from routes.reports_routes import register_reports_routes
 from routes.rotative_assets_routes import register_rotative_assets_routes
@@ -200,6 +202,7 @@ _MODULE_ROUTES = {
     'inspecciones':     {'pages': ['/inspecciones'], 'api': ['/api/inspection']},
     'espesores':        {'pages': ['/espesores'], 'api': ['/api/thickness']},
     'cockpit':          {'pages': ['/cockpit'], 'api': []},
+    'paradas':          {'pages': ['/paradas'], 'api': ['/api/shutdowns']},
     'seguimiento':      {'pages': ['/seguimiento'], 'api': ['/api/activities', '/api/milestones']},
     'reportes':         {'pages': ['/reportes'], 'api': ['/api/reports']},
     'historial_equipo': {'pages': ['/equipo-historial'], 'api': ['/api/equipment/']},
@@ -227,6 +230,7 @@ _DEFAULT_PERMS = {
         'herramientas': {'view': True, 'edit': False}, 'lubricacion': {'view': True, 'edit': True},
         'inspecciones': {'view': True, 'edit': True}, 'monitoreo': {'view': True, 'edit': True},
         'espesores': {'view': True, 'edit': True},
+        'paradas': {'view': True, 'edit': True},
         'seguimiento': {'view': True, 'edit': True}, 'reportes': {'view': True, 'edit': False},
         'activos_rotativos': {'view': True, 'edit': False}, 'activos_config': {'view': True, 'edit': False},
         'historial_equipo': {'view': True, 'edit': False}, 'exportar': {'view': False, 'edit': False},
@@ -238,6 +242,7 @@ _DEFAULT_PERMS = {
         'herramientas': {'view': True, 'edit': False}, 'lubricacion': {'view': True, 'edit': True},
         'inspecciones': {'view': True, 'edit': True}, 'monitoreo': {'view': True, 'edit': True},
         'espesores': {'view': True, 'edit': True},
+        'paradas': {'view': True, 'edit': True},
         'seguimiento': {'view': True, 'edit': True}, 'reportes': {'view': True, 'edit': False},
         'activos_rotativos': {'view': True, 'edit': False}, 'activos_config': {'view': True, 'edit': False},
         'historial_equipo': {'view': True, 'edit': False}, 'exportar': {'view': False, 'edit': False},
@@ -249,6 +254,7 @@ _DEFAULT_PERMS = {
         'herramientas': {'view': True, 'edit': False}, 'lubricacion': {'view': True, 'edit': True},
         'inspecciones': {'view': True, 'edit': True}, 'monitoreo': {'view': True, 'edit': True},
         'espesores': {'view': True, 'edit': True},
+        'paradas': {'view': True, 'edit': False},
         'seguimiento': {'view': False, 'edit': False}, 'reportes': {'view': False, 'edit': False},
         'activos_rotativos': {'view': False, 'edit': False}, 'activos_config': {'view': False, 'edit': False},
         'historial_equipo': {'view': False, 'edit': False}, 'exportar': {'view': False, 'edit': False},
@@ -260,6 +266,7 @@ _DEFAULT_PERMS = {
         'herramientas': {'view': False, 'edit': False}, 'lubricacion': {'view': False, 'edit': False},
         'inspecciones': {'view': False, 'edit': False}, 'monitoreo': {'view': False, 'edit': False},
         'espesores': {'view': False, 'edit': False},
+        'paradas': {'view': False, 'edit': False},
         'seguimiento': {'view': False, 'edit': False}, 'reportes': {'view': False, 'edit': False},
         'activos_rotativos': {'view': False, 'edit': False}, 'activos_config': {'view': False, 'edit': False},
         'historial_equipo': {'view': False, 'edit': False}, 'exportar': {'view': False, 'edit': False},
@@ -271,6 +278,7 @@ _DEFAULT_PERMS = {
         'herramientas': {'view': True, 'edit': True}, 'lubricacion': {'view': False, 'edit': False},
         'inspecciones': {'view': False, 'edit': False}, 'monitoreo': {'view': False, 'edit': False},
         'espesores': {'view': False, 'edit': False},
+        'paradas': {'view': False, 'edit': False},
         'seguimiento': {'view': False, 'edit': False}, 'reportes': {'view': False, 'edit': False},
         'activos_rotativos': {'view': False, 'edit': False}, 'activos_config': {'view': False, 'edit': False},
         'historial_equipo': {'view': False, 'edit': False}, 'exportar': {'view': False, 'edit': False},
@@ -282,6 +290,7 @@ _DEFAULT_PERMS = {
         'herramientas': {'view': True, 'edit': False}, 'lubricacion': {'view': True, 'edit': False},
         'inspecciones': {'view': True, 'edit': False}, 'monitoreo': {'view': True, 'edit': False},
         'espesores': {'view': True, 'edit': False}, 'cockpit': {'view': True, 'edit': False},
+        'paradas': {'view': True, 'edit': False},
         'seguimiento': {'view': True, 'edit': False}, 'reportes': {'view': True, 'edit': False},
         'activos_rotativos': {'view': True, 'edit': False}, 'activos_config': {'view': True, 'edit': False},
         'historial_equipo': {'view': True, 'edit': False}, 'exportar': {'view': False, 'edit': False},
@@ -557,6 +566,20 @@ register_thickness_routes(
     MaintenanceNotice=MaintenanceNotice,
 )
 
+register_shutdown_routes(
+    app=app,
+    db=db,
+    logger=logger,
+    Shutdown=Shutdown,
+    ShutdownArea=ShutdownArea,
+    WorkOrder=WorkOrder,
+    Area=Area,
+    Equipment=Equipment,
+    Line=Line,
+    OTPersonnel=OTPersonnel,
+    Technician=Technician,
+)
+
 register_rotative_assets_routes(
     app=app,
     db=db,
@@ -667,6 +690,7 @@ _ENSURE_COLUMNS = [
     ("ot_materials", "is_installed", "BOOLEAN DEFAULT true"),
     ("technicians", "user_id", "INTEGER"),
     ("thickness_inspections", "pdf_url", "VARCHAR(500)"),
+    ("work_orders", "shutdown_id", "INTEGER"),
 ]
 
 
