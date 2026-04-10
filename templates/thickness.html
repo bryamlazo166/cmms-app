@@ -9,6 +9,7 @@
     <link rel="stylesheet" href="/static/css/sidebar.css?v={{ v }}">
     <link href="https://fonts.googleapis.com/css2?family=Roboto:wght@300;400;500;700&display=swap" rel="stylesheet">
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css">
+    <script src="https://cdn.jsdelivr.net/npm/echarts@5.5.0/dist/echarts.min.js"></script>
     <style>
         .wrap{max-width:1500px;margin:0 auto;padding:16px;}
         .header{background:linear-gradient(120deg,#1e2430,#151b24);border:1px solid #2d3f56;border-radius:12px;padding:16px;margin-bottom:12px;}
@@ -138,6 +139,57 @@
             <div class="panel">
                 <h3>Histórico de inspecciones</h3>
                 <div id="historyList"></div>
+            </div>
+        </div>
+
+        <!-- Vista de análisis predictivo -->
+        <div id="thkAnalysis" class="hidden">
+            <div class="toolbar">
+                <button class="btn" onclick="backToDashboard()"><i class="fas fa-arrow-left"></i> Volver</button>
+                <span id="analysisTitle" style="color:#FF9F0A;font-weight:700;font-size:1.05rem;"></span>
+            </div>
+
+            <!-- Alertas de decisión -->
+            <div id="analysisAlerts" class="panel" style="display:none;border-color:#FF453A;">
+                <h3 style="color:#FF453A;"><i class="fas fa-exclamation-triangle"></i> Alertas de Fabricación y Reemplazo</h3>
+                <div id="alertsList"></div>
+            </div>
+
+            <!-- Resumen por componente -->
+            <div class="panel">
+                <h3><i class="fas fa-table"></i> Vida Residual por Componente</h3>
+                <div id="groupsSummaryTable"></div>
+            </div>
+
+            <!-- Tabla detallada -->
+            <div class="panel">
+                <h3><i class="fas fa-chart-line"></i> Detalle por Punto de Medición</h3>
+                <div style="font-size:.78rem;color:#9ab0cb;margin-bottom:8px;">Click en una fila para ver la tendencia gráfica del punto</div>
+                <div style="max-height:500px;overflow-y:auto;">
+                    <table class="thk-table" style="width:100%;">
+                        <thead>
+                            <tr>
+                                <th>Grupo</th>
+                                <th>Sec.</th>
+                                <th>Pos.</th>
+                                <th>Último (mm)</th>
+                                <th>Desgaste mm/mes</th>
+                                <th>Desgaste mm/sem</th>
+                                <th>Restante (mm)</th>
+                                <th>Vida (meses)</th>
+                                <th>Vida (semanas)</th>
+                                <th>Reemplazo est.</th>
+                            </tr>
+                        </thead>
+                        <tbody id="analysisTableBody"></tbody>
+                    </table>
+                </div>
+            </div>
+
+            <!-- Gráfico de tendencia de un punto seleccionado -->
+            <div class="panel" id="pointChartPanel" style="display:none;">
+                <h3 id="pointChartTitle"><i class="fas fa-chart-area"></i> Tendencia</h3>
+                <div id="pointChart" style="height:350px;width:100%;"></div>
             </div>
         </div>
     </div>

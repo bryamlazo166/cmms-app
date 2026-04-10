@@ -60,6 +60,9 @@ function renderDashboard() {
                 <button class="btn" style="flex:1;font-size:.78rem;height:30px;padding:0;" onclick="event.stopPropagation();openHistoryFor(${eq.equipment_id})">
                     <i class="fas fa-history"></i> Histórico
                 </button>
+                <button class="btn" style="flex:1;font-size:.78rem;height:30px;padding:0;background:rgba(255,159,10,.15);color:#FF9F0A;border:1px solid rgba(255,159,10,.3);" onclick="event.stopPropagation();openAnalysisFor(${eq.equipment_id})">
+                    <i class="fas fa-chart-line"></i> Análisis
+                </button>
             </div>
         </div>`;
     }).join('');
@@ -112,12 +115,7 @@ async function openInspectionFor(equipmentId, inspectionId) {
     }
 }
 
-function backToDashboard() {
-    document.getElementById('thkDashboard').classList.remove('hidden');
-    document.getElementById('thkCapture').classList.add('hidden');
-    document.getElementById('thkHistory').classList.add('hidden');
-    reloadDashboard();
-}
+
 
 function renderCaptureSections() {
     const container = document.getElementById('thkSections');
@@ -444,6 +442,195 @@ async function deleteInspection(inspectionId) {
     }
 }
 
+// ── Análisis Predictivo ──────────────────────────────────────
+
+let _analysisChart = null;
+
+async function openAnalysisFor(equipmentId) {
+    const eq = _thkDashboard.find(e => e.equipment_id === equipmentId);
+    _thkActiveEquipment = eq;
+    try {
+        // Cargar puntos para umbrales del gráfico
+        const ptsRes = await fetch(`/api/thickness/points/${equipmentId}`);
+        _thkPoints = await ptsRes.json();
+        const res = await fetch(`/api/thickness/analysis/${equipmentId}`);
+        if (!res.ok) { alert('Error al cargar análisis'); return; }
+        const data = await res.json();
+
+        document.getElementById('thkDashboard').classList.add('hidden');
+        document.getElementById('thkCapture').classList.add('hidden');
+        document.getElementById('thkHistory').classList.add('hidden');
+        document.getElementById('thkAnalysis').classList.remove('hidden');
+        document.getElementById('analysisTitle').textContent =
+            `Análisis Predictivo — ${data.equipment_tag} ${data.equipment_name}`;
+        document.getElementById('pointChartPanel').style.display = 'none';
+
+        renderAlerts(data.alerts || []);
+        renderGroupsSummary(data.groups_summary || []);
+        renderAnalysisTable(data.points || []);
+    } catch (e) { console.error('openAnalysisFor:', e); }
+}
+
+function renderAlerts(alerts) {
+    const panel = document.getElementById('analysisAlerts');
+    const list = document.getElementById('alertsList');
+    if (!alerts.length) { panel.style.display = 'none'; return; }
+    panel.style.display = 'block';
+    const urgencyColors = { CRITICO: '#FF453A', URGENTE: '#FF9F0A', PLANIFICAR: '#5ac8fa' };
+    const urgencyIcons = { CRITICO: 'fa-skull-crossbones', URGENTE: 'fa-exclamation-triangle', PLANIFICAR: 'fa-calendar-alt' };
+    list.innerHTML = alerts.map(a => `
+        <div style="padding:10px 14px;margin-bottom:8px;background:rgba(0,0,0,.2);border-left:4px solid ${urgencyColors[a.urgency]};border-radius:6px;">
+            <div style="display:flex;justify-content:space-between;align-items:center;">
+                <span style="color:${urgencyColors[a.urgency]};font-weight:700;">
+                    <i class="fas ${urgencyIcons[a.urgency]}"></i> ${a.urgency}
+                </span>
+                <span style="color:#9ab0cb;font-size:.82rem;">${a.group_name} S${a.section || ''}-${a.position}</span>
+            </div>
+            <div style="color:#d5e2f5;font-size:.88rem;margin-top:6px;">
+                Actual: <strong>${a.last_value} mm</strong> → Descarte: ${a.scrap} mm |
+                Desgaste: <strong>${a.wear_mm_month} mm/mes</strong> |
+                Vida: <strong style="color:${urgencyColors[a.urgency]};">${a.life_months} meses${a.life_weeks ? ` (${a.life_weeks} sem)` : ''}</strong>
+                ${a.estimated_replacement ? ` → ${a.estimated_replacement}` : ''}
+            </div>
+            <div style="color:${urgencyColors[a.urgency]};font-size:.85rem;margin-top:4px;font-weight:600;">
+                → ${a.recommendation}
+            </div>
+        </div>
+    `).join('');
+}
+
+function renderGroupsSummary(groups) {
+    const container = document.getElementById('groupsSummaryTable');
+    if (!groups.length) { container.innerHTML = '<div class="empty">Sin datos suficientes para análisis. Se requieren al menos 2 inspecciones.</div>'; return; }
+    const groupLabels = { PALETA: 'Paletas Trípode', REFUERZO: 'Refuerzo Trípode', EJE: 'Ejes Trípode', CHAQUETA: 'Chaqueta Interna', TAPA_MOTRIZ: 'Tapa Motriz', TAPA_CONDUCIDA: 'Tapa Conducida' };
+    container.innerHTML = `
+        <table class="thk-table" style="width:100%;">
+            <thead><tr>
+                <th>Componente</th><th>Puntos</th><th>Espesor mínimo (mm)</th>
+                <th>Mayor desgaste (mm/mes)</th><th>Menor vida (meses)</th><th>Punto crítico</th><th>Estado</th>
+            </tr></thead>
+            <tbody>
+                ${groups.map(g => {
+                    const lifeColor = g.min_life_months <= 1 ? '#FF453A' : g.min_life_months <= 3 ? '#FF9F0A' : g.min_life_months <= 6 ? '#ffd966' : '#30D158';
+                    const statusLabel = g.min_life_months <= 1 ? 'FABRICAR YA' : g.min_life_months <= 3 ? 'INICIAR FABRICACIÓN' : g.min_life_months <= 6 ? 'PROGRAMAR' : 'OK';
+                    return `<tr>
+                        <td style="font-weight:700;color:#d5e2f5;">${groupLabels[g.group_name] || g.group_name}</td>
+                        <td>${g.total_points}</td>
+                        <td>${g.min_value < 999 ? g.min_value : '-'}</td>
+                        <td>${g.max_wear_rate > 0 ? g.max_wear_rate.toFixed(2) : '-'}</td>
+                        <td style="color:${lifeColor};font-weight:700;">${g.min_life_months < 999 ? g.min_life_months : '-'}</td>
+                        <td style="color:#FF9F0A;">${g.worst_point || '-'}</td>
+                        <td><span style="color:${lifeColor};font-weight:700;">${g.min_life_months < 999 ? statusLabel : 'Sin datos'}</span></td>
+                    </tr>`;
+                }).join('')}
+            </tbody>
+        </table>`;
+}
+
+function renderAnalysisTable(points) {
+    const tbody = document.getElementById('analysisTableBody');
+    if (!points.length) { tbody.innerHTML = '<tr><td colspan="10" style="text-align:center;color:#666;">Sin datos de medición.</td></tr>'; return; }
+    tbody.innerHTML = points.filter(p => p.readings_count > 0).map(p => {
+        const wr = p.wear_rate;
+        const lifeColor = p.life_months === null ? '#666' : p.life_months <= 1 ? '#FF453A' : p.life_months <= 3 ? '#FF9F0A' : p.life_months <= 6 ? '#ffd966' : '#30D158';
+        return `<tr onclick="renderPointChart(${p.point_id}, '${p.group_name} S${p.section||''}-${p.position}')" style="cursor:pointer;">
+            <td>${p.group_name}</td>
+            <td>${p.section || '-'}</td>
+            <td>${p.position}</td>
+            <td style="font-weight:700;color:${p.status === 'CRITICO' ? '#FF453A' : p.status === 'ALERTA' ? '#FF9F0A' : '#30D158'};">${p.last_value}</td>
+            <td>${wr ? wr.mm_per_month.toFixed(2) : '-'}</td>
+            <td>${wr ? wr.mm_per_week.toFixed(3) : '-'}</td>
+            <td>${p.remaining_mm}</td>
+            <td style="color:${lifeColor};font-weight:700;">${p.life_months !== null ? p.life_months : '-'}</td>
+            <td style="color:${lifeColor};">${p.life_weeks !== null ? p.life_weeks : '-'}</td>
+            <td style="font-size:.8rem;">${p.estimated_replacement || '-'}</td>
+        </tr>`;
+    }).join('');
+}
+
+async function renderPointChart(pointId, label) {
+    const panel = document.getElementById('pointChartPanel');
+    panel.style.display = 'block';
+    document.getElementById('pointChartTitle').innerHTML = `<i class="fas fa-chart-area"></i> Tendencia: ${label}`;
+    try {
+        const res = await fetch(`/api/thickness/history/${pointId}`);
+        const data = await res.json();
+        if (!data.length) return;
+
+        const el = document.getElementById('pointChart');
+        if (_analysisChart) _analysisChart.dispose();
+        _analysisChart = echarts.init(el, 'dark');
+
+        const dates = data.map(d => d.inspection_date);
+        const values = data.map(d => d.value_mm);
+
+        // Buscar el punto para obtener umbrales
+        const pt = _thkPoints.find(p => p.id === pointId);
+        const alarm = pt ? pt.alarm_thickness : 10;
+        const scrap = pt ? pt.scrap_thickness : 8;
+
+        // Proyección futura si hay >= 2 puntos
+        let projDates = [];
+        let projValues = [];
+        if (values.length >= 2) {
+            const d0 = new Date(dates[0]);
+            const dLast = new Date(dates[dates.length - 1]);
+            const vLast = values[values.length - 1];
+            const totalDays = (dLast - d0) / 86400000;
+            const totalDrop = values[0] - vLast;
+            if (totalDays > 0 && totalDrop > 0) {
+                const ratePerDay = totalDrop / totalDays;
+                const daysToScrap = (vLast - scrap) / ratePerDay;
+                const maxProjDays = Math.min(Math.max(daysToScrap, 30), 730);
+                for (let d = 30; d <= maxProjDays; d += 30) {
+                    const projDate = new Date(dLast);
+                    projDate.setDate(projDate.getDate() + d);
+                    projDates.push(projDate.toISOString().slice(0, 10));
+                    projValues.push(Math.max(0, vLast - ratePerDay * d));
+                }
+            }
+        }
+        const allDates = [...dates, ...projDates];
+
+        _analysisChart.setOption({
+            backgroundColor: 'transparent',
+            tooltip: { trigger: 'axis', formatter: params => params.map(p => `${p.seriesName}: ${p.value} mm`).join('<br/>') },
+            legend: { data: ['Medición real', 'Proyección'], textStyle: { color: '#bfd2ec' } },
+            grid: { top: 50, right: 20, bottom: 40, left: 60 },
+            xAxis: { type: 'category', data: allDates, axisLabel: { color: '#9ab0cb', rotate: 30, fontSize: 10 } },
+            yAxis: { type: 'value', name: 'mm', axisLabel: { color: '#9ab0cb' }, splitLine: { lineStyle: { color: 'rgba(255,255,255,.06)' } } },
+            series: [
+                {
+                    name: 'Medición real', type: 'line', data: [...values, ...new Array(projDates.length).fill(null)],
+                    lineStyle: { color: '#5ac8fa', width: 3 }, itemStyle: { color: '#5ac8fa' },
+                    symbolSize: 8, areaStyle: { color: { type: 'linear', x: 0, y: 0, x2: 0, y2: 1, colorStops: [{ offset: 0, color: 'rgba(90,200,250,.3)' }, { offset: 1, color: 'rgba(90,200,250,0)' }] } },
+                },
+                {
+                    name: 'Proyección', type: 'line', data: [...new Array(dates.length - 1).fill(null), values[values.length - 1], ...projValues],
+                    lineStyle: { color: '#FF9F0A', width: 2, type: 'dashed' }, itemStyle: { color: '#FF9F0A' }, symbolSize: 4,
+                },
+                {
+                    name: 'Alarma', type: 'line', data: allDates.map(() => alarm),
+                    lineStyle: { color: '#ffd966', width: 1, type: 'dotted' }, itemStyle: { opacity: 0 }, symbol: 'none',
+                },
+                {
+                    name: 'Descarte', type: 'line', data: allDates.map(() => scrap),
+                    lineStyle: { color: '#FF453A', width: 2, type: 'dotted' }, itemStyle: { opacity: 0 }, symbol: 'none',
+                    markArea: { data: [[{ yAxis: 0 }, { yAxis: scrap }]], itemStyle: { color: 'rgba(255,69,58,0.08)' } }
+                }
+            ]
+        });
+    } catch (e) { console.error('renderPointChart:', e); }
+}
+
+function backToDashboard() {
+    document.getElementById('thkDashboard').classList.remove('hidden');
+    document.getElementById('thkCapture').classList.add('hidden');
+    document.getElementById('thkHistory').classList.add('hidden');
+    document.getElementById('thkAnalysis').classList.add('hidden');
+    reloadDashboard();
+}
+
 window.reloadDashboard = reloadDashboard;
 window.openInspectionFor = openInspectionFor;
 window.openHistoryFor = openHistoryFor;
@@ -452,3 +639,5 @@ window.saveInspection = saveInspection;
 window.attachPdfToInspection = attachPdfToInspection;
 window.editInspection = editInspection;
 window.deleteInspection = deleteInspection;
+window.openAnalysisFor = openAnalysisFor;
+window.renderPointChart = renderPointChart;

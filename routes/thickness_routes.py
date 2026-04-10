@@ -374,3 +374,180 @@ def register_thickness_routes(
             "is_critical": r.is_critical,
             "is_alert": r.is_alert,
         } for r, i in readings])
+
+    # ── ANÁLISIS PREDICTIVO ────────────────────────────────────────────────
+    def _calc_wear_rate(readings_with_dates):
+        """Calcula velocidad de desgaste (mm/mes) con regresión lineal simple."""
+        if len(readings_with_dates) < 2:
+            return None, None
+        # Convertir a días desde primera lectura
+        try:
+            dates = [dt.date.fromisoformat(r['date']) for r in readings_with_dates]
+            values = [r['value'] for r in readings_with_dates]
+            d0 = dates[0]
+            days = [(d - d0).days for d in dates]
+            n = len(days)
+            if days[-1] == 0:
+                return None, None
+            # Regresión lineal: y = a + b*x
+            sx = sum(days)
+            sy = sum(values)
+            sxx = sum(d * d for d in days)
+            sxy = sum(d * v for d, v in zip(days, values))
+            denom = n * sxx - sx * sx
+            if denom == 0:
+                return None, None
+            b = (n * sxy - sx * sy) / denom  # pendiente (mm/día)
+            a = (sy - b * sx) / n  # intercepto
+            wear_rate_month = abs(b) * 30.44  # mm/mes (positivo = desgaste)
+            wear_rate_week = abs(b) * 7
+            return {
+                'mm_per_day': round(abs(b), 4),
+                'mm_per_week': round(wear_rate_week, 3),
+                'mm_per_month': round(wear_rate_month, 3),
+                'mm_per_year': round(abs(b) * 365.25, 2),
+                'slope': round(b, 6),
+                'intercept': round(a, 2),
+            }, dates[0]
+        except Exception:
+            return None, None
+
+    @app.route('/api/thickness/analysis/<int:equipment_id>', methods=['GET'])
+    def thickness_analysis(equipment_id):
+        """Análisis predictivo completo por equipo: desgaste, vida residual, alertas."""
+        try:
+            points = ThicknessPoint.query.filter_by(
+                equipment_id=equipment_id, is_active=True
+            ).all()
+
+            eq = Equipment.query.get(equipment_id)
+            eq_name = eq.name if eq else f"Equipo {equipment_id}"
+            eq_tag = eq.tag if eq else "?"
+
+            analysis = []
+            alerts = []
+
+            for pt in points:
+                readings = db.session.query(ThicknessReading, ThicknessInspection) \
+                    .join(ThicknessInspection, ThicknessReading.inspection_id == ThicknessInspection.id) \
+                    .filter(ThicknessReading.point_id == pt.id) \
+                    .order_by(ThicknessInspection.inspection_date.asc()).all()
+
+                if not readings:
+                    continue
+
+                data_points = [{'date': i.inspection_date, 'value': r.value_mm} for r, i in readings]
+                wear, first_date = _calc_wear_rate(data_points)
+
+                last_value = data_points[-1]['value']
+                last_date = data_points[-1]['date']
+                remaining = last_value - pt.scrap_thickness
+
+                life_months = None
+                life_weeks = None
+                estimated_replacement = None
+
+                if wear and wear['mm_per_month'] > 0:
+                    life_months = round(remaining / wear['mm_per_month'], 1)
+                    life_weeks = round(remaining / wear['mm_per_week'], 1) if wear['mm_per_week'] > 0 else None
+                    try:
+                        last_dt = dt.date.fromisoformat(last_date)
+                        replace_dt = last_dt + dt.timedelta(days=int(life_months * 30.44))
+                        estimated_replacement = replace_dt.isoformat()
+                    except Exception:
+                        pass
+
+                entry = {
+                    'point_id': pt.id,
+                    'group_name': pt.group_name,
+                    'section': pt.section,
+                    'position': pt.position,
+                    'nominal': pt.nominal_thickness,
+                    'alarm': pt.alarm_thickness,
+                    'scrap': pt.scrap_thickness,
+                    'last_value': last_value,
+                    'last_date': last_date,
+                    'status': pt.status,
+                    'readings_count': len(data_points),
+                    'readings': data_points,
+                    'wear_rate': wear,
+                    'remaining_mm': round(remaining, 2),
+                    'life_months': life_months,
+                    'life_weeks': life_weeks,
+                    'estimated_replacement': estimated_replacement,
+                }
+                analysis.append(entry)
+
+                # Generar alertas si queda poco tiempo
+                if life_months is not None:
+                    urgency = None
+                    if life_months <= 1:
+                        urgency = 'CRITICO'
+                    elif life_months <= 3:
+                        urgency = 'URGENTE'
+                    elif life_months <= 6:
+                        urgency = 'PLANIFICAR'
+
+                    if urgency:
+                        alerts.append({
+                            'urgency': urgency,
+                            'group_name': pt.group_name,
+                            'section': pt.section,
+                            'position': pt.position,
+                            'last_value': last_value,
+                            'scrap': pt.scrap_thickness,
+                            'remaining_mm': round(remaining, 2),
+                            'wear_mm_month': wear['mm_per_month'],
+                            'life_months': life_months,
+                            'life_weeks': life_weeks,
+                            'estimated_replacement': estimated_replacement,
+                            'recommendation': (
+                                'REEMPLAZO INMEDIATO — iniciar fabricación URGENTE'
+                                if urgency == 'CRITICO' else
+                                'Iniciar fabricación AHORA — quedan menos de 3 meses'
+                                if urgency == 'URGENTE' else
+                                'Programar fabricación en próximas semanas'
+                            )
+                        })
+
+            # Ordenar alertas por urgencia
+            urgency_order = {'CRITICO': 0, 'URGENTE': 1, 'PLANIFICAR': 2}
+            alerts.sort(key=lambda a: (urgency_order.get(a['urgency'], 9), a.get('life_months', 999)))
+
+            # Resumen por grupo (componente)
+            groups_summary = {}
+            for a in analysis:
+                g = a['group_name']
+                if g not in groups_summary:
+                    groups_summary[g] = {
+                        'group_name': g,
+                        'total_points': 0,
+                        'min_value': 999,
+                        'max_wear_rate': 0,
+                        'min_life_months': 999,
+                        'worst_point': None,
+                    }
+                gs = groups_summary[g]
+                gs['total_points'] += 1
+                if a['last_value'] < gs['min_value']:
+                    gs['min_value'] = a['last_value']
+                if a['wear_rate'] and a['wear_rate']['mm_per_month'] > gs['max_wear_rate']:
+                    gs['max_wear_rate'] = a['wear_rate']['mm_per_month']
+                if a['life_months'] is not None and a['life_months'] < gs['min_life_months']:
+                    gs['min_life_months'] = a['life_months']
+                    gs['worst_point'] = f"S{a['section'] or ''}-{a['position']}"
+
+            return jsonify({
+                'equipment_id': equipment_id,
+                'equipment_name': eq_name,
+                'equipment_tag': eq_tag,
+                'total_points_analyzed': len(analysis),
+                'points': analysis,
+                'alerts': alerts,
+                'groups_summary': list(groups_summary.values()),
+            })
+        except Exception as e:
+            logger.error(f"thickness_analysis error: {e}")
+            import traceback
+            traceback.print_exc()
+            return jsonify({"error": str(e)}), 500
