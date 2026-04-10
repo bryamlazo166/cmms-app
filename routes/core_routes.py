@@ -135,6 +135,10 @@ def register_core_routes(app, db, logger, app_build_tag,
     def thickness_page():
         return render_template('thickness.html')
 
+    @app.route('/cockpit')
+    def cockpit_page():
+        return render_template('cockpit.html')
+
     @app.route('/activos-rotativos')
     def rotative_assets_page():
         return render_template('rotative_assets.html')

@@ -1,0 +1,208 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <link rel="icon" type="image/svg+xml" href="/static/favicon.svg">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Cockpit Gerencial - CMMS</title>
+    <link rel="stylesheet" href="/static/css/style.css?v={{ v }}">
+    <link rel="stylesheet" href="/static/css/sidebar.css?v={{ v }}">
+    <link href="https://fonts.googleapis.com/css2?family=Roboto:wght@300;400;500;700&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css">
+    <script src="https://cdn.jsdelivr.net/npm/echarts@5.5.0/dist/echarts.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
+    <style>
+        body{background:#0a0e14;}
+        .cockpit-wrap{max-width:1600px;margin:0 auto;padding:16px;}
+        .cockpit-header{background:linear-gradient(120deg,#1e2430,#151b24);border:1px solid #2d3f56;border-radius:14px;padding:20px 24px;margin-bottom:16px;display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:14px;}
+        .cockpit-header h1{margin:0;color:#5ac8fa;font-size:1.5rem;display:flex;align-items:center;gap:10px;}
+        .cockpit-header p{margin:4px 0 0;color:#9ab0cb;font-size:.85rem;}
+        .cockpit-tools{display:flex;gap:10px;align-items:center;flex-wrap:wrap;}
+        .cockpit-tools select, .cockpit-tools input{height:38px;background:#0f1319;color:#d5e2f5;border:1px solid #344964;border-radius:8px;padding:6px 12px;font-size:.88rem;}
+        .btn-cockpit{height:38px;border:1px solid #385273;border-radius:8px;background:#193451;color:#d7e9ff;padding:0 16px;font-weight:600;cursor:pointer;font-size:.88rem;display:inline-flex;align-items:center;gap:6px;}
+        .btn-cockpit:hover{background:#234870;}
+        .btn-cockpit.primary{background:#0a84ff;border-color:#0a84ff;color:#fff;}
+        .btn-cockpit.primary:hover{background:#1f95ff;}
+        .btn-cockpit.export{background:#30D158;border-color:#30D158;color:#fff;}
+        .btn-cockpit.export:hover{background:#34d85f;}
+
+        /* KPI cards */
+        .kpi-row{display:grid;grid-template-columns:repeat(4,1fr);gap:14px;margin-bottom:16px;}
+        .kpi-card{background:linear-gradient(135deg,#1b212b,#151a23);border:1px solid #31455f;border-radius:14px;padding:18px 20px;position:relative;overflow:hidden;}
+        .kpi-card::before{content:'';position:absolute;top:0;left:0;right:0;height:3px;background:var(--kpi-color, #0a84ff);}
+        .kpi-card .label{font-size:.72rem;color:#9ab3d0;text-transform:uppercase;letter-spacing:.5px;font-weight:600;margin-bottom:10px;}
+        .kpi-card .value{font-size:2.2rem;font-weight:700;color:#eff6ff;line-height:1;}
+        .kpi-card .unit{font-size:1rem;color:#9ab3d0;margin-left:4px;}
+        .kpi-card .trend{margin-top:8px;font-size:.78rem;display:flex;align-items:center;gap:4px;}
+        .kpi-card .trend.up{color:#30D158;}
+        .kpi-card .trend.down{color:#FF453A;}
+        .kpi-card .trend.neutral{color:#9ab0cb;}
+        .kpi-card.availability{--kpi-color:#30D158;}
+        .kpi-card.compliance{--kpi-color:#0a84ff;}
+        .kpi-card.mtbf{--kpi-color:#BF5AF2;}
+        .kpi-card.mttr{--kpi-color:#FF9F0A;}
+        .kpi-card.downtime{--kpi-color:#FF453A;}
+        .kpi-card.cost{--kpi-color:#FFD60A;}
+
+        /* Chart grid */
+        .chart-row{display:grid;gap:14px;margin-bottom:16px;}
+        .chart-row.cols-2{grid-template-columns:1fr 1fr;}
+        .chart-row.cols-3{grid-template-columns:2fr 1fr;}
+        .chart-card{background:#181d24;border:1px solid #2f4257;border-radius:14px;padding:16px 18px;}
+        .chart-card h3{margin:0 0 12px;color:#5ac8fa;font-size:.95rem;font-weight:600;display:flex;align-items:center;gap:8px;}
+        .chart-card .subtitle{color:#9ab0cb;font-size:.75rem;margin-bottom:10px;}
+        .chart-container{height:320px;width:100%;}
+        .chart-container.tall{height:380px;}
+        .chart-container.short{height:260px;}
+
+        /* Heatmap área */
+        .area-heatmap{display:grid;grid-template-columns:repeat(auto-fill,minmax(240px,1fr));gap:12px;}
+        .area-tile{background:#1b212b;border:1px solid #344964;border-radius:10px;padding:14px 16px;transition:transform .15s, border-color .15s;cursor:pointer;}
+        .area-tile:hover{transform:translateY(-2px);border-color:#5ac8fa;}
+        .area-tile .name{font-size:.95rem;font-weight:700;color:#eff6ff;margin-bottom:6px;}
+        .area-tile .meta{font-size:.78rem;color:#9ab0cb;}
+        .area-tile .stats{display:flex;gap:12px;margin-top:10px;font-size:.85rem;}
+        .area-tile .stat{flex:1;}
+        .area-tile .stat .val{color:#fff;font-weight:700;font-size:1.1rem;}
+        .area-tile .stat .lbl{color:#9ab0cb;font-size:.7rem;text-transform:uppercase;}
+        .area-tile.critical{border-left:4px solid #FF453A;}
+        .area-tile.warning{border-left:4px solid #FF9F0A;}
+        .area-tile.ok{border-left:4px solid #30D158;}
+
+        /* Loading */
+        .loading-msg{text-align:center;color:#9ab0cb;padding:40px;font-size:.9rem;}
+
+        /* Print styles */
+        @media print {
+            body{background:#fff !important;color:#000 !important;}
+            .sidebar{display:none !important;}
+            .home-section{margin-left:0 !important;}
+            .cockpit-tools, .btn-cockpit{display:none !important;}
+            .kpi-card, .chart-card, .area-tile{background:#fff !important;border:1px solid #ccc !important;color:#000 !important;break-inside:avoid;}
+            .kpi-card .value, .chart-card h3, .area-tile .name{color:#000 !important;}
+            .kpi-card .label, .area-tile .meta, .area-tile .stat .lbl{color:#666 !important;}
+            @page{size:A4 landscape;margin:10mm;}
+        }
+
+        @media(max-width:1200px){
+            .kpi-row{grid-template-columns:repeat(2,1fr);}
+            .chart-row.cols-2, .chart-row.cols-3{grid-template-columns:1fr;}
+        }
+    </style>
+</head>
+<body>
+<nav class="sidebar">
+    <div class="logo-details"><i class="fas fa-industry icon"></i><div class="logo_name">CMMS Pro</div><i class="fas fa-bars" id="btn_toggle"></i></div>
+    <ul class="nav-list"></ul>
+</nav>
+
+<section class="home-section">
+    <div class="cockpit-wrap" id="cockpitContent">
+        <div class="cockpit-header">
+            <div>
+                <h1><i class="fas fa-chart-pie"></i> Cockpit Gerencial</h1>
+                <p id="cockpitSubtitle">Vista ejecutiva de indicadores clave de mantenimiento</p>
+            </div>
+            <div class="cockpit-tools">
+                <select id="periodSelect" onchange="onPeriodChange()">
+                    <option value="month">Mes actual</option>
+                    <option value="last_month">Mes anterior</option>
+                    <option value="quarter">Último trimestre</option>
+                    <option value="year">Último año</option>
+                    <option value="custom">Personalizado</option>
+                </select>
+                <input type="date" id="startDate" style="display:none;">
+                <input type="date" id="endDate" style="display:none;">
+                <button class="btn-cockpit primary" onclick="loadCockpit()"><i class="fas fa-sync"></i> Actualizar</button>
+                <button class="btn-cockpit export" onclick="exportPdf()"><i class="fas fa-file-pdf"></i> Exportar PDF</button>
+            </div>
+        </div>
+
+        <!-- KPIs principales -->
+        <div class="kpi-row" id="kpiRow">
+            <div class="kpi-card availability">
+                <div class="label"><i class="fas fa-check-circle"></i> Disponibilidad</div>
+                <div class="value" id="kpiAvailability">—<span class="unit">%</span></div>
+                <div class="trend neutral" id="trendAvailability">vs periodo anterior</div>
+            </div>
+            <div class="kpi-card compliance">
+                <div class="label"><i class="fas fa-calendar-check"></i> Cumplimiento Plan</div>
+                <div class="value" id="kpiCompliance">—<span class="unit">%</span></div>
+                <div class="trend neutral" id="trendCompliance">vs periodo anterior</div>
+            </div>
+            <div class="kpi-card mtbf">
+                <div class="label"><i class="fas fa-stopwatch"></i> MTBF</div>
+                <div class="value" id="kpiMtbf">—<span class="unit">h</span></div>
+                <div class="trend neutral" id="trendMtbf">Tiempo medio entre fallas</div>
+            </div>
+            <div class="kpi-card mttr">
+                <div class="label"><i class="fas fa-tools"></i> MTTR</div>
+                <div class="value" id="kpiMttr">—<span class="unit">h</span></div>
+                <div class="trend neutral" id="trendMttr">Tiempo medio reparación</div>
+            </div>
+        </div>
+
+        <!-- KPIs secundarios -->
+        <div class="kpi-row" style="grid-template-columns:repeat(4,1fr);">
+            <div class="kpi-card downtime">
+                <div class="label"><i class="fas fa-power-off"></i> Downtime Total</div>
+                <div class="value" id="kpiDowntime">—<span class="unit">h</span></div>
+                <div class="trend neutral">Horas de parada de producción</div>
+            </div>
+            <div class="kpi-card cost">
+                <div class="label"><i class="fas fa-dollar-sign"></i> Costo Mtto</div>
+                <div class="value" id="kpiCost">—<span class="unit"></span></div>
+                <div class="trend neutral">Mano de obra + repuestos</div>
+            </div>
+            <div class="kpi-card" style="--kpi-color:#5AC8FA;">
+                <div class="label"><i class="fas fa-tasks"></i> Total OTs</div>
+                <div class="value" id="kpiTotalOts">—</div>
+                <div class="trend neutral" id="trendOts">Periodo seleccionado</div>
+            </div>
+            <div class="kpi-card" style="--kpi-color:#30D158;">
+                <div class="label"><i class="fas fa-shield-alt"></i> Preventivo %</div>
+                <div class="value" id="kpiPrevPct">—<span class="unit">%</span></div>
+                <div class="trend neutral" id="trendPrev">Vs correctivo</div>
+            </div>
+        </div>
+
+        <!-- Mapa de áreas + tendencia -->
+        <div class="chart-row cols-3">
+            <div class="chart-card">
+                <h3><i class="fas fa-chart-line"></i> Tendencia de disponibilidad y cumplimiento</h3>
+                <div class="chart-container" id="chartTrend"></div>
+            </div>
+            <div class="chart-card">
+                <h3><i class="fas fa-chart-pie"></i> Preventivo vs Correctivo</h3>
+                <div class="chart-container" id="chartDonut"></div>
+            </div>
+        </div>
+
+        <!-- Top 5 equipos + Pareto -->
+        <div class="chart-row cols-2">
+            <div class="chart-card">
+                <h3><i class="fas fa-exclamation-triangle"></i> Top equipos con más fallas</h3>
+                <div class="chart-container" id="chartTopEquips"></div>
+            </div>
+            <div class="chart-card">
+                <h3><i class="fas fa-clock"></i> Top causas de downtime</h3>
+                <div class="chart-container" id="chartDowntimeCauses"></div>
+            </div>
+        </div>
+
+        <!-- Heatmap por área -->
+        <div class="chart-card" style="margin-bottom:16px;">
+            <h3><i class="fas fa-th-large"></i> Estado por área</h3>
+            <div class="subtitle">Click en un área para ver detalle</div>
+            <div class="area-heatmap" id="areaHeatmap">
+                <div class="loading-msg">Cargando áreas...</div>
+            </div>
+        </div>
+    </div>
+</section>
+
+<script src="/static/js/sidebar.js?v={{ v }}"></script>
+<script src="/static/js/cockpit.js?v={{ v }}"></script>
+</body>
+</html>

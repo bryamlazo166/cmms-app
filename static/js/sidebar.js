@@ -13,6 +13,7 @@
         { href: '/lubricacion', icon: 'fas fa-oil-can', label: 'Lubricacion', tip: 'Lubricacion' },
         { href: '/inspecciones', icon: 'fas fa-clipboard-check', label: 'Inspecciones', tip: 'Inspecciones' },
         { href: '/espesores', icon: 'fas fa-ruler-vertical', label: 'Espesores', tip: 'Espesores UT' },
+        { href: '/cockpit', icon: 'fas fa-chart-pie', label: 'Cockpit Gerencial', tip: 'Cockpit Gerencial', restricted: true },
         { href: '/seguimiento', icon: 'fas fa-tasks', label: 'Seguimiento', tip: 'Seguimiento' },
         { href: '/calendario', icon: 'fas fa-calendar-alt', label: 'Calendario', tip: 'Plan Mtto' },
         { href: '/reportes', icon: 'fas fa-file-contract', label: 'Reportes', tip: 'Reportes' }
@@ -99,6 +100,7 @@
         'activos_rotativos': '/activos-rotativos', 'activos_config': '/configuracion',
         'monitoreo': '/monitoreo', 'lubricacion': '/lubricacion',
         'inspecciones': '/inspecciones', 'espesores': '/espesores',
+        'cockpit': '/cockpit',
         'seguimiento': '/seguimiento',
         'reportes': '/reportes', 'historial_equipo': '/equipo-historial',
     };
@@ -112,11 +114,12 @@
 
             // Load permissions to filter sidebar
             let hidden = [];
+            let rolePerms = {};
             if (user.role !== 'admin') {
                 try {
                     const permRes = await fetch('/api/auth/permissions');
                     const permData = await permRes.json();
-                    const rolePerms = permData[user.role] || {};
+                    rolePerms = permData[user.role] || {};
                     for (const [mod, href] of Object.entries(MODULE_TO_HREF)) {
                         if (rolePerms[mod] && !rolePerms[mod].view) {
                             hidden.push(href);
@@ -125,9 +128,21 @@
                 } catch (_) {}
             }
 
+            // Items restringidos (restricted: true) solo aparecen si el rol los tiene explícitos
+            const hrefToModule = Object.fromEntries(
+                Object.entries(MODULE_TO_HREF).map(([m, h]) => [h, m])
+            );
+
             const navList = sidebar.querySelector('.nav-list');
             const extra = user.role === 'admin' ? ADMIN_MENU_ITEMS : [];
-            const filtered = MENU_ITEMS.filter(item => !hidden.includes(item.href));
+            const filtered = MENU_ITEMS.filter(item => {
+                if (hidden.includes(item.href)) return false;
+                if (item.restricted && user.role !== 'admin') {
+                    const mod = hrefToModule[item.href];
+                    if (!mod || !rolePerms[mod] || !rolePerms[mod].view) return false;
+                }
+                return true;
+            });
             renderNav(navList, extra, filtered);
         } catch (_) {}
     }
