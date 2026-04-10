@@ -228,6 +228,85 @@ def register_thickness_routes(
             db.session.rollback()
             return jsonify({"error": str(e)}), 500
 
+    @app.route('/api/thickness/inspections/<int:inspection_id>/edit', methods=['PUT'])
+    def edit_thickness_inspection(inspection_id):
+        """Editar una inspección existente: actualiza metadata + reemplaza readings."""
+        try:
+            inspection = ThicknessInspection.query.get_or_404(inspection_id)
+            data = request.json or {}
+            equipment_id = inspection.equipment_id
+
+            # Actualizar metadata
+            if 'inspection_date' in data:
+                inspection.inspection_date = data['inspection_date']
+                freq = inspection.frequency_days or 60
+                try:
+                    insp_dt = dt.date.fromisoformat(data['inspection_date'])
+                    inspection.next_due_date = (insp_dt + dt.timedelta(days=freq)).isoformat()
+                except Exception:
+                    pass
+            if 'inspector_name' in data:
+                inspection.inspector_name = data['inspector_name']
+            if 'observations' in data:
+                inspection.observations = data['observations']
+            if 'pdf_url' in data:
+                inspection.pdf_url = data.get('pdf_url') or None
+
+            readings_data = data.get('readings', [])
+            if readings_data:
+                # Eliminar readings anteriores
+                ThicknessReading.query.filter_by(inspection_id=inspection_id).delete()
+
+                total = 0
+                criticals = 0
+                alerts = 0
+                for r in readings_data:
+                    point_id = int(r.get('point_id'))
+                    value = r.get('value_mm')
+                    if value is None or value == '':
+                        continue
+                    try:
+                        value = float(value)
+                    except Exception:
+                        continue
+                    pt = ThicknessPoint.query.get(point_id)
+                    if not pt or pt.equipment_id != equipment_id:
+                        continue
+                    status, is_alert, is_critical = _calc_status(value, pt)
+                    rd = ThicknessReading(
+                        inspection_id=inspection_id,
+                        point_id=point_id,
+                        value_mm=value,
+                        is_alert=is_alert,
+                        is_critical=is_critical,
+                    )
+                    db.session.add(rd)
+                    pt.last_value = value
+                    pt.last_date = inspection.inspection_date
+                    pt.status = status
+                    total += 1
+                    if is_critical:
+                        criticals += 1
+                    elif is_alert:
+                        alerts += 1
+
+                inspection.total_points = total
+                inspection.critical_points = criticals
+                inspection.alert_points = alerts
+                if criticals > 0:
+                    inspection.semaphore_status = 'ROJO'
+                elif alerts > 0:
+                    inspection.semaphore_status = 'AMARILLO'
+                else:
+                    inspection.semaphore_status = 'VERDE'
+
+            db.session.commit()
+            return jsonify(inspection.to_dict())
+        except Exception as e:
+            db.session.rollback()
+            logger.error(f"Error editando inspección espesores: {e}")
+            return jsonify({"error": str(e)}), 500
+
     @app.route('/api/thickness/inspections/<int:inspection_id>', methods=['GET', 'DELETE'])
     def handle_thickness_inspection_detail(inspection_id):
         inspection = ThicknessInspection.query.get_or_404(inspection_id)

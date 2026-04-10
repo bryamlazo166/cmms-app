@@ -3,6 +3,7 @@ let _thkDashboard = [];
 let _thkActiveEquipment = null;
 let _thkPoints = [];
 let _thkValues = {};  // { point_id: value }
+let _editingInspectionId = null; // null = nueva, int = editando
 
 document.addEventListener('DOMContentLoaded', () => {
     reloadDashboard();
@@ -64,10 +65,11 @@ function renderDashboard() {
     }).join('');
 }
 
-async function openInspectionFor(equipmentId) {
+async function openInspectionFor(equipmentId, inspectionId) {
     try {
         const eq = _thkDashboard.find(e => e.equipment_id === equipmentId);
         _thkActiveEquipment = eq;
+        _editingInspectionId = inspectionId || null;
         // Cargar puntos del equipo
         const res = await fetch(`/api/thickness/points/${equipmentId}`);
         _thkPoints = await res.json();
@@ -79,12 +81,29 @@ async function openInspectionFor(equipmentId) {
         document.getElementById('thkDashboard').classList.add('hidden');
         document.getElementById('thkCapture').classList.remove('hidden');
         document.getElementById('thkHistory').classList.add('hidden');
-        document.getElementById('captureTitle').textContent = `${eq.equipment_tag} — ${eq.equipment_name}`;
-        document.getElementById('capInspDate').value = new Date().toISOString().slice(0, 10);
-        document.getElementById('capInspector').value = '';
-        document.getElementById('capObservations').value = '';
-        const pdfInp = document.getElementById('capPdfUrl');
-        if (pdfInp) pdfInp.value = '';
+
+        if (_editingInspectionId) {
+            // Modo edición: cargar datos existentes
+            const inspRes = await fetch(`/api/thickness/inspections/${_editingInspectionId}`);
+            const inspData = await inspRes.json();
+            document.getElementById('captureTitle').textContent = `✏️ Editando — ${eq.equipment_tag} — ${inspData.inspection_date}`;
+            document.getElementById('capInspDate').value = inspData.inspection_date || '';
+            document.getElementById('capInspector').value = inspData.inspector_name || '';
+            document.getElementById('capObservations').value = inspData.observations || '';
+            const pdfInp = document.getElementById('capPdfUrl');
+            if (pdfInp) pdfInp.value = inspData.pdf_url || '';
+            // Pre-llenar valores de readings
+            (inspData.readings || []).forEach(r => {
+                _thkValues[r.point_id] = r.value_mm;
+            });
+        } else {
+            document.getElementById('captureTitle').textContent = `${eq.equipment_tag} — ${eq.equipment_name}`;
+            document.getElementById('capInspDate').value = new Date().toISOString().slice(0, 10);
+            document.getElementById('capInspector').value = '';
+            document.getElementById('capObservations').value = '';
+            const pdfInp = document.getElementById('capPdfUrl');
+            if (pdfInp) pdfInp.value = '';
+        }
         renderCaptureSections();
         updateSummary();
     } catch (e) {
@@ -138,9 +157,19 @@ function renderCaptureSections() {
 
     container.innerHTML = html;
 
-    // Pre-llenar con últimos valores como sugerencia (opcional, aquí lo dejamos vacío)
-    // Bind onChange events for live coloring
+    // Pre-llenar inputs con valores existentes (en modo edición)
     container.querySelectorAll('input.thk-input').forEach(inp => {
+        const pid = inp.getAttribute('data-point-id');
+        if (_thkValues[pid] != null) {
+            inp.value = _thkValues[pid];
+            // Aplicar coloreo
+            const alarm = parseFloat(inp.getAttribute('data-alarm'));
+            const scrap = parseFloat(inp.getAttribute('data-scrap'));
+            inp.classList.remove('normal', 'alert', 'critical');
+            if (_thkValues[pid] <= scrap) inp.classList.add('critical');
+            else if (_thkValues[pid] <= alarm) inp.classList.add('alert');
+            else inp.classList.add('normal');
+        }
         inp.addEventListener('input', onValueChange);
     });
 }
@@ -274,8 +303,13 @@ async function saveInspection() {
         value_mm: val,
     }));
     try {
-        const res = await fetch('/api/thickness/inspections', {
-            method: 'POST',
+        const isEdit = !!_editingInspectionId;
+        const url = isEdit
+            ? `/api/thickness/inspections/${_editingInspectionId}/edit`
+            : '/api/thickness/inspections';
+        const method = isEdit ? 'PUT' : 'POST';
+        const res = await fetch(url, {
+            method,
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({
                 equipment_id: _thkActiveEquipment.equipment_id,
@@ -293,12 +327,14 @@ async function saveInspection() {
             return;
         }
         const data = await res.json();
-        let msg = `✅ Inspección guardada (${filled} puntos).`;
+        const action = isEdit ? 'actualizada' : 'guardada';
+        let msg = `✅ Inspección ${action} (${filled} puntos).`;
         if (data.critical_points > 0) {
-            msg += `\n\n⚠️ Se detectaron ${data.critical_points} puntos críticos. Se generó un aviso automático de alta prioridad.`;
+            msg += `\n\n⚠️ Se detectaron ${data.critical_points} puntos críticos.` + (isEdit ? '' : ' Se generó un aviso automático de alta prioridad.');
         } else if (data.alert_points > 0) {
             msg += `\n\n⚠️ ${data.alert_points} puntos en alerta — vigilar próxima inspección.`;
         }
+        _editingInspectionId = null;
         alert(msg);
         backToDashboard();
     } catch (e) {
@@ -334,6 +370,7 @@ async function openHistoryFor(equipmentId) {
                     <th>Estado</th>
                     <th>Próxima</th>
                     <th>PDF</th>
+                    <th>Acciones</th>
                 </tr>
             </thead>
             <tbody>
@@ -350,6 +387,10 @@ async function openHistoryFor(equipmentId) {
                             ? `<a href="${i.pdf_url}" target="_blank" style="color:#5ac8fa;font-size:1.1rem;" title="Abrir PDF"><i class="fas fa-file-pdf"></i></a>`
                             : `<button class="btn" style="font-size:.7rem;height:24px;padding:0 8px;" onclick="attachPdfToInspection(${i.id})">+</button>`
                         }</td>
+                        <td style="display:flex;gap:4px;justify-content:center;">
+                            <button onclick="editInspection(${i.equipment_id}, ${i.id})" style="background:rgba(10,132,255,.18);color:#5ac8fa;border:none;border-radius:6px;width:28px;height:28px;cursor:pointer;" title="Editar"><i class="fas fa-edit"></i></button>
+                            <button onclick="deleteInspection(${i.id})" style="background:rgba(255,69,58,.16);color:#ff6b61;border:none;border-radius:6px;width:28px;height:28px;cursor:pointer;" title="Eliminar"><i class="fas fa-trash"></i></button>
+                        </td>
                     </tr>
                 `).join('')}
             </tbody>
@@ -381,9 +422,33 @@ async function attachPdfToInspection(inspectionId) {
     }
 }
 
+function editInspection(equipmentId, inspectionId) {
+    openInspectionFor(equipmentId, inspectionId);
+}
+
+async function deleteInspection(inspectionId) {
+    if (!confirm('¿Eliminar esta inspección? Se borrarán todas las mediciones asociadas.')) return;
+    try {
+        const res = await fetch(`/api/thickness/inspections/${inspectionId}`, { method: 'DELETE' });
+        if (!res.ok) {
+            const err = await res.json();
+            alert('Error: ' + (err.error || 'No se pudo eliminar'));
+            return;
+        }
+        alert('✅ Inspección eliminada.');
+        const eq = _thkActiveEquipment;
+        if (eq) openHistoryFor(eq.equipment_id);
+        else backToDashboard();
+    } catch (e) {
+        console.error('deleteInspection error:', e);
+    }
+}
+
 window.reloadDashboard = reloadDashboard;
 window.openInspectionFor = openInspectionFor;
 window.openHistoryFor = openHistoryFor;
 window.backToDashboard = backToDashboard;
 window.saveInspection = saveInspection;
 window.attachPdfToInspection = attachPdfToInspection;
+window.editInspection = editInspection;
+window.deleteInspection = deleteInspection;
