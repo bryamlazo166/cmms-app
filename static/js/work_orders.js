@@ -23,6 +23,7 @@ document.addEventListener('DOMContentLoaded', () => {
     loadPendingNotices();
     loadHierarchyData();
     loadCurrentUser();
+    loadUsersForTechLink();
 
     // Provider Form Submit
     const provForm = document.getElementById('providerForm');
@@ -1711,11 +1712,15 @@ function renderTechnicians() {
     const container = document.getElementById('techniciansGrid');
     if (!container) return;
 
-    container.innerHTML = allTechnicians.map(t => `
+    container.innerHTML = allTechnicians.map(t => {
+        const linkedUser = t.user_id ? _allUsers.find(u => u.id === t.user_id) : null;
+        const userLabel = linkedUser ? `<span style="color:#30D158;font-size:.8rem;"><i class="fas fa-link"></i> ${linkedUser.full_name || linkedUser.username}</span>` : '<span style="color:#666;font-size:.8rem;">Sin vincular</span>';
+        return `
         <div class="card provider-card" style="${t.is_active ? '' : 'opacity: 0.5; border: 1px dashed #888;'}">
             <h3>${t.name} ${t.is_active ? '' : '(INACTIVO)'}</h3>
             <p><strong>Esp:</strong> ${t.specialty || '-'}</p>
             <p><i class="fas fa-phone"></i> ${t.contact_info || '-'}</p>
+            <p>${userLabel}</p>
             <div style="margin-top:10px; border-top:1px solid #eee; padding-top:5px;">
                 <button class="btn-icon" onclick="editTechnician(${t.id})"><i class="fas fa-edit"></i></button>
                 <button class="btn-icon" onclick="toggleTechnician(${t.id})" style="color:${t.is_active ? 'orange' : 'green'};" title="${t.is_active ? 'Dar de baja' : 'Dar de alta'}">
@@ -1723,7 +1728,7 @@ function renderTechnicians() {
                 </button>
             </div>
         </div>
-    `).join('');
+    `}).join('');
 }
 
 function populateTechnicianSelect() {
@@ -1736,24 +1741,47 @@ function populateTechnicianSelect() {
         activeTechs.map(t => `<option value="${t.id}">${t.name}</option>`).join('');
 }
 
+let _allUsers = [];
+async function loadUsersForTechLink() {
+    try {
+        const res = await fetch('/api/auth/me');
+        if (!res.ok) return;
+        const me = await res.json();
+        if (me.role === 'admin') {
+            const uRes = await fetch('/api/auth/users');
+            if (uRes.ok) _allUsers = await uRes.json();
+        }
+    } catch (_) {}
+}
+
+function populateTechUserSelect(selectedUserId) {
+    const sel = document.getElementById('techUserId');
+    if (!sel) return;
+    const linkedIds = new Set(allTechnicians.filter(t => t.user_id).map(t => t.user_id));
+    sel.innerHTML = '<option value="">— Sin vincular —</option>' +
+        _allUsers.filter(u => u.active && (!linkedIds.has(u.id) || u.id === selectedUserId))
+            .map(u => `<option value="${u.id}" ${u.id === selectedUserId ? 'selected' : ''}>${u.full_name || u.username} (${u.role})</option>`).join('');
+}
+
 function openTechnicianModal() {
     document.getElementById('techId').value = '';
     document.getElementById('techName').value = '';
     document.getElementById('techSpecialty').value = '';
     document.getElementById('techContact').value = '';
     document.getElementById('techModalTitle').textContent = 'Nuevo Técnico';
+    populateTechUserSelect(null);
     document.getElementById('technicianModal').showModal();
 }
 
 window.editTechnician = (id) => {
     const t = allTechnicians.find(x => x.id === id);
     if (!t) return;
-
     document.getElementById('techId').value = t.id;
     document.getElementById('techName').value = t.name;
     document.getElementById('techSpecialty').value = t.specialty || '';
     document.getElementById('techContact').value = t.contact_info || '';
     document.getElementById('techModalTitle').textContent = 'Editar Técnico';
+    populateTechUserSelect(t.user_id || null);
     document.getElementById('technicianModal').showModal();
 }
 
@@ -1773,10 +1801,12 @@ document.addEventListener('DOMContentLoaded', () => {
         techForm.onsubmit = async (e) => {
             e.preventDefault();
             const id = document.getElementById('techId').value;
+            const userIdVal = document.getElementById('techUserId').value;
             const data = {
                 name: document.getElementById('techName').value,
                 specialty: document.getElementById('techSpecialty').value,
-                contact_info: document.getElementById('techContact').value
+                contact_info: document.getElementById('techContact').value,
+                user_id: userIdVal ? parseInt(userIdVal) : null,
             };
 
             const url = id ? `/api/technicians/${id}` : '/api/technicians';
