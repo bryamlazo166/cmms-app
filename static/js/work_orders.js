@@ -1699,7 +1699,7 @@ async function handleCloseOTSubmit(e) {
     }
 }
 
-function shareOTWhatsApp(otId, comments, duration) {
+async function shareOTWhatsApp(otId, comments, duration) {
     const ot = allWorkOrders.find(o => o.id === parseInt(otId));
     if (!ot) return;
     const techMatch = allTechnicians.find(t => String(t.id) === String(ot.technician_id));
@@ -1708,6 +1708,16 @@ function shareOTWhatsApp(otId, comments, duration) {
     const equip = ot.equipment_name || '-';
     const tag = ot.equipment_tag || '';
 
+    // Generar link seguro de foto
+    let photoLink = '';
+    try {
+        const res = await fetch(`/api/photo-share/generate/work_order/${otId}`);
+        if (res.ok) {
+            const data = await res.json();
+            if (data.url) photoLink = `${window.location.origin}${data.url}`;
+        }
+    } catch (_) {}
+
     let msg = `✅ *OT ${ot.code || 'OT-' + ot.id} CERRADA*\n`;
     msg += `📍 ${area} > ${equip}${tag ? ' [' + tag + ']' : ''}\n`;
     msg += `\n🔧 *Trabajo realizado:*\n${comments || '-'}\n`;
@@ -1715,6 +1725,7 @@ function shareOTWhatsApp(otId, comments, duration) {
     msg += `\n👤 Técnico: ${techName}`;
     if (ot.caused_downtime) msg += `\n⚠️ Causó parada: ${ot.downtime_hours || '-'} horas`;
     msg += `\n📅 ${new Date().toLocaleDateString('es-PE')}`;
+    if (photoLink) msg += `\n\n📷 Ver foto (válido 24h):\n${photoLink}`;
     msg += `\n\n_Equipo disponible para producción_`;
     msg += `\n_Enviado desde CMMS Pro_`;
 

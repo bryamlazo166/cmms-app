@@ -582,6 +582,50 @@ def register_core_routes(app, db, logger, app_build_tag,
         db.session.commit()
         return jsonify({"ok": True})
 
+    # ── Photo Share (signed temporary link) ──────────────────────────────
+    import hashlib, hmac, time as _time
+
+    _PHOTO_SHARE_SECRET = (os.getenv('SECRET_KEY') or 'cmms-photo-share-2026').encode()
+    _PHOTO_SHARE_TTL = 86400  # 24 horas
+
+    def _sign_photo_token(photo_id, expires):
+        payload = f"{photo_id}:{expires}".encode()
+        sig = hmac.new(_PHOTO_SHARE_SECRET, payload, hashlib.sha256).hexdigest()[:16]
+        return sig
+
+    @app.route('/api/photo-share/generate/<entity_type>/<int:entity_id>', methods=['GET'])
+    def generate_photo_share_link(entity_type, entity_id):
+        """Genera un link temporal firmado para la primera foto de un aviso/OT."""
+        from models import PhotoAttachment
+        photo = PhotoAttachment.query.filter_by(
+            entity_type=entity_type, entity_id=entity_id
+        ).order_by(PhotoAttachment.id.desc()).first()
+        if not photo:
+            return jsonify({"url": None, "message": "Sin fotos"})
+        expires = int(_time.time()) + _PHOTO_SHARE_TTL
+        sig = _sign_photo_token(photo.id, expires)
+        share_url = f"/api/photo-view/{photo.id}/{expires}/{sig}"
+        return jsonify({"url": share_url, "photo_id": photo.id, "expires_in": _PHOTO_SHARE_TTL})
+
+    @app.route('/api/photo-view/<int:photo_id>/<int:expires>/<sig>', methods=['GET'])
+    def view_shared_photo(photo_id, expires, sig):
+        """Sirve una foto compartida si el token es válido y no expiró."""
+        # Validar firma
+        expected_sig = _sign_photo_token(photo_id, expires)
+        if not hmac.compare_digest(sig, expected_sig):
+            return "<h2>Link inválido</h2><p>Este enlace de foto no es válido.</p>", 403
+        # Validar expiración
+        if _time.time() > expires:
+            return "<h2>Link expirado</h2><p>Este enlace de foto expiró. Solicita uno nuevo desde el CMMS.</p>", 410
+        # Buscar foto
+        from models import PhotoAttachment
+        photo = PhotoAttachment.query.get(photo_id)
+        if not photo or not photo.url:
+            return "<h2>Foto no encontrada</h2>", 404
+        # Redirigir a la URL real de la foto en Storage
+        from flask import redirect
+        return redirect(photo.url)
+
     # ── Technical Specs (Equipment & Component) ──────────────────────────
 
     @app.route('/api/specs/<entity_type>/<int:entity_id>', methods=['GET', 'POST'])

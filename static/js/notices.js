@@ -967,13 +967,15 @@ window.shareNoticeWhatsApp = async function(noticeId) {
     const sys = getName(allSys, n.system_id);
     const comp = getName(allComps, n.component_id);
 
-    // Buscar foto
-    let photoUrl = '';
+    // Generar link seguro temporal para la foto
+    let photoLink = '';
     try {
-        const res = await fetch(`/api/photos?entity_type=notice&entity_id=${noticeId}`);
+        const res = await fetch(`/api/photo-share/generate/notice/${noticeId}`);
         if (res.ok) {
-            const photos = await res.json();
-            if (photos.length > 0) photoUrl = photos[0].url;
+            const data = await res.json();
+            if (data.url) {
+                photoLink = `${window.location.origin}${data.url}`;
+            }
         }
     } catch (_) {}
 
@@ -989,7 +991,7 @@ window.shareNoticeWhatsApp = async function(noticeId) {
     if (n.blockage_object) msg += `\n🪨 Objeto extraño: ${n.blockage_object}`;
     msg += `\n📅 Fecha: ${n.request_date || '-'}`;
     msg += `\n👤 Reportado por: ${n.reporter_name || '-'}`;
-    if (photoUrl) msg += `\n\n📷 Foto: ${photoUrl}`;
+    if (photoLink) msg += `\n\n📷 Ver foto (válido 24h):\n${photoLink}`;
     msg += `\n\n_Enviado desde CMMS Pro_`;
 
     const encoded = encodeURIComponent(msg);
