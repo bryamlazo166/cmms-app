@@ -979,24 +979,24 @@ window.shareNoticeWhatsApp = async function(noticeId) {
         }
     } catch (_) {}
 
-    let msg = `*AVISO ${n.code || 'AV-' + n.id}*\n`;
-    msg += `${area}`;
-    if (equip !== '-') msg += ` > ${equip}`;
-    if (sys !== '-') msg += ` > ${sys}`;
-    if (comp !== '-') msg += ` > ${comp}`;
-    msg += `\n\n${n.description || '-'}`;
-    msg += `\n\nCriticidad: ${n.criticality || '-'} | Prioridad: ${n.priority || '-'}`;
-    msg += `\nTipo: ${n.maintenance_type || '-'}`;
-    if (n.failure_mode) msg += ` | Modo: ${n.failure_mode}`;
-    if (n.blockage_object) msg += `\nObjeto extrano: ${n.blockage_object}`;
-    msg += `\nFecha: ${n.request_date || '-'}`;
-    msg += `\nReportado por: ${n.reporter_name || '-'}`;
+    let msg = '\uD83D\uDD14 *AVISO ' + (n.code || 'AV-' + n.id) + '*\n';
+    msg += '\uD83D\uDCCD ' + area;
+    if (equip !== '-') msg += ' > ' + equip;
+    if (sys !== '-') msg += ' > ' + sys;
+    if (comp !== '-') msg += ' > ' + comp;
+    msg += '\n\n\uD83D\uDCCB ' + (n.description || '-');
+    msg += '\n\n\u26A0\uFE0F Criticidad: ' + (n.criticality || '-') + ' | Prioridad: ' + (n.priority || '-');
+    msg += '\n\uD83D\uDD27 Tipo: ' + (n.maintenance_type || '-');
+    if (n.failure_mode) msg += ' | Modo: ' + n.failure_mode;
+    if (n.blockage_object) msg += '\n\uD83E\uDEA8 Objeto extra\u00f1o: ' + n.blockage_object;
+    msg += '\n\uD83D\uDCC5 Fecha: ' + (n.request_date || '-');
+    msg += '\n\uD83D\uDC64 Reportado por: ' + (n.reporter_name || '-');
     if (photoLink) {
-        msg += `\n\nVer foto (valido 24h):\n${photoLink}`;
+        msg += '\n\n\uD83D\uDCF7 Ver foto (v\u00e1lido 24h):\n' + photoLink;
     } else {
-        msg += `\n\nVer en CMMS: ${window.location.origin}/avisos`;
+        msg += '\n\nVer en CMMS: ' + window.location.origin + '/avisos';
     }
-    msg += `\n\n_Enviado desde CMMS Pro_`;
+    msg += '\n\n_Enviado desde CMMS Pro_';
 
     const encoded = encodeURIComponent(msg);
     window.open(`https://wa.me/?text=${encoded}`, '_blank');

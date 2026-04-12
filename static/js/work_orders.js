@@ -1718,18 +1718,18 @@ async function shareOTWhatsApp(otId, comments, duration) {
         }
     } catch (_) {}
 
-    let msg = `*OT ${ot.code || 'OT-' + ot.id} CERRADA*\n`;
-    msg += `${area} > ${equip}${tag ? ' [' + tag + ']' : ''}\n`;
-    msg += `\n*Trabajo realizado:*\n${comments || '-'}\n`;
-    msg += `\nDuracion: ${duration}`;
-    msg += `\nTecnico: ${techName}`;
-    if (ot.caused_downtime) msg += `\nCauso parada: ${ot.downtime_hours || '-'} horas`;
-    msg += `\nFecha: ${new Date().toLocaleDateString('es-PE')}`;
+    let msg = '\u2705 *OT ' + (ot.code || 'OT-' + ot.id) + ' CERRADA*\n';
+    msg += '\uD83D\uDCCD ' + area + ' > ' + equip + (tag ? ' [' + tag + ']' : '') + '\n';
+    msg += '\n\uD83D\uDD27 *Trabajo realizado:*\n' + (comments || '-') + '\n';
+    msg += '\n\u23F1 Duraci\u00f3n: ' + duration;
+    msg += '\n\uD83D\uDC64 T\u00e9cnico: ' + techName;
+    if (ot.caused_downtime) msg += '\n\u26A0\uFE0F Caus\u00f3 parada: ' + (ot.downtime_hours || '-') + ' horas';
+    msg += '\n\uD83D\uDCC5 ' + new Date().toLocaleDateString('es-PE');
     if (photoLink) {
-        msg += `\n\nVer foto (valido 24h):\n${photoLink}`;
+        msg += '\n\n\uD83D\uDCF7 Ver foto (v\u00e1lido 24h):\n' + photoLink;
     }
-    msg += `\n\n_Equipo disponible para produccion_`;
-    msg += `\n_Enviado desde CMMS Pro_`;
+    msg += '\n\n_Equipo disponible para producci\u00f3n_';
+    msg += '\n_Enviado desde CMMS Pro_';
 
     window.open(`https://wa.me/?text=${encodeURIComponent(msg)}`, '_blank');
 }
@@ -1741,18 +1741,19 @@ window.quickShareOT = function(otId) {
     const techMatch = allTechnicians.find(t => String(t.id) === String(ot.technician_id));
     const techName = (techMatch && techMatch.name) || ot.technician_id || '-';
 
-    let msg = `*${ot.code || 'OT-' + ot.id}* - ${ot.status}\n`;
-    msg += `${ot.area_name || '-'} > ${ot.equipment_name || '-'}${ot.equipment_tag ? ' [' + ot.equipment_tag + ']' : ''}\n`;
-    msg += `\n${ot.description || '-'}\n`;
-    msg += `\nTipo: ${ot.maintenance_type || '-'}`;
-    msg += `\nTecnico: ${techName}`;
-    msg += `\nProgramada: ${ot.scheduled_date || '-'}`;
+    const statusIcon = ot.status === 'Cerrada' ? '\u2705' : ot.status === 'En Progreso' ? '\uD83D\uDD27' : '\uD83D\uDCCB';
+    let msg = statusIcon + ' *' + (ot.code || 'OT-' + ot.id) + '* \u2014 ' + ot.status + '\n';
+    msg += '\uD83D\uDCCD ' + (ot.area_name || '-') + ' > ' + (ot.equipment_name || '-') + (ot.equipment_tag ? ' [' + ot.equipment_tag + ']' : '') + '\n';
+    msg += '\n\uD83D\uDCCB ' + (ot.description || '-') + '\n';
+    msg += '\n\uD83D\uDD27 Tipo: ' + (ot.maintenance_type || '-');
+    msg += '\n\uD83D\uDC64 T\u00e9cnico: ' + techName;
+    msg += '\n\uD83D\uDCC5 Programada: ' + (ot.scheduled_date || '-');
     if (ot.status === 'Cerrada') {
-        msg += `\nDuracion: ${ot.real_duration || '-'} h`;
-        if (ot.caused_downtime) msg += `\nParada: ${ot.downtime_hours || '-'} h`;
-        msg += `\n\n_Equipo disponible para produccion_`;
+        msg += '\n\u23F1 Duraci\u00f3n: ' + (ot.real_duration || '-') + ' h';
+        if (ot.caused_downtime) msg += '\n\u26A0\uFE0F Parada: ' + (ot.downtime_hours || '-') + ' h';
+        msg += '\n\n_Equipo disponible para producci\u00f3n_';
     }
-    msg += `\n\n_Enviado desde CMMS Pro_`;
+    msg += '\n\n_Enviado desde CMMS Pro_';
 
     window.open(`https://wa.me/?text=${encodeURIComponent(msg)}`, '_blank');
 };
