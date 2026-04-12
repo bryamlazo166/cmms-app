@@ -484,6 +484,7 @@ function renderPlanningTable(data = null) {
                 <div style="display:flex; align-items:center; gap:6px;">
                     <button class="btn-icon planning-action-btn" onclick="editOT(${ot.id})" title="Editar OT"><i class="fas fa-edit"></i></button>
                     <button class="btn-icon planning-action-btn" onclick="openOTInExecution(${ot.id})" title="Ir a Ejecucion y Cierre" style="border-color:#2d6a3d; background:#173528; color:#b8ffd0;"><i class="fas fa-play"></i></button>
+                    <button class="btn-icon planning-action-btn" onclick="quickShareOT(${ot.id})" title="Compartir por WhatsApp" style="border-color:#25D366; background:rgba(37,211,102,.12); color:#25D366;"><i class="fab fa-whatsapp"></i></button>
                 </div>
             </td>
         </tr>
@@ -1692,8 +1693,61 @@ async function handleCloseOTSubmit(e) {
     document.getElementById('execution-details').classList.add('hidden');
     document.getElementById('executionSearch').value = '';
 
-    alert(`✅ Orden Cerrada Correctamente.\n\nTiempo Total: ${hours} horas y ${minutes} minutos.`);
+    const shareMsg = `✅ Orden Cerrada. Tiempo Total: ${hours}h ${minutes}m.\n\n¿Desea compartir por WhatsApp?`;
+    if (confirm(shareMsg)) {
+        shareOTWhatsApp(id, data.execution_comments, `${hours}h ${minutes}m`);
+    }
 }
+
+function shareOTWhatsApp(otId, comments, duration) {
+    const ot = allWorkOrders.find(o => o.id === parseInt(otId));
+    if (!ot) return;
+    const techMatch = allTechnicians.find(t => String(t.id) === String(ot.technician_id));
+    const techName = (techMatch && techMatch.name) || ot.technician_id || '-';
+    const area = ot.area_name || '-';
+    const equip = ot.equipment_name || '-';
+    const tag = ot.equipment_tag || '';
+
+    let msg = `✅ *OT ${ot.code || 'OT-' + ot.id} CERRADA*\n`;
+    msg += `📍 ${area} > ${equip}${tag ? ' [' + tag + ']' : ''}\n`;
+    msg += `\n🔧 *Trabajo realizado:*\n${comments || '-'}\n`;
+    msg += `\n⏱ Duración: ${duration}`;
+    msg += `\n👤 Técnico: ${techName}`;
+    if (ot.caused_downtime) msg += `\n⚠️ Causó parada: ${ot.downtime_hours || '-'} horas`;
+    msg += `\n📅 ${new Date().toLocaleDateString('es-PE')}`;
+    msg += `\n\n_Equipo disponible para producción_`;
+    msg += `\n_Enviado desde CMMS Pro_`;
+
+    window.open(`https://wa.me/?text=${encodeURIComponent(msg)}`, '_blank');
+}
+window.shareOTWhatsApp = shareOTWhatsApp;
+
+window.quickShareOT = function(otId) {
+    const ot = allWorkOrders.find(o => o.id === otId);
+    if (!ot) return;
+    const techMatch = allTechnicians.find(t => String(t.id) === String(ot.technician_id));
+    const techName = (techMatch && techMatch.name) || ot.technician_id || '-';
+
+    let emoji = '📋';
+    if (ot.status === 'Cerrada') emoji = '✅';
+    else if (ot.status === 'En Progreso') emoji = '🔧';
+    else if (ot.status === 'Programada') emoji = '📅';
+
+    let msg = `${emoji} *${ot.code || 'OT-' + ot.id}* — ${ot.status}\n`;
+    msg += `📍 ${ot.area_name || '-'} > ${ot.equipment_name || '-'}${ot.equipment_tag ? ' [' + ot.equipment_tag + ']' : ''}\n`;
+    msg += `\n📋 ${ot.description || '-'}\n`;
+    msg += `\n🔧 Tipo: ${ot.maintenance_type || '-'}`;
+    msg += `\n👤 Técnico: ${techName}`;
+    msg += `\n📅 Programada: ${ot.scheduled_date || '-'}`;
+    if (ot.status === 'Cerrada') {
+        msg += `\n⏱ Duración: ${ot.real_duration || '-'} h`;
+        if (ot.caused_downtime) msg += `\n⚠️ Parada: ${ot.downtime_hours || '-'} h`;
+        msg += `\n\n_Equipo disponible para producción_`;
+    }
+    msg += `\n\n_Enviado desde CMMS Pro_`;
+
+    window.open(`https://wa.me/?text=${encodeURIComponent(msg)}`, '_blank');
+};
 
 /* --- TECHNICIAN MANAGEMENT --- */
 async function loadTechnicians() {

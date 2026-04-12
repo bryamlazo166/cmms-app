@@ -151,11 +151,12 @@ function renderNotices() {
             <td>${n.ot_number || '-'}</td>
             <td>${scopeBadge(scope)}</td>
             <td>${statusBadge}</td>
-            <td>
+            <td style="white-space:nowrap;">
                 ${convertBtn}
                 ${editBtn}
                 ${promoteBtn}
                 ${actionBtns}
+                <button onclick="shareNoticeWhatsApp(${n.id})" style="padding:2px 5px; background:transparent; border:none; cursor:pointer; color:#25D366; font-size:1.1em;" title="Compartir por WhatsApp"><i class="fab fa-whatsapp"></i></button>
             </td>
         `;
         tbody.appendChild(tr);
@@ -956,4 +957,43 @@ async function deleteNoticePhoto(photoId, noticeId) {
     await fetch(`/api/photos/${photoId}`, { method: 'DELETE' });
     loadNoticePhotos(noticeId);
 }
+
+// ── Compartir por WhatsApp ──────────────────────────────
+window.shareNoticeWhatsApp = async function(noticeId) {
+    const n = allNotices.find(x => x.id === noticeId);
+    if (!n) return;
+    const area = getName(allAreas, n.area_id);
+    const equip = n.equipment_id ? getName(allEquips, n.equipment_id) : (n.free_location || '-');
+    const sys = getName(allSys, n.system_id);
+    const comp = getName(allComps, n.component_id);
+
+    // Buscar foto
+    let photoUrl = '';
+    try {
+        const res = await fetch(`/api/photos?entity_type=notice&entity_id=${noticeId}`);
+        if (res.ok) {
+            const photos = await res.json();
+            if (photos.length > 0) photoUrl = photos[0].url;
+        }
+    } catch (_) {}
+
+    let msg = `🔔 *AVISO ${n.code || 'AV-' + n.id}*\n`;
+    msg += `📍 ${area}`;
+    if (equip !== '-') msg += ` > ${equip}`;
+    if (sys !== '-') msg += ` > ${sys}`;
+    if (comp !== '-') msg += ` > ${comp}`;
+    msg += `\n\n📋 ${n.description || '-'}`;
+    msg += `\n\n⚠️ Criticidad: ${n.criticality || '-'} | Prioridad: ${n.priority || '-'}`;
+    msg += `\n🔧 Tipo: ${n.maintenance_type || '-'}`;
+    if (n.failure_mode) msg += ` | Modo: ${n.failure_mode}`;
+    if (n.blockage_object) msg += `\n🪨 Objeto extraño: ${n.blockage_object}`;
+    msg += `\n📅 Fecha: ${n.request_date || '-'}`;
+    msg += `\n👤 Reportado por: ${n.reporter_name || '-'}`;
+    if (photoUrl) msg += `\n\n📷 Foto: ${photoUrl}`;
+    msg += `\n\n_Enviado desde CMMS Pro_`;
+
+    const encoded = encodeURIComponent(msg);
+    window.open(`https://wa.me/?text=${encoded}`, '_blank');
+};
+
 
