@@ -48,6 +48,7 @@ from routes.lubrication_routes import register_lubrication_routes
 from routes.monitoring_routes import register_monitoring_routes
 from routes.thickness_routes import register_thickness_routes
 from routes.shutdown_routes import register_shutdown_routes
+from routes.indicators_routes import register_indicators_routes
 from routes.notices_routes import register_notices_routes
 from routes.reports_routes import register_reports_routes
 from routes.rotative_assets_routes import register_rotative_assets_routes
@@ -202,6 +203,8 @@ _MODULE_ROUTES = {
     'inspecciones':     {'pages': ['/inspecciones'], 'api': ['/api/inspection']},
     'espesores':        {'pages': ['/espesores'], 'api': ['/api/thickness']},
     'cockpit':          {'pages': ['/cockpit'], 'api': []},
+    'indicadores': {'view': False, 'edit': False},
+    'indicadores':      {'pages': ['/indicadores'], 'api': ['/api/indicators']},
     'paradas':          {'pages': ['/paradas'], 'api': ['/api/shutdowns']},
     'seguimiento':      {'pages': ['/seguimiento'], 'api': ['/api/activities', '/api/milestones']},
     'reportes':         {'pages': ['/reportes'], 'api': ['/api/reports']},
@@ -219,6 +222,7 @@ _DEFAULT_PERMS = {
         'herramientas': {'view': True, 'edit': True}, 'lubricacion': {'view': True, 'edit': True},
         'inspecciones': {'view': True, 'edit': True}, 'monitoreo': {'view': True, 'edit': True},
         'espesores': {'view': True, 'edit': True}, 'cockpit': {'view': True, 'edit': False},
+        'indicadores': {'view': True, 'edit': False},
         'seguimiento': {'view': True, 'edit': True}, 'reportes': {'view': True, 'edit': True},
         'activos_rotativos': {'view': True, 'edit': True}, 'activos_config': {'view': True, 'edit': False},
         'historial_equipo': {'view': True, 'edit': False}, 'exportar': {'view': False, 'edit': False},
@@ -290,6 +294,7 @@ _DEFAULT_PERMS = {
         'herramientas': {'view': True, 'edit': False}, 'lubricacion': {'view': True, 'edit': False},
         'inspecciones': {'view': True, 'edit': False}, 'monitoreo': {'view': True, 'edit': False},
         'espesores': {'view': True, 'edit': False}, 'cockpit': {'view': True, 'edit': False},
+        'indicadores': {'view': True, 'edit': False},
         'paradas': {'view': True, 'edit': False},
         'seguimiento': {'view': True, 'edit': False}, 'reportes': {'view': True, 'edit': False},
         'activos_rotativos': {'view': True, 'edit': False}, 'activos_config': {'view': True, 'edit': False},
@@ -578,6 +583,16 @@ register_shutdown_routes(
     Line=Line,
     OTPersonnel=OTPersonnel,
     Technician=Technician,
+)
+
+register_indicators_routes(
+    app=app,
+    db=db,
+    logger=logger,
+    WorkOrder=WorkOrder,
+    Area=Area,
+    Line=Line,
+    Equipment=Equipment,
 )
 
 register_rotative_assets_routes(

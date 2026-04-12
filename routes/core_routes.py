@@ -143,6 +143,10 @@ def register_core_routes(app, db, logger, app_build_tag,
     def shutdowns_page():
         return render_template('shutdowns.html')
 
+    @app.route('/indicadores')
+    def indicators_page():
+        return render_template('indicators.html')
+
     @app.route('/activos-rotativos')
     def rotative_assets_page():
         return render_template('rotative_assets.html')

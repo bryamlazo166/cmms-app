@@ -1,0 +1,97 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <link rel="icon" type="image/svg+xml" href="/static/favicon.svg">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Indicadores para Directorio - CMMS</title>
+    <link rel="stylesheet" href="/static/css/style.css?v={{ v }}">
+    <link rel="stylesheet" href="/static/css/sidebar.css?v={{ v }}">
+    <link href="https://fonts.googleapis.com/css2?family=Roboto:wght@300;400;500;700&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css">
+    <script src="https://cdn.jsdelivr.net/npm/echarts@5.5.0/dist/echarts.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
+    <style>
+        body{background:#0a0e14;}
+        .wrap{max-width:1600px;margin:0 auto;padding:16px;}
+        .header{background:linear-gradient(120deg,#1a1f2e,#12161f);border:1px solid #2d3f56;border-radius:14px;padding:20px 24px;margin-bottom:16px;display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:14px;}
+        .header h1{margin:0;color:#BF5AF2;font-size:1.5rem;display:flex;align-items:center;gap:10px;}
+        .header .sub{margin:4px 0 0;color:#9ab0cb;font-size:.85rem;}
+        .tools{display:flex;gap:10px;align-items:center;flex-wrap:wrap;}
+        .tools select,.tools input{height:38px;background:#0f1319;color:#d5e2f5;border:1px solid #344964;border-radius:8px;padding:6px 12px;font-size:.88rem;}
+        .btn{height:38px;border-radius:8px;padding:0 16px;font-weight:600;cursor:pointer;font-size:.88rem;border:none;display:inline-flex;align-items:center;gap:6px;}
+        .btn.primary{background:#0a84ff;color:#fff;}.btn.export{background:#30D158;color:#fff;}
+        .btn.back{background:#2a2d35;color:#d6d8de;border:1px solid #4a5361;}
+        .breadcrumb{display:flex;gap:6px;align-items:center;margin-bottom:14px;font-size:.9rem;color:#9ab0cb;}
+        .breadcrumb span{cursor:pointer;color:#5ac8fa;}.breadcrumb span:hover{text-decoration:underline;}
+        .breadcrumb .sep{color:#4a5361;cursor:default;}
+        .breadcrumb .current{color:#BF5AF2;font-weight:700;cursor:default;}
+        .chart-panel{background:#181d24;border:1px solid #2f4257;border-radius:14px;padding:18px;margin-bottom:16px;}
+        .chart-panel h3{margin:0 0 4px;color:#BF5AF2;font-size:1rem;}
+        .chart-panel .method{color:#9ab0cb;font-size:.78rem;margin-bottom:12px;}
+        .chart-box{height:420px;width:100%;}
+        .kpi-strip{display:grid;grid-template-columns:repeat(4,1fr);gap:12px;margin-bottom:16px;}
+        .kpi-item{background:#1b212b;border:1px solid #344964;border-radius:12px;padding:14px;text-align:center;}
+        .kpi-item .label{font-size:.72rem;color:#9ab0cb;text-transform:uppercase;letter-spacing:.5px;}
+        .kpi-item .value{font-size:2rem;font-weight:700;margin-top:6px;}
+        .kpi-item .unit{font-size:.9rem;color:#9ab0cb;}
+        .kpi-item.avail .value{color:#30D158;}.kpi-item.mtbf .value{color:#BF5AF2;}
+        .kpi-item.mttr .value{color:#FF9F0A;}.kpi-item.rel .value{color:#5ac8fa;}
+        .failures-panel{background:#181d24;border:1px solid #2f4257;border-radius:14px;padding:18px;margin-bottom:16px;}
+        .failures-panel h3{color:#FF453A;margin:0 0 12px;}
+        .failure-row{display:grid;grid-template-columns:80px 1fr 100px 80px 80px;gap:8px;padding:8px;border-bottom:1px solid rgba(255,255,255,.06);font-size:.85rem;align-items:center;}
+        .failure-row.head{color:#9ab0cb;font-weight:700;font-size:.78rem;text-transform:uppercase;border-bottom:1px solid #344964;}
+        .empty{text-align:center;color:#666;padding:30px;}
+        @media print{
+            body{background:#fff !important;color:#000 !important;}
+            .sidebar{display:none !important;}.home-section{margin-left:0 !important;}
+            .tools,.btn{display:none !important;}
+            .chart-panel,.kpi-item,.failures-panel{background:#fff !important;border:1px solid #ccc !important;break-inside:avoid;}
+            .kpi-item .label{color:#666 !important;}
+            @page{size:A4 landscape;margin:10mm;}
+        }
+    </style>
+</head>
+<body>
+<nav class="sidebar"><div class="logo-details"><i class="fas fa-industry icon"></i><div class="logo_name">CMMS Pro</div><i class="fas fa-bars" id="btn_toggle"></i></div><ul class="nav-list"></ul></nav>
+<section class="home-section">
+    <div class="wrap" id="indicatorsContent">
+        <div class="header">
+            <div>
+                <h1><i class="fas fa-chart-bar"></i> Indicadores para Directorio</h1>
+                <div class="sub">MTBF · MTTR · Disponibilidad (ponderada) · Confiabilidad — Drill-down: Área → Equipo → Fallas</div>
+            </div>
+            <div class="tools">
+                <select id="indPeriod" onchange="onIndPeriodChange()">
+                    <option value="month">Mes actual</option>
+                    <option value="last_month">Mes anterior</option>
+                    <option value="quarter">Último trimestre</option>
+                    <option value="semester">Último semestre</option>
+                    <option value="year">Último año</option>
+                    <option value="custom">Personalizado</option>
+                </select>
+                <input type="date" id="indStart" style="display:none;">
+                <input type="date" id="indEnd" style="display:none;">
+                <button class="btn primary" onclick="loadIndicators()"><i class="fas fa-sync"></i> Actualizar</button>
+                <button class="btn export" onclick="exportIndPdf()"><i class="fas fa-file-pdf"></i> PDF</button>
+            </div>
+        </div>
+
+        <div class="breadcrumb" id="breadcrumb"></div>
+        <div class="kpi-strip" id="kpiStrip"></div>
+        <div class="chart-panel" id="chartPanel">
+            <h3 id="chartTitle"></h3>
+            <div class="method" id="chartMethod"></div>
+            <div class="chart-box" id="mainChart"></div>
+        </div>
+        <div class="failures-panel" id="failuresPanel" style="display:none;">
+            <h3 id="failuresTitle"></h3>
+            <div id="failuresList"></div>
+        </div>
+    </div>
+</section>
+<script src="/static/js/sidebar.js?v={{ v }}"></script>
+<script src="/static/js/indicators.js?v={{ v }}"></script>
+</body>
+</html>
