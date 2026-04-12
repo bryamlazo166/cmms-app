@@ -328,6 +328,12 @@ class MaintenanceNotice(db.Model):
     scope: Mapped[str] = mapped_column(String(20), default='PLAN', nullable=False)
     free_location: Mapped[str | None] = mapped_column(String(255), nullable=True)
 
+    # Failure analysis
+    failure_mode: Mapped[Optional[str]] = mapped_column(String(100), nullable=True)
+    failure_category: Mapped[Optional[str]] = mapped_column(String(50), nullable=True)
+    blockage_object: Mapped[Optional[str]] = mapped_column(String(100), nullable=True)
+    # Metal, Piedra, Cadena, Madera, Alambre, Perno, Acero Inoxidable, Bronce, Otro
+
     # Link to preventive source (lubrication/inspection/monitoring point)
     source_type: Mapped[str | None] = mapped_column(String(20), nullable=True)
     source_id: Mapped[int | None] = mapped_column(Integer, nullable=True)

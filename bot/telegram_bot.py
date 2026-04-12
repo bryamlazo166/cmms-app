@@ -681,13 +681,17 @@ def _create_notice(app, data):
 
             free_loc = data.get('free_location')
 
+            blockage = data.get('blockage_object')
+            if blockage:
+                desc_parts.append(f"[Objeto: {blockage}]")
+
             _db.session.execute(text("""
                 INSERT INTO maintenance_notices (code, description, criticality, priority, request_date,
                     maintenance_type, status, reporter_name, reporter_type,
                     area_id, line_id, equipment_id, system_id, component_id, rotative_asset_id, shift,
-                    scope, free_location)
+                    scope, free_location, failure_mode, failure_category, blockage_object)
                 VALUES (:code, :desc, :crit, :prio, :rdate, :mtype, 'Pendiente', :reporter, 'telegram',
-                    :ar, :ln, :eq, :sys, :comp, :ra, :shift, :scope, :loc)
+                    :ar, :ln, :eq, :sys, :comp, :ra, :shift, :scope, :loc, :fm, :fc, :bo)
             """), {
                 "code": code, "desc": ' | '.join(desc_parts),
                 "crit": data.get('criticality', 'Media'), "prio": data.get('priority', 'Normal'),
@@ -696,6 +700,7 @@ def _create_notice(app, data):
                 "ar": ar_id, "ln": ln_id, "eq": eq_id, "sys": sys_id, "comp": comp_id, "ra": ra_id,
                 "shift": data.get('shift'),
                 "scope": scope, "loc": free_loc,
+                "fm": data.get('failure_mode'), "fc": data.get('failure_category'), "bo": blockage,
             })
             _db.session.commit()
             nid = _db.session.execute(text("SELECT id FROM maintenance_notices WHERE code = :c"), {"c": code}).scalar()
@@ -1207,7 +1212,7 @@ REGLA CRITICA #2: Si el usuario reporta una falla, pide crear/editar/cerrar algo
 ACCIONES DISPONIBLES:
 
 1. CREAR AVISO (reportar falla o registrar actividad):
-{"action": "create_notice", "data": {"description": "...", "scope": "PLAN|FUERA_PLAN|GENERAL", "failure_mode": "Rotura|Desgaste|Fuga|Desalineacion|Sobrecalentamiento|Ruido anormal|Vibracion excesiva|Aflojamiento|Corrosion|Atascamiento|Descarrilamiento|Cortocircuito|Sobrecarga|Fatiga", "failure_category": "Mecanica|Electrica|Hidraulica|Neumatica|Instrumentacion|Lubricacion|Estructural", "equipment_tag": "D8", "component_name": "motor electrico", "free_location": "texto libre si no hay equipo", "criticality": "Alta|Media|Baja", "priority": "Alta|Normal|Baja", "maintenance_type": "Correctivo|Preventivo|Mejora"}}
+{"action": "create_notice", "data": {"description": "...", "scope": "PLAN|FUERA_PLAN|GENERAL", "failure_mode": "Rotura|Desgaste|Fuga|Desalineacion|Sobrecalentamiento|Ruido anormal|Vibracion excesiva|Aflojamiento|Corrosion|Atascamiento|Descarrilamiento|Cortocircuito|Sobrecarga|Fatiga", "failure_category": "Mecanica|Electrica|Hidraulica|Neumatica|Instrumentacion|Lubricacion|Estructural", "blockage_object": "Metal|Piedra|Cadena|Madera|Alambre|Perno|Acero Inoxidable|Bronce|Otro", "equipment_tag": "D8", "component_name": "motor electrico", "free_location": "texto libre si no hay equipo", "criticality": "Alta|Media|Baja", "priority": "Alta|Normal|Baja", "maintenance_type": "Correctivo|Preventivo|Mejora"}}
 
 REGLAS PARA EL CAMPO scope (CRITICO):
 - "PLAN" = falla/trabajo sobre un equipo que SI esta en el arbol (lista EQUIPOS del contexto). REQUIERE equipment_tag valido. Es el caso por defecto y mas comun.
@@ -1245,6 +1250,12 @@ Ejemplos:
 - "rodamiento de la caja reductora del TH2 hace ruido" → {"action":"create_notice","data":{"description":"Ruido anormal en rodamiento de caja reductora del TH2","failure_mode":"Ruido anormal","failure_category":"Mecanica","equipment_tag":"TH2","component_name":"reductor","criticality":"Media"}}
 - "se rompio la chumacera conducida del D3" → {"action":"create_notice","data":{"description":"Rotura de chumacera lado conducido del Digestor #3","failure_mode":"Rotura","failure_category":"Mecanica","equipment_tag":"D3","component_name":"chumacera conducida","criticality":"Alta"}}
 - "fuga de aceite en el motorreductor del TH1" → component_name:"motorreductor"
+- "el D9 se bloqueo por una cadena que ingreso con la materia prima" → {"action":"create_notice","data":{"description":"Bloqueo del Digestor #9 por cadena ingresada con materia prima - revisar tripode interno","failure_mode":"Atascamiento","failure_category":"Mecanica","blockage_object":"Cadena","equipment_tag":"D9","component_name":"tripode interno","criticality":"Alta"}}
+- "D5 se trabo por piedra" → failure_mode:"Atascamiento", blockage_object:"Piedra"
+- "encontramos un fierro dentro del D3" → failure_mode:"Atascamiento", blockage_object:"Metal"
+- "el D7 se paro porque ingreso madera" → failure_mode:"Atascamiento", blockage_object:"Madera"
+
+REGLA PARA BLOQUEOS: Cuando el usuario reporta que un digestor se "bloqueo", "trabo", "atasco", "paro por objeto", SIEMPRE usa failure_mode:"Atascamiento" e incluye blockage_object con el tipo de objeto (Metal, Piedra, Cadena, Madera, Alambre, Perno, Acero Inoxidable, Bronce, Otro). Si no dice que objeto fue, pregunta.
 
 2. CERRAR OT:
 {"action": "close_ot", "data": {"ot_code": "OT-0034", "comments": "Trabajo completado - se reemplazo faja y se verifico alineacion"}}
@@ -1407,10 +1418,24 @@ def _generate_daily_summary(app):
                 AND report_due_date IS NOT NULL AND report_due_date < :today
             """), {"today": date.today().isoformat()}).fetchall()
 
-            # Low stock
-            low_stock = _db.session.execute(text("""
-                SELECT count(*) FROM warehouse_items WHERE is_active = true AND current_stock <= min_stock
-            """)).scalar() or 0
+            # Low stock — detalle de items
+            low_stock_items = _db.session.execute(text("""
+                SELECT code, name, current_stock, min_stock, unit
+                FROM warehouse_items
+                WHERE is_active = true AND current_stock <= min_stock
+                ORDER BY (current_stock - min_stock) ASC LIMIT 15
+            """)).fetchall()
+            low_stock = len(low_stock_items)
+
+            # Espesores UT vencidos
+            ut_vencidos = 0
+            try:
+                ut_vencidos = _db.session.execute(text("""
+                    SELECT count(DISTINCT equipment_id) FROM thickness_inspections
+                    WHERE next_due_date IS NOT NULL AND next_due_date < :today
+                """), {"today": date.today().isoformat()}).scalar() or 0
+            except Exception:
+                pass
 
             _db.session.remove()
 
@@ -1423,6 +1448,9 @@ def _generate_daily_summary(app):
             if lub + insp + mon > 0:
                 msg += f"\n\n🔴 *Puntos vencidos:*\n  Lubricacion: {lub} | Inspeccion: {insp} | Monitoreo: {mon}"
 
+            if ut_vencidos > 0:
+                msg += f"\n  Espesores UT: {ut_vencidos} equipo(s)"
+
             if overdue:
                 msg += f"\n\n⏰ *OTs vencidas ({len(overdue)}):*"
                 for o in overdue:
@@ -1433,8 +1461,15 @@ def _generate_daily_summary(app):
                 for r in reports_due:
                     msg += f"\n  {r[0]} — vencio: {r[1]}"
 
-            if low_stock:
-                msg += f"\n\n📦 *{low_stock} items con stock bajo*"
+            if low_stock > 0:
+                msg += f"\n\n📦 *Stock bajo ({low_stock} items):*"
+                for item in low_stock_items:
+                    stock_val = int(item[2]) if item[2] else 0
+                    min_val = int(item[3]) if item[3] else 0
+                    status_icon = '🔴' if stock_val == 0 else '🟡'
+                    msg += f"\n  {status_icon} {item[0]} {item[1][:35]} → *{stock_val}* / min: {min_val} {item[4] or 'und'}"
+                if low_stock > 15:
+                    msg += f"\n  _...y {low_stock - 15} items más_"
 
             msg += "\n\n_Escribe cualquier pregunta para mas detalles._"
 
@@ -1692,6 +1727,91 @@ def _process_message(app, chat_id, text, photos=None):
             _send(chat_id, f"❌ Error: {e}")
         return
 
+    # Comando: reporte de contratista
+    if text.lower().startswith('/reporte_contratista'):
+        parts = text.split(maxsplit=1)
+        provider_filter = parts[1].strip().upper() if len(parts) > 1 else None
+        try:
+            with app.app_context():
+                from database import db as _db
+                from sqlalchemy import text as _t
+                # Mes actual
+                today = date.today()
+                month_start = today.replace(day=1).isoformat()
+                month_end = today.isoformat()
+                month_name = today.strftime('%B %Y')
+
+                q = """
+                    SELECT p.name AS provider,
+                           count(*) AS total_ots,
+                           sum(CASE WHEN w.status = 'Cerrada' THEN 1 ELSE 0 END) AS cerradas,
+                           COALESCE(sum(w.real_duration), 0) AS total_hours,
+                           COALESCE(sum(w.downtime_hours), 0) AS downtime_hrs
+                    FROM work_orders w
+                    JOIN providers p ON w.provider_id = p.id
+                    WHERE w.scheduled_date >= :s AND w.scheduled_date <= :e
+                """
+                params = {"s": month_start, "e": month_end}
+                if provider_filter:
+                    q += " AND UPPER(p.name) LIKE :pf"
+                    params["pf"] = f"%{provider_filter}%"
+                q += " GROUP BY p.name ORDER BY total_ots DESC"
+
+                rows = _db.session.execute(_t(q), params).fetchall()
+
+                # Avisos creados por contratistas vía telegram
+                aviso_q = """
+                    SELECT reporter_name, count(*) AS cnt
+                    FROM maintenance_notices
+                    WHERE request_date >= :s AND request_date <= :e
+                    AND reporter_type = 'telegram'
+                """
+                if provider_filter:
+                    aviso_q += " AND UPPER(reporter_name) LIKE :pf"
+                aviso_q += " GROUP BY reporter_name ORDER BY cnt DESC"
+                avisos = _db.session.execute(_t(aviso_q), params).fetchall()
+
+                # Lubricaciones ejecutadas
+                lub_q = """
+                    SELECT executed_by, count(*) AS cnt
+                    FROM lubrication_executions
+                    WHERE execution_date >= :s AND execution_date <= :e
+                """
+                if provider_filter:
+                    lub_q += " AND UPPER(executed_by) LIKE :pf"
+                lub_q += " GROUP BY executed_by ORDER BY cnt DESC"
+                lubs = _db.session.execute(_t(lub_q), params).fetchall()
+
+                _db.session.remove()
+
+                msg = f"📋 *Reporte de Contratistas — {month_name}*\n"
+                if provider_filter:
+                    msg += f"Filtro: {provider_filter}\n"
+
+                if rows:
+                    msg += f"\n*OTs asignadas:*"
+                    for r in rows:
+                        pct = round(r[2] / r[1] * 100) if r[1] else 0
+                        msg += f"\n  🔧 *{r[0]}*: {r[1]} OTs ({r[2]} cerradas, {pct}%) | {r[3]:.1f}h trabajo | {r[4]:.1f}h downtime"
+                else:
+                    msg += "\nSin OTs de contratistas este mes."
+
+                if avisos:
+                    msg += f"\n\n*Avisos reportados (Telegram):*"
+                    for a in avisos:
+                        msg += f"\n  📱 {a[0]}: {a[1]} avisos"
+
+                if lubs:
+                    msg += f"\n\n*Lubricaciones ejecutadas:*"
+                    for l in lubs:
+                        msg += f"\n  🛢 {l[0]}: {l[1]} puntos"
+
+                _send(chat_id, msg)
+        except Exception as e:
+            logger.error(f"/reporte_contratista error: {e}")
+            _send(chat_id, f"❌ Error: {e}")
+        return
+
     # Comando: subir foto del formato UT a la última inspección
     # Uso: /ut_foto D7  → luego enviar la foto
     if text.lower().startswith('/ut_foto'):
@@ -1761,6 +1881,11 @@ def _process_message(app, chat_id, text, photos=None):
 *Inspeccion de Espesores (UT):*
 • `/ut_pdf D7 https://drive.google.com/...` — vincular PDF a la ultima inspeccion del equipo
 • `/ut_foto D7` — luego envia la(s) foto(s) del formato fisico
+
+*Contratistas y Stock:*
+• `/reporte_contratista` — resumen mensual de todos los contratistas
+• `/reporte_contratista FAPMETAL` — solo un contratista
+• _Items con stock bajo?_ — lista de repuestos bajo minimo
 
 *Analisis:*
 • _% correctivo vs preventivo_
