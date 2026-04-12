@@ -34,32 +34,64 @@ def register_notices_routes(
 
                 # Code will be assigned after flush (uses real DB id)
 
-                # --- DUPLICATE DETECTION LOGIC ---
+                # --- DUPLICATE DETECTION LOGIC (taxonomía completa) ---
                 is_duplicate = False
                 duplicate_reason = ""
 
                 target_equip = clean_data.get('equipment_id')
+                target_system = clean_data.get('system_id')
+                target_comp = clean_data.get('component_id')
+                target_failure = clean_data.get('failure_mode')
+
                 if target_equip:
-                    # 1. Check for Active Notices (Pendiente, En Progreso, En Tratamiento)
-                    existing_notice = MaintenanceNotice.query.filter(
+                    # Construir filtro progresivo por taxonomía
+                    # Nivel 1: mismo equipo + mismo componente (más específico)
+                    # Nivel 2: mismo equipo + mismo sistema (si no hay componente)
+                    # Nivel 3: mismo equipo + mismo modo de falla (para bloqueos/atascamientos)
+
+                    # 1. Buscar avisos activos con match de taxonomía
+                    notice_q = MaintenanceNotice.query.filter(
                         MaintenanceNotice.equipment_id == target_equip,
                         MaintenanceNotice.status.in_(['Pendiente', 'En Progreso', 'En Tratamiento']),
-                    ).first()
+                    )
+
+                    existing_notice = None
+                    if target_comp:
+                        # Match exacto: equipo + componente
+                        existing_notice = notice_q.filter(
+                            MaintenanceNotice.component_id == target_comp
+                        ).first()
+                    elif target_system:
+                        # Match por sistema (si no hay componente)
+                        existing_notice = notice_q.filter(
+                            MaintenanceNotice.system_id == target_system
+                        ).first()
+                    elif target_failure:
+                        # Match por modo de falla (ej: Atascamiento del mismo equipo)
+                        existing_notice = notice_q.filter(
+                            MaintenanceNotice.failure_mode == target_failure
+                        ).first()
 
                     if existing_notice:
                         is_duplicate = True
-                        duplicate_reason = f"Aviso previo activo ({existing_notice.code})"
+                        match_level = 'componente' if target_comp else ('sistema' if target_system else 'modo de falla')
+                        duplicate_reason = f"Aviso activo {existing_notice.code} (mismo {match_level})"
 
-                    # 2. Check for Active Work Orders (Abierta, Programada, En Progreso)
+                    # 2. Buscar OTs activas con match de taxonomía
                     if not is_duplicate:
-                        existing_ot = WorkOrder.query.filter(
+                        ot_q = WorkOrder.query.filter(
                             WorkOrder.equipment_id == target_equip,
                             WorkOrder.status.in_(['Abierta', 'Programada', 'En Progreso']),
-                        ).first()
+                        )
+                        existing_ot = None
+                        if target_comp:
+                            existing_ot = ot_q.filter(WorkOrder.component_id == target_comp).first()
+                        elif target_system:
+                            existing_ot = ot_q.filter(WorkOrder.system_id == target_system).first()
 
                         if existing_ot:
                             is_duplicate = True
-                            duplicate_reason = f"OT activa asociada ({existing_ot.code})"
+                            duplicate_reason = f"OT activa {existing_ot.code}"
 
                 if is_duplicate:
                     clean_data['status'] = 'Duplicado'
