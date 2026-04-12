@@ -979,19 +979,23 @@ window.shareNoticeWhatsApp = async function(noticeId) {
         }
     } catch (_) {}
 
-    let msg = `🔔 *AVISO ${n.code || 'AV-' + n.id}*\n`;
-    msg += `📍 ${area}`;
+    let msg = `*AVISO ${n.code || 'AV-' + n.id}*\n`;
+    msg += `${area}`;
     if (equip !== '-') msg += ` > ${equip}`;
     if (sys !== '-') msg += ` > ${sys}`;
     if (comp !== '-') msg += ` > ${comp}`;
-    msg += `\n\n📋 ${n.description || '-'}`;
-    msg += `\n\n⚠️ Criticidad: ${n.criticality || '-'} | Prioridad: ${n.priority || '-'}`;
-    msg += `\n🔧 Tipo: ${n.maintenance_type || '-'}`;
+    msg += `\n\n${n.description || '-'}`;
+    msg += `\n\nCriticidad: ${n.criticality || '-'} | Prioridad: ${n.priority || '-'}`;
+    msg += `\nTipo: ${n.maintenance_type || '-'}`;
     if (n.failure_mode) msg += ` | Modo: ${n.failure_mode}`;
-    if (n.blockage_object) msg += `\n🪨 Objeto extraño: ${n.blockage_object}`;
-    msg += `\n📅 Fecha: ${n.request_date || '-'}`;
-    msg += `\n👤 Reportado por: ${n.reporter_name || '-'}`;
-    if (photoLink) msg += `\n\n📷 Ver foto (válido 24h):\n${photoLink}`;
+    if (n.blockage_object) msg += `\nObjeto extrano: ${n.blockage_object}`;
+    msg += `\nFecha: ${n.request_date || '-'}`;
+    msg += `\nReportado por: ${n.reporter_name || '-'}`;
+    if (photoLink) {
+        msg += `\n\nVer foto (valido 24h):\n${photoLink}`;
+    } else {
+        msg += `\n\nVer en CMMS: ${window.location.origin}/avisos`;
+    }
     msg += `\n\n_Enviado desde CMMS Pro_`;
 
     const encoded = encodeURIComponent(msg);

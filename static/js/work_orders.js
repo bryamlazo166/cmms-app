@@ -1718,15 +1718,17 @@ async function shareOTWhatsApp(otId, comments, duration) {
         }
     } catch (_) {}
 
-    let msg = `✅ *OT ${ot.code || 'OT-' + ot.id} CERRADA*\n`;
-    msg += `📍 ${area} > ${equip}${tag ? ' [' + tag + ']' : ''}\n`;
-    msg += `\n🔧 *Trabajo realizado:*\n${comments || '-'}\n`;
-    msg += `\n⏱ Duración: ${duration}`;
-    msg += `\n👤 Técnico: ${techName}`;
-    if (ot.caused_downtime) msg += `\n⚠️ Causó parada: ${ot.downtime_hours || '-'} horas`;
-    msg += `\n📅 ${new Date().toLocaleDateString('es-PE')}`;
-    if (photoLink) msg += `\n\n📷 Ver foto (válido 24h):\n${photoLink}`;
-    msg += `\n\n_Equipo disponible para producción_`;
+    let msg = `*OT ${ot.code || 'OT-' + ot.id} CERRADA*\n`;
+    msg += `${area} > ${equip}${tag ? ' [' + tag + ']' : ''}\n`;
+    msg += `\n*Trabajo realizado:*\n${comments || '-'}\n`;
+    msg += `\nDuracion: ${duration}`;
+    msg += `\nTecnico: ${techName}`;
+    if (ot.caused_downtime) msg += `\nCauso parada: ${ot.downtime_hours || '-'} horas`;
+    msg += `\nFecha: ${new Date().toLocaleDateString('es-PE')}`;
+    if (photoLink) {
+        msg += `\n\nVer foto (valido 24h):\n${photoLink}`;
+    }
+    msg += `\n\n_Equipo disponible para produccion_`;
     msg += `\n_Enviado desde CMMS Pro_`;
 
     window.open(`https://wa.me/?text=${encodeURIComponent(msg)}`, '_blank');
@@ -1739,21 +1741,16 @@ window.quickShareOT = function(otId) {
     const techMatch = allTechnicians.find(t => String(t.id) === String(ot.technician_id));
     const techName = (techMatch && techMatch.name) || ot.technician_id || '-';
 
-    let emoji = '📋';
-    if (ot.status === 'Cerrada') emoji = '✅';
-    else if (ot.status === 'En Progreso') emoji = '🔧';
-    else if (ot.status === 'Programada') emoji = '📅';
-
-    let msg = `${emoji} *${ot.code || 'OT-' + ot.id}* — ${ot.status}\n`;
-    msg += `📍 ${ot.area_name || '-'} > ${ot.equipment_name || '-'}${ot.equipment_tag ? ' [' + ot.equipment_tag + ']' : ''}\n`;
-    msg += `\n📋 ${ot.description || '-'}\n`;
-    msg += `\n🔧 Tipo: ${ot.maintenance_type || '-'}`;
-    msg += `\n👤 Técnico: ${techName}`;
-    msg += `\n📅 Programada: ${ot.scheduled_date || '-'}`;
+    let msg = `*${ot.code || 'OT-' + ot.id}* - ${ot.status}\n`;
+    msg += `${ot.area_name || '-'} > ${ot.equipment_name || '-'}${ot.equipment_tag ? ' [' + ot.equipment_tag + ']' : ''}\n`;
+    msg += `\n${ot.description || '-'}\n`;
+    msg += `\nTipo: ${ot.maintenance_type || '-'}`;
+    msg += `\nTecnico: ${techName}`;
+    msg += `\nProgramada: ${ot.scheduled_date || '-'}`;
     if (ot.status === 'Cerrada') {
-        msg += `\n⏱ Duración: ${ot.real_duration || '-'} h`;
-        if (ot.caused_downtime) msg += `\n⚠️ Parada: ${ot.downtime_hours || '-'} h`;
-        msg += `\n\n_Equipo disponible para producción_`;
+        msg += `\nDuracion: ${ot.real_duration || '-'} h`;
+        if (ot.caused_downtime) msg += `\nParada: ${ot.downtime_hours || '-'} h`;
+        msg += `\n\n_Equipo disponible para produccion_`;
     }
     msg += `\n\n_Enviado desde CMMS Pro_`;
 
