@@ -44,6 +44,19 @@ def _get_focused_equipment_context(app, message):
     msg_upper = (message or '').upper()
     if not msg_upper:
         return ''
+
+    # Normalizar: quitar '#' y colapsar espacios para hacer match flexible.
+    # Asi "Digestor 2", "Digestor #2", "DIGESTOR  #  2" matchean todos contra "DIGESTOR #2".
+    def _norm(s):
+        return re.sub(r'\s+', ' ', (s or '').upper().replace('#', '').replace('.', '')).strip()
+    msg_norm = _norm(msg_upper)
+
+    # Extraer patrones tipo "DIGESTOR 2" -> inferir tag "D2"; "TRANSPORTADOR 5" -> "TH5"
+    inferred_tags = set()
+    for kw, prefix in (('DIGESTOR', 'D'), ('TRANSPORTADOR', 'TH'), ('SECADOR', 'SEC')):
+        for m in re.finditer(kw + r'\s*(\d+)', msg_norm):
+            inferred_tags.add(prefix + m.group(1))
+
     lines = []
     with app.app_context():
         from database import db as _db
@@ -57,12 +70,18 @@ def _get_focused_equipment_context(app, message):
             for e in equips:
                 eq_tag = (e[1] or '').upper()
                 eq_name = (e[2] or '').upper()
-                # Match por tag completo (SEC2-TH10)
-                if eq_tag and eq_tag in msg_upper:
+                eq_tag_norm = _norm(eq_tag)
+                eq_name_norm = _norm(eq_name)
+                # Match por tag completo (SEC2-TH10, D2, etc) normalizado
+                if eq_tag_norm and re.search(r'\b' + re.escape(eq_tag_norm) + r'\b', msg_norm):
                     matched_ids.add(e[0])
                     continue
-                # Match por nombre como palabra (TH10, D5, etc.)
-                if eq_name and re.search(r'\b' + re.escape(eq_name) + r'\b', msg_upper):
+                # Match por tag inferido ("Digestor 2" -> "D2")
+                if eq_tag_norm and eq_tag_norm in inferred_tags:
+                    matched_ids.add(e[0])
+                    continue
+                # Match por nombre completo normalizado
+                if eq_name_norm and re.search(r'\b' + re.escape(eq_name_norm) + r'\b', msg_norm):
                     matched_ids.add(e[0])
             if not matched_ids:
                 return ''
