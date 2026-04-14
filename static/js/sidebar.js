@@ -118,18 +118,24 @@
             let hidden = [];
             let rolePerms = {};
             if (user.role !== 'admin') {
+                let permsLoaded = false;
                 try {
                     const permRes = await fetch('/api/auth/permissions');
-                    const permData = await permRes.json();
-                    rolePerms = permData[user.role] || {};
-                    // Ocultar cualquier item cuyo módulo no tenga view:true explícito
+                    if (permRes.ok) {
+                        const permData = await permRes.json();
+                        rolePerms = permData[user.role] || {};
+                        permsLoaded = Object.keys(rolePerms).length > 0;
+                    }
+                } catch (_) {}
+                // Solo ocultar items si logramos cargar permisos; si falla, mostrar todo y dejar que el backend bloquee acceso
+                if (permsLoaded) {
                     for (const [mod, href] of Object.entries(MODULE_TO_HREF)) {
                         const p = rolePerms[mod];
                         if (!p || !p.view) {
                             hidden.push(href);
                         }
                     }
-                } catch (_) {}
+                }
             }
 
             const hrefToModule = Object.fromEntries(

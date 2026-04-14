@@ -210,7 +210,7 @@ _MODULE_ROUTES = {
     'reportes':         {'pages': ['/reportes'], 'api': ['/api/reports']},
     'historial_equipo': {'pages': ['/equipo-historial'], 'api': ['/api/equipment/']},
     'exportar':         {'pages': [], 'api': ['/api/reports/powerbi-export', '/api/warehouse/export', '/api/reports/weekly-plan/export', '/api/warehouse/export-kardex']},
-    'usuarios':         {'pages': ['/usuarios'], 'api': ['/api/auth/users', '/api/auth/permissions']},
+    'usuarios':         {'pages': ['/usuarios'], 'api': ['/api/auth/users']},
 }
 
 # Default permissions (used when no DB config exists)

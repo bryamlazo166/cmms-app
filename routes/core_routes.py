@@ -717,9 +717,19 @@ def register_core_routes(app, db, logger, app_build_tag,
     def failure_recurrence():
         """Top components/equipment with most corrective WOs in a period."""
         from sqlalchemy import func
-        months = int(request.args.get('months', 6))
-        limit_n = int(request.args.get('limit', 20))
+        try:
+            months = int(request.args.get('months', 6))
+            limit_n = int(request.args.get('limit', 20))
+        except (TypeError, ValueError):
+            months, limit_n = 6, 20
         cutoff = dt.datetime.utcnow() - dt.timedelta(days=months * 30)
+        try:
+            return _failure_recurrence_impl(db, WorkOrder, cutoff, limit_n, months)
+        except Exception as e:
+            logger.exception("failure_recurrence error: %s", e)
+            return jsonify({"by_component": [], "by_equipment": [], "months": months, "error": str(e)}), 200
+
+    def _failure_recurrence_impl(db, WorkOrder, cutoff, limit_n, months):
 
         # Top components by corrective OT count
         results = db.session.query(
