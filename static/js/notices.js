@@ -999,8 +999,12 @@ window.shareNoticeWhatsApp = async function(noticeId) {
     }
     msg += '\n\n_Enviado desde CMMS Pro_';
 
-    const encoded = encodeURIComponent(msg);
-    window.open(`https://wa.me/?text=${encoded}`, '_blank');
+    const waUrl = `https://wa.me/?text=${encodeURIComponent(msg)}`;
+    if (navigator.share) {
+        navigator.share({ text: msg }).catch(() => window.open(waUrl, '_blank'));
+    } else {
+        window.open(waUrl, '_blank');
+    }
 };
 
 

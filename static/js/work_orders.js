@@ -1731,7 +1731,12 @@ async function shareOTWhatsApp(otId, comments, duration) {
     msg += '\n\n_Equipo disponible para producci\u00f3n_';
     msg += '\n_Enviado desde CMMS Pro_';
 
-    window.open(`https://wa.me/?text=${encodeURIComponent(msg)}`, '_blank');
+    const waUrl = `https://wa.me/?text=${encodeURIComponent(msg)}`;
+    if (navigator.share) {
+        navigator.share({ text: msg }).catch(() => window.open(waUrl, '_blank'));
+    } else {
+        window.open(waUrl, '_blank');
+    }
 }
 window.shareOTWhatsApp = shareOTWhatsApp;
 
@@ -1755,7 +1760,12 @@ window.quickShareOT = function(otId) {
     }
     msg += '\n\n_Enviado desde CMMS Pro_';
 
-    window.open(`https://wa.me/?text=${encodeURIComponent(msg)}`, '_blank');
+    const waUrl = `https://wa.me/?text=${encodeURIComponent(msg)}`;
+    if (navigator.share) {
+        navigator.share({ text: msg }).catch(() => window.open(waUrl, '_blank'));
+    } else {
+        window.open(waUrl, '_blank');
+    }
 };
 
 /* --- TECHNICIAN MANAGEMENT --- */
