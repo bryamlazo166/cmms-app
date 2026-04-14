@@ -122,15 +122,16 @@
                     const permRes = await fetch('/api/auth/permissions');
                     const permData = await permRes.json();
                     rolePerms = permData[user.role] || {};
+                    // Ocultar cualquier item cuyo módulo no tenga view:true explícito
                     for (const [mod, href] of Object.entries(MODULE_TO_HREF)) {
-                        if (rolePerms[mod] && !rolePerms[mod].view) {
+                        const p = rolePerms[mod];
+                        if (!p || !p.view) {
                             hidden.push(href);
                         }
                     }
                 } catch (_) {}
             }
 
-            // Items restringidos (restricted: true) solo aparecen si el rol los tiene explícitos
             const hrefToModule = Object.fromEntries(
                 Object.entries(MODULE_TO_HREF).map(([m, h]) => [h, m])
             );

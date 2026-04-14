@@ -938,6 +938,7 @@ def register_work_orders_routes(
                     if notice:
                         notice.status = 'Cerrado'
                         notice.ot_number = wo.code
+                        notice.closed_date = wo.real_end_date or datetime.now().strftime('%Y-%m-%d')
 
                 # If closing a preventive OT linked to a source, update the source point
                 if data.get('status') == 'Cerrada' and wo.source_type and wo.source_id:

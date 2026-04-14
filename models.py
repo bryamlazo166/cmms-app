@@ -316,6 +316,7 @@ class MaintenanceNotice(db.Model):
     request_date: Mapped[str | None] = mapped_column(String(20), nullable=True)  # F.Solicitud - when created
     treatment_date: Mapped[str | None] = mapped_column(String(20), nullable=True)  # F.Tratada - when OT started
     planning_date: Mapped[str | None] = mapped_column(String(20), nullable=True)  # F.Programado - from OT scheduled
+    closed_date: Mapped[Optional[str]] = mapped_column(String(20), nullable=True)  # F.Fin - cuando se cerró el aviso
     maintenance_type: Mapped[str | None] = mapped_column(String(50), nullable=True)
     ot_number: Mapped[str | None] = mapped_column(String(20), nullable=True)
     status: Mapped[str] = mapped_column(String(50), default='Pendiente') # Pendiente, En Progreso, Cerrado, Anulado

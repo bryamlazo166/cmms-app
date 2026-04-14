@@ -146,6 +146,7 @@ function renderNotices() {
             <td>${n.request_date || '-'}</td>
             <td>${n.treatment_date || '-'}</td>
             <td>${n.planning_date || '-'}</td>
+            <td style="color:${n.closed_date ? '#30D158' : '#666'};">${n.closed_date || '-'}</td>
             <td>${n.failure_mode || '-'}</td>
             <td>${n.maintenance_type || '-'}</td>
             <td>${n.ot_number || '-'}</td>

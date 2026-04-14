@@ -695,6 +695,7 @@ _ENSURE_COLUMNS = [
     ("maintenance_notices", "failure_mode", "VARCHAR(100)"),
     ("maintenance_notices", "failure_category", "VARCHAR(50)"),
     ("maintenance_notices", "blockage_object", "VARCHAR(100)"),
+    ("maintenance_notices", "closed_date", "VARCHAR(20)"),
     ("work_orders", "report_required", "BOOLEAN DEFAULT false"),
     ("work_orders", "report_status", "VARCHAR(20)"),
     ("work_orders", "report_due_date", "VARCHAR(20)"),

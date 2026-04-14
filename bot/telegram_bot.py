@@ -895,11 +895,13 @@ def _reschedule_ot(app, data):
 
 # Whitelist of editable fields per entity — keep FKs out to avoid integrity issues via bot
 _NOTICE_EDITABLE = {'description', 'criticality', 'priority', 'maintenance_type',
-                    'cancellation_reason', 'status', 'failure_mode', 'failure_category'}
+                    'cancellation_reason', 'status', 'failure_mode', 'failure_category',
+                    'closed_date'}
 _OT_EDITABLE = {'description', 'failure_mode', 'maintenance_type', 'technician_id',
                 'scheduled_date', 'estimated_duration', 'tech_count',
                 'execution_comments', 'caused_downtime', 'downtime_hours',
-                'report_required', 'report_due_date', 'status'}
+                'report_required', 'report_due_date', 'status',
+                'real_start_date', 'real_end_date'}
 
 
 def _edit_notice(app, data):
