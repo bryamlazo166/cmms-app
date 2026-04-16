@@ -535,7 +535,7 @@
 
         <!-- MODAL: CREATE/EDIT OT -->
         <dialog id="otModal" style="max-width: 950px; width:95%; max-height: 90vh; overflow-y: auto;">
-            <form id="otForm" method="dialog">
+            <form id="otForm" novalidate>
                 <h2>Gestion de Orden de Trabajo</h2>
                 <input type="hidden" id="otId">
                 <input type="hidden" id="otNoticeId">
@@ -775,7 +775,7 @@
         <!-- MODAL: PURCHASE REQUEST -->
         <dialog id="purchaseModal" class="modal">
             <h3><i class="fas fa-shopping-cart"></i> Solicitud de Compra / Servicio</h3>
-            <form id="purchaseForm" method="dialog">
+            <form id="purchaseForm" novalidate>
                 <input type="hidden" id="reqOtId">
 
                 <label>Tipo</label>
@@ -993,7 +993,7 @@
 
         <!-- MODAL: PROVIDER -->
         <dialog id="providerModal">
-            <form id="providerForm" method="dialog">
+            <form id="providerForm" novalidate>
                 <h2>Nuevo Proveedor</h2>
                 <div class="form-group">
                     <label>Nombre Empresa</label>
@@ -1017,7 +1017,7 @@
 
         <!-- MODAL: TECHNICIAN -->
         <dialog id="technicianModal">
-            <form id="technicianForm" method="dialog">
+            <form id="technicianForm" novalidate>
                 <h2 id="techModalTitle">Nuevo Tecnico</h2>
                 <input type="hidden" id="techId">
                 <div class="form-group">
@@ -1055,7 +1055,7 @@
 
         <!-- MODAL: CLOSE OT -->
         <dialog id="closeOTModal">
-            <form id="closeOTForm" method="dialog">
+            <form id="closeOTForm" novalidate>
                 <h2>Cierre Tecnico de OT</h2>
                 <input type="hidden" id="closeOtId">
 
@@ -1133,7 +1133,7 @@
 
         <!-- MODAL: PAUSAR TRABAJO -->
         <dialog id="pauseOTModal">
-            <form id="pauseOTForm" method="dialog" onsubmit="return false;">
+            <form id="pauseOTForm" novalidate onsubmit="return false;">
                 <h2 style="color:#FF9F0A;"><i class="fas fa-pause"></i> Pausar Trabajo</h2>
                 <p style="color:#aaa;font-size:0.88em;margin:6px 0 14px;">
                     La OT permanece <strong style="color:#FF9F0A;">En Progreso</strong>. Registra el avance y lo que queda pendiente para que el siguiente turno continúe.

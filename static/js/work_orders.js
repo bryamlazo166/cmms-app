@@ -1618,6 +1618,12 @@ async function handleCloseOTSubmit(e) {
     const id = document.getElementById('closeOtId').value;
     const startVal = document.getElementById('realStart').value;
     const endVal = document.getElementById('realEnd').value;
+    const comments = document.getElementById('closeComments').value.trim();
+
+    // Validacion manual (reemplaza la del browser que falla en <dialog>)
+    if (!comments) { alert('Debe ingresar el trabajo realizado.'); document.getElementById('closeComments').focus(); return; }
+    if (!startVal) { alert('Debe ingresar la fecha/hora de inicio real.'); document.getElementById('realStart').focus(); return; }
+    if (!endVal) { alert('Debe ingresar la fecha/hora de fin real.'); document.getElementById('realEnd').focus(); return; }
 
     // Calculate Duration
     const startDate = new Date(startVal);
