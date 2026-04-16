@@ -912,15 +912,104 @@ def _reschedule_ot(app, data):
             return None, str(e)
 
 
-# Whitelist of editable fields per entity — keep FKs out to avoid integrity issues via bot
+# Whitelist of editable fields per entity
 _NOTICE_EDITABLE = {'description', 'criticality', 'priority', 'maintenance_type',
                     'cancellation_reason', 'status', 'failure_mode', 'failure_category',
-                    'closed_date'}
+                    'closed_date',
+                    'equipment_id', 'system_id', 'component_id', 'line_id', 'area_id'}
 _OT_EDITABLE = {'description', 'failure_mode', 'maintenance_type', 'technician_id',
                 'scheduled_date', 'estimated_duration', 'tech_count',
                 'execution_comments', 'caused_downtime', 'downtime_hours',
                 'report_required', 'report_due_date', 'status',
-                'real_start_date', 'real_end_date'}
+                'real_start_date', 'real_end_date',
+                'equipment_id', 'system_id', 'component_id', 'line_id', 'area_id'}
+
+
+def _resolve_taxonomy(db_session, fields):
+    """Resolve equipment_tag/system_name/component_name to FK ids.
+
+    Accepts virtual keys (equipment_tag, system_name, component_name) and
+    replaces them with real FK columns (equipment_id, system_id, component_id,
+    line_id, area_id).  Returns (resolved_fields_dict, resolved_names_list, error).
+    """
+    import re
+    from sqlalchemy import text
+    resolved = {}
+    names = []
+
+    eq_tag = fields.pop('equipment_tag', None)
+    eq_name = fields.pop('equipment_name', None)
+    sys_name = fields.pop('system_name', None)
+    comp_name = fields.pop('component_name', None)
+
+    # ── Resolve equipment ──
+    eq_row = None
+    if eq_tag:
+        # Normalize: strip #, collapse spaces
+        tag_norm = re.sub(r'\s+', '', (eq_tag or '').upper().replace('#', ''))
+        eq_row = db_session.execute(text(
+            "SELECT e.id, e.name, e.tag, l.id, l.area_id "
+            "FROM equipments e LEFT JOIN lines l ON e.line_id=l.id "
+            "WHERE UPPER(REPLACE(REPLACE(e.tag,'#',''),' ','')) = :t LIMIT 1"
+        ), {"t": tag_norm}).fetchone()
+        if not eq_row:
+            # Fallback: try ILIKE on name
+            eq_row = db_session.execute(text(
+                "SELECT e.id, e.name, e.tag, l.id, l.area_id "
+                "FROM equipments e LEFT JOIN lines l ON e.line_id=l.id "
+                "WHERE UPPER(REPLACE(REPLACE(e.name,'#',''),' ','')) = :t LIMIT 1"
+            ), {"t": tag_norm}).fetchone()
+    elif eq_name:
+        name_norm = re.sub(r'\s+', '', (eq_name or '').upper().replace('#', ''))
+        eq_row = db_session.execute(text(
+            "SELECT e.id, e.name, e.tag, l.id, l.area_id "
+            "FROM equipments e LEFT JOIN lines l ON e.line_id=l.id "
+            "WHERE UPPER(REPLACE(REPLACE(e.name,'#',''),' ','')) = :n "
+            "   OR UPPER(REPLACE(REPLACE(e.tag,'#',''),' ','')) = :n LIMIT 1"
+        ), {"n": name_norm}).fetchone()
+
+    if eq_row:
+        resolved['equipment_id'] = eq_row[0]
+        resolved['line_id'] = eq_row[3]
+        resolved['area_id'] = eq_row[4]
+        names.append(f"equipo: {eq_row[2]} {eq_row[1]}")
+
+    eq_id = resolved.get('equipment_id') or fields.get('equipment_id')
+
+    # ── Resolve system ──
+    if sys_name and eq_id:
+        sys_row = db_session.execute(text(
+            "SELECT id, name FROM systems "
+            "WHERE equipment_id = :eid AND UPPER(name) = UPPER(:n) LIMIT 1"
+        ), {"eid": eq_id, "n": sys_name.strip()}).fetchone()
+        if sys_row:
+            resolved['system_id'] = sys_row[0]
+            names.append(f"sistema: {sys_row[1]}")
+
+    sys_id = resolved.get('system_id') or fields.get('system_id')
+
+    # ── Resolve component ──
+    if comp_name and sys_id:
+        comp_row = db_session.execute(text(
+            "SELECT id, name FROM components "
+            "WHERE system_id = :sid AND UPPER(name) = UPPER(:n) LIMIT 1"
+        ), {"sid": sys_id, "n": comp_name.strip()}).fetchone()
+        if comp_row:
+            resolved['component_id'] = comp_row[0]
+            names.append(f"componente: {comp_row[1]}")
+    elif comp_name and eq_id and not sys_id:
+        # Search component across all systems of this equipment
+        comp_row = db_session.execute(text(
+            "SELECT c.id, c.name, s.id AS sid, s.name AS sname FROM components c "
+            "JOIN systems s ON c.system_id=s.id "
+            "WHERE s.equipment_id = :eid AND UPPER(c.name) = UPPER(:n) LIMIT 1"
+        ), {"eid": eq_id, "n": comp_name.strip()}).fetchone()
+        if comp_row:
+            resolved['component_id'] = comp_row[0]
+            resolved['system_id'] = comp_row[2]
+            names.append(f"sistema: {comp_row[3]}, componente: {comp_row[1]}")
+
+    return resolved, names, None
 
 
 def _edit_notice(app, data):
@@ -935,8 +1024,16 @@ def _edit_notice(app, data):
             row = _db.session.execute(text("SELECT id FROM maintenance_notices WHERE code = :c"), {"c": code}).fetchone()
             if not row:
                 return None, None, f"Aviso {code} no encontrado"
+            notice_id = row[0]
 
             fields = data.get('fields') or {}
+
+            # Resolve taxonomy virtual fields (equipment_tag → equipment_id, etc.)
+            tax_resolved, tax_names, tax_err = _resolve_taxonomy(_db.session, fields)
+            if tax_err:
+                return None, None, tax_err
+            fields.update(tax_resolved)
+
             updates = {k: v for k, v in fields.items() if k in _NOTICE_EDITABLE and v is not None}
             if not updates:
                 return None, None, "No hay campos validos para actualizar"
@@ -945,9 +1042,20 @@ def _edit_notice(app, data):
             params = dict(updates)
             params['c'] = code
             _db.session.execute(text(f"UPDATE maintenance_notices SET {set_clause} WHERE code = :c"), params)
+
+            # Propagate taxonomy changes to linked OTs
+            tax_keys = {'equipment_id', 'system_id', 'component_id', 'line_id', 'area_id'}
+            tax_updates = {k: v for k, v in updates.items() if k in tax_keys}
+            if tax_updates:
+                ot_set = ', '.join(f"{k} = :{k}" for k in tax_updates)
+                tax_params = dict(tax_updates)
+                tax_params['nid'] = notice_id
+                _db.session.execute(text(f"UPDATE work_orders SET {ot_set} WHERE notice_id = :nid"), tax_params)
+
             _db.session.commit()
             _db.session.remove()
-            return code, list(updates.keys()), None
+            changed = [k for k in updates if k not in tax_keys] + tax_names
+            return code, changed, None
         except Exception as e:
             _db.session.rollback()
             _db.session.remove()
@@ -1146,11 +1254,19 @@ def _edit_ot(app, data):
             code = (data.get('ot_code') or data.get('code') or '').upper()
             if not code:
                 return None, None, "Falta ot_code"
-            row = _db.session.execute(text("SELECT id FROM work_orders WHERE code = :c"), {"c": code}).fetchone()
+            row = _db.session.execute(text("SELECT id, notice_id FROM work_orders WHERE code = :c"), {"c": code}).fetchone()
             if not row:
                 return None, None, f"OT {code} no encontrada"
+            ot_id, notice_id = row[0], row[1]
 
             fields = data.get('fields') or {}
+
+            # Resolve taxonomy virtual fields (equipment_tag → equipment_id, etc.)
+            tax_resolved, tax_names, tax_err = _resolve_taxonomy(_db.session, fields)
+            if tax_err:
+                return None, None, tax_err
+            fields.update(tax_resolved)
+
             updates = {k: v for k, v in fields.items() if k in _OT_EDITABLE and v is not None}
             if not updates:
                 return None, None, "No hay campos validos para actualizar"
@@ -1159,9 +1275,20 @@ def _edit_ot(app, data):
             params = dict(updates)
             params['c'] = code
             _db.session.execute(text(f"UPDATE work_orders SET {set_clause} WHERE code = :c"), params)
+
+            # Propagate taxonomy changes to linked notice
+            tax_keys = {'equipment_id', 'system_id', 'component_id', 'line_id', 'area_id'}
+            tax_updates = {k: v for k, v in updates.items() if k in tax_keys}
+            if tax_updates and notice_id:
+                n_set = ', '.join(f"{k} = :{k}" for k in tax_updates)
+                tax_params = dict(tax_updates)
+                tax_params['nid'] = notice_id
+                _db.session.execute(text(f"UPDATE maintenance_notices SET {n_set} WHERE id = :nid"), tax_params)
+
             _db.session.commit()
             _db.session.remove()
-            return code, list(updates.keys()), None
+            changed = [k for k in updates if k not in tax_keys] + tax_names
+            return code, changed, None
         except Exception as e:
             _db.session.rollback()
             _db.session.remove()
@@ -1292,13 +1419,20 @@ REGLA PARA BLOQUEOS: Cuando el usuario reporta que un digestor se "bloqueo", "tr
 Convierte fechas relativas: "lunes" = proximo lunes, "mañana" = fecha de mañana. Hoy es """ + date.today().isoformat() + """.
 
 6. EDITAR AVISO (modificar campos de un aviso existente):
-{"action": "edit_notice", "data": {"notice_code": "AV-0003", "fields": {"description": "nueva descripcion", "criticality": "Alta", "priority": "Alta", "maintenance_type": "Correctivo", "status": "Pendiente|Anulado", "cancellation_reason": "texto si status=Anulado"}}}
-Campos editables permitidos: description, criticality, priority, maintenance_type, status, cancellation_reason, failure_mode, failure_category.
+{"action": "edit_notice", "data": {"notice_code": "AV-0003", "fields": {"description": "nueva descripcion", "criticality": "Alta", "priority": "Alta", "maintenance_type": "Correctivo", "status": "Pendiente|Anulado", "cancellation_reason": "texto si status=Anulado", "equipment_tag": "H2", "system_name": "SISTEMA DE ACCIONAMIENTO", "component_name": "MOTOR ELECTRICO"}}}
+Campos editables permitidos: description, criticality, priority, maintenance_type, status, cancellation_reason, failure_mode, failure_category, closed_date.
+Campos de TAXONOMIA (para cambiar equipo/sistema/componente): equipment_tag, equipment_name, system_name, component_name.
+  - equipment_tag: tag del equipo destino (ej: "D8", "H2", "SEC2-TH3"). El sistema resuelve automaticamente line_id y area_id.
+  - system_name: nombre del sistema dentro del equipo (ej: "SISTEMA DE ACCIONAMIENTO", "SISTEMA ELECTRICO").
+  - component_name: nombre del componente dentro del sistema (ej: "MOTOR ELECTRICO", "REDUCTOR").
+  - Si cambias equipo en un aviso, las OTs vinculadas se actualizan automaticamente.
 Solo incluye en "fields" los campos que el usuario pide cambiar. No inventes valores.
 Ejemplos:
 - "cambia la criticidad del AV-0003 a alta" → {"action":"edit_notice","data":{"notice_code":"AV-0003","fields":{"criticality":"Alta"}}}
 - "corrige la descripcion del AV-0005: ahora es fuga de aceite en reductor" → {"action":"edit_notice","data":{"notice_code":"AV-0005","fields":{"description":"Fuga de aceite en reductor - revisar retenes"}}}
 - "anula el AV-0002, era duplicado" → {"action":"edit_notice","data":{"notice_code":"AV-0002","fields":{"status":"Anulado","cancellation_reason":"Duplicado"}}}
+- "el AV-0019 es de la hidrolavadora 2, no la 3" → {"action":"edit_notice","data":{"notice_code":"AV-0019","fields":{"equipment_tag":"H2"}}}
+- "cambia el AV-0010 al motor del digestor 8" → {"action":"edit_notice","data":{"notice_code":"AV-0010","fields":{"equipment_tag":"D8","system_name":"SISTEMA DE ACCIONAMIENTO","component_name":"MOTOR ELECTRICO"}}}
 
 7b. REGISTRAR LUBRICACION (cuando el usuario reporta que se lubrico un punto POR PRIMERA VEZ):
 {"action": "register_lubrication", "data": {"point_id": 12, "execution_date": "2026-03-30", "executed_by": "MANTENIMIENTO|FAPMETAL|nombre tecnico", "quantity_used": 0.5, "comments": "opcional", "leak_detected": false, "anomaly_detected": false}}
@@ -1335,12 +1469,20 @@ Ejemplos:
   * "marca el AV-0009 como fuera de plan, es una bomba que aun no inventariamos" → {"action":"promote_notice","data":{"notice_code":"AV-0009","target_scope":"FUERA_PLAN","free_location":"bomba sin inventariar"}}
 
 7. EDITAR OT (modificar campos de una OT existente):
-{"action": "edit_ot", "data": {"ot_code": "OT-0034", "fields": {"description": "...", "technician_id": "CARLOS LUQUE", "estimated_duration": 4, "tech_count": 2, "scheduled_date": "2026-04-10", "execution_comments": "...", "caused_downtime": true, "downtime_hours": 1.5}}}
+{"action": "edit_ot", "data": {"ot_code": "OT-0034", "fields": {"description": "...", "technician_id": "CARLOS LUQUE", "estimated_duration": 4, "tech_count": 2, "scheduled_date": "2026-04-10", "execution_comments": "...", "caused_downtime": true, "downtime_hours": 1.5, "equipment_tag": "H2", "system_name": "SISTEMA DE ACCIONAMIENTO", "component_name": "MOTOR ELECTRICO"}}}
 Campos editables permitidos: description, failure_mode, maintenance_type, technician_id, scheduled_date, estimated_duration, tech_count, execution_comments, caused_downtime, downtime_hours, report_required, report_due_date, status.
+Campos de TAXONOMIA (para cambiar equipo/sistema/componente): equipment_tag, equipment_name, system_name, component_name.
+  - equipment_tag: tag del equipo destino (ej: "D8", "H2", "SEC2-TH3"). Resuelve automaticamente line_id y area_id.
+  - system_name: nombre del sistema dentro del equipo (ej: "SISTEMA DE ACCIONAMIENTO", "SISTEMA ELECTRICO").
+  - component_name: nombre del componente dentro del sistema (ej: "MOTOR ELECTRICO", "REDUCTOR").
+  - Si cambias equipo en una OT, el aviso vinculado se actualiza automaticamente.
+  - IMPORTANTE: cuando el usuario diga "deberia ser la hidrolavadora 2" o "cambialo al digestor 8" o "el equipo correcto es TH5", usa equipment_tag para cambiar el equipo. NO cambies solo la descripcion.
 Ejemplos:
 - "asigna la OT-0034 a Carlos Luque" → {"action":"edit_ot","data":{"ot_code":"OT-0034","fields":{"technician_id":"CARLOS LUQUE CCOLQUE"}}}
 - "la OT-0034 duro 3 horas y paro la linea 1 hora" → {"action":"edit_ot","data":{"ot_code":"OT-0034","fields":{"caused_downtime":true,"downtime_hours":1}}}
 - "cambia la duracion estimada de la OT-0034 a 6 horas y asigna 2 tecnicos" → {"action":"edit_ot","data":{"ot_code":"OT-0034","fields":{"estimated_duration":6,"tech_count":2}}}
+- "la OT-0014 deberia ser la hidrolavadora 2, no la 3" → {"action":"edit_ot","data":{"ot_code":"OT-0014","fields":{"equipment_tag":"H2"}}}
+- "cambia la OT-0014 al motor del D8" → {"action":"edit_ot","data":{"ot_code":"OT-0014","fields":{"equipment_tag":"D8","system_name":"SISTEMA DE ACCIONAMIENTO","component_name":"MOTOR ELECTRICO"}}}
 Nota: para cambiar SOLO la fecha programada, prefiere reschedule_ot. Para cerrar/iniciar OT usa close_ot/start_ot.
 
 REGLAS para interpretar avisos:
