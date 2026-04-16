@@ -833,7 +833,9 @@ def _close_ot(app, data):
 
             # Close linked notice
             if row[2]:
-                _db.session.execute(text("UPDATE maintenance_notices SET status = 'Cerrado' WHERE id = :id"), {"id": row[2]})
+                _db.session.execute(text(
+                    "UPDATE maintenance_notices SET status = 'Cerrado', closed_date = :d WHERE id = :id"
+                ), {"id": row[2], "d": date.today().isoformat()})
 
             _db.session.commit()
             _db.session.remove()
