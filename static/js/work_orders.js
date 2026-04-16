@@ -418,7 +418,7 @@ function renderPlanningTable(data = null) {
     if (!tbody) return;
 
     if (list.length === 0) {
-        tbody.innerHTML = '<tr><td colspan="16" style="text-align:center; padding:20px; color:#9fb6d6;">No se encontraron ordenes de trabajo.</td></tr>';
+        tbody.innerHTML = '<tr><td colspan="17" style="text-align:center; padding:20px; color:#9fb6d6;">No se encontraron ordenes de trabajo.</td></tr>';
         return;
     }
 
@@ -471,6 +471,7 @@ function renderPlanningTable(data = null) {
             <td><span class="badge ${statusClass}">${ot.status || '-'}</span></td>
             <td><span class="badge ${priorityClass}">${ot.priority || '-'}</span></td>
             <td>${ot.scheduled_date || '-'}</td>
+            <td>${ot.real_end_date || '-'}</td>
             <td>${assignedTo}</td>
             <td>
                 <span class="logistics-chip ${logisticsClass}">${logisticsLabel}</span>
