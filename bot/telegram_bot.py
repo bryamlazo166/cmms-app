@@ -85,6 +85,49 @@ def _get_focused_equipment_context(app, message):
                     matched_ids.add(e[0])
             if not matched_ids:
                 return ''
+
+            # ── DESAMBIGUACION: si hay multiples equipos del mismo nombre,
+            # filtrar por LINEA o AREA mencionada en el mensaje, y priorizar
+            # los que TIENEN component_specs (mas utiles para responder).
+            if len(matched_ids) > 3:
+                lines_db = _db.session.execute(text("SELECT id, name, area_id FROM lines")).fetchall()
+                areas_db = _db.session.execute(text("SELECT id, name FROM areas")).fetchall()
+                line_hits = set()
+                for l in lines_db:
+                    ln = _norm(l[1] or '')
+                    if ln and re.search(r'\b' + re.escape(ln) + r'\b', msg_norm):
+                        line_hits.add(l[0])
+                area_hits = set()
+                for a in areas_db:
+                    an = _norm(a[1] or '')
+                    if an and re.search(r'\b' + re.escape(an) + r'\b', msg_norm):
+                        area_hits.add(a[0])
+                if line_hits or area_hits:
+                    eqs_full = _db.session.execute(text(
+                        "SELECT e.id, e.line_id, l.area_id FROM equipments e "
+                        "LEFT JOIN lines l ON e.line_id = l.id WHERE e.id = ANY(:ids)"
+                    ), {"ids": list(matched_ids)}).fetchall()
+                    filtered = set()
+                    for ef in eqs_full:
+                        if line_hits and ef[1] in line_hits:
+                            filtered.add(ef[0])
+                        elif area_hits and ef[2] in area_hits:
+                            filtered.add(ef[0])
+                    if filtered:
+                        matched_ids = filtered
+
+            # Si todavia hay muchos, priorizar los que tienen specs cargadas
+            if len(matched_ids) > 3:
+                with_specs = _db.session.execute(text(
+                    "SELECT DISTINCT s.equipment_id FROM systems s "
+                    "JOIN components c ON c.system_id = s.id "
+                    "JOIN component_specs cs ON cs.component_id = c.id "
+                    "WHERE s.equipment_id = ANY(:ids)"
+                ), {"ids": list(matched_ids)}).fetchall()
+                ws_ids = {r[0] for r in with_specs}
+                if ws_ids:
+                    matched_ids = ws_ids
+
             matched_list = list(matched_ids)[:3]  # max 3 equipos para no saturar
 
             # ── BULK QUERIES (evitar N+1 que cuelga el bot) ──────────────────
