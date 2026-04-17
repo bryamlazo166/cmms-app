@@ -1265,3 +1265,120 @@ def register_core_routes(app, db, logger, app_build_tag,
             db.session.rollback()
             logger.exception("Notification scan error")
             return jsonify({"error": str(e)}), 500
+
+    @app.route('/api/print/daily-coordination', methods=['GET'])
+    def print_daily_coordination():
+        """Genera un PDF con OTs activas y Avisos pendientes para coordinacion diaria.
+
+        Query params opcionales:
+          ?area_id=X       filtrar por area
+          ?include_closed=1 incluir OTs cerradas (por defecto solo activas)
+        """
+        try:
+            from flask import send_file
+            from utils.pdf_helpers import generate_daily_coordination_pdf
+
+            area_id = request.args.get('area_id', type=int)
+            include_closed = request.args.get('include_closed', '0') == '1'
+
+            # Pre-cargar taxonomia para enriquecer
+            areas = {a.id: a for a in Area.query.all()}
+            lines = {l.id: l for l in Line.query.all()}
+            equips = {e.id: e for e in Equipment.query.all()}
+            techs = {t.id: t for t in Technician.query.all()}
+
+            # OTs activas
+            ot_q = WorkOrder.query
+            if not include_closed:
+                ot_q = ot_q.filter(WorkOrder.status != 'Cerrada')
+            if area_id:
+                ot_q = ot_q.filter(WorkOrder.area_id == area_id)
+            # Orden: estado activo primero, luego fecha programada, luego id
+            ots_db = ot_q.order_by(
+                db.case(
+                    (WorkOrder.status == 'En Progreso', 0),
+                    (WorkOrder.status == 'Programada', 1),
+                    (WorkOrder.status == 'Abierta', 2),
+                    else_=3
+                ),
+                WorkOrder.scheduled_date.asc().nulls_last(),
+                WorkOrder.id.desc()
+            ).all()
+
+            ots_data = []
+            for wo in ots_db:
+                eq = equips.get(wo.equipment_id) if wo.equipment_id else None
+                ar = areas.get(wo.area_id) if wo.area_id else None
+                tech_name = None
+                try:
+                    if wo.technician_id:
+                        t = techs.get(int(wo.technician_id))
+                        tech_name = t.name if t else wo.technician_id
+                except Exception:
+                    tech_name = wo.technician_id
+                # Criticidad: del componente o equipo como aproximacion de prioridad
+                crit = '-'
+                if eq and getattr(eq, 'criticality', None):
+                    crit = eq.criticality
+                ots_data.append({
+                    'code': wo.code or f"OT-{wo.id}",
+                    'equipment_name': eq.name if eq else None,
+                    'equipment_tag': eq.tag if eq else None,
+                    'area_name': ar.name if ar else None,
+                    'maintenance_type': wo.maintenance_type,
+                    'status': wo.status,
+                    'priority': crit,
+                    'scheduled_date': wo.scheduled_date,
+                    'technician_name': tech_name,
+                    'description': wo.description,
+                })
+
+            # Avisos pendientes (no cerrados)
+            n_q = MaintenanceNotice.query.filter(
+                MaintenanceNotice.status.notin_(['Cerrado', 'Cancelado', 'Anulado'])
+            )
+            if area_id:
+                n_q = n_q.filter(MaintenanceNotice.area_id == area_id)
+            notices_db = n_q.order_by(
+                db.case(
+                    (MaintenanceNotice.criticality == 'Alta', 0),
+                    (MaintenanceNotice.criticality == 'Media', 1),
+                    else_=2
+                ),
+                MaintenanceNotice.id.desc()
+            ).all()
+
+            notices_data = []
+            for n in notices_db:
+                eq = equips.get(n.equipment_id) if n.equipment_id else None
+                ar = areas.get(n.area_id) if n.area_id else None
+                notices_data.append({
+                    'code': n.code or f"AV-{n.id:04d}",
+                    'equipment_name': eq.name if eq else None,
+                    'equipment_tag': eq.tag if eq else None,
+                    'area_name': ar.name if ar else None,
+                    'failure_mode': getattr(n, 'failure_mode', None),
+                    'blockage_object': getattr(n, 'blockage_object', None),
+                    'criticality': getattr(n, 'criticality', None),
+                    'status': n.status,
+                    'created_date': getattr(n, 'request_date', None),
+                    'reporter': getattr(n, 'reporter_name', None),
+                    'description': n.description,
+                })
+
+            subtitle = None
+            if area_id and area_id in areas:
+                subtitle = f"Filtro por area: <b>{areas[area_id].name}</b>"
+
+            pdf = generate_daily_coordination_pdf(
+                ots_data, notices_data,
+                title='Hoja de Coordinacion Diaria',
+                subtitle=subtitle,
+            )
+
+            fname = f"coordinacion_{dt.date.today().isoformat()}.pdf"
+            return send_file(pdf, mimetype='application/pdf',
+                             as_attachment=False, download_name=fname)
+        except Exception as e:
+            logger.exception("Error generating daily coordination PDF")
+            return jsonify({"error": str(e)}), 500
