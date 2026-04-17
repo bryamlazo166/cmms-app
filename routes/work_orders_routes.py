@@ -711,6 +711,32 @@ def register_work_orders_routes(
         # Pagination support: ?page=1&per_page=50 (omit page for all)
         page = request.args.get('page', type=int)
         query = WorkOrder.query.order_by(WorkOrder.id.desc())
+
+        # Si el usuario es 'tecnico', restringir a sus OTs (asignado o en personnel)
+        try:
+            from flask_login import current_user
+            if current_user.is_authenticated and (current_user.role or '').lower() == 'tecnico':
+                full_name = (current_user.full_name or '').strip()
+                tech = Technician.query.filter_by(user_id=current_user.id).first()
+                if not tech and full_name:
+                    tech = Technician.query.filter(
+                        db.func.upper(Technician.name) == full_name.upper()
+                    ).first()
+                if tech:
+                    personnel_ot_ids = [op.work_order_id for op in OTPersonnel.query.filter_by(technician_id=tech.id).all()]
+                    if personnel_ot_ids:
+                        query = query.filter(db.or_(
+                            WorkOrder.technician_id == str(tech.id),
+                            WorkOrder.id.in_(personnel_ot_ids),
+                        ))
+                    else:
+                        query = query.filter(WorkOrder.technician_id == str(tech.id))
+                else:
+                    # Tecnico sin registro de Technician: no ve OTs
+                    query = query.filter(WorkOrder.id == -1)
+        except Exception as _e:
+            logger.warning(f"Filtro por tecnico no aplicado: {_e}")
+
         pagination_meta = None
         if page:
             from utils.crud_helpers import paginate_query
@@ -914,6 +940,14 @@ def register_work_orders_routes(
                 if not wo:
                     return jsonify({"error": "Work Order not found"}), 404
 
+                # Capturar valores anteriores para auditoria de cambios en OT cerrada
+                was_closed = (wo.status == 'Cerrada')
+                prev_values = {
+                    'real_end_date': wo.real_end_date,
+                    'real_start_date': wo.real_start_date,
+                    'real_duration': wo.real_duration,
+                }
+
                 # Hard guard for required field before applying updates
                 # If status comes null/empty from frontend, ignore incoming value and keep current/default.
                 if ('status' in data) and (data.get('status') is None or (isinstance(data.get('status'), str) and data.get('status').strip() == "")):
@@ -952,6 +986,32 @@ def register_work_orders_routes(
                     if comp:
                         comp.criticality = criticality_value
                         logger.info(f"Updated Component {comp.id} criticality to '{criticality_value}'")
+
+                # AUDITORIA: si la OT estaba cerrada y se editaron fechas/duracion reales,
+                # registrar el cambio en el historial de la OT.
+                if was_closed and OTLogEntry:
+                    from flask_login import current_user
+                    changes = []
+                    for fname, label in (('real_end_date', 'Fecha término'),
+                                         ('real_start_date', 'Fecha inicio'),
+                                         ('real_duration', 'Duración (h)')):
+                        new_val = getattr(wo, fname, None)
+                        old_val = prev_values.get(fname)
+                        if (old_val or '') != (new_val or '') and (old_val is not None or new_val is not None):
+                            changes.append(f"{label}: {old_val or '—'} → {new_val or '—'}")
+                    if changes:
+                        author = None
+                        try:
+                            author = (current_user.full_name or current_user.username) if getattr(current_user, 'is_authenticated', False) else None
+                        except Exception:
+                            author = None
+                        db.session.add(OTLogEntry(
+                            work_order_id=wo.id,
+                            log_date=datetime.now().strftime('%Y-%m-%d'),
+                            log_type='CIERRE',
+                            author=author or 'sistema',
+                            comment='Edición post-cierre: ' + '; '.join(changes),
+                        ))
 
                 db.session.commit()
                 return jsonify(wo.to_dict())

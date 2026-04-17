@@ -239,6 +239,15 @@ async function loadCurrentUser() {
                 badge.style.display = 'inline';
             }
         }
+        // Auto-activar 'Mis OTs' para tecnicos: solo ven sus OTs por defecto
+        if (_currentUser && (_currentUser.role || '').toLowerCase() === 'tecnico') {
+            _myOTsMode = true;
+            const btn = document.getElementById('btnMisOTs');
+            if (btn) {
+                btn.style.background = 'rgba(10,132,255,0.35)';
+                btn.style.borderColor = '#0A84FF';
+            }
+        }
     } catch (e) { console.error('loadCurrentUser:', e); }
 }
 
