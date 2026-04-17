@@ -443,7 +443,7 @@ async function loadGlobalTree() {
                                     const ulComps = document.createElement('ul');
                                     ulComps.className = 'nested';
 
-                                    const ROT_NAMES = ['MOTOR ELECTRICO', 'CAJA REDUCTORA', 'MOTORREDUCTOR'];
+                                    const ROT_NAMES = ['MOTOR ELECTRICO', 'CAJA REDUCTORA', 'MOTORREDUCTOR', 'HIDROLAVADORA', 'BOMBA DE LODOS', 'BOMBA TORRE DE ENFRIAMIENTO'];
                                     sysComps.forEach(comp => {
                                         const { li: liComp, node: nodeComp } = buildTreeNode(comp.name, 'Component', comp, 0);
                                         // Show installed rotative asset for key components
