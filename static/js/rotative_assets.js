@@ -2,6 +2,8 @@ let rotState = {
     areas: [],
     lines: [],
     equips: [],
+    systems: [],
+    components: [],
     assets: []
 };
 
@@ -138,14 +140,18 @@ function setAreaLineEquip(areaIdEl, lineIdEl, equipIdEl, areaValue, lineValue, e
 }
 
 async function loadHierarchy() {
-    const [areas, lines, equips] = await Promise.all([
+    const [areas, lines, equips, systems, components] = await Promise.all([
         rFetch('/api/areas'),
         rFetch('/api/lines'),
-        rFetch('/api/equipments')
+        rFetch('/api/equipments'),
+        rFetch('/api/systems'),
+        rFetch('/api/components')
     ]);
     rotState.areas = areas;
     rotState.lines = lines;
     rotState.equips = equips;
+    rotState.systems = systems;
+    rotState.components = components;
 
     fillSelect('fArea', areas, 'Area: Todas');
     fillSelect('fLine', lines, 'Linea: Todas');
@@ -158,6 +164,36 @@ async function loadHierarchy() {
     fillSelect('insArea', areas, 'Selecciona area');
     fillSelect('insLine', lines, 'Selecciona linea');
     fillSelect('insEquip', equips, 'Selecciona equipo');
+}
+
+function fillSystemSelect(selectId, equipmentId, selectedId) {
+    const sel = rQ(selectId);
+    if (!sel) return;
+    if (!equipmentId) {
+        sel.innerHTML = '<option value="">- Selecciona equipo primero -</option>';
+        return;
+    }
+    const systems = rotState.systems.filter(s => String(s.equipment_id) === String(equipmentId));
+    sel.innerHTML = '<option value="">- Sin sistema -</option>'
+        + systems.map(s => `<option value="${s.id}">${s.name}</option>`).join('');
+    if (selectedId && systems.some(s => String(s.id) === String(selectedId))) {
+        sel.value = String(selectedId);
+    }
+}
+
+function fillComponentSelect(selectId, systemId, selectedId) {
+    const sel = rQ(selectId);
+    if (!sel) return;
+    if (!systemId) {
+        sel.innerHTML = '<option value="">- Selecciona sistema primero -</option>';
+        return;
+    }
+    const components = rotState.components.filter(c => String(c.system_id) === String(systemId));
+    sel.innerHTML = '<option value="">- Sin componente -</option>'
+        + components.map(c => `<option value="${c.id}">${c.name}</option>`).join('');
+    if (selectedId && components.some(c => String(c.id) === String(selectedId))) {
+        sel.value = String(selectedId);
+    }
 }
 
 async function reloadRotative() {
@@ -182,6 +218,8 @@ function openAssetModal(id) {
     rQ('aStatus').value = 'Disponible';
 
     setAreaLineEquip('aArea', 'aLine', 'aEquip', '', '', '', 'Selecciona linea', 'Selecciona equipo');
+    fillSystemSelect('aSystemId', null);
+    fillComponentSelect('aComponentId', null);
 
     if (!id) {
         rQ('assetModal').showModal();
@@ -202,8 +240,8 @@ function openAssetModal(id) {
 
     setAreaLineEquip('aArea', 'aLine', 'aEquip', a.area_id, a.line_id, a.equipment_id, 'Selecciona linea', 'Selecciona equipo');
 
-    rQ('aSystemId').value = a.system_id || '';
-    rQ('aComponentId').value = a.component_id || '';
+    fillSystemSelect('aSystemId', a.equipment_id, a.system_id);
+    fillComponentSelect('aComponentId', a.system_id, a.component_id);
     rQ('aInstallDate').value = a.install_date || '';
     rQ('aNotes').value = a.notes || '';
     rQ('assetModal').showModal();
@@ -219,8 +257,8 @@ function openInstallModal(id) {
 
     setAreaLineEquip('insArea', 'insLine', 'insEquip', a.area_id, a.line_id, a.equipment_id, 'Selecciona linea', 'Selecciona equipo');
 
-    rQ('insSystem').value = a.system_id || '';
-    rQ('insComp').value = a.component_id || '';
+    fillSystemSelect('insSystem', a.equipment_id, a.system_id);
+    fillComponentSelect('insComp', a.system_id, a.component_id);
     rQ('installModal').showModal();
 }
 
@@ -615,11 +653,41 @@ async function initRotative() {
     rQ('fStatus').addEventListener('change', reloadRotative);
     rQ('fSearch').addEventListener('input', () => renderAssets(rotState.assets));
 
-    rQ('aArea').addEventListener('change', () => syncAreaLineEquip('aArea', 'aLine', 'aEquip', 'Selecciona linea', 'Selecciona equipo'));
-    rQ('aLine').addEventListener('change', () => syncAreaLineEquip('aArea', 'aLine', 'aEquip', 'Selecciona linea', 'Selecciona equipo'));
+    rQ('aArea').addEventListener('change', () => {
+        syncAreaLineEquip('aArea', 'aLine', 'aEquip', 'Selecciona linea', 'Selecciona equipo');
+        fillSystemSelect('aSystemId', rQ('aEquip').value);
+        fillComponentSelect('aComponentId', null);
+    });
+    rQ('aLine').addEventListener('change', () => {
+        syncAreaLineEquip('aArea', 'aLine', 'aEquip', 'Selecciona linea', 'Selecciona equipo');
+        fillSystemSelect('aSystemId', rQ('aEquip').value);
+        fillComponentSelect('aComponentId', null);
+    });
+    rQ('aEquip').addEventListener('change', () => {
+        fillSystemSelect('aSystemId', rQ('aEquip').value);
+        fillComponentSelect('aComponentId', null);
+    });
+    rQ('aSystemId').addEventListener('change', () => {
+        fillComponentSelect('aComponentId', rQ('aSystemId').value);
+    });
 
-    rQ('insArea').addEventListener('change', () => syncAreaLineEquip('insArea', 'insLine', 'insEquip', 'Selecciona linea', 'Selecciona equipo'));
-    rQ('insLine').addEventListener('change', () => syncAreaLineEquip('insArea', 'insLine', 'insEquip', 'Selecciona linea', 'Selecciona equipo'));
+    rQ('insArea').addEventListener('change', () => {
+        syncAreaLineEquip('insArea', 'insLine', 'insEquip', 'Selecciona linea', 'Selecciona equipo');
+        fillSystemSelect('insSystem', rQ('insEquip').value);
+        fillComponentSelect('insComp', null);
+    });
+    rQ('insLine').addEventListener('change', () => {
+        syncAreaLineEquip('insArea', 'insLine', 'insEquip', 'Selecciona linea', 'Selecciona equipo');
+        fillSystemSelect('insSystem', rQ('insEquip').value);
+        fillComponentSelect('insComp', null);
+    });
+    rQ('insEquip').addEventListener('change', () => {
+        fillSystemSelect('insSystem', rQ('insEquip').value);
+        fillComponentSelect('insComp', null);
+    });
+    rQ('insSystem').addEventListener('change', () => {
+        fillComponentSelect('insComp', rQ('insSystem').value);
+    });
 }
 
 document.addEventListener('DOMContentLoaded', () => {
