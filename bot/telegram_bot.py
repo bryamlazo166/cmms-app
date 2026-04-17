@@ -85,48 +85,67 @@ def _get_focused_equipment_context(app, message):
                     matched_ids.add(e[0])
             if not matched_ids:
                 return ''
-            # Para cada equipo encontrado, traer arbol completo + specs
-            for eq_id in list(matched_ids)[:3]:  # max 3 equipos para no saturar
-                eq = _db.session.execute(text(
-                    "SELECT e.id, e.tag, e.name, l.name AS line_name, a.name AS area_name "
-                    "FROM equipments e LEFT JOIN lines l ON e.line_id = l.id "
-                    "LEFT JOIN areas a ON l.area_id = a.id WHERE e.id = :id"
-                ), {"id": eq_id}).fetchone()
-                if not eq:
-                    continue
+            matched_list = list(matched_ids)[:3]  # max 3 equipos para no saturar
+
+            # ── BULK QUERIES (evitar N+1 que cuelga el bot) ──────────────────
+            # 1) Equipos
+            eqs_rows = _db.session.execute(text(
+                "SELECT e.id, e.tag, e.name, l.name AS line_name, a.name AS area_name "
+                "FROM equipments e LEFT JOIN lines l ON e.line_id = l.id "
+                "LEFT JOIN areas a ON l.area_id = a.id WHERE e.id = ANY(:ids)"
+            ), {"ids": matched_list}).fetchall()
+            # 2) Specs de equipos
+            espec_rows = _db.session.execute(text(
+                "SELECT equipment_id, key_name, value_text, unit FROM equipment_specs "
+                "WHERE equipment_id = ANY(:ids) ORDER BY equipment_id, order_index"
+            ), {"ids": matched_list}).fetchall()
+            espec_by_eq = {}
+            for r in espec_rows:
+                espec_by_eq.setdefault(r[0], []).append((r[1], r[2], r[3]))
+            # 3) Sistemas y componentes
+            syscomp_rows = _db.session.execute(text(
+                "SELECT s.equipment_id, s.name AS sys_name, c.id AS comp_id, c.name AS comp_name "
+                "FROM systems s LEFT JOIN components c ON c.system_id = s.id "
+                "WHERE s.equipment_id = ANY(:ids) ORDER BY s.equipment_id, s.name, c.name"
+            ), {"ids": matched_list}).fetchall()
+            comp_ids = [r[2] for r in syscomp_rows if r[2]]
+            # 4) Specs de componentes en bulk
+            cspec_by_comp = {}
+            if comp_ids:
+                cspec_rows = _db.session.execute(text(
+                    "SELECT component_id, key_name, value_text, unit FROM component_specs "
+                    "WHERE component_id = ANY(:cids) ORDER BY component_id, order_index"
+                ), {"cids": comp_ids}).fetchall()
+                for r in cspec_rows:
+                    cspec_by_comp.setdefault(r[0], []).append((r[1], r[2], r[3]))
+
+            # Indexar syscomp por equipo
+            syscomp_by_eq = {}
+            for r in syscomp_rows:
+                syscomp_by_eq.setdefault(r[0], []).append((r[1], r[2], r[3]))
+
+            # ── Render ──
+            for eq in eqs_rows:
                 lines.append(f"\n>>> EQUIPO ENCONTRADO: [{eq[1]}] {eq[2]}")
                 lines.append(f"    Linea: {eq[3]} | Area: {eq[4]}")
-                # Specs del equipo
-                especs = _db.session.execute(text(
-                    "SELECT key_name, value_text, unit FROM equipment_specs "
-                    "WHERE equipment_id = :id ORDER BY order_index"
-                ), {"id": eq_id}).fetchall()
-                if especs:
+                espec_list = espec_by_eq.get(eq[0], [])
+                if espec_list:
                     lines.append(f"    SPECS DEL EQUIPO:")
-                    for s in especs:
-                        lines.append(f"      - {s[0]}: {s[1]} {s[2] or ''}")
-                # Sistemas y componentes con specs
-                syscomps = _db.session.execute(text(
-                    "SELECT s.name AS sys_name, c.id AS comp_id, c.name AS comp_name "
-                    "FROM systems s LEFT JOIN components c ON c.system_id = s.id "
-                    "WHERE s.equipment_id = :id ORDER BY s.name, c.name"
-                ), {"id": eq_id}).fetchall()
+                    for k, v, u in espec_list:
+                        lines.append(f"      - {k}: {v} {u or ''}")
                 cur_sys = None
-                for r in syscomps:
-                    if r[0] != cur_sys:
-                        lines.append(f"    SISTEMA: {r[0]}")
-                        cur_sys = r[0]
-                    if r[1]:
-                        lines.append(f"      COMPONENTE: {r[2]}")
-                        cspecs = _db.session.execute(text(
-                            "SELECT key_name, value_text, unit FROM component_specs "
-                            "WHERE component_id = :cid ORDER BY order_index"
-                        ), {"cid": r[1]}).fetchall()
-                        if cspecs:
-                            for cs in cspecs:
-                                lines.append(f"        * {cs[0]}: {cs[1]} {cs[2] or ''}")
+                for sys_name, comp_id, comp_name in syscomp_by_eq.get(eq[0], []):
+                    if sys_name != cur_sys:
+                        lines.append(f"    SISTEMA: {sys_name}")
+                        cur_sys = sys_name
+                    if comp_id:
+                        lines.append(f"      COMPONENTE: {comp_name}")
+                        cs_list = cspec_by_comp.get(comp_id, [])
+                        if cs_list:
+                            for k, v, u in cs_list:
+                                lines.append(f"        * {k}: {v} {u or ''}")
                         else:
-                            lines.append(f"        * SPEC_FALTANTE: ficha tecnica no cargada en el CMMS")
+                            lines.append(f"        * SPEC_FALTANTE: ficha tecnica no cargada")
         except Exception as e:
             logger.warning(f"_get_focused_equipment_context error: {e}")
             return ''
@@ -1564,7 +1583,7 @@ DATOS ACTUALES:
     }
 
     try:
-        r = requests.post(DEEPSEEK_URL, headers=headers, json=payload, timeout=30)
+        r = requests.post(DEEPSEEK_URL, headers=headers, json=payload, timeout=60)
         if r.status_code != 200:
             return f"Error DeepSeek: {r.status_code} {r.text[:200]}"
         return r.json()['choices'][0]['message']['content']
@@ -2085,6 +2104,17 @@ def _process_message(app, chat_id, text, photos=None):
     focus = _get_focused_equipment_context(app, text)
     context = _get_cmms_context(app)
     if focus:
+        # Si hay foco, quitar la seccion gigante 'SPECS DE COMPONENTES' del contexto
+        # general (la info relevante ya esta en el foco). Asi evitamos timeout/saturacion.
+        try:
+            import re as _re
+            context = _re.sub(
+                r'\n=== SPECS DE COMPONENTES ===.*?(?=\n===|\Z)',
+                '\n=== SPECS DE COMPONENTES === (ver FOCO arriba)\n',
+                context, flags=_re.DOTALL,
+            )
+        except Exception:
+            pass
         context = focus + context
     answer = _ask_deepseek(text, context, is_action=True)
 
