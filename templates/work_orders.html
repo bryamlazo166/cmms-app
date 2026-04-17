@@ -698,11 +698,17 @@
                 <div id="ot-tab-personal" class="ot-tab-content" style="display: none;">
                     <div
                         style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 15px;">
-                        <h4 style="margin: 0; color: #0A84FF;"><i class="fas fa-users"></i> Personal Asignado</h4>
-                        <button type="button" class="btn-primary" onclick="addPersonnelRow()"
-                            style="padding: 5px 15px;">
-                            <i class="fas fa-plus"></i> Agregar Personal
-                        </button>
+                        <h4 style="margin: 0; color: #0A84FF;"><i class="fas fa-users"></i> Personal: Planificado vs Ejecutado</h4>
+                        <div style="display:flex; gap:6px;">
+                            <button type="button" class="btn-primary" onclick="addPersonnelRow(false)"
+                                style="padding: 5px 12px;">
+                                <i class="fas fa-plus"></i> Planificado
+                            </button>
+                            <button type="button" onclick="addPersonnelRow(true)"
+                                style="padding: 5px 12px;background:#FF9F0A;color:#1a1a1a;border:none;border-radius:6px;font-weight:600;">
+                                <i class="fas fa-user-plus"></i> Reemplazo
+                            </button>
+                        </div>
                     </div>
                     <table class="data-table" id="otPersonnelTable" style="width: 100%;">
                         <thead>
@@ -711,6 +717,8 @@
                                 <th>Especialidad</th>
                                 <th style="text-align:center;">H. Plan</th>
                                 <th style="text-align:center;">H. Reales</th>
+                                <th style="text-align:center;">Asistio</th>
+                                <th>Origen</th>
                                 <th>Acciones</th>
                             </tr>
                         </thead>
@@ -719,7 +727,7 @@
                         </tbody>
                     </table>
                     <div id="personnelEmpty" style="text-align: center; color: #888; padding: 20px;">
-                        No hay personal asignado. Haga clic en "Agregar Personal".
+                        No hay personal asignado. Haga clic en "Planificado" para asignar.
                     </div>
                 </div>
 

@@ -2865,22 +2865,84 @@ function renderPersonnelTable() {
 
     currentOTPersonnel.forEach((p, idx) => {
         const tr = document.createElement('tr');
-        const displayHours = p.hours_assigned !== undefined ? p.hours_assigned : (p.hours || 0);
+        const planHours = p.hours_assigned !== undefined ? p.hours_assigned : (p.hours || 0);
+        const realHours = (p.hours_worked !== null && p.hours_worked !== undefined) ? p.hours_worked : '';
+        const isReplacement = !!p.replacement_for_id;
+        const repName = p.replacement_for_name || '';
+
+        // Estado asistencia
+        let attBadge = '';
+        if (p.attended === true) attBadge = '<span style="color:#30D158;font-weight:600">SI</span>';
+        else if (p.attended === false) attBadge = '<span style="color:#FF453A;font-weight:600">NO</span>';
+        else attBadge = '<span style="color:#888">—</span>';
+
+        // Origen
+        let origenLabel = isReplacement
+            ? `<span style="color:#FF9F0A;font-size:.78rem">Reemplazo de ${repName || '?'}</span>`
+            : `<span style="color:#0A84FF;font-size:.78rem">Planificado</span>`;
+
+        // Si la persona no asistio, marcar fila en gris
+        const rowStyle = (p.attended === false) ? 'opacity:.55;text-decoration:line-through;' : '';
+
+        tr.style.cssText = rowStyle;
         tr.innerHTML = `
             <td>${p.technician_name || p.name || 'N/A'}</td>
             <td>${p.specialty || '-'}</td>
-            <td>${displayHours} hrs</td>
+            <td style="text-align:center;">${planHours} h</td>
+            <td style="text-align:center;">
+                <input type="number" min="0" step="0.5" value="${realHours}" data-idx="${idx}"
+                    onchange="updatePersonnelHoursWorked(${idx}, this.value)"
+                    style="width:60px;padding:2px 4px;background:#1c1c1c;color:#fff;border:1px solid #333;border-radius:4px;text-align:center;" />
+            </td>
+            <td style="text-align:center;">${attBadge}</td>
+            <td>${origenLabel}</td>
             <td>
-                <button type="button" class="btn-danger" onclick="removePersonnel(${idx})" style="padding: 2px 8px;">
-                    <i class="fas fa-trash"></i>
-                </button>
+                <div style="display:flex;gap:4px;flex-wrap:wrap;">
+                    <button type="button" onclick="setAttended(${idx}, true)"
+                        title="Marcar asistio" style="padding:2px 6px;background:#0d3a1a;color:#5cd870;border:1px solid #2d6a3d;border-radius:4px;font-size:.72rem;">
+                        <i class="fas fa-check"></i>
+                    </button>
+                    <button type="button" onclick="setAttended(${idx}, false)"
+                        title="Marcar NO asistio" style="padding:2px 6px;background:#3a1d1d;color:#ff8a8a;border:1px solid #6a2d2d;border-radius:4px;font-size:.72rem;">
+                        <i class="fas fa-times"></i>
+                    </button>
+                    <button type="button" class="btn-danger" onclick="removePersonnel(${idx})"
+                        title="Eliminar fila" style="padding:2px 6px;font-size:.72rem;">
+                        <i class="fas fa-trash"></i>
+                    </button>
+                </div>
             </td>
         `;
         tbody.appendChild(tr);
     });
 }
 
-window.addPersonnelRow = function () {
+window.updatePersonnelHoursWorked = function (idx, value) {
+    const v = parseFloat(value);
+    currentOTPersonnel[idx].hours_worked = isNaN(v) ? null : v;
+    const otId = document.getElementById('otId').value;
+    if (otId) saveOTPersonnel(otId);
+};
+
+window.setAttended = function (idx, val) {
+    currentOTPersonnel[idx].attended = val;
+    // Si marca como NO asistio, ofrecer agregar un reemplazo
+    if (val === false) {
+        if (confirm('Marcado como NO asistio. ¿Quieres agregar un reemplazo ahora?')) {
+            const original = currentOTPersonnel[idx];
+            // ID temporal: usamos el id real si ya existe en BD, si no usamos negativo basado en idx
+            _pendingReplacementFor = { idx, id: original.id || null, name: original.technician_name };
+            addPersonnelRow(true);
+        }
+    }
+    renderPersonnelTable();
+    const otId = document.getElementById('otId').value;
+    if (otId) saveOTPersonnel(otId);
+};
+
+let _pendingReplacementFor = null;
+
+window.addPersonnelRow = function (isReplacement) {
     const select = document.getElementById('personnelTechSelect');
     if (!select) return alert('Modal de personal no encontrado');
     select.innerHTML = '<option value="">- Seleccione Técnico -</option>';
@@ -2902,6 +2964,19 @@ window.addPersonnelRow = function () {
         }
     };
     document.getElementById('personnelHours').value = 8;
+
+    // Marcar si esta agregando un reemplazo
+    if (!isReplacement) _pendingReplacementFor = null;
+    const titleEl = document.querySelector('#addPersonnelModal h3');
+    if (titleEl) {
+        if (isReplacement && _pendingReplacementFor) {
+            titleEl.innerHTML = `<i class="fas fa-user-plus"></i> Reemplazo para ${_pendingReplacementFor.name || '?'}`;
+        } else if (isReplacement) {
+            titleEl.innerHTML = `<i class="fas fa-user-plus"></i> Agregar Reemplazo`;
+        } else {
+            titleEl.innerHTML = `<i class="fas fa-user-plus"></i> Agregar Personal Planificado`;
+        }
+    }
     document.getElementById('addPersonnelModal').showModal();
 }
 
@@ -2915,16 +2990,24 @@ window.confirmAddPersonnel = function () {
     const specialty = document.getElementById('personnelSpecialty').value;
     const hours = parseFloat(document.getElementById('personnelHours').value) || 8;
 
-    if (currentOTPersonnel.find(p => p.technician_id == techId)) {
-        return alert('Este técnico ya está asignado a la OT');
+    // Validar duplicado solo para planificados (un reemplazo puede repetir si eligen al mismo)
+    if (!_pendingReplacementFor && currentOTPersonnel.find(p => p.technician_id == techId && !p.replacement_for_id)) {
+        return alert('Este técnico ya está asignado en planificado');
     }
 
-    currentOTPersonnel.push({
+    const newRow = {
         technician_id: parseInt(techId),
         technician_name: techName,
         specialty: specialty,
-        hours: hours
-    });
+        hours: hours,
+        attended: _pendingReplacementFor ? true : null,
+    };
+    if (_pendingReplacementFor) {
+        newRow.replacement_for_id = _pendingReplacementFor.id;
+        newRow.replacement_for_name = _pendingReplacementFor.name;
+    }
+    currentOTPersonnel.push(newRow);
+    _pendingReplacementFor = null;
 
     renderPersonnelTable();
     document.getElementById('addPersonnelModal').close();
@@ -3279,7 +3362,7 @@ window.clearPersonnelSelection = function() {
     document.getElementById('personnelSearchInput').focus();
 };
 
-window.addPersonnelRow = function () {
+window.addPersonnelRow = function (isReplacement) {
     _selectedPersonnelId   = null;
     _selectedPersonnelName = null;
     document.getElementById('personnelTechId').value = '';
@@ -3294,6 +3377,18 @@ window.addPersonnelRow = function () {
         else document.getElementById('personnelSuggestions').style.display = 'none';
     };
 
+    if (!isReplacement) _pendingReplacementFor = null;
+    const titleEl = document.querySelector('#addPersonnelModal h3');
+    if (titleEl) {
+        if (isReplacement && _pendingReplacementFor) {
+            titleEl.innerHTML = `<i class="fas fa-user-plus"></i> Reemplazo para ${_pendingReplacementFor.name || '?'}`;
+        } else if (isReplacement) {
+            titleEl.innerHTML = `<i class="fas fa-user-plus"></i> Agregar Reemplazo`;
+        } else {
+            titleEl.innerHTML = `<i class="fas fa-user-plus"></i> Agregar Personal Planificado`;
+        }
+    }
+
     document.getElementById('addPersonnelModal').showModal();
     searchInput.focus();
 };
@@ -3307,16 +3402,24 @@ window.confirmAddPersonnel = function () {
     const specialty = document.getElementById('personnelSpecialty').value;
     const hours     = parseFloat(document.getElementById('personnelHours').value) || 8;
 
-    if (currentOTPersonnel.find(p => Number(p.technician_id) === Number(techId))) {
-        return alert('Este técnico ya está asignado a la OT');
+    // Validar duplicado solo entre planificados (un reemplazo puede repetir)
+    if (!_pendingReplacementFor && currentOTPersonnel.find(p => Number(p.technician_id) === Number(techId) && !p.replacement_for_id)) {
+        return alert('Este técnico ya está asignado en planificado');
     }
 
-    currentOTPersonnel.push({
+    const newRow = {
         technician_id: parseInt(techId, 10),
         technician_name: techName,
         specialty: specialty,
-        hours: hours
-    });
+        hours: hours,
+        attended: _pendingReplacementFor ? true : null,
+    };
+    if (_pendingReplacementFor) {
+        newRow.replacement_for_id = _pendingReplacementFor.id;
+        newRow.replacement_for_name = _pendingReplacementFor.name;
+    }
+    currentOTPersonnel.push(newRow);
+    _pendingReplacementFor = null;
 
     renderPersonnelTable();
     document.getElementById('addPersonnelModal').close();

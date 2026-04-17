@@ -390,11 +390,35 @@ def register_work_orders_routes(
                         except Exception:
                             hours = 8.0
 
+                        # Optional new fields
+                        try:
+                            hw_val = p.get('hours_worked')
+                            hours_worked = float(hw_val) if hw_val not in (None, '') else None
+                        except Exception:
+                            hours_worked = None
+
+                        attended = p.get('attended')
+                        if attended in ('true', 'True', 1, '1'):
+                            attended = True
+                        elif attended in ('false', 'False', 0, '0'):
+                            attended = False
+                        elif attended not in (True, False, None):
+                            attended = None
+
+                        try:
+                            rep_for = p.get('replacement_for_id')
+                            rep_for = int(rep_for) if rep_for not in (None, '') else None
+                        except Exception:
+                            rep_for = None
+
                         person = OTPersonnel(
                             work_order_id=ot_id,
                             technician_id=tech_id,
                             specialty=p.get('specialty') or None,
                             hours_assigned=hours,
+                            hours_worked=hours_worked,
+                            attended=attended,
+                            replacement_for_id=rep_for,
                         )
                         db.session.add(person)
 

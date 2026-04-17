@@ -504,11 +504,14 @@ class OTPersonnel(db.Model):
     specialty: Mapped[str | None] = mapped_column(String(50), nullable=True)  # MECANICO, ELECTRICO, etc.
     hours_assigned: Mapped[float] = mapped_column(Float, default=0)  # Planned hours
     hours_worked: Mapped[float | None] = mapped_column(Float, nullable=True)  # Actual hours
-    
+    attended: Mapped[bool | None] = mapped_column(Boolean, nullable=True)  # NULL=sin confirmar, True=asistio, False=no vino
+    replacement_for_id: Mapped[int | None] = mapped_column(ForeignKey('ot_personnel.id'), nullable=True)  # si reemplaza a otro
+
     # Relationships
     work_order = relationship("WorkOrder", backref="assigned_personnel")
     technician = relationship("Technician")
-    
+    replacement_for = relationship("OTPersonnel", remote_side="OTPersonnel.id", foreign_keys=[replacement_for_id])
+
     def to_dict(self):
         return {
             "id": self.id,
@@ -517,7 +520,10 @@ class OTPersonnel(db.Model):
             "technician_name": self.technician.name if self.technician else None,
             "specialty": self.specialty,
             "hours_assigned": self.hours_assigned,
-            "hours_worked": self.hours_worked
+            "hours_worked": self.hours_worked,
+            "attended": self.attended,
+            "replacement_for_id": self.replacement_for_id,
+            "replacement_for_name": (self.replacement_for.technician.name if self.replacement_for and self.replacement_for.technician else None),
         }
 
 

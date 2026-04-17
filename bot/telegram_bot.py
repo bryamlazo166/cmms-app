@@ -122,14 +122,29 @@ def _get_focused_equipment_context(app, message):
                             "SELECT key_name, value_text, unit FROM component_specs "
                             "WHERE component_id = :cid ORDER BY order_index"
                         ), {"cid": r[1]}).fetchall()
-                        for cs in cspecs:
-                            lines.append(f"        * {cs[0]}: {cs[1]} {cs[2] or ''}")
+                        if cspecs:
+                            for cs in cspecs:
+                                lines.append(f"        * {cs[0]}: {cs[1]} {cs[2] or ''}")
+                        else:
+                            lines.append(f"        * SPEC_FALTANTE: ficha tecnica no cargada en el CMMS")
         except Exception as e:
             logger.warning(f"_get_focused_equipment_context error: {e}")
             return ''
     if not lines:
         return ''
-    return "=== FOCO DE CONSULTA — DATOS DETALLADOS DEL EQUIPO MENCIONADO ===\n" + "\n".join(lines) + "\n\n"
+    header = (
+        "=== FOCO DE CONSULTA — DATOS DETALLADOS DEL EQUIPO MENCIONADO ===\n"
+        "INSTRUCCION CRITICA PARA EL ASISTENTE:\n"
+        "  Las lineas que empiezan con '*' bajo cada COMPONENTE son las ESPECIFICACIONES TECNICAS\n"
+        "  reales (modelo, marca, codigo, dimensiones, etc.). Si el usuario pregunta por specs,\n"
+        "  modelo, marca, codigo, parte, dimensiones, ficha tecnica, NUMERO DE PARTE de un componente,\n"
+        "  responde EXACTAMENTE con esos pares clave=valor de aqui. NO digas 'no hay especificaciones'\n"
+        "  si abajo hay lineas con '*'. Ejemplo de spec: '* CHUMACERA: UCF315-300D1' significa\n"
+        "  que la chumacera modelo es UCF315-300D1.\n"
+        "  Las lineas que empiezan con '* SPEC_FALTANTE' indican que no se ha cargado la ficha de\n"
+        "  ese componente (responde claramente que la ficha no esta cargada en el CMMS).\n"
+    )
+    return header + "\n".join(lines) + "\n\n"
 
 
 def _get_cmms_context(app):
@@ -1518,6 +1533,13 @@ SIEMPRE respondes con un objeto JSON valido (ver FORMATO DE RESPUESTA OBLIGATORI
 Dentro del campo "reply" responde en español, conciso y profesional. Usa SOLO datos reales del sistema.
 NUNCA inventes datos ni confirmes acciones no realizadas.
 Si no tienes info, responde {{"action":"none","reply":"No tengo esa informacion."}}.
+
+CONSULTAS DE ESPECIFICACIONES TECNICAS (modelo, marca, codigo, parte, dimensiones, ficha tecnica):
+- Busca PRIMERO en la seccion '=== FOCO DE CONSULTA ===' las lineas '* CLAVE: VALOR' debajo del COMPONENTE pedido. Esas SON las specs.
+- Si no hay foco, busca en '=== SPECS DE COMPONENTES ===' por '[TAG] NOMBRE_COMPONENTE: ...'.
+- Si encuentras specs, responde listandolas: "El componente X tiene: marca=NTN, modelo=UCF315, ...".
+- Solo responde "no hay especificaciones" si efectivamente no aparece ninguna linea de spec para ese componente o si aparece 'SPEC_FALTANTE'.
+- IMPORTANTE: notas tipograficas como CHUAMCERA = CHUMACERA. Usa el dato aunque haya errores de tipeo.
 
 Cuando el usuario pida ANALISIS o RECOMENDACIONES, puedes:
 - Calcular % correctivo vs preventivo
