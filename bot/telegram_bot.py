@@ -119,8 +119,10 @@ def _get_focused_equipment_context(app, message):
 
     # Extraer patrones tipo "DIGESTOR 2" -> inferir tag "D2"; "TRANSPORTADOR 5" -> "TH5"
     inferred_tags = set()
-    for kw, prefix in (('DIGESTOR', 'D'), ('TRANSPORTADOR', 'TH'), ('SECADOR', 'SEC')):
-        for m in re.finditer(kw + r'\s*(\d+)', msg_norm):
+    for kw, prefix in (('DIGESTOR', 'D'), ('TRANSPORTADOR', 'TH'), ('SECADOR', 'SEC'),
+                       ('MOLINO', 'MOLI'), ('HIDROLAVADORA', 'H'), ('TRITURADOR', 'TRI'),
+                       ('PERCOLADOR', 'PER'), ('VAHO', 'VAHO')):
+        for m in re.finditer(kw + r'\s*#?\s*(\d+)', msg_norm):
             inferred_tags.add(prefix + m.group(1))
 
     lines = []
@@ -143,9 +145,15 @@ def _get_focused_equipment_context(app, message):
                     matched_ids.add(e[0])
                     continue
                 # Match por tag inferido ("Digestor 2" -> "D2")
-                if eq_tag_norm and eq_tag_norm in inferred_tags:
-                    matched_ids.add(e[0])
-                    continue
+                # Tolera tags compuestos tipo 'MOLI2-LINE1' cuando se infiere 'MOLI2'.
+                if eq_tag_norm:
+                    inf_match = any(
+                        (inf == eq_tag_norm or eq_tag_norm.startswith(inf + '-'))
+                        for inf in inferred_tags
+                    )
+                    if inf_match:
+                        matched_ids.add(e[0])
+                        continue
                 # Match por nombre completo normalizado
                 if eq_name_norm and re.search(r'\b' + re.escape(eq_name_norm) + r'\b', msg_norm):
                     matched_ids.add(e[0])
@@ -228,6 +236,49 @@ def _get_focused_equipment_context(app, message):
                 for r in cspec_rows:
                     cspec_by_comp.setdefault(r[0], []).append((r[1], r[2], r[3]))
 
+            # 5) Activos rotativos INSTALADOS en cualquiera de esos componentes
+            # (motores, bombas, cajas reductoras, etc. con su marca/modelo/BOM)
+            ra_by_comp = {}
+            ra_specs_by_id = {}
+            ra_bom_by_id = {}
+            if comp_ids:
+                ra_rows = _db.session.execute(text(
+                    "SELECT id, code, name, brand, model, category, component_id "
+                    "FROM rotative_assets "
+                    "WHERE component_id = ANY(:cids) AND status = 'Instalado'"
+                ), {"cids": comp_ids}).fetchall()
+                asset_ids = []
+                for ra in ra_rows:
+                    ra_by_comp.setdefault(ra[6], []).append(ra)
+                    asset_ids.append(ra[0])
+                # 5a) Specs de esos activos rotativos
+                if asset_ids:
+                    ras_rows = _db.session.execute(text(
+                        "SELECT asset_id, key_name, value_text, unit "
+                        "FROM rotative_asset_specs "
+                        "WHERE asset_id = ANY(:aids) AND is_active = TRUE "
+                        "ORDER BY asset_id, order_index"
+                    ), {"aids": asset_ids}).fetchall()
+                    for r in ras_rows:
+                        ra_specs_by_id.setdefault(r[0], []).append((r[1], r[2], r[3]))
+                    # 5b) BOM (repuestos: rodamientos, retenes, etc.)
+                    bom_rows = _db.session.execute(text(
+                        "SELECT rab.asset_id, rab.category, rab.quantity, rab.notes, "
+                        "       COALESCE(wi.code, '-') AS item_code, "
+                        "       COALESCE(wi.name, rab.free_text, '-') AS item_name, "
+                        "       COALESCE(wi.brand, '') AS item_brand, "
+                        "       COALESCE(wi.manufacturer_code, '') AS mfr_code "
+                        "FROM rotative_asset_bom rab "
+                        "LEFT JOIN warehouse_items wi ON rab.warehouse_item_id = wi.id "
+                        "WHERE rab.asset_id = ANY(:aids)"
+                    ), {"aids": asset_ids}).fetchall()
+                    for r in bom_rows:
+                        ra_bom_by_id.setdefault(r[0], []).append({
+                            'category': r[1], 'qty': r[2], 'notes': r[3],
+                            'code': r[4], 'name': r[5], 'brand': r[6],
+                            'mfr_code': r[7],
+                        })
+
             # Indexar syscomp por equipo
             syscomp_by_eq = {}
             for r in syscomp_rows:
@@ -253,7 +304,33 @@ def _get_focused_equipment_context(app, message):
                         if cs_list:
                             for k, v, u in cs_list:
                                 lines.append(f"        * {k}: {v} {u or ''}")
-                        else:
+                        # Activos rotativos instalados en este componente
+                        ras_here = ra_by_comp.get(comp_id, [])
+                        for ra in ras_here:
+                            ra_id, ra_code, ra_name, ra_brand, ra_model, ra_cat, _ = ra
+                            lines.append(f"        >> ACTIVO ROTATIVO INSTALADO: {ra_code} {ra_name}")
+                            meta_bits = []
+                            if ra_brand: meta_bits.append(f"Marca: {ra_brand}")
+                            if ra_model: meta_bits.append(f"Modelo: {ra_model}")
+                            if ra_cat:   meta_bits.append(f"Categoria: {ra_cat}")
+                            if meta_bits:
+                                lines.append(f"           " + ' | '.join(meta_bits))
+                            for k, v, u in ra_specs_by_id.get(ra_id, []):
+                                lines.append(f"           · SPEC {k}: {v} {u or ''}")
+                            boms = ra_bom_by_id.get(ra_id, [])
+                            if boms:
+                                lines.append(f"           REPUESTOS/BOM del activo (rodamientos, retenes, fajas, etc):")
+                                for b in boms:
+                                    note = f" [{b['notes']}]" if b.get('notes') else ''
+                                    brand = f" {b['brand']}" if b.get('brand') else ''
+                                    mfr = f" (parte: {b['mfr_code']})" if b.get('mfr_code') else ''
+                                    qty = b.get('qty') or ''
+                                    cat = b.get('category') or ''
+                                    lines.append(
+                                        f"             • {b.get('code', '-')} {b.get('name', '-')}{brand}{mfr}"
+                                        f" — x{qty} {cat}{note}"
+                                    )
+                        if not cs_list and not ras_here:
                             lines.append(f"        * SPEC_FALTANTE: ficha tecnica no cargada")
         except Exception as e:
             logger.warning(f"_get_focused_equipment_context error: {e}")
@@ -263,19 +340,55 @@ def _get_focused_equipment_context(app, message):
     header = (
         "=== FOCO DE CONSULTA — DATOS DETALLADOS DEL EQUIPO MENCIONADO ===\n"
         "INSTRUCCION CRITICA PARA EL ASISTENTE:\n"
-        "  Las lineas que empiezan con '*' bajo cada COMPONENTE son las ESPECIFICACIONES TECNICAS\n"
-        "  reales (modelo, marca, codigo, dimensiones, etc.). Si el usuario pregunta por specs,\n"
-        "  modelo, marca, codigo, parte, dimensiones, ficha tecnica, NUMERO DE PARTE de un componente,\n"
-        "  responde EXACTAMENTE con esos pares clave=valor de aqui. NO digas 'no hay especificaciones'\n"
-        "  si abajo hay lineas con '*'. Ejemplo de spec: '* CHUMACERA: UCF315-300D1' significa\n"
-        "  que la chumacera modelo es UCF315-300D1.\n"
-        "  Las lineas que empiezan con '* SPEC_FALTANTE' indican que no se ha cargado la ficha de\n"
-        "  ese componente (responde claramente que la ficha no esta cargada en el CMMS).\n"
+        "  Las lineas '*' bajo cada COMPONENTE son las ESPECIFICACIONES TECNICAS del\n"
+        "  componente (modelo, marca, codigo, dimensiones). Si el usuario pregunta por\n"
+        "  specs/modelo/marca/codigo/parte/dimensiones, responde EXACTAMENTE con esos\n"
+        "  pares clave=valor. NO digas 'no hay especificaciones' si abajo hay lineas '*'.\n"
+        "  Ejemplo: '* CHUMACERA: UCF315-300D1' significa chumacera modelo UCF315-300D1.\n"
+        "  '* SPEC_FALTANTE' significa que NO se cargo la ficha del componente.\n"
+        "\n"
+        "  Las lineas '>> ACTIVO ROTATIVO INSTALADO' son el activo rotativo real montado\n"
+        "  en ese componente (bomba centrifuga, motor electrico, caja reductora, etc).\n"
+        "  Las lineas '· SPEC' bajo el activo son sus especificaciones (HP, RPM, etc).\n"
+        "  Las lineas 'REPUESTOS/BOM' listan los repuestos del activo rotativo:\n"
+        "  RODAMIENTOS, RETENES, FAJAS, ACOPLES, etc. con su codigo de almacen,\n"
+        "  marca y numero de parte del fabricante.\n"
+        "  Si el usuario pregunta '¿que rodamiento usa la bomba X?', '¿que repuestos\n"
+        "  lleva?', '¿codigo de parte del reten?', responde con los items del BOM del\n"
+        "  activo instalado en ese componente.\n"
+        "  IMPORTANTE: CHUAMCERA = CHUMACERA (tolera errores de tipeo en los datos).\n"
     )
     return header + "\n".join(lines) + "\n\n"
 
 
+# ── Pre-calculo del contexto general (Opt #3) ────────────────────────────
+# El contexto general (conteos, listado de equipos/tecnicos/fallas, etc)
+# cambia lentamente. Lo pre-calculamos cada 60s en un thread de background
+# para no repetir ~15 queries a Supabase en cada mensaje al bot.
+_cached_cmms_context = ''
+_cached_cmms_context_ts = 0.0
+_CACHE_CONTEXT_TTL = 60  # segundos entre refrescos
+
+
 def _get_cmms_context(app):
+    """Devuelve el contexto general. Usa cache si esta disponible.
+
+    - Si el cache esta frio (aun sin inicializar), construye una vez on-demand.
+    - Si el cache esta caliente, devuelve la version pre-calculada (0ms).
+    - El refresh ocurre en un thread separado lanzado por start_bot().
+    """
+    global _cached_cmms_context
+    # Fallback: durante los primeros segundos del bot, cache puede estar vacio
+    if not _cached_cmms_context:
+        try:
+            _cached_cmms_context = _build_cmms_context_real(app)
+        except Exception as e:
+            logger.warning(f"_get_cmms_context first-build fallo: {e}")
+            return ''
+    return _cached_cmms_context
+
+
+def _build_cmms_context_real(app):
     ctx = []
     with app.app_context():
         from database import db as _db
@@ -2791,6 +2904,20 @@ def start_telegram_bot(app):
                     logger.error(f"Daily alert error: {e}")
             time.sleep(60)
 
+    def refresh_context_loop():
+        """Pre-calcula el contexto general cada 60s (Opt #3)."""
+        global _cached_cmms_context, _cached_cmms_context_ts
+        logger.info("Context pre-cache thread started (TTL 60s).")
+        while True:
+            try:
+                ctx = _build_cmms_context_real(app)
+                _cached_cmms_context = ctx
+                _cached_cmms_context_ts = time.time()
+            except Exception as e:
+                logger.warning(f"Context refresh fallo: {e}")
+            time.sleep(_CACHE_CONTEXT_TTL)
+
     threading.Thread(target=poll, daemon=True).start()
     threading.Thread(target=daily_alerts, daemon=True).start()
-    logger.info("Telegram bot + daily alerts started.")
+    threading.Thread(target=refresh_context_loop, daemon=True).start()
+    logger.info("Telegram bot + daily alerts + context cache started.")
