@@ -157,6 +157,61 @@ def _get_focused_equipment_context(app, message):
                 # Match por nombre completo normalizado
                 if eq_name_norm and re.search(r'\b' + re.escape(eq_name_norm) + r'\b', msg_norm):
                     matched_ids.add(e[0])
+
+            # Si no encontramos equipo por tag/nombre, el usuario pudo mencionar
+            # un COMPONENTE (ej: 'bomba de lodos', 'motor electrico del D5').
+            # Buscamos componentes por nombre y tomamos su equipo padre.
+            if not matched_ids:
+                try:
+                    comp_rows = _db.session.execute(text(
+                        "SELECT c.name, s.equipment_id FROM components c "
+                        "JOIN systems s ON c.system_id = s.id"
+                    )).fetchall()
+                    # Orden descendente por longitud para priorizar matches largos
+                    # (ej: 'BOMBA DE LODOS' antes que 'BOMBA')
+                    for c in sorted(comp_rows, key=lambda x: -len(x[0] or '')):
+                        cname = _norm(c[0] or '')
+                        if cname and len(cname) >= 5 and re.search(
+                            r'\b' + re.escape(cname) + r'\b', msg_norm
+                        ):
+                            matched_ids.add(c[1])
+                except Exception:
+                    pass
+
+            # Tambien probar por CODIGO de activo rotativo mencionado (ej: MR-0048)
+            if not matched_ids:
+                try:
+                    ra_rows = _db.session.execute(text(
+                        "SELECT code, name, component_id FROM rotative_assets "
+                        "WHERE status = 'Instalado'"
+                    )).fetchall()
+                    for ra in ra_rows:
+                        rac = _norm(ra[0] or '')
+                        ran = _norm(ra[1] or '')
+                        if rac and re.search(r'\b' + re.escape(rac) + r'\b', msg_norm):
+                            # Buscar equipment_id a partir del component_id
+                            if ra[2]:
+                                eq_row = _db.session.execute(text(
+                                    "SELECT s.equipment_id FROM systems s "
+                                    "JOIN components c ON c.system_id = s.id "
+                                    "WHERE c.id = :cid"
+                                ), {"cid": ra[2]}).fetchone()
+                                if eq_row:
+                                    matched_ids.add(eq_row[0])
+                        elif ran and len(ran) >= 8 and re.search(
+                            r'\b' + re.escape(ran) + r'\b', msg_norm
+                        ):
+                            if ra[2]:
+                                eq_row = _db.session.execute(text(
+                                    "SELECT s.equipment_id FROM systems s "
+                                    "JOIN components c ON c.system_id = s.id "
+                                    "WHERE c.id = :cid"
+                                ), {"cid": ra[2]}).fetchone()
+                                if eq_row:
+                                    matched_ids.add(eq_row[0])
+                except Exception:
+                    pass
+
             if not matched_ids:
                 return ''
 
