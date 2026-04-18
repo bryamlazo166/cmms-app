@@ -178,6 +178,89 @@ def main():
     conn.commit()
     print(f"Avisos indexados: {indexed}/{len(avisos)}")
 
+    # ── Inspecciones de espesor (UT) — Mejora 4 ────────────────────
+    # Cada inspeccion = 1 embedding con resumen: fecha, equipo,
+    # total puntos, criticos/alerta, y lista de los peores puntos.
+    cur.execute("""
+        SELECT ti.id, ti.inspection_date, ti.inspector_name, ti.status,
+               ti.total_points, ti.critical_points, ti.alert_points,
+               ti.semaphore_status, ti.notes,
+               e.tag AS eq_tag, e.name AS eq_name,
+               a.name AS area_name
+        FROM thickness_inspections ti
+        LEFT JOIN equipments e ON ti.equipment_id = e.id
+        LEFT JOIN areas a ON e.line_id IN (SELECT id FROM lines WHERE area_id = a.id)
+    """)
+    inspections = cur.fetchall()
+    print(f"\nInspecciones de espesor a indexar: {len(inspections)}")
+
+    indexed = 0
+    for ti in inspections:
+        # Traer peores puntos de la inspeccion
+        cur.execute("""
+            SELECT tp.group_name, tp.section, tp.position,
+                   tp.nominal_thickness, tr.value_mm,
+                   tr.is_critical, tr.is_alert
+            FROM thickness_readings tr
+            JOIN thickness_points tp ON tr.point_id = tp.id
+            WHERE tr.inspection_id = %s
+            ORDER BY tr.is_critical DESC, tr.is_alert DESC,
+                     (tr.value_mm / NULLIF(tp.nominal_thickness, 0)) ASC
+            LIMIT 5
+        """, (ti['id'],))
+        readings = cur.fetchall()
+
+        parts = [f"INSPECCION UT del {ti['inspection_date']} (id {ti['id']})\n"]
+        parts.append(f"Equipo: [{ti['eq_tag'] or '-'}] {ti['eq_name'] or '-'}\n")
+        if ti['area_name']:
+            parts.append(f"Area: {ti['area_name']}\n")
+        if ti['inspector_name']:
+            parts.append(f"Inspector: {ti['inspector_name']}\n")
+        parts.append(f"Estado: {ti['status']} | Semaforo: {ti['semaphore_status']}\n")
+        parts.append(
+            f"Puntos: total={ti['total_points']}, "
+            f"criticos={ti['critical_points']}, alertas={ti['alert_points']}\n"
+        )
+        if ti['notes']:
+            parts.append(f"Notas: {ti['notes']}\n")
+        if readings:
+            parts.append("Peores lecturas:\n")
+            for r in readings:
+                loc = ' - '.join(filter(None, [r['group_name'], r['section'], r['position']]))
+                flag = 'CRITICO' if r['is_critical'] else ('ALERTA' if r['is_alert'] else 'normal')
+                parts.append(
+                    f"  - {loc}: {r['value_mm']}mm "
+                    f"(nominal {r['nominal_thickness']}mm) [{flag}]\n"
+                )
+
+        text = ''.join(parts).strip()
+        emb = gen_embed(text)
+        if not emb:
+            continue
+        meta = {
+            'equipment_tag': ti['eq_tag'],
+            'equipment_name': ti['eq_name'],
+            'inspection_date': str(ti['inspection_date']) if ti['inspection_date'] else None,
+            'semaphore_status': ti['semaphore_status'],
+            'critical_points': ti['critical_points'],
+        }
+        cur.execute("""
+            INSERT INTO bot_embeddings (entity_type, entity_id, text_chunk, embedding, metadata, created_at, updated_at)
+            VALUES (%s, %s, %s, %s::vector, %s::jsonb, NOW(), NOW())
+            ON CONFLICT (entity_type, entity_id) DO UPDATE
+              SET text_chunk = EXCLUDED.text_chunk,
+                  embedding  = EXCLUDED.embedding,
+                  metadata   = EXCLUDED.metadata,
+                  updated_at = NOW()
+        """, ('thickness_inspection', ti['id'], text, vec_lit(emb), json.dumps(meta)))
+        indexed += 1
+        if indexed % 3 == 0:
+            conn.commit()
+            print(f"  ... {indexed}/{len(inspections)} inspecciones indexadas")
+
+    conn.commit()
+    print(f"Inspecciones UT indexadas: {indexed}/{len(inspections)}")
+
     cur.close()
     conn.close()
     print("\n=== INDEXADO COMPLETO ===")

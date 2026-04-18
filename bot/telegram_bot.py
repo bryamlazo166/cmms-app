@@ -387,6 +387,162 @@ def _get_focused_equipment_context(app, message):
                                     )
                         if not cs_list and not ras_here:
                             lines.append(f"        * SPEC_FALTANTE: ficha tecnica no cargada")
+
+            # ── HISTORIAL ENRIQUECIDO POR EQUIPO (Mejora 1) ──────────────
+            # Por cada equipo identificado traemos: ultimas OTs cerradas,
+            # ultimos avisos, preventivos vencidos/proximos, lecturas de espesor.
+            try:
+                from datetime import date as _date, timedelta as _td
+                today_iso = _date.today().isoformat()
+                soon_iso = (_date.today() + _td(days=30)).isoformat()
+
+                # Ultimas OTs cerradas por equipo (top 5 c/u)
+                ot_hist = _db.session.execute(text("""
+                    SELECT equipment_id, code, real_end_date, maintenance_type,
+                           failure_mode, description, execution_comments, technician_id
+                    FROM work_orders
+                    WHERE equipment_id = ANY(:ids) AND status = 'Cerrada'
+                    ORDER BY equipment_id, real_end_date DESC NULLS LAST, id DESC
+                """), {"ids": matched_list}).fetchall()
+                ot_by_eq = {}
+                for r in ot_hist:
+                    ot_by_eq.setdefault(r[0], []).append(r)
+
+                # Ultimos avisos por equipo (top 5 c/u)
+                nt_hist = _db.session.execute(text("""
+                    SELECT equipment_id, code, request_date, status, criticality,
+                           failure_mode, blockage_object, description
+                    FROM maintenance_notices
+                    WHERE equipment_id = ANY(:ids)
+                    ORDER BY equipment_id, request_date DESC NULLS LAST, id DESC
+                """), {"ids": matched_list}).fetchall()
+                nt_by_eq = {}
+                for r in nt_hist:
+                    nt_by_eq.setdefault(r[0], []).append(r)
+
+                # Preventivos: lubricacion
+                lub_rows = _db.session.execute(text("""
+                    SELECT lp.equipment_id, lp.code, lp.lubricant_name, lp.frequency_days,
+                           lp.last_service_date, lp.next_due_date
+                    FROM lubrication_points lp
+                    WHERE lp.equipment_id = ANY(:ids) AND lp.is_active = TRUE
+                    ORDER BY lp.next_due_date NULLS LAST
+                """), {"ids": matched_list}).fetchall()
+                lub_by_eq = {}
+                for r in lub_rows:
+                    lub_by_eq.setdefault(r[0], []).append(r)
+
+                # Preventivos: inspecciones (rutas)
+                insp_rows = _db.session.execute(text("""
+                    SELECT ir.equipment_id, ir.code, ir.name, ir.frequency_days,
+                           ir.last_execution_date, ir.next_due_date, ir.semaphore_status
+                    FROM inspection_routes ir
+                    WHERE ir.equipment_id = ANY(:ids) AND ir.is_active = TRUE
+                    ORDER BY ir.next_due_date NULLS LAST
+                """), {"ids": matched_list}).fetchall()
+                insp_by_eq = {}
+                for r in insp_rows:
+                    insp_by_eq.setdefault(r[0], []).append(r)
+
+                # Monitoreo de condicion
+                mon_rows = _db.session.execute(text("""
+                    SELECT mp.equipment_id, mp.code, mp.name, mp.frequency_days,
+                           mp.last_measurement_date, mp.next_due_date
+                    FROM monitoring_points mp
+                    WHERE mp.equipment_id = ANY(:ids) AND mp.is_active = TRUE
+                    ORDER BY mp.next_due_date NULLS LAST
+                """), {"ids": matched_list}).fetchall()
+                mon_by_eq = {}
+                for r in mon_rows:
+                    mon_by_eq.setdefault(r[0], []).append(r)
+
+                # Puntos de espesor (top criticos por equipo)
+                tp_rows = _db.session.execute(text("""
+                    SELECT tp.equipment_id, tp.group_name, tp.section, tp.position,
+                           tp.nominal_thickness, tp.alarm_thickness, tp.scrap_thickness,
+                           tp.last_value, tp.last_date, tp.status
+                    FROM thickness_points tp
+                    WHERE tp.equipment_id = ANY(:ids) AND tp.is_active = TRUE
+                      AND tp.status IN ('CRITICO', 'ALERTA')
+                    ORDER BY tp.status DESC, tp.last_value ASC NULLS LAST
+                """), {"ids": matched_list}).fetchall()
+                tp_by_eq = {}
+                for r in tp_rows:
+                    tp_by_eq.setdefault(r[0], []).append(r)
+
+                # Render historial agrupado por equipo
+                for eq in eqs_rows:
+                    eq_id = eq[0]
+                    hist_lines = []
+
+                    ots = (ot_by_eq.get(eq_id) or [])[:5]
+                    if ots:
+                        hist_lines.append(f"    [HISTORIAL OTs CERRADAS]")
+                        for r in ots:
+                            fm = f" - {r[4]}" if r[4] else ""
+                            tech = f" (tec: {r[7]})" if r[7] else ""
+                            comments = (r[6] or '')[:120]
+                            hist_lines.append(
+                                f"      * {r[1]} | {r[3] or '-'} | cerrada: {r[2] or '?'}{fm}{tech}"
+                            )
+                            if r[5]:
+                                hist_lines.append(f"        desc: {r[5][:160]}")
+                            if comments:
+                                hist_lines.append(f"        trabajo: {comments}")
+
+                    nts = (nt_by_eq.get(eq_id) or [])[:5]
+                    if nts:
+                        hist_lines.append(f"    [HISTORIAL AVISOS]")
+                        for r in nts:
+                            fm = f" - {r[5]}" if r[5] else ""
+                            blk = f" [bloqueo: {r[6]}]" if r[6] else ""
+                            hist_lines.append(
+                                f"      * {r[1]} | {r[3] or '-'} | fecha: {r[2] or '?'}"
+                                f" | crit: {r[4] or '-'}{fm}{blk}"
+                            )
+                            if r[7]:
+                                hist_lines.append(f"        desc: {r[7][:160]}")
+
+                    # Preventivos clasificados: vencidos y proximos 30 dias
+                    vencidos = []
+                    proximos = []
+                    for (code, tipo_label, next_due, extra) in [
+                        *[(l[1], f"LUBRICACION - {l[2]}", l[5], f"cada {l[3]}d") for l in lub_by_eq.get(eq_id, [])],
+                        *[(i[1], f"INSPECCION - {i[2]}", i[5], f"cada {i[3]}d") for i in insp_by_eq.get(eq_id, [])],
+                        *[(m[1], f"MONITOREO - {m[2]}", m[5], f"cada {m[3]}d") for m in mon_by_eq.get(eq_id, [])],
+                    ]:
+                        if not next_due:
+                            continue
+                        if next_due < today_iso:
+                            vencidos.append((code, tipo_label, next_due, extra))
+                        elif next_due <= soon_iso:
+                            proximos.append((code, tipo_label, next_due, extra))
+                    if vencidos:
+                        hist_lines.append(f"    [PREVENTIVOS VENCIDOS] (urgente)")
+                        for c, t, d, x in vencidos[:8]:
+                            hist_lines.append(f"      ! {c} | {t} | vencio: {d} ({x})")
+                    if proximos:
+                        hist_lines.append(f"    [PREVENTIVOS PROXIMOS 30 DIAS]")
+                        for c, t, d, x in proximos[:8]:
+                            hist_lines.append(f"      > {c} | {t} | vence: {d} ({x})")
+
+                    # Espesores criticos/alerta
+                    tps = tp_by_eq.get(eq_id, [])
+                    if tps:
+                        hist_lines.append(f"    [ESPESORES CRITICOS/ALERTA]")
+                        for r in tps[:6]:
+                            loc = ' - '.join(filter(None, [r[1], r[2], r[3]]))
+                            hist_lines.append(
+                                f"      * {r[9]} | {loc} | nominal {r[4]}mm,"
+                                f" alarma {r[5]}mm, scrap {r[6]}mm"
+                                f" | ultimo {r[7] or '?'}mm el {r[8] or '?'}"
+                            )
+
+                    if hist_lines:
+                        # Insertar historial al final del bloque del equipo
+                        lines.extend(hist_lines)
+            except Exception as _e:
+                logger.warning(f"Historial enriquecido fallo: {_e}")
         except Exception as e:
             logger.warning(f"_get_focused_equipment_context error: {e}")
             return ''
@@ -412,6 +568,23 @@ def _get_focused_equipment_context(app, message):
         "  lleva?', '¿codigo de parte del reten?', responde con los items del BOM del\n"
         "  activo instalado en ese componente.\n"
         "  IMPORTANTE: CHUAMCERA = CHUMACERA (tolera errores de tipeo en los datos).\n"
+        "\n"
+        "  Los bloques [HISTORIAL OTs CERRADAS] y [HISTORIAL AVISOS] muestran el\n"
+        "  historico de mantenimiento del equipo. USALOS para responder preguntas como:\n"
+        "  - '¿cuando fue la ultima vez que cambie el tripode del D9?' -> busca\n"
+        "    en 'trabajo:' o 'desc:' de OTs cerradas que mencionen 'tripode' y da\n"
+        "    la fecha de cierre y el codigo OT.\n"
+        "  - '¿cuando fallo la ultima X?' -> busca en avisos.\n"
+        "  - '¿cuantas veces se rompio Y este ano?' -> cuenta OTs/avisos que\n"
+        "    mencionen Y y responde con numero y codigos.\n"
+        "\n"
+        "  Los bloques [PREVENTIVOS VENCIDOS] y [PREVENTIVOS PROXIMOS 30 DIAS]\n"
+        "  responden a '¿que mantenimiento le toca al equipo X?'. Lista los codigos\n"
+        "  (LUB-xxx, RTA-xxx, MON-xxx) con el tipo y la fecha vencida o proxima.\n"
+        "\n"
+        "  [ESPESORES CRITICOS/ALERTA] muestra puntos UT del equipo con status\n"
+        "  CRITICO o ALERTA. Si el usuario pregunta '¿donde esta mas delgado?' o\n"
+        "  '¿hay riesgo en la chaqueta?', responde con los puntos listados.\n"
     )
     return header + "\n".join(lines) + "\n\n"
 
@@ -1608,6 +1781,187 @@ def _edit_ot(app, data):
             return None, None, str(e)
 
 
+# ── Analisis predictivo y programacion (Mejoras 2 y 3) ────────────────────
+
+_THICKNESS_KEYWORDS = (
+    'espesor', 'espesores', 'chaqueta', 'delgado', 'delgada', 'corrosion',
+    'inspeccion ut', 'ultrasonido', 'cual toca inspeccionar',
+    'que digestor', 'cual digestor', 'mas critico', 'mas delgado',
+)
+
+_SCHEDULE_KEYWORDS = (
+    'que me toca', 'que toca hoy', 'que toca esta semana', 'que toca manana',
+    'que hay programado', 'pendientes de hoy', 'vencidos', 'proximos preventivos',
+    'que hay para hacer', 'mis ots de hoy', 'mis ots programadas',
+    'agenda de mantenimiento',
+)
+
+
+def _build_thickness_analysis(app, message):
+    """Si la pregunta es analitica sobre espesores, inyecta un ranking global."""
+    msg_l = (message or '').lower()
+    if not any(kw in msg_l for kw in _THICKNESS_KEYWORDS):
+        return ''
+    try:
+        from sqlalchemy import text
+        with app.app_context():
+            from database import db as _db
+            # Top 15 puntos mas criticos (remaining wall ratio)
+            rows = _db.session.execute(text("""
+                SELECT e.tag, e.name, tp.group_name, tp.section, tp.position,
+                       tp.nominal_thickness, tp.alarm_thickness, tp.scrap_thickness,
+                       tp.last_value, tp.last_date, tp.status,
+                       c.name AS comp_name
+                FROM thickness_points tp
+                JOIN equipments e ON tp.equipment_id = e.id
+                LEFT JOIN components c ON tp.component_id = c.id
+                WHERE tp.is_active = TRUE AND tp.last_value IS NOT NULL
+                  AND tp.nominal_thickness > 0
+                ORDER BY
+                  CASE tp.status
+                    WHEN 'CRITICO' THEN 0
+                    WHEN 'ALERTA' THEN 1
+                    ELSE 2
+                  END,
+                  (tp.last_value / NULLIF(tp.nominal_thickness, 0)) ASC
+                LIMIT 15
+            """)).fetchall()
+            if not rows:
+                return ''
+
+            # Agrupar por equipo para ranking
+            by_eq = {}
+            for r in rows:
+                tag = r[0]
+                by_eq.setdefault(tag, {'name': r[1], 'points': []})['points'].append(r)
+
+            lines = [
+                "=== ANALISIS DE ESPESORES (TOP CRITICOS) ===",
+                "INSTRUCCION: el usuario esta pidiendo recomendacion sobre inspecciones.",
+                "Ordena por criticidad (CRITICO antes que ALERTA) y recomienda el equipo",
+                "con peor remaining wall para inspeccion prioritaria.",
+                "",
+            ]
+            ranked = sorted(by_eq.items(),
+                            key=lambda kv: min(
+                                (r[8] / r[5]) for r in kv[1]['points'] if r[5] and r[8]
+                            ))
+            for tag, data in ranked[:8]:
+                lines.append(f"EQUIPO [{tag}] {data['name']}:")
+                for r in data['points'][:3]:
+                    loc = ' - '.join(filter(None, [r[11], r[2], r[3], r[4]]))
+                    ratio = (r[8] / r[5] * 100) if r[5] and r[8] else 0
+                    lines.append(
+                        f"  {r[10]}: {loc} | nominal {r[5]}mm, alarma {r[6]}mm,"
+                        f" scrap {r[7]}mm | ultimo {r[8]}mm ({ratio:.0f}%)"
+                        f" el {r[9] or '?'}"
+                    )
+                lines.append("")
+            return '\n'.join(lines) + '\n'
+    except Exception as e:
+        logger.warning(f"_build_thickness_analysis error: {e}")
+        return ''
+
+
+def _build_schedule_context(app, message):
+    """Si pregunta por programacion general, lista overdue + proximos 7 dias."""
+    msg_l = (message or '').lower()
+    if not any(kw in msg_l for kw in _SCHEDULE_KEYWORDS):
+        return ''
+    try:
+        from datetime import date as _date, timedelta as _td
+        from sqlalchemy import text
+        today = _date.today().isoformat()
+        soon = (_date.today() + _td(days=7)).isoformat()
+
+        with app.app_context():
+            from database import db as _db
+            # OTs programadas/abiertas con scheduled_date en ventana
+            ots = _db.session.execute(text("""
+                SELECT wo.code, wo.scheduled_date, wo.status, wo.maintenance_type,
+                       wo.description, e.tag, e.name
+                FROM work_orders wo
+                LEFT JOIN equipments e ON wo.equipment_id = e.id
+                WHERE wo.status IN ('Abierta','Programada','En Progreso')
+                  AND (wo.scheduled_date IS NULL OR wo.scheduled_date <= :soon)
+                ORDER BY wo.scheduled_date NULLS LAST, wo.id DESC
+                LIMIT 20
+            """), {"soon": soon}).fetchall()
+
+            lub = _db.session.execute(text("""
+                SELECT lp.code, lp.lubricant_name, lp.next_due_date, e.tag, e.name
+                FROM lubrication_points lp
+                LEFT JOIN equipments e ON lp.equipment_id = e.id
+                WHERE lp.is_active = TRUE AND lp.next_due_date IS NOT NULL
+                  AND lp.next_due_date <= :soon
+                ORDER BY lp.next_due_date LIMIT 20
+            """), {"soon": soon}).fetchall()
+
+            insp = _db.session.execute(text("""
+                SELECT ir.code, ir.name, ir.next_due_date, ir.semaphore_status,
+                       e.tag, e.name
+                FROM inspection_routes ir
+                LEFT JOIN equipments e ON ir.equipment_id = e.id
+                WHERE ir.is_active = TRUE AND ir.next_due_date IS NOT NULL
+                  AND ir.next_due_date <= :soon
+                ORDER BY ir.next_due_date LIMIT 20
+            """), {"soon": soon}).fetchall()
+
+            mon = _db.session.execute(text("""
+                SELECT mp.code, mp.name, mp.next_due_date, e.tag, e.name
+                FROM monitoring_points mp
+                LEFT JOIN equipments e ON mp.equipment_id = e.id
+                WHERE mp.is_active = TRUE AND mp.next_due_date IS NOT NULL
+                  AND mp.next_due_date <= :soon
+                ORDER BY mp.next_due_date LIMIT 20
+            """), {"soon": soon}).fetchall()
+
+            if not (ots or lub or insp or mon):
+                return ''
+
+            lines = [
+                "=== PROGRAMACION — VENCIDOS Y PROXIMOS 7 DIAS ===",
+                "INSTRUCCION: el usuario pregunta por trabajos pendientes. Lista los",
+                "items abajo agrupados por tipo, mostrando codigo, fecha, equipo y descripcion.",
+                "",
+            ]
+            if ots:
+                lines.append(f"[OTs PENDIENTES ({len(ots)})]")
+                for r in ots[:15]:
+                    eq = f"[{r[5]}] {r[6]}" if r[5] else "-"
+                    lines.append(
+                        f"  {r[0]} | {r[2]} | {r[3] or '-'} | {r[1] or 'sin fecha'} | {eq}"
+                    )
+                    if r[4]:
+                        lines.append(f"    desc: {r[4][:140]}")
+                lines.append("")
+            if lub:
+                lines.append(f"[LUBRICACIONES ({len(lub)})]")
+                for r in lub[:10]:
+                    eq = f"[{r[3]}] {r[4]}" if r[3] else "-"
+                    overdue = "VENCIDO" if r[2] and r[2] < today else "proximo"
+                    lines.append(f"  {r[0]} | {r[1]} | {r[2]} ({overdue}) | {eq}")
+                lines.append("")
+            if insp:
+                lines.append(f"[INSPECCIONES ({len(insp)})]")
+                for r in insp[:10]:
+                    eq = f"[{r[4]}] {r[5]}" if r[4] else "-"
+                    overdue = "VENCIDO" if r[2] and r[2] < today else "proximo"
+                    lines.append(f"  {r[0]} | {r[1]} | {r[2]} ({overdue}) | {eq} | {r[3] or '-'}")
+                lines.append("")
+            if mon:
+                lines.append(f"[MONITOREO ({len(mon)})]")
+                for r in mon[:10]:
+                    eq = f"[{r[3]}] {r[4]}" if r[3] else "-"
+                    overdue = "VENCIDO" if r[2] and r[2] < today else "proximo"
+                    lines.append(f"  {r[0]} | {r[1]} | {r[2]} ({overdue}) | {eq}")
+                lines.append("")
+            return '\n'.join(lines) + '\n'
+    except Exception as e:
+        logger.warning(f"_build_schedule_context error: {e}")
+        return ''
+
+
 # ── Glosario aprendido (B1) ────────────────────────────────────────────────
 
 def _apply_aliases(app, text_msg, chat_id):
@@ -2686,6 +3040,16 @@ pasados automaticamente y los usa como referencia. Pregunta cosas como
     rag_context = _build_rag_context(app, text)
     if rag_context:
         context = rag_context + context
+
+    # ── ANALISIS DE ESPESORES (Mejora 2) ─────────────────────────────
+    thickness_ctx = _build_thickness_analysis(app, text)
+    if thickness_ctx:
+        context = thickness_ctx + context
+
+    # ── PROGRAMACION / SCHEDULE (Mejora 3) ───────────────────────────
+    schedule_ctx = _build_schedule_context(app, text)
+    if schedule_ctx:
+        context = schedule_ctx + context
 
     # Memoria de conversacion: trae los ultimos turnos del chat (TTL 10 min)
     history = _get_chat_history(chat_id)
