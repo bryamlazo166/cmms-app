@@ -12,6 +12,9 @@ logger = logging.getLogger(__name__)
 TELEGRAM_TOKEN = os.getenv('TELEGRAM_TOKEN')
 DEEPSEEK_API_KEY = os.getenv('DEEPSEEK_API_KEY')
 DEEPSEEK_URL = 'https://api.deepseek.com/chat/completions'
+# Opcional: para transcribir mensajes de voz (Whisper API). Si no esta seteada,
+# el bot responde indicando que la funcion no esta configurada.
+OPENAI_API_KEY = os.getenv('OPENAI_API_KEY')
 POLL_INTERVAL = 2
 
 # Authorized chat_ids — only these can use the bot
@@ -20,6 +23,40 @@ _allowed_chats = {OWNER_CHAT_ID}
 
 # Store admin chat_ids for daily alerts
 _admin_chats = set()
+
+# Memoria de conversacion: por chat_id guarda los ultimos N mensajes
+# (user/assistant) para que el bot tenga contexto entre mensajes.
+# Estructura: {chat_id: {'msgs': [...], 'last_ts': float}}
+# TTL: si pasaron mas de _CHAT_HISTORY_TTL segundos sin actividad, se descarta.
+_chat_history = {}
+_CHAT_HISTORY_MAX = 6        # ultimas 6 entradas (3 turnos user+assistant)
+_CHAT_HISTORY_TTL = 600      # 10 minutos sin actividad -> reinicia contexto
+
+
+def _get_chat_history(chat_id):
+    """Devuelve la lista de mensajes previos validos para el chat."""
+    entry = _chat_history.get(chat_id)
+    if not entry:
+        return []
+    if time.time() - entry.get('last_ts', 0) > _CHAT_HISTORY_TTL:
+        _chat_history.pop(chat_id, None)
+        return []
+    return list(entry.get('msgs', []))
+
+
+def _append_chat_history(chat_id, role, content):
+    """Agrega un mensaje (user/assistant) al historial del chat. Mantiene sliding window."""
+    if not chat_id or not content:
+        return
+    entry = _chat_history.setdefault(chat_id, {'msgs': [], 'last_ts': 0})
+    entry['msgs'].append({'role': role, 'content': str(content)[:1500]})
+    if len(entry['msgs']) > _CHAT_HISTORY_MAX:
+        entry['msgs'] = entry['msgs'][-_CHAT_HISTORY_MAX:]
+    entry['last_ts'] = time.time()
+
+
+def _reset_chat_history(chat_id):
+    _chat_history.pop(chat_id, None)
 
 
 def _tg_api(method, **kwargs):
@@ -1374,6 +1411,58 @@ def _edit_ot(app, data):
             return None, None, str(e)
 
 
+def _download_telegram_file(file_id):
+    """Descarga el contenido binario de un archivo de Telegram. Devuelve (bytes, file_path) o (None, None)."""
+    try:
+        fi = _tg_api('getFile', file_id=file_id)
+        if not fi.get('ok'):
+            return None, None
+        fp = fi['result']['file_path']
+        data = requests.get(
+            f'https://api.telegram.org/file/bot{TELEGRAM_TOKEN}/{fp}', timeout=30
+        ).content
+        return data, fp
+    except Exception as e:
+        logger.warning(f"_download_telegram_file error: {e}")
+        return None, None
+
+
+def _transcribe_voice(file_id):
+    """Transcribe un mensaje de voz de Telegram usando Whisper API.
+
+    Devuelve el texto transcrito o None si falla. Requiere OPENAI_API_KEY.
+    Telegram envia voz en formato OGG/Opus que Whisper acepta nativamente.
+    """
+    if not OPENAI_API_KEY:
+        return None
+    audio_bytes, fp = _download_telegram_file(file_id)
+    if not audio_bytes:
+        return None
+    try:
+        # Determinar nombre de archivo segun extension original
+        ext = (fp or 'voice.ogg').rsplit('.', 1)[-1] if fp and '.' in fp else 'ogg'
+        filename = f"voice.{ext}"
+        files = {
+            'file': (filename, audio_bytes, 'audio/ogg'),
+            'model': (None, 'whisper-1'),
+            'language': (None, 'es'),
+            'response_format': (None, 'text'),
+        }
+        headers = {'Authorization': f'Bearer {OPENAI_API_KEY}'}
+        r = requests.post(
+            'https://api.openai.com/v1/audio/transcriptions',
+            headers=headers, files=files, timeout=60,
+        )
+        if r.status_code != 200:
+            logger.warning(f"Whisper API error {r.status_code}: {r.text[:200]}")
+            return None
+        text = r.text.strip()
+        return text or None
+    except Exception as e:
+        logger.warning(f"_transcribe_voice error: {e}")
+        return None
+
+
 def _upload_telegram_photo(app, file_id, entity_type, entity_id):
     try:
         fi = _tg_api('getFile', file_id=file_id)
@@ -1413,7 +1502,7 @@ def _upload_telegram_photo(app, file_id, entity_type, entity_id):
 
 # ── DeepSeek AI ──────────────────────────────────────────────────────────────
 
-def _ask_deepseek(question, cmms_context, is_action=False):
+def _ask_deepseek(question, cmms_context, is_action=False, history=None):
     headers = {'Authorization': f'Bearer {DEEPSEEK_API_KEY}', 'Content-Type': 'application/json'}
 
     action_instructions = """
@@ -1618,9 +1707,21 @@ DATOS ACTUALES:
 {cmms_context}
 """
 
+    # Construir mensajes: system + historial previo (opcional) + pregunta actual
+    messages = [{'role': 'system', 'content': system_prompt}]
+    if history:
+        # Solo incluir entradas con role valido (user/assistant) y content no vacio.
+        # El historial NO incluye otro 'system' (ya esta arriba).
+        for h in history:
+            r = (h or {}).get('role')
+            c = (h or {}).get('content')
+            if r in ('user', 'assistant') and c:
+                messages.append({'role': r, 'content': c})
+    messages.append({'role': 'user', 'content': question})
+
     payload = {
         'model': 'deepseek-chat',
-        'messages': [{'role': 'system', 'content': system_prompt}, {'role': 'user', 'content': question}],
+        'messages': messages,
         'max_tokens': 2000, 'temperature': 0.2,
         'response_format': {'type': 'json_object'},
     }
@@ -2139,7 +2240,16 @@ def _process_message(app, chat_id, text, photos=None):
 *Analisis:*
 • _% correctivo vs preventivo_
 • _Que repuestos necesito stockear?_
-• _Resumen ejecutivo para gerencia_""")
+• _Resumen ejecutivo para gerencia_
+
+*Mensajes de voz:* envia un audio y el bot lo transcribe automaticamente.
+*Memoria:* el bot recuerda los ultimos mensajes (10 min). Usa `/reset` para olvidar la conversacion.""")
+        return
+
+    # Comandos rapidos para limpiar el historial de conversacion
+    if (text or '').strip().lower() in ('/reset', '/nuevo', '/olvida'):
+        _reset_chat_history(chat_id)
+        _send(chat_id, "🧹 Conversacion reiniciada. Empezamos de cero.")
         return
 
     # Process
@@ -2159,7 +2269,21 @@ def _process_message(app, chat_id, text, photos=None):
         except Exception:
             pass
         context = focus + context
-    answer = _ask_deepseek(text, context, is_action=True)
+
+    # Memoria de conversacion: trae los ultimos turnos del chat (TTL 10 min)
+    history = _get_chat_history(chat_id)
+    answer = _ask_deepseek(text, context, is_action=True, history=history)
+
+    # Guardar el turno actual en el historial para futuros mensajes
+    _append_chat_history(chat_id, 'user', text)
+    # El answer es JSON; guardamos el campo 'reply' si existe, o el JSON crudo si no.
+    try:
+        _ad = _extract_json(answer)
+        if _ad and isinstance(_ad, dict):
+            _summary = _ad.get('reply') or f"[accion: {_ad.get('action', 'none')}]"
+            _append_chat_history(chat_id, 'assistant', _summary)
+    except Exception:
+        pass
 
     # DeepSeek is forced to return JSON via response_format. Parse it.
     action_data = _extract_json(answer)
@@ -2345,7 +2469,26 @@ def start_telegram_bot(app):
                         txt = msg.get('text', '')
                         photos = msg.get('photo')
                         caption = msg.get('caption', '')
-                        if chat_id and (txt or photos):
+                        voice = msg.get('voice') or msg.get('audio')
+                        # Mensaje de voz: transcribir y procesar como texto
+                        if chat_id and voice and not (txt or photos):
+                            try:
+                                file_id = voice.get('file_id')
+                                if not OPENAI_API_KEY:
+                                    _send(chat_id, "🎤 Mensaje de voz recibido pero la transcripcion no esta configurada. "
+                                                   "Pide al admin que setee OPENAI_API_KEY.")
+                                else:
+                                    _send(chat_id, "🎤 Transcribiendo mensaje de voz...")
+                                    transcribed = _transcribe_voice(file_id)
+                                    if not transcribed:
+                                        _send(chat_id, "❌ No pude transcribir el audio. Intenta de nuevo o escribelo.")
+                                    else:
+                                        _send(chat_id, f"📝 _Transcripcion:_ {transcribed}")
+                                        _process_message(app, chat_id, transcribed, photos=None)
+                            except Exception as e:
+                                logger.error(f"Bot voice error: {e}")
+                                _send(chat_id, f"Error procesando voz: {e}")
+                        elif chat_id and (txt or photos):
                             try:
                                 _process_message(app, chat_id, txt or caption, photos=[photos] if photos else None)
                             except Exception as e:
