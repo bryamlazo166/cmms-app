@@ -1411,6 +1411,94 @@ def _edit_ot(app, data):
             return None, None, str(e)
 
 
+def _build_rag_context(app, query_text):
+    """Busca casos historicos similares (OTs cerradas + avisos) y devuelve un
+    bloque de contexto para inyectar al prompt del bot.
+
+    Si no hay OPENAI_API_KEY o la tabla esta vacia, devuelve string vacio.
+    """
+    if not OPENAI_API_KEY or not query_text:
+        return ''
+    try:
+        from utils.embeddings import semantic_search
+        with app.app_context():
+            from database import db as _db
+            results = semantic_search(_db.session, query_text, top_k=4)
+        if not results:
+            return ''
+        # Filtrar resultados con baja similitud (ruido)
+        results = [r for r in results if r.get('similarity', 0) >= 0.35]
+        if not results:
+            return ''
+        lines = ["=== CASOS HISTORICOS SIMILARES (encontrados por busqueda semantica) ==="]
+        lines.append("INSTRUCCION: si el usuario pregunta '¿como se arreglo la ultima vez?' o pide")
+        lines.append("comparar con casos pasados, USA estos como referencia y citalos por codigo.")
+        lines.append("")
+        for i, r in enumerate(results, 1):
+            sim_pct = int(r['similarity'] * 100)
+            lines.append(f"#{i} [{r['entity_type']}] similitud {sim_pct}%:")
+            lines.append(r['text_chunk'])
+            lines.append("")
+        return '\n'.join(lines) + '\n\n'
+    except Exception as e:
+        logger.warning(f"_build_rag_context error: {e}")
+        return ''
+
+
+def _index_entity_async(app, entity_type, entity_id):
+    """Indexa una OT cerrada o un aviso en bot_embeddings. No bloquea."""
+    if not OPENAI_API_KEY:
+        return
+    def _do():
+        try:
+            from utils.embeddings import upsert_embedding, build_ot_text, build_notice_text
+            with app.app_context():
+                from database import db as _db
+                from models import (
+                    WorkOrder, MaintenanceNotice, Area, Line, Equipment, System, Component
+                )
+                if entity_type == 'work_order':
+                    wo = WorkOrder.query.get(entity_id)
+                    if not wo:
+                        return
+                    eq = Equipment.query.get(wo.equipment_id) if wo.equipment_id else None
+                    ar = Area.query.get(wo.area_id) if wo.area_id else None
+                    ln = Line.query.get(wo.line_id) if wo.line_id else None
+                    sy = System.query.get(wo.system_id) if wo.system_id else None
+                    co = Component.query.get(wo.component_id) if wo.component_id else None
+                    notice = MaintenanceNotice.query.get(wo.notice_id) if wo.notice_id else None
+                    text = build_ot_text(wo.to_dict(), equipment=eq, area=ar, line=ln,
+                                         system=sy, component=co, notice=notice)
+                    metadata = {
+                        'code': wo.code,
+                        'equipment_tag': eq.tag if eq else None,
+                        'failure_mode': wo.failure_mode,
+                    }
+                    upsert_embedding(_db.session, 'work_order', wo.id, text, metadata)
+                    _db.session.commit()
+                elif entity_type == 'notice':
+                    n = MaintenanceNotice.query.get(entity_id)
+                    if not n:
+                        return
+                    eq = Equipment.query.get(n.equipment_id) if n.equipment_id else None
+                    ar = Area.query.get(n.area_id) if n.area_id else None
+                    ln = Line.query.get(n.line_id) if n.line_id else None
+                    co = Component.query.get(n.component_id) if n.component_id else None
+                    text = build_notice_text(n, equipment=eq, area=ar, line=ln, component=co)
+                    metadata = {
+                        'code': n.code,
+                        'equipment_tag': eq.tag if eq else None,
+                        'failure_mode': n.failure_mode,
+                        'criticality': n.criticality,
+                    }
+                    upsert_embedding(_db.session, 'notice', n.id, text, metadata)
+                    _db.session.commit()
+        except Exception as e:
+            logger.warning(f"_index_entity_async error ({entity_type}/{entity_id}): {e}")
+
+    threading.Thread(target=_do, daemon=True).start()
+
+
 def _download_telegram_file(file_id):
     """Descarga el contenido binario de un archivo de Telegram. Devuelve (bytes, file_path) o (None, None)."""
     try:
@@ -2270,6 +2358,14 @@ def _process_message(app, chat_id, text, photos=None):
             pass
         context = focus + context
 
+    # ── RAG: casos historicos similares ──────────────────────────────
+    # Busqueda semantica sobre OTs cerradas y avisos para que el bot
+    # pueda responder con casos reales pasados ("¿como se arreglo la
+    # ultima vez que paso esto?")
+    rag_context = _build_rag_context(app, text)
+    if rag_context:
+        context = rag_context + context
+
     # Memoria de conversacion: trae los ultimos turnos del chat (TTL 10 min)
     history = _get_chat_history(chat_id)
     answer = _ask_deepseek(text, context, is_action=True, history=history)
@@ -2306,6 +2402,8 @@ def _process_message(app, chat_id, text, photos=None):
         code, nid, err = _create_notice(app, data)
         if code and nid:
             _pending_photos[chat_id] = {"entity_type": "notice", "entity_id": nid, "code": code}
+            # Indexar el aviso para busqueda semantica futura (RAG)
+            _index_entity_async(app, 'notice', nid)
             scope = data.get('_resolved_scope', 'PLAN')
             scope_emoji = {'PLAN': '🏭', 'FUERA_PLAN': '🚧', 'GENERAL': '🛠️'}.get(scope, '🏭')
             scope_label = {'PLAN': 'PLAN', 'FUERA_PLAN': 'Fuera de Plan', 'GENERAL': 'General'}.get(scope, scope)
@@ -2344,6 +2442,19 @@ def _process_message(app, chat_id, text, photos=None):
         code, err = _close_ot(app, data)
         if code:
             _send(chat_id, f"✅ *{code} cerrada*\n📝 {data.get('comments', '-')}")
+            # Indexar la OT cerrada para busqueda semantica futura (RAG)
+            try:
+                with app.app_context():
+                    from database import db as _db
+                    from sqlalchemy import text as _sqltext
+                    row = _db.session.execute(
+                        _sqltext("SELECT id FROM work_orders WHERE code = :c"),
+                        {"c": code}
+                    ).fetchone()
+                    if row:
+                        _index_entity_async(app, 'work_order', row[0])
+            except Exception:
+                pass
         else:
             _send(chat_id, f"❌ {err}")
         return

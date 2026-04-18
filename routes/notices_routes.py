@@ -105,6 +105,13 @@ def register_notices_routes(
                 new_entry.code = f"AV-{new_entry.id:04d}"
                 db.session.commit()
 
+                # RAG: indexar el nuevo aviso para busqueda semantica
+                try:
+                    from bot.telegram_bot import _index_entity_async
+                    _index_entity_async(app, 'notice', new_entry.id)
+                except Exception as _ei:
+                    logger.warning(f"RAG index aviso {new_entry.id} fallo: {_ei}")
+
                 resp_data = new_entry.to_dict()
                 if is_duplicate:
                     resp_data['is_duplicate'] = True

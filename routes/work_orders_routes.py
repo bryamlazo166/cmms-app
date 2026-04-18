@@ -1084,6 +1084,15 @@ def register_work_orders_routes(
                         ))
 
                 db.session.commit()
+
+                # RAG: si la OT acaba de cerrarse, indexarla para busqueda semantica
+                if data.get('status') == 'Cerrada':
+                    try:
+                        from bot.telegram_bot import _index_entity_async
+                        _index_entity_async(app, 'work_order', wo.id)
+                    except Exception as _ei:
+                        logger.warning(f"RAG index post-cierre OT {wo.id} fallo: {_ei}")
+
                 return jsonify(wo.to_dict())
 
             return delete_entry(WorkOrder, id)
