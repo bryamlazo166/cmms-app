@@ -96,6 +96,12 @@
                     <button class="btn success" onclick="openCreateOTInShutdownModal()" style="background:#0A84FF;"><i class="fas fa-plus-circle"></i> Crear OT Nueva</button>
                     <button class="btn warning" onclick="openAddOTModal()"><i class="fas fa-link"></i> Vincular OTs</button>
                     <button class="btn primary" onclick="editCurrentShutdown()"><i class="fas fa-edit"></i> Editar</button>
+                    <button onclick="deleteCurrentShutdown()"
+                        title="Eliminar esta parada (desvincula todas sus OTs)"
+                        style="background:rgba(255,69,58,.15);color:#ff6b63;border:1px solid rgba(255,69,58,.4);
+                               border-radius:8px;padding:8px 14px;cursor:pointer;font-size:.88rem;">
+                        <i class="fas fa-trash"></i> Eliminar
+                    </button>
                 </div>
             </div>
 

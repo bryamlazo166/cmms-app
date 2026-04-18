@@ -124,22 +124,30 @@ function renderDetail() {
     const container = document.getElementById('detailOTsByArea');
     const byArea = s.by_area || {};
     if (!Object.keys(byArea).length) {
-        container.innerHTML = '<div class="panel"><div class="empty">No hay OTs asignadas. Use "Agregar OTs" para vincular órdenes de trabajo.</div></div>';
+        container.innerHTML = '<div class="panel"><div class="empty">No hay OTs asignadas. Use "Crear OT Nueva" o "Vincular OTs" para agregar trabajos.</div></div>';
     } else {
         container.innerHTML = Object.entries(byArea).map(([area, ots]) => `
             <div class="panel">
                 <h3><i class="fas fa-industry"></i> ${area} (${ots.length} actividades)</h3>
-                <div class="ot-row head">
-                    <div>OT</div><div>Equipo</div><div>Actividad</div><div>Técnico</div><div>Hrs</div><div>Estado</div>
+                <div class="ot-row head" style="grid-template-columns: 1fr 1fr 2fr 1fr 0.6fr 0.8fr 0.6fr;">
+                    <div>OT</div><div>Equipo</div><div>Actividad</div><div>Técnico</div><div>Hrs</div><div>Estado</div><div></div>
                 </div>
                 ${ots.map(ot => `
-                    <div class="ot-row">
+                    <div class="ot-row" style="grid-template-columns: 1fr 1fr 2fr 1fr 0.6fr 0.8fr 0.6fr;">
                         <div style="font-weight:700;color:#5ac8fa;">${ot.code || 'OT-' + ot.id}</div>
                         <div style="color:#FF9F0A;">${ot.equipment_tag || '-'}</div>
                         <div style="color:#d5e2f5;">${ot.description || '-'}</div>
                         <div style="color:#bfd2ec;">${ot.technician_name || '-'}</div>
                         <div>${ot.estimated_duration || '-'}</div>
                         <div><span class="pill ${ot.status === 'Cerrada' ? 'COMPLETADA' : (ot.status === 'En Progreso' ? 'EN_CURSO' : 'PLANIFICADA')}">${ot.status || '-'}</span></div>
+                        <div style="text-align:right;">
+                            <button onclick="removeOtFromShutdown(${ot.id}, '${(ot.code || 'OT-' + ot.id).replace(/'/g, '')}')"
+                                title="Desvincular OT de esta parada"
+                                style="background:rgba(255,69,58,.15);color:#ff6b63;border:1px solid rgba(255,69,58,.4);
+                                    border-radius:6px;padding:4px 8px;font-size:.72rem;cursor:pointer;">
+                                <i class="fas fa-unlink"></i>
+                            </button>
+                        </div>
                     </div>
                 `).join('')}
             </div>
@@ -474,3 +482,53 @@ window.cotOnLineChange = cotOnLineChange;
 window.cotOnEquipChange = cotOnEquipChange;
 window.cotOnSystemChange = cotOnSystemChange;
 window.confirmCreateOTInShutdown = confirmCreateOTInShutdown;
+
+
+// ── Desvincular OT de una parada ─────────────────────────────────
+async function removeOtFromShutdown(otId, otCode) {
+    if (!_activeShutdown || !_activeShutdown.id) return;
+    if (!confirm(`¿Desvincular la OT ${otCode} de esta parada?\n\nLa OT NO se elimina, solo deja de estar asociada a la parada.`)) return;
+    try {
+        const res = await fetch(`/api/shutdowns/${_activeShutdown.id}/remove-ot/${otId}`, {
+            method: 'DELETE',
+        });
+        const data = await res.json();
+        if (!res.ok) return alert('Error: ' + (data.error || res.status));
+        // Recargar detalle
+        await openDetail(_activeShutdown.id);
+    } catch (e) {
+        alert('Error desvinculando: ' + e);
+    }
+}
+
+// ── Eliminar parada completa ─────────────────────────────────────
+async function deleteCurrentShutdown() {
+    if (!_activeShutdown || !_activeShutdown.id) return;
+    const name = _activeShutdown.name || ('PARADA-' + _activeShutdown.id);
+    const count = (_activeShutdown.ot_count != null)
+        ? _activeShutdown.ot_count
+        : 0;
+
+    let msg = `¿Eliminar la parada "${name}"?`;
+    if (count > 0) {
+        msg += `\n\nAtencion: tiene ${count} OTs vinculadas. Las OTs NO se eliminan, solo se desvinculan de la parada (vuelven al listado como OTs sueltas).`;
+    }
+    msg += `\n\nEsta accion no se puede deshacer.`;
+    if (!confirm(msg)) return;
+
+    try {
+        const res = await fetch(`/api/shutdowns/${_activeShutdown.id}`, {
+            method: 'DELETE',
+        });
+        const data = await res.json();
+        if (!res.ok) return alert('Error: ' + (data.error || res.status));
+        alert('Parada eliminada');
+        if (typeof backToList === 'function') backToList();
+        if (typeof loadShutdowns === 'function') loadShutdowns();
+    } catch (e) {
+        alert('Error eliminando parada: ' + e);
+    }
+}
+
+window.removeOtFromShutdown = removeOtFromShutdown;
+window.deleteCurrentShutdown = deleteCurrentShutdown;
