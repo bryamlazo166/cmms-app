@@ -1411,6 +1411,99 @@ def _edit_ot(app, data):
             return None, None, str(e)
 
 
+# ── Glosario aprendido (B1) ────────────────────────────────────────────────
+
+def _apply_aliases(app, text_msg, chat_id):
+    """Expande aliases conocidos dentro del mensaje del usuario.
+
+    Devuelve (texto_expandido, lista_aliases_aplicados).
+    """
+    if not text_msg:
+        return text_msg, []
+    try:
+        from utils.aliases import expand_message, increment_usage
+        with app.app_context():
+            from database import db as _db
+            expanded, applied = expand_message(text_msg, chat_id, db_session=_db.session)
+            if applied:
+                increment_usage(_db.session, applied)
+            return expanded, applied
+    except Exception as e:
+        logger.warning(f"_apply_aliases error: {e}")
+        return text_msg, []
+
+
+def _handle_alias_command(app, chat_id, text_msg):
+    """Procesa '/alias <termino> = <expansion> [categoria]'."""
+    body = text_msg[len('/alias '):].strip()
+    if '=' not in body:
+        _send(chat_id, "Formato: `/alias <termino> = <expansion>`\nEjemplo: `/alias FAPMETAL = FAB METAL SAC`")
+        return
+    parts = body.split('=', 1)
+    alias = parts[0].strip()
+    rest = parts[1].strip()
+    # Categoria opcional al final entre [corchetes]
+    category = None
+    import re as _re
+    m = _re.search(r'\[([^\]]+)\]\s*$', rest)
+    if m:
+        category = m.group(1).strip()
+        rest = rest[:m.start()].strip()
+    expansion = rest
+    try:
+        from utils.aliases import save_alias
+        with app.app_context():
+            from database import db as _db
+            ok, msg = save_alias(_db.session, alias, expansion,
+                                 chat_id=None,  # global por defecto
+                                 category=category, created_by=str(chat_id))
+        emoji = "✅" if ok else "❌"
+        _send(chat_id, f"{emoji} {msg}")
+    except Exception as e:
+        _send(chat_id, f"❌ Error guardando alias: {e}")
+
+
+def _list_aliases_for_chat(app, chat_id):
+    """Responde con la lista de aliases activos."""
+    try:
+        from utils.aliases import list_aliases
+        with app.app_context():
+            from database import db as _db
+            items = list_aliases(_db.session, chat_id=chat_id, limit=80)
+        if not items:
+            _send(chat_id, "📚 Sin aliases guardados todavia.\n\nUsa `/alias <termino> = <expansion>` para enseñar al bot.")
+            return
+        lines = ["📚 *Glosario aprendido:*\n"]
+        for it in items:
+            cat = f" _[{it['category']}]_" if it.get('category') else ""
+            uc = f" (usado {it['usage_count']}x)" if it.get('usage_count') else ""
+            lines.append(f"• `{it['alias']}` → {it['expansion']}{cat}{uc}")
+        # Telegram limit 4096 chars
+        msg = '\n'.join(lines)
+        if len(msg) > 3500:
+            msg = msg[:3500] + "\n_... (lista truncada)_"
+        _send(chat_id, msg)
+    except Exception as e:
+        _send(chat_id, f"❌ Error listando aliases: {e}")
+
+
+def _delete_alias_for_chat(app, chat_id, text_msg):
+    """Procesa '/borra_alias <termino>'."""
+    alias = text_msg[len('/borra_alias '):].strip()
+    if not alias:
+        _send(chat_id, "Formato: `/borra_alias <termino>`")
+        return
+    try:
+        from utils.aliases import delete_alias
+        with app.app_context():
+            from database import db as _db
+            ok, msg = delete_alias(_db.session, alias)
+        emoji = "✅" if ok else "❌"
+        _send(chat_id, f"{emoji} {msg}")
+    except Exception as e:
+        _send(chat_id, f"❌ Error: {e}")
+
+
 def _build_rag_context(app, query_text):
     """Busca casos historicos similares (OTs cerradas + avisos) y devuelve un
     bloque de contexto para inyectar al prompt del bot.
@@ -2331,7 +2424,17 @@ def _process_message(app, chat_id, text, photos=None):
 • _Resumen ejecutivo para gerencia_
 
 *Mensajes de voz:* envia un audio y el bot lo transcribe automaticamente.
-*Memoria:* el bot recuerda los ultimos mensajes (10 min). Usa `/reset` para olvidar la conversacion.""")
+*Memoria:* el bot recuerda los ultimos mensajes (10 min). Usa `/reset` para olvidar la conversacion.
+
+*Glosario aprendido (aliases):*
+• `/alias FAPMETAL = FAB METAL SAC` — guardar abreviatura/apodo
+• `/alias el negro = chumacera oxidada del D8 [apodo]` — con categoria
+• `/aliases` — listar todos los aliases
+• `/borra_alias FAPMETAL` — eliminar un alias
+
+*RAG (memoria historica):* el bot busca casos similares en OTs y avisos
+pasados automaticamente y los usa como referencia. Pregunta cosas como
+"¿como se arreglo la ultima vez que paso esto?" o "compara con el TH4".""")
         return
 
     # Comandos rapidos para limpiar el historial de conversacion
@@ -2339,6 +2442,26 @@ def _process_message(app, chat_id, text, photos=None):
         _reset_chat_history(chat_id)
         _send(chat_id, "🧹 Conversacion reiniciada. Empezamos de cero.")
         return
+
+    # ── Comandos del glosario aprendido (B1) ──────────────────────────────
+    txt_strip = (text or '').strip()
+    if txt_strip.lower().startswith('/alias '):
+        _handle_alias_command(app, chat_id, txt_strip)
+        return
+    if txt_strip.lower() in ('/aliases', '/glosario'):
+        _list_aliases_for_chat(app, chat_id)
+        return
+    if txt_strip.lower().startswith('/borra_alias '):
+        _delete_alias_for_chat(app, chat_id, txt_strip)
+        return
+
+    # ── Glosario: expandir aliases en el mensaje antes de procesar ────────
+    expanded_text, applied = _apply_aliases(app, text, chat_id)
+    if applied:
+        # Notificar discretamente al usuario que se expandio
+        terms_str = ', '.join(f"'{a}' → '{e}'" for a, e in applied)
+        _send(chat_id, f"💡 _Aliases aplicados: {terms_str}_")
+        text = expanded_text  # usar el texto expandido para el resto del flujo
 
     # Process
     _send(chat_id, "⏳ Consultando datos...")
