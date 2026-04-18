@@ -4,6 +4,7 @@ import json
 import logging
 import threading
 import time
+import collections
 import requests
 from datetime import datetime, date, timedelta
 
@@ -23,6 +24,34 @@ _allowed_chats = {OWNER_CHAT_ID}
 
 # Store admin chat_ids for daily alerts
 _admin_chats = set()
+
+# Idempotencia: evita procesar el mismo update_id de Telegram dos veces.
+# Caso comun: durante un re-deploy en Render, dos instancias del bot pueden
+# polear Telegram a la vez y procesar el mismo mensaje, generando respuestas
+# duplicadas (a veces con redaccion ligeramente distinta porque DeepSeek se
+# ejecuta dos veces).
+_processed_updates = collections.deque(maxlen=500)
+_processed_lock = threading.Lock()
+
+
+def _seen_update(update_id):
+    """Devuelve True si ya procesamos este update_id antes (y lo marca si no)."""
+    if update_id is None:
+        return False
+    with _processed_lock:
+        if update_id in _processed_updates:
+            return True
+        _processed_updates.append(update_id)
+        return False
+
+
+def _send_typing(chat_id):
+    """Envia el indicador 'typing...' a Telegram. Dura ~5s en el cliente."""
+    try:
+        _tg_api('sendChatAction', chat_id=chat_id, action='typing')
+    except Exception:
+        pass
+
 
 # Memoria de conversacion: por chat_id guarda los ultimos N mensajes
 # (user/assistant) para que el bot tenga contexto entre mensajes.
@@ -2465,6 +2494,7 @@ pasados automaticamente y los usa como referencia. Pregunta cosas como
 
     # Process
     _send(chat_id, "⏳ Consultando datos...")
+    _send_typing(chat_id)  # indicador 'typing...' adicional (Telegram ~5s)
     focus = _get_focused_equipment_context(app, text)
     context = _get_cmms_context(app)
     if focus:
@@ -2697,7 +2727,13 @@ def start_telegram_bot(app):
                 result = _tg_api('getUpdates', offset=offset, timeout=20)
                 if result.get('ok') and result.get('result'):
                     for update in result['result']:
-                        offset = update['update_id'] + 1
+                        update_id = update['update_id']
+                        offset = update_id + 1
+                        # Idempotencia: si ya procesamos este update, saltarlo
+                        # (evita duplicados cuando hay 2 instancias del bot).
+                        if _seen_update(update_id):
+                            logger.info(f"Skipping duplicate update_id {update_id}")
+                            continue
                         msg = update.get('message', {})
                         chat_id = msg.get('chat', {}).get('id')
                         txt = msg.get('text', '')
