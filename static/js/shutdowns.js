@@ -324,3 +324,153 @@ window.openAddOTModal = openAddOTModal;
 window.confirmAddOTs = confirmAddOTs;
 window.exportShutdownPdf = exportShutdownPdf;
 window.toggleAreaChecks = toggleAreaChecks;
+
+
+// ── Crear OT nueva dentro de la parada (plan de trabajos aprovechados) ───
+let _cotAreas = [];
+let _cotLines = [];
+let _cotEquips = [];
+let _cotSystems = [];
+let _cotComponents = [];
+
+async function openCreateOTInShutdownModal() {
+    if (!_activeShutdown || !_activeShutdown.id) return alert('No hay parada seleccionada');
+    document.getElementById('cotShutdownId').value = _activeShutdown.id;
+
+    // Limpiar formulario
+    document.getElementById('cotDesc').value = '';
+    document.getElementById('cotDuration').value = '4';
+    document.getElementById('cotTechs').value = '1';
+    document.getElementById('cotPriority').value = 'Normal';
+    document.getElementById('cotType').value = 'Mejora';
+
+    // Cargar taxonomia si no esta cargada
+    if (_cotAreas.length === 0) {
+        try {
+            const [a, l, e, s, c] = await Promise.all([
+                fetch('/api/areas').then(r => r.json()),
+                fetch('/api/lines').then(r => r.json()),
+                fetch('/api/equipments').then(r => r.json()),
+                fetch('/api/systems').then(r => r.json()),
+                fetch('/api/components').then(r => r.json()),
+            ]);
+            _cotAreas = a; _cotLines = l; _cotEquips = e;
+            _cotSystems = s; _cotComponents = c;
+        } catch (err) {
+            return alert('Error cargando taxonomia: ' + err);
+        }
+    }
+
+    // Poblar Areas
+    const areaSel = document.getElementById('cotArea');
+    areaSel.innerHTML = '<option value="">- Selecciona -</option>' +
+        _cotAreas.map(a => `<option value="${a.id}">${a.name}</option>`).join('');
+
+    // Reset cascada
+    document.getElementById('cotLine').innerHTML = '<option value="">- Selecciona area -</option>';
+    document.getElementById('cotEquip').innerHTML = '<option value="">- Selecciona linea -</option>';
+    document.getElementById('cotSystem').innerHTML = '<option value="">- Selecciona equipo -</option>';
+    document.getElementById('cotComponent').innerHTML = '<option value="">- Selecciona sistema -</option>';
+
+    document.getElementById('createOTModal').showModal();
+}
+
+function cotOnAreaChange() {
+    const aid = document.getElementById('cotArea').value;
+    const lineSel = document.getElementById('cotLine');
+    if (!aid) {
+        lineSel.innerHTML = '<option value="">- Selecciona area -</option>';
+        return;
+    }
+    const filtered = _cotLines.filter(l => String(l.area_id) === String(aid));
+    lineSel.innerHTML = '<option value="">- Sin linea -</option>' +
+        filtered.map(l => `<option value="${l.id}">${l.name}</option>`).join('');
+    cotOnLineChange();
+}
+
+function cotOnLineChange() {
+    const lid = document.getElementById('cotLine').value;
+    const equipSel = document.getElementById('cotEquip');
+    if (!lid) {
+        equipSel.innerHTML = '<option value="">- Selecciona linea -</option>';
+        return;
+    }
+    const filtered = _cotEquips.filter(e => String(e.line_id) === String(lid));
+    equipSel.innerHTML = '<option value="">- Sin equipo -</option>' +
+        filtered.map(e => `<option value="${e.id}">[${e.tag || '-'}] ${e.name}</option>`).join('');
+    cotOnEquipChange();
+}
+
+function cotOnEquipChange() {
+    const eid = document.getElementById('cotEquip').value;
+    const sysSel = document.getElementById('cotSystem');
+    if (!eid) {
+        sysSel.innerHTML = '<option value="">- Selecciona equipo -</option>';
+        return;
+    }
+    const filtered = _cotSystems.filter(s => String(s.equipment_id) === String(eid));
+    sysSel.innerHTML = '<option value="">- Sin sistema -</option>' +
+        filtered.map(s => `<option value="${s.id}">${s.name}</option>`).join('');
+    cotOnSystemChange();
+}
+
+function cotOnSystemChange() {
+    const sid = document.getElementById('cotSystem').value;
+    const compSel = document.getElementById('cotComponent');
+    if (!sid) {
+        compSel.innerHTML = '<option value="">- Selecciona sistema -</option>';
+        return;
+    }
+    const filtered = _cotComponents.filter(c => String(c.system_id) === String(sid));
+    compSel.innerHTML = '<option value="">- Sin componente -</option>' +
+        filtered.map(c => `<option value="${c.id}">${c.name}</option>`).join('');
+}
+
+async function confirmCreateOTInShutdown() {
+    const shId = document.getElementById('cotShutdownId').value;
+    if (!shId) return alert('Falta parada');
+
+    const area = document.getElementById('cotArea').value;
+    const equip = document.getElementById('cotEquip').value;
+    const desc = document.getElementById('cotDesc').value.trim();
+    if (!area) return alert('Selecciona un area');
+    if (!equip) return alert('Selecciona un equipo');
+    if (!desc) return alert('Escribe una descripcion');
+
+    const payload = {
+        area_id: parseInt(area, 10),
+        line_id: parseInt(document.getElementById('cotLine').value, 10) || null,
+        equipment_id: parseInt(equip, 10),
+        system_id: parseInt(document.getElementById('cotSystem').value, 10) || null,
+        component_id: parseInt(document.getElementById('cotComponent').value, 10) || null,
+        description: desc,
+        maintenance_type: document.getElementById('cotType').value,
+        estimated_duration: parseFloat(document.getElementById('cotDuration').value) || 0,
+        tech_count: parseInt(document.getElementById('cotTechs').value, 10) || 1,
+        priority: document.getElementById('cotPriority').value,
+        status: 'Programada',
+    };
+
+    try {
+        const res = await fetch(`/api/shutdowns/${shId}/work-orders`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(payload),
+        });
+        const data = await res.json();
+        if (!res.ok) return alert('Error: ' + (data.error || res.status));
+        alert(`OT creada: ${data.code}`);
+        document.getElementById('createOTModal').close();
+        // Recargar detalle de la parada
+        if (typeof openDetail === 'function') await openDetail(shId);
+    } catch (err) {
+        alert('Error creando OT: ' + err);
+    }
+}
+
+window.openCreateOTInShutdownModal = openCreateOTInShutdownModal;
+window.cotOnAreaChange = cotOnAreaChange;
+window.cotOnLineChange = cotOnLineChange;
+window.cotOnEquipChange = cotOnEquipChange;
+window.cotOnSystemChange = cotOnSystemChange;
+window.confirmCreateOTInShutdown = confirmCreateOTInShutdown;

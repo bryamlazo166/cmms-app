@@ -736,6 +736,11 @@ def register_work_orders_routes(
         page = request.args.get('page', type=int)
         query = WorkOrder.query.order_by(WorkOrder.id.desc())
 
+        # Filtro opcional por parada (?shutdown_id=X)
+        sh_id_filter = request.args.get('shutdown_id', type=int)
+        if sh_id_filter:
+            query = query.filter(WorkOrder.shutdown_id == sh_id_filter)
+
         # Si el usuario es 'tecnico', restringir a sus OTs (asignado o en personnel)
         try:
             from flask_login import current_user
@@ -774,6 +779,17 @@ def register_work_orders_routes(
             reqs = PurchaseRequest.query.filter(PurchaseRequest.work_order_id.in_(ot_ids)).all()
             for req in reqs:
                 purchase_by_ot.setdefault(req.work_order_id, []).append(req)
+
+        # Pre-cargar paradas vinculadas (para mostrar 'Parada' en la tabla)
+        shutdown_map = {}
+        try:
+            from models import Shutdown
+            sh_ids = {wo.shutdown_id for wo in entries if getattr(wo, 'shutdown_id', None)}
+            if sh_ids:
+                for sh in Shutdown.query.filter(Shutdown.id.in_(sh_ids)).all():
+                    shutdown_map[sh.id] = sh
+        except Exception:
+            pass
 
         # Pre-load taxonomy in bulk (eliminates N*5 queries)
         _area_ids  = {wo.area_id      for wo in entries if wo.area_id}
@@ -829,6 +845,17 @@ def register_work_orders_routes(
                 crit = wo.notice.criticality
 
             data['criticality'] = crit
+
+            # Datos de la parada vinculada (si existe)
+            sh_id = getattr(wo, 'shutdown_id', None)
+            if sh_id and sh_id in shutdown_map:
+                sh = shutdown_map[sh_id]
+                data['shutdown_id'] = sh.id
+                data['shutdown_name'] = sh.name
+                data['shutdown_date'] = sh.shutdown_date
+                data['shutdown_status'] = sh.status
+            else:
+                data['shutdown_name'] = None
 
             reqs_for_ot = purchase_by_ot.get(wo.id, [])
             status_count = {

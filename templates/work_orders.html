@@ -175,6 +175,12 @@
                             </div>
                         </div>
 
+                        <select id="planningShutdownFilter" class="filter-btn" onchange="applyFilters()">
+                            <option value="all">Parada: Todas</option>
+                            <option value="with">Solo con parada</option>
+                            <option value="without">Sin parada</option>
+                        </select>
+
                         <select id="planningLogisticsFilter" class="filter-btn" onchange="applyFilters()">
                             <option value="all">Logistica: Todas</option>
                             <option value="blocked">Solo bloqueadas</option>
@@ -223,6 +229,7 @@
                                     <th>Prioridad</th>
                                     <th>Fecha Prog.</th>
                                     <th>Fecha Término</th>
+                                    <th>Parada</th>
                                     <th>Tecnico/Prov.</th>
                                     <th>Logistica</th>
                                     <th>Informe</th>
@@ -696,6 +703,13 @@
                                     <option value="">- Sin activo rotativo -</option>
                                 </select>
                                 <small style="color:rgba(255,255,255,.35);font-size:.72rem">Se carga automaticamente al seleccionar equipo desde un aviso</small>
+                            </div>
+                            <div class="form-group">
+                                <label>Asociar a Parada (opcional)</label>
+                                <select id="otShutdown" style="width:100%">
+                                    <option value="">- Sin parada -</option>
+                                </select>
+                                <small style="color:rgba(255,255,255,.35);font-size:.72rem">Vincula esta OT a una parada planificada</small>
                             </div>
                         </div>
                     </fieldset>

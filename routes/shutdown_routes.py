@@ -171,6 +171,69 @@ def register_shutdown_routes(
         d['technician_count'] = len(tech_ids)
         return jsonify(d)
 
+    @app.route('/api/shutdowns/<int:shutdown_id>/work-orders', methods=['POST'])
+    def create_ot_in_shutdown(shutdown_id):
+        """Crear una OT NUEVA directamente dentro de una parada (no requiere aviso).
+
+        Uso tipico: planificador arma una parada con varios trabajos
+        aprovechados (cambio de tapa, chaqueta, etc.) sin que haya una
+        falla concreta que los origine.
+        """
+        try:
+            data = request.json or {}
+            # Validar que la parada existe
+            from models import Shutdown
+            sh = Shutdown.query.get_or_404(shutdown_id)
+
+            # Campos obligatorios
+            description = (data.get('description') or '').strip()
+            if not description:
+                return jsonify({"error": "Falta descripcion"}), 400
+
+            # Sanitizar y construir
+            clean = {
+                'description': description,
+                'maintenance_type': data.get('maintenance_type') or 'Correctivo',
+                'status': data.get('status') or 'Programada',
+                'scheduled_date': data.get('scheduled_date') or sh.shutdown_date,
+                'estimated_duration': data.get('estimated_duration') or 0,
+                'tech_count': data.get('tech_count') or 1,
+                'failure_mode': data.get('failure_mode'),
+                'priority': data.get('priority'),
+                'technician_id': data.get('technician_id'),
+                'provider_id': data.get('provider_id'),
+                'area_id': data.get('area_id'),
+                'line_id': data.get('line_id'),
+                'equipment_id': data.get('equipment_id'),
+                'system_id': data.get('system_id'),
+                'component_id': data.get('component_id'),
+                'shutdown_id': shutdown_id,
+            }
+            # Convertir '' a None
+            for k, v in list(clean.items()):
+                if isinstance(v, str) and v.strip() == '':
+                    clean[k] = None
+
+            wo = WorkOrder(**clean)
+            db.session.add(wo)
+            db.session.flush()
+            wo.code = f"OT-{wo.id:04d}"
+            db.session.commit()
+
+            # Indexar para RAG (opcional, no bloqueante)
+            try:
+                from bot.telegram_bot import _index_entity_async
+                _index_entity_async(app, 'work_order', wo.id)
+            except Exception:
+                pass
+
+            return jsonify(wo.to_dict()), 201
+        except Exception as e:
+            db.session.rollback()
+            import traceback
+            traceback.print_exc()
+            return jsonify({"error": str(e)}), 500
+
     @app.route('/api/shutdowns/<int:shutdown_id>/add-ot', methods=['POST'])
     def add_ot_to_shutdown(shutdown_id):
         """Vincular OT(s) existentes a una parada."""

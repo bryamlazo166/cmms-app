@@ -93,7 +93,8 @@
                 <span id="detailTitle" style="color:#FF9F0A;font-weight:700;font-size:1.1rem;"></span>
                 <div style="margin-left:auto;display:flex;gap:8px;">
                     <button class="btn success" onclick="exportShutdownPdf()"><i class="fas fa-file-pdf"></i> Exportar PDF</button>
-                    <button class="btn warning" onclick="openAddOTModal()"><i class="fas fa-plus"></i> Agregar OTs</button>
+                    <button class="btn success" onclick="openCreateOTInShutdownModal()" style="background:#0A84FF;"><i class="fas fa-plus-circle"></i> Crear OT Nueva</button>
+                    <button class="btn warning" onclick="openAddOTModal()"><i class="fas fa-link"></i> Vincular OTs</button>
                     <button class="btn primary" onclick="editCurrentShutdown()"><i class="fas fa-edit"></i> Editar</button>
                 </div>
             </div>
@@ -164,12 +165,87 @@
 
     <!-- MODAL AGREGAR OTs -->
     <dialog id="addOTModal" style="max-width:800px;">
-        <h2>Agregar OTs a la Parada</h2>
+        <h2>Vincular OTs existentes a la Parada</h2>
         <p style="color:#9ab0cb;font-size:.85rem;">OTs abiertas/programadas sin parada asignada. Marque las que desea incluir.</p>
         <div id="suggestedOTs" style="max-height:400px;overflow-y:auto;"></div>
         <div style="display:flex;gap:10px;justify-content:flex-end;margin-top:16px;">
             <button class="btn secondary" onclick="document.getElementById('addOTModal').close()">Cancelar</button>
-            <button class="btn primary" onclick="confirmAddOTs()"><i class="fas fa-plus"></i> Agregar Seleccionadas</button>
+            <button class="btn primary" onclick="confirmAddOTs()"><i class="fas fa-link"></i> Vincular Seleccionadas</button>
+        </div>
+    </dialog>
+
+    <!-- MODAL CREAR OT NUEVA EN PARADA -->
+    <dialog id="createOTModal" style="max-width:720px;">
+        <h2><i class="fas fa-plus-circle"></i> Crear OT nueva en esta parada</h2>
+        <p style="color:#9ab0cb;font-size:.85rem;">
+            Trabajos planificados dentro de la parada (no requieren aviso previo).
+            Ejemplo: cambio de tapa bombeada, reparacion de chaqueta, renovacion de linea de vapor.
+        </p>
+        <input type="hidden" id="cotShutdownId">
+
+        <div class="form-row">
+            <div class="form-group">
+                <label>Area *</label>
+                <select id="cotArea" onchange="cotOnAreaChange()"><option value="">- Selecciona -</option></select>
+            </div>
+            <div class="form-group">
+                <label>Linea</label>
+                <select id="cotLine" onchange="cotOnLineChange()"><option value="">- Selecciona area -</option></select>
+            </div>
+        </div>
+        <div class="form-row">
+            <div class="form-group">
+                <label>Equipo *</label>
+                <select id="cotEquip" onchange="cotOnEquipChange()"><option value="">- Selecciona linea -</option></select>
+            </div>
+            <div class="form-group">
+                <label>Sistema</label>
+                <select id="cotSystem" onchange="cotOnSystemChange()"><option value="">- Selecciona equipo -</option></select>
+            </div>
+        </div>
+        <div class="form-row">
+            <div class="form-group">
+                <label>Componente</label>
+                <select id="cotComponent"><option value="">- Selecciona sistema -</option></select>
+            </div>
+            <div class="form-group">
+                <label>Tipo *</label>
+                <select id="cotType">
+                    <option value="Correctivo">Correctivo</option>
+                    <option value="Preventivo">Preventivo</option>
+                    <option value="Mejora" selected>Mejora (trabajo aprovechado)</option>
+                    <option value="Inspeccion">Inspeccion</option>
+                </select>
+            </div>
+        </div>
+        <div class="form-row">
+            <div class="form-group">
+                <label>Descripcion *</label>
+                <textarea id="cotDesc" rows="2" placeholder="Ej: Cambio de tapa bombeada descarga del D9 aprovechando parada por trípode"></textarea>
+            </div>
+        </div>
+        <div class="form-row">
+            <div class="form-group">
+                <label>Duracion estimada (h)</label>
+                <input type="number" id="cotDuration" min="0" step="0.5" value="4">
+            </div>
+            <div class="form-group">
+                <label>Cant. tecnicos</label>
+                <input type="number" id="cotTechs" min="1" value="1">
+            </div>
+            <div class="form-group">
+                <label>Prioridad</label>
+                <select id="cotPriority">
+                    <option value="Normal">Normal</option>
+                    <option value="Alta">Alta</option>
+                    <option value="Baja">Baja</option>
+                </select>
+            </div>
+        </div>
+
+        <div style="display:flex;gap:10px;justify-content:flex-end;margin-top:16px;">
+            <button class="btn secondary" onclick="document.getElementById('createOTModal').close()">Cancelar</button>
+            <button class="btn primary" onclick="confirmCreateOTInShutdown()"><i class="fas fa-save"></i> Crear OT</button>
         </div>
     </dialog>
 </section>

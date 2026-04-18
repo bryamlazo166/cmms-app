@@ -24,6 +24,7 @@ document.addEventListener('DOMContentLoaded', () => {
     loadHierarchyData();
     loadCurrentUser();
     loadUsersForTechLink();
+    loadShutdownsForOT();
 
     // Provider Form Submit
     const provForm = document.getElementById('providerForm');
@@ -223,6 +224,19 @@ async function loadProviders() {
     } catch (e) { console.error(e); }
 }
 
+let allShutdowns = [];
+async function loadShutdownsForOT() {
+    try {
+        const res = await fetch('/api/shutdowns');
+        allShutdowns = await res.json();
+        const sel = document.getElementById('otShutdown');
+        if (!sel) return;
+        const active = allShutdowns.filter(s => s.status !== 'COMPLETADA' && s.status !== 'CANCELADA');
+        sel.innerHTML = '<option value="">- Sin parada -</option>' +
+            active.map(s => `<option value="${s.id}">${s.name} (${s.shutdown_date || '-'}) — ${s.status}</option>`).join('');
+    } catch (e) { console.error('loadShutdowns OT:', e); }
+}
+
 async function loadCurrentUser() {
     try {
         const res = await fetch('/api/auth/me');
@@ -365,6 +379,8 @@ window.applyFilters = () => {
     const logisticsFilter = logisticsSelect ? logisticsSelect.value : 'all';
     const reportSelect = document.getElementById('planningReportFilter');
     const reportFilter = reportSelect ? reportSelect.value : 'all';
+    const shutdownSelect = document.getElementById('planningShutdownFilter');
+    const shutdownFilter = shutdownSelect ? shutdownSelect.value : 'all';
 
     const filtered = allWorkOrders.filter(ot => {
         // Filtro "Mis OTs"
@@ -391,6 +407,10 @@ window.applyFilters = () => {
 
         if (reportFilter === 'pending' && !(ot.report_required && ot.report_status !== 'RECIBIDO')) return false;
         if (reportFilter === 'received' && !(ot.report_required && ot.report_status === 'RECIBIDO')) return false;
+
+        const hasShutdown = !!ot.shutdown_id;
+        if (shutdownFilter === 'with' && !hasShutdown) return false;
+        if (shutdownFilter === 'without' && hasShutdown) return false;
 
         if (search) {
             const code = (ot.code || '').toLowerCase();
@@ -427,7 +447,7 @@ function renderPlanningTable(data = null) {
     if (!tbody) return;
 
     if (list.length === 0) {
-        tbody.innerHTML = '<tr><td colspan="17" style="text-align:center; padding:20px; color:#9fb6d6;">No se encontraron ordenes de trabajo.</td></tr>';
+        tbody.innerHTML = '<tr><td colspan="18" style="text-align:center; padding:20px; color:#9fb6d6;">No se encontraron ordenes de trabajo.</td></tr>';
         return;
     }
 
@@ -481,6 +501,7 @@ function renderPlanningTable(data = null) {
             <td><span class="badge ${priorityClass}">${ot.priority || '-'}</span></td>
             <td>${ot.scheduled_date || '-'}</td>
             <td>${ot.real_end_date || '-'}</td>
+            <td>${ot.shutdown_name ? `<a href="/paradas#${ot.shutdown_id}" style="color:#FF9F0A;text-decoration:underline;font-size:.78rem;" title="${ot.shutdown_name}">${ot.shutdown_name.substring(0, 22)}${ot.shutdown_name.length > 22 ? '…' : ''}</a>` : '<span style="color:rgba(255,255,255,.2);font-size:.78rem">-</span>'}</td>
             <td>${assignedTo}</td>
             <td>
                 <span class="logistics-chip ${logisticsClass}">${logisticsLabel}</span>
@@ -595,6 +616,10 @@ async function editOT(id) {
     document.getElementById('otEstDuration').value = ot.estimated_duration || '';
     document.getElementById('otStatus').value = ot.status || 'Abierta';
     document.getElementById('otFailureMode').value = ot.failure_mode || '';
+
+    // Preseleccionar parada vinculada (si existe)
+    const otShutdown = document.getElementById('otShutdown');
+    if (otShutdown) otShutdown.value = ot.shutdown_id || '';
 
     // Load rotative assets for this equipment
     if (ot.equipment_id) {
@@ -754,6 +779,10 @@ async function handleOTSubmit(e) {
             status: document.getElementById('otStatus').value,
             failure_mode: document.getElementById('otFailureMode').value,
             rotative_asset_id: raVal ? parseInt(raVal) : null,
+            shutdown_id: (() => {
+                const v = document.getElementById('otShutdown') ? document.getElementById('otShutdown').value : '';
+                return v ? parseInt(v) : null;
+            })(),
         };
 
         let url = '/api/work-orders';
