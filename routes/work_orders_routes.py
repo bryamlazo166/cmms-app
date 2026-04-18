@@ -952,6 +952,52 @@ def register_work_orders_routes(
             logger.error(f"OT Export Error: {e}")
             return jsonify({"error": str(e)}), 500
 
+    @app.route('/api/work-orders/by-code/<string:code>', methods=['GET'])
+    def get_work_order_by_code(code):
+        """Devuelve datos enriquecidos de una OT por su codigo (ej: OT-0018).
+
+        Usado por el modulo de Compras para que logistica vea de que OT viene
+        un requerimiento sin tener que buscar manualmente.
+        """
+        try:
+            wo = WorkOrder.query.filter_by(code=code).first()
+            if not wo:
+                return jsonify({"error": f"OT {code} no encontrada"}), 404
+            data = wo.to_dict()
+            # Enriquecer con nombres de jerarquia
+            area = Area.query.get(wo.area_id) if wo.area_id else None
+            line = Line.query.get(wo.line_id) if wo.line_id else None
+            equip = Equipment.query.get(wo.equipment_id) if wo.equipment_id else None
+            system = System.query.get(wo.system_id) if wo.system_id else None
+            comp = Component.query.get(wo.component_id) if wo.component_id else None
+            data['area_name'] = area.name if area else None
+            data['line_name'] = line.name if line else None
+            data['equipment_name'] = equip.name if equip else None
+            data['equipment_tag'] = equip.tag if equip else None
+            data['system_name'] = system.name if system else None
+            data['component_name'] = comp.name if comp else None
+            # Tecnico nombre
+            tech_name = None
+            try:
+                if wo.technician_id:
+                    t = Technician.query.get(int(wo.technician_id))
+                    tech_name = t.name if t else wo.technician_id
+            except Exception:
+                tech_name = wo.technician_id
+            data['technician_name'] = tech_name
+            # Aviso vinculado
+            if wo.notice_id:
+                notice = MaintenanceNotice.query.get(wo.notice_id)
+                if notice:
+                    data['notice_code'] = notice.code or f"AV-{notice.id:04d}"
+                    data['notice_description'] = notice.description
+                    data['notice_failure_mode'] = getattr(notice, 'failure_mode', None)
+                    data['notice_blockage_object'] = getattr(notice, 'blockage_object', None)
+            return jsonify(data)
+        except Exception as e:
+            logger.exception(f"Error get OT by code {code}")
+            return jsonify({"error": str(e)}), 500
+
     @app.route('/api/work-orders/<int:id>', methods=['PUT', 'DELETE'])
     def handle_wot_id(id):
         try:

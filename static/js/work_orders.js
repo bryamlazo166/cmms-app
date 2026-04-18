@@ -1524,15 +1524,13 @@ function openCloseModal() {
     startInput.value = start;
     endInput.value = now;
 
-    if (activeExecutionOT.real_start_date) {
-        startInput.readOnly = true;
-        startInput.style.backgroundColor = "#444";
-    } else {
-        startInput.readOnly = false;
-        startInput.style.backgroundColor = "";
-    }
-    endInput.readOnly = true;
-    endInput.style.backgroundColor = "#444";
+    // Ambos campos editables: el valor se prellena con lo que tiene el sistema,
+    // pero el tecnico/supervisor puede ajustar si la hora real no coincide
+    // (ej: olvido cerrar la OT y la cierra al dia siguiente).
+    startInput.readOnly = false;
+    startInput.style.backgroundColor = "";
+    endInput.readOnly = false;
+    endInput.style.backgroundColor = "";
 
     // Pre-llenar horas de parada con la duración calendario como sugerencia
     try {

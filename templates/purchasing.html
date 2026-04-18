@@ -259,6 +259,20 @@
         </div>
     </dialog>
 
+    <!-- Modal: Detalle de OT (visible desde un RQ) -->
+    <dialog id="otDetailModal" class="modal" style="max-width:680px;border-radius:12px;background:#222;color:#ddd;border:1px solid #333;padding:22px;">
+        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:14px;border-bottom:1px solid #333;padding-bottom:10px;">
+            <h3 style="margin:0;color:#0A84FF;"><i class="fas fa-clipboard-list"></i> Detalle de la Orden de Trabajo</h3>
+            <button type="button" onclick="document.getElementById('otDetailModal').close()"
+                style="background:transparent;border:none;color:#aaa;font-size:1.4em;cursor:pointer;">&times;</button>
+        </div>
+        <div id="otDetailBody"></div>
+        <div style="display:flex;justify-content:flex-end;margin-top:14px;border-top:1px solid #333;padding-top:10px;">
+            <button type="button" onclick="document.getElementById('otDetailModal').close()"
+                style="background:#0A84FF;color:white;border:none;padding:8px 18px;border-radius:6px;cursor:pointer;">Cerrar</button>
+        </div>
+    </dialog>
+
     <script src="/static/js/purchasing.js?v={{ v }}"></script>
     <script src="/static/js/sidebar.js?v={{ v }}"></script>
 </body>
