@@ -184,12 +184,13 @@ def main():
     cur.execute("""
         SELECT ti.id, ti.inspection_date, ti.inspector_name, ti.status,
                ti.total_points, ti.critical_points, ti.alert_points,
-               ti.semaphore_status, ti.notes,
+               ti.semaphore_status, ti.observations AS notes,
                e.tag AS eq_tag, e.name AS eq_name,
                a.name AS area_name
         FROM thickness_inspections ti
         LEFT JOIN equipments e ON ti.equipment_id = e.id
-        LEFT JOIN areas a ON e.line_id IN (SELECT id FROM lines WHERE area_id = a.id)
+        LEFT JOIN lines l ON e.line_id = l.id
+        LEFT JOIN areas a ON l.area_id = a.id
     """)
     inspections = cur.fetchall()
     print(f"\nInspecciones de espesor a indexar: {len(inspections)}")
@@ -226,7 +227,11 @@ def main():
         if readings:
             parts.append("Peores lecturas:\n")
             for r in readings:
-                loc = ' - '.join(filter(None, [r['group_name'], r['section'], r['position']]))
+                loc = ' - '.join(filter(None, [
+                    str(r['group_name']) if r['group_name'] is not None else '',
+                    str(r['section']) if r['section'] is not None else '',
+                    str(r['position']) if r['position'] is not None else '',
+                ]))
                 flag = 'CRITICO' if r['is_critical'] else ('ALERTA' if r['is_alert'] else 'normal')
                 parts.append(
                     f"  - {loc}: {r['value_mm']}mm "
