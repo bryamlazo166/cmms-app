@@ -5,6 +5,7 @@
 let charts = {};
 let currentMetrics = null;
 let cachedAreas = [];
+let editingGoalId = null;   // id de meta en edición; null = modo creación
 
 // ── Inicialización ──────────────────────────────────────────────────────
 function currentPeriod() {
@@ -361,11 +362,13 @@ function openGoalModal() {
     cachedAreas.forEach(a => {
         sel.insertAdjacentHTML('beforeend', `<option value="${a.id}">${a.name}</option>`);
     });
+    clearGoalForm();
     loadGoalsList();
 }
 
 function closeGoalModal() {
     document.getElementById('goalModal').classList.remove('open');
+    clearGoalForm();
 }
 
 async function loadGoalsList() {
@@ -387,12 +390,49 @@ async function loadGoalsList() {
                 <td>${g.area_name || '-'}</td>
                 <td>${g.monthly_avg_yield_tons} TM</td>
                 <td>${g.monthly_target_tons} TM</td>
-                <td><button class="action-btn delete" onclick="deleteGoal(${g.id})"><i class="fas fa-trash"></i></button></td>
+                <td style="white-space:nowrap;">
+                    <button class="action-btn" title="Editar" onclick='editGoal(${JSON.stringify(g)})'><i class="fas fa-pen"></i></button>
+                    <button class="action-btn delete" title="Eliminar" onclick="deleteGoal(${g.id})"><i class="fas fa-trash"></i></button>
+                </td>
             `;
             tbody.appendChild(row);
         });
     } catch (e) {
         tbody.innerHTML = `<tr><td colspan="5" style="color:#FF453A;">Error: ${e.message}</td></tr>`;
+    }
+}
+
+function editGoal(g) {
+    editingGoalId = g.id;
+    document.getElementById('goalPeriod').value = g.goal_period;
+    document.getElementById('goalAreaId').value = g.area_id || '';
+    document.getElementById('goalYield').value = g.monthly_avg_yield_tons;
+    document.getElementById('goalTarget').value = g.monthly_target_tons;
+    document.getElementById('goalHours').value = g.operating_hours_month || 720;
+    document.getElementById('goalNotes').value = g.notes || '';
+    updateGoalFormMode();
+    document.getElementById('goalYield').focus();
+}
+
+function clearGoalForm() {
+    editingGoalId = null;
+    document.getElementById('goalYield').value = '';
+    document.getElementById('goalTarget').value = '';
+    document.getElementById('goalHours').value = '';
+    document.getElementById('goalNotes').value = '';
+    updateGoalFormMode();
+}
+
+function updateGoalFormMode() {
+    const btn = document.getElementById('btnSaveGoal');
+    const badge = document.getElementById('editingBadge');
+    if (!btn) return;
+    if (editingGoalId) {
+        btn.innerHTML = '<i class="fas fa-save"></i> Actualizar';
+        if (badge) badge.style.display = 'inline-flex';
+    } else {
+        btn.innerHTML = '<i class="fas fa-save"></i> Guardar';
+        if (badge) badge.style.display = 'none';
     }
 }
 
@@ -410,16 +450,18 @@ async function saveGoal() {
         return;
     }
     try {
-        const r = await fetch('/api/production/goals', {
-            method: 'POST',
+        const url = editingGoalId
+            ? `/api/production/goals/${editingGoalId}`
+            : '/api/production/goals';
+        const method = editingGoalId ? 'PUT' : 'POST';
+        const r = await fetch(url, {
+            method,
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify(payload),
         });
         const j = await r.json();
         if (r.ok) {
-            document.getElementById('goalYield').value = '';
-            document.getElementById('goalTarget').value = '';
-            document.getElementById('goalNotes').value = '';
+            clearGoalForm();
             loadGoalsList();
             loadProduction();
         } else {
