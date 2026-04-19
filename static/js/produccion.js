@@ -230,8 +230,8 @@ function renderTopEquips(m) {
             trigger: 'axis',
             formatter: params => {
                 const p = params[0];
-                const i = items.length - 1 - p.dataIndex;
-                const e = items[items.length - 1 - p.dataIndex];
+                const e = items[p.dataIndex];
+                if (!e) return '';
                 return `<b>${e.equipment_tag}</b> — ${e.equipment_name}<br/>
                         Área: ${e.area_name}<br/>
                         Fallas: ${e.failure_count}<br/>
@@ -329,7 +329,7 @@ function renderAreaTable(m) {
 async function loadAiDiagnosis() {
     const body = document.getElementById('aiDiagnosisBody');
     const src = document.getElementById('aiSource');
-    body.textContent = '⏳ Generando diagnóstico ejecutivo con DeepSeek...';
+    body.textContent = '⏳ Generando diagnóstico ejecutivo...';
     src.textContent = '';
     try {
         const r = await fetch('/api/production/ai-diagnosis', {
@@ -339,9 +339,8 @@ async function loadAiDiagnosis() {
         });
         const j = await r.json();
         body.textContent = j.diagnosis || 'Sin diagnóstico disponible.';
-        src.textContent = j.source === 'deepseek'
-            ? '🤖 Generado por DeepSeek AI'
-            : (j.source === 'rule-based' ? '📋 Diagnóstico básico (configura DEEPSEEK_API_KEY para análisis IA)' : '⚠ Fallback');
+        src.textContent = '🤖 Análisis automático basado en datos del CMMS · ' +
+            new Date().toLocaleString('es-PE', { dateStyle: 'medium', timeStyle: 'short' });
     } catch (e) {
         body.textContent = 'Error al generar diagnóstico: ' + e.message;
     }

@@ -455,7 +455,7 @@ def register_production_routes(app, db, logger, ProductionGoal, WorkOrder, Area,
             if not DEEPSEEK_API_KEY:
                 return jsonify({
                     "diagnosis": _fallback_diagnosis(metrics),
-                    "source": "rule-based",
+                    "source": "internal",
                 })
 
             prompt = _build_ai_prompt(metrics)
@@ -490,7 +490,7 @@ def register_production_routes(app, db, logger, ProductionGoal, WorkOrder, Area,
 
             return jsonify({
                 "diagnosis": answer,
-                "source": "deepseek",
+                "source": "ai",
                 "metrics_snapshot": metrics['totals'],
             })
         except Exception as e:
