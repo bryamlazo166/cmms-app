@@ -199,7 +199,6 @@ def register_shutdown_routes(
                 'estimated_duration': data.get('estimated_duration') or 0,
                 'tech_count': data.get('tech_count') or 1,
                 'failure_mode': data.get('failure_mode'),
-                'priority': data.get('priority'),
                 'technician_id': data.get('technician_id'),
                 'provider_id': data.get('provider_id'),
                 'area_id': data.get('area_id'),

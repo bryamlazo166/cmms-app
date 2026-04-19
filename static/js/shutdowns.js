@@ -349,10 +349,9 @@ async function openCreateOTInShutdownModal() {
     document.getElementById('cotDesc').value = '';
     document.getElementById('cotDuration').value = '4';
     document.getElementById('cotTechs').value = '1';
-    document.getElementById('cotPriority').value = 'Normal';
     document.getElementById('cotType').value = 'Mejora';
 
-    // Cargar taxonomia si no esta cargada
+    // Cargar taxonomia + proveedores si no estan cargados
     if (_cotAreas.length === 0) {
         try {
             const [a, l, e, s, c] = await Promise.all([
@@ -367,6 +366,17 @@ async function openCreateOTInShutdownModal() {
         } catch (err) {
             return alert('Error cargando taxonomia: ' + err);
         }
+    }
+
+    // Poblar Proveedores (siempre, por si se agrego alguno nuevo)
+    try {
+        const providers = await fetch('/api/providers').then(r => r.json());
+        const provSel = document.getElementById('cotProvider');
+        provSel.innerHTML = '<option value="">- Interno -</option>' +
+            providers.map(p => `<option value="${p.id}">${p.name}</option>`).join('');
+        provSel.value = '';
+    } catch (err) {
+        console.warn('No se pudieron cargar proveedores:', err);
     }
 
     // Poblar Areas
@@ -455,7 +465,7 @@ async function confirmCreateOTInShutdown() {
         maintenance_type: document.getElementById('cotType').value,
         estimated_duration: parseFloat(document.getElementById('cotDuration').value) || 0,
         tech_count: parseInt(document.getElementById('cotTechs').value, 10) || 1,
-        priority: document.getElementById('cotPriority').value,
+        provider_id: parseInt(document.getElementById('cotProvider').value, 10) || null,
         status: 'Programada',
     };
 
