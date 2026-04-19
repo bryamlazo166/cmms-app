@@ -23,6 +23,7 @@ from models import (
     FailureCatalog,
     ThicknessPoint, ThicknessInspection, ThicknessReading,
     Shutdown, ShutdownArea,
+    ProductionGoal,
 )
 from utils.crud_helpers import create_entry, get_entries, update_entry, delete_entry
 from utils.reporting_helpers import (
@@ -56,6 +57,7 @@ from routes.tools_routes import register_tools_routes
 from routes.purchasing_routes import register_purchasing_routes
 from routes.warehouse_routes import register_warehouse_routes
 from routes.work_orders_routes import register_work_orders_routes
+from routes.production_routes import register_production_routes
 
 logging.basicConfig(level=logging.DEBUG)
 logger = logging.getLogger(__name__)
@@ -205,6 +207,7 @@ _MODULE_ROUTES = {
     'cockpit':          {'pages': ['/cockpit'], 'api': []},
     'indicadores': {'view': False, 'edit': False},
     'indicadores':      {'pages': ['/indicadores'], 'api': ['/api/indicators']},
+    'produccion':       {'pages': ['/produccion'], 'api': ['/api/production']},
     'paradas':          {'pages': ['/paradas'], 'api': ['/api/shutdowns']},
     'seguimiento':      {'pages': ['/seguimiento'], 'api': ['/api/activities', '/api/milestones']},
     'reportes':         {'pages': ['/reportes'], 'api': ['/api/reports']},
@@ -223,6 +226,7 @@ _DEFAULT_PERMS = {
         'inspecciones': {'view': True, 'edit': True}, 'monitoreo': {'view': True, 'edit': True},
         'espesores': {'view': True, 'edit': True}, 'cockpit': {'view': True, 'edit': False},
         'indicadores': {'view': True, 'edit': False},
+        'produccion': {'view': True, 'edit': True},
         'seguimiento': {'view': True, 'edit': True}, 'reportes': {'view': True, 'edit': True},
         'activos_rotativos': {'view': True, 'edit': True}, 'activos_config': {'view': True, 'edit': False},
         'historial_equipo': {'view': True, 'edit': False}, 'exportar': {'view': False, 'edit': False},
@@ -235,6 +239,7 @@ _DEFAULT_PERMS = {
         'inspecciones': {'view': True, 'edit': True}, 'monitoreo': {'view': True, 'edit': True},
         'espesores': {'view': True, 'edit': True},
         'paradas': {'view': True, 'edit': True},
+        'produccion': {'view': True, 'edit': True},
         'seguimiento': {'view': True, 'edit': True}, 'reportes': {'view': True, 'edit': False},
         'activos_rotativos': {'view': True, 'edit': False}, 'activos_config': {'view': True, 'edit': False},
         'historial_equipo': {'view': True, 'edit': False}, 'exportar': {'view': False, 'edit': False},
@@ -295,6 +300,7 @@ _DEFAULT_PERMS = {
         'inspecciones': {'view': True, 'edit': False}, 'monitoreo': {'view': True, 'edit': False},
         'espesores': {'view': True, 'edit': False}, 'cockpit': {'view': True, 'edit': False},
         'indicadores': {'view': True, 'edit': False},
+        'produccion': {'view': True, 'edit': True},
         'paradas': {'view': True, 'edit': False},
         'seguimiento': {'view': True, 'edit': False}, 'reportes': {'view': True, 'edit': False},
         'activos_rotativos': {'view': True, 'edit': False}, 'activos_config': {'view': True, 'edit': False},
@@ -589,6 +595,17 @@ register_indicators_routes(
     app=app,
     db=db,
     logger=logger,
+    WorkOrder=WorkOrder,
+    Area=Area,
+    Line=Line,
+    Equipment=Equipment,
+)
+
+register_production_routes(
+    app=app,
+    db=db,
+    logger=logger,
+    ProductionGoal=ProductionGoal,
     WorkOrder=WorkOrder,
     Area=Area,
     Line=Line,

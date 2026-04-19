@@ -1,0 +1,264 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <link rel="icon" type="image/svg+xml" href="/static/favicon.svg">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Producción vs Mantenimiento - CMMS</title>
+    <link rel="stylesheet" href="/static/css/style.css?v={{ v }}">
+    <link rel="stylesheet" href="/static/css/sidebar.css?v={{ v }}">
+    <link href="https://fonts.googleapis.com/css2?family=Roboto:wght@300;400;500;700&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css">
+    <script src="https://cdn.jsdelivr.net/npm/echarts@5.5.0/dist/echarts.min.js"></script>
+    <style>
+        body{background:#0a0e14;}
+        .prod-wrap{max-width:1600px;margin:0 auto;padding:16px;}
+        .prod-header{background:linear-gradient(120deg,#1e2430,#151b24);border:1px solid #2d3f56;border-radius:14px;padding:20px 24px;margin-bottom:16px;display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:14px;}
+        .prod-header h1{margin:0;color:#5ac8fa;font-size:1.5rem;display:flex;align-items:center;gap:10px;}
+        .prod-header p{margin:4px 0 0;color:#9ab0cb;font-size:.85rem;}
+        .prod-tools{display:flex;gap:10px;align-items:center;flex-wrap:wrap;}
+        .prod-tools select, .prod-tools input{height:38px;background:#0f1319;color:#d5e2f5;border:1px solid #344964;border-radius:8px;padding:6px 12px;font-size:.88rem;}
+        .btn-prod{height:38px;border:1px solid #385273;border-radius:8px;background:#193451;color:#d7e9ff;padding:0 16px;font-weight:600;cursor:pointer;font-size:.88rem;display:inline-flex;align-items:center;gap:6px;}
+        .btn-prod:hover{background:#234870;}
+        .btn-prod.primary{background:#0a84ff;border-color:#0a84ff;color:#fff;}
+        .btn-prod.primary:hover{background:#1f95ff;}
+        .btn-prod.export{background:#30D158;border-color:#30D158;color:#fff;}
+        .btn-prod.goal{background:#BF5AF2;border-color:#BF5AF2;color:#fff;}
+
+        /* Alert banner para riesgo */
+        .risk-banner{border-radius:12px;padding:14px 18px;margin-bottom:16px;display:flex;align-items:center;gap:12px;font-weight:600;font-size:.95rem;}
+        .risk-banner.ok{background:linear-gradient(90deg,#143823,#0f2618);border:1px solid #30D158;color:#a8f5c4;}
+        .risk-banner.risk{background:linear-gradient(90deg,#3d1414,#240c0c);border:1px solid #FF453A;color:#ffb8b0;animation:pulse-risk 2s infinite;}
+        @keyframes pulse-risk{0%,100%{box-shadow:0 0 0 0 rgba(255,69,58,.4);}50%{box-shadow:0 0 0 12px rgba(255,69,58,0);}}
+
+        /* KPI cards */
+        .kpi-row{display:grid;grid-template-columns:repeat(5,1fr);gap:14px;margin-bottom:16px;}
+        .kpi-card{background:linear-gradient(135deg,#1b212b,#151a23);border:1px solid #31455f;border-radius:14px;padding:18px 20px;position:relative;overflow:hidden;}
+        .kpi-card::before{content:'';position:absolute;top:0;left:0;right:0;height:3px;background:var(--kpi-color,#0a84ff);}
+        .kpi-card .label{font-size:.72rem;color:#9ab3d0;text-transform:uppercase;letter-spacing:.5px;font-weight:600;margin-bottom:10px;display:flex;align-items:center;gap:6px;}
+        .kpi-card .value{font-size:2.1rem;font-weight:700;color:#eff6ff;line-height:1;}
+        .kpi-card .unit{font-size:1rem;color:#9ab3d0;margin-left:4px;}
+        .kpi-card .sub{margin-top:8px;font-size:.78rem;color:#9ab0cb;}
+        .kpi-card.actual{--kpi-color:#30D158;}
+        .kpi-card.required{--kpi-color:#FF9F0A;}
+        .kpi-card.tons-lost{--kpi-color:#FF453A;}
+        .kpi-card.sacks-lost{--kpi-color:#BF5AF2;}
+        .kpi-card.gap{--kpi-color:#FFD60A;}
+        .kpi-card.gap .value.pos{color:#30D158;}
+        .kpi-card.gap .value.neg{color:#FF453A;}
+
+        /* Chart grid */
+        .chart-row{display:grid;gap:14px;margin-bottom:16px;}
+        .chart-row.cols-2{grid-template-columns:1fr 1fr;}
+        .chart-card{background:#181d24;border:1px solid #2f4257;border-radius:14px;padding:16px 18px;}
+        .chart-card h3{margin:0 0 4px;color:#5ac8fa;font-size:.95rem;font-weight:600;display:flex;align-items:center;gap:8px;}
+        .chart-card .subtitle{color:#9ab0cb;font-size:.75rem;margin-bottom:10px;}
+        .chart-container{height:340px;width:100%;}
+        .chart-container.short{height:280px;}
+
+        /* Panel IA */
+        .ai-panel{background:linear-gradient(135deg,#1b1d3a,#151828);border:1px solid #4a5cbd;border-radius:14px;padding:20px 22px;margin-bottom:16px;}
+        .ai-panel h3{margin:0 0 10px;color:#9aa8ff;font-size:1rem;font-weight:600;display:flex;align-items:center;gap:8px;justify-content:space-between;}
+        .ai-panel .ai-body{background:#0f1220;border-radius:10px;padding:16px 18px;color:#d5e2f5;font-size:.9rem;line-height:1.65;white-space:pre-wrap;min-height:80px;}
+        .ai-panel .ai-source{font-size:.72rem;color:#7a86b5;margin-top:8px;text-align:right;}
+
+        /* Modal formulario meta */
+        .modal-backdrop{position:fixed;inset:0;background:rgba(0,0,0,.72);display:none;justify-content:center;align-items:center;z-index:1000;}
+        .modal-backdrop.open{display:flex;}
+        .modal-box{background:#151b24;border:1px solid #2f4257;border-radius:14px;padding:24px;width:92%;max-width:560px;max-height:90vh;overflow-y:auto;}
+        .modal-box h2{margin:0 0 16px;color:#5ac8fa;font-size:1.15rem;}
+        .modal-box label{display:block;color:#9ab0cb;font-size:.8rem;margin:10px 0 4px;font-weight:600;}
+        .modal-box input, .modal-box select, .modal-box textarea{width:100%;box-sizing:border-box;background:#0f1319;color:#d5e2f5;border:1px solid #344964;border-radius:8px;padding:8px 12px;font-size:.9rem;}
+        .modal-box textarea{min-height:60px;resize:vertical;}
+        .modal-actions{display:flex;gap:10px;justify-content:flex-end;margin-top:18px;}
+        .modal-hint{background:#0f1b2c;border-left:3px solid #0a84ff;padding:10px 14px;border-radius:6px;font-size:.82rem;color:#9ab3d0;margin-top:8px;}
+
+        /* Tabla de metas existentes */
+        .goals-list{width:100%;border-collapse:collapse;margin-top:12px;font-size:.85rem;}
+        .goals-list th, .goals-list td{padding:8px 10px;border-bottom:1px solid #2a3a50;color:#d5e2f5;text-align:left;}
+        .goals-list th{color:#9ab0cb;font-weight:600;font-size:.75rem;text-transform:uppercase;}
+        .goals-list .action-btn{background:transparent;color:#5ac8fa;border:none;cursor:pointer;padding:4px 6px;}
+        .goals-list .action-btn.delete{color:#FF453A;}
+
+        .loading-msg{text-align:center;color:#9ab0cb;padding:40px;font-size:.9rem;}
+
+        @media(max-width:1200px){
+            .kpi-row{grid-template-columns:repeat(2,1fr);}
+            .chart-row.cols-2{grid-template-columns:1fr;}
+        }
+    </style>
+</head>
+<body>
+<nav class="sidebar">
+    <div class="logo-details"><i class="fas fa-industry icon"></i><div class="logo_name">CMMS Pro</div><i class="fas fa-bars" id="btn_toggle"></i></div>
+    <ul class="nav-list"></ul>
+</nav>
+
+<section class="home-section">
+    <div class="prod-wrap">
+        <div class="prod-header">
+            <div>
+                <h1><i class="fas fa-seedling"></i> Producción vs Mantenimiento</h1>
+                <p>Impacto en toneladas, sacos perdidos y cumplimiento de meta mensual</p>
+            </div>
+            <div class="prod-tools">
+                <input type="month" id="periodSelect" />
+                <button class="btn-prod primary" onclick="loadProduction()"><i class="fas fa-sync"></i> Actualizar</button>
+                <button class="btn-prod goal" onclick="openGoalModal()"><i class="fas fa-bullseye"></i> Capturar meta</button>
+                <button class="btn-prod export" onclick="exportExcel()"><i class="fas fa-file-excel"></i> Excel</button>
+            </div>
+        </div>
+
+        <!-- Banner de estado -->
+        <div id="riskBanner" class="risk-banner ok" style="display:none;">
+            <i class="fas fa-info-circle"></i>
+            <span id="riskBannerText">—</span>
+        </div>
+
+        <!-- KPIs principales -->
+        <div class="kpi-row">
+            <div class="kpi-card actual">
+                <div class="label"><i class="fas fa-check-circle"></i> Disponibilidad Actual</div>
+                <div class="value" id="kpiActual">—<span class="unit">%</span></div>
+                <div class="sub">Ponderada por rendimiento</div>
+            </div>
+            <div class="kpi-card required">
+                <div class="label"><i class="fas fa-bullseye"></i> Disponibilidad Requerida</div>
+                <div class="value" id="kpiRequired">—<span class="unit">%</span></div>
+                <div class="sub" id="kpiRequiredSub">Incluye Factor de Seguridad</div>
+            </div>
+            <div class="kpi-card tons-lost">
+                <div class="label"><i class="fas fa-weight-hanging"></i> TM Perdidas</div>
+                <div class="value" id="kpiTons">—<span class="unit">TM</span></div>
+                <div class="sub">Por paros de equipos</div>
+            </div>
+            <div class="kpi-card sacks-lost">
+                <div class="label"><i class="fas fa-box"></i> Sacos Perdidos</div>
+                <div class="value" id="kpiSacks">—<span class="unit">sacos</span></div>
+                <div class="sub">50 kg cada uno</div>
+            </div>
+            <div class="kpi-card gap">
+                <div class="label"><i class="fas fa-chart-line"></i> Brecha</div>
+                <div class="value" id="kpiGap">—<span class="unit">pp</span></div>
+                <div class="sub" id="kpiGapSub">Actual vs Requerida</div>
+            </div>
+        </div>
+
+        <!-- Fila 1: Gauge comparativo + Barras meta vs real -->
+        <div class="chart-row cols-2">
+            <div class="chart-card">
+                <h3><i class="fas fa-tachometer-alt"></i> Disponibilidad: Actual vs Requerida</h3>
+                <div class="subtitle">Aguja verde = actual · Aguja naranja = meta requerida (con FS)</div>
+                <div class="chart-container" id="chartGauge"></div>
+            </div>
+            <div class="chart-card">
+                <h3><i class="fas fa-chart-bar"></i> Meta vs Producción Teórica vs Pérdidas por Área</h3>
+                <div class="subtitle">En toneladas del periodo</div>
+                <div class="chart-container" id="chartAreas"></div>
+            </div>
+        </div>
+
+        <!-- Fila 2: Tendencia 6 meses + Waterfall equipos -->
+        <div class="chart-row cols-2">
+            <div class="chart-card">
+                <h3><i class="fas fa-chart-line"></i> Tendencia 6 meses — Disponibilidad Actual vs Requerida</h3>
+                <div class="subtitle">Línea punteada = requerida con FS · Zona roja = bajo meta</div>
+                <div class="chart-container" id="chartTrend"></div>
+            </div>
+            <div class="chart-card">
+                <h3><i class="fas fa-exclamation-triangle"></i> Top 5 Equipos con mayor impacto en TM perdidas</h3>
+                <div class="subtitle">Equipos que más afectan el cumplimiento de meta</div>
+                <div class="chart-container" id="chartTopEquips"></div>
+            </div>
+        </div>
+
+        <!-- Fila 3: Proyección cumplimiento + Tabla áreas -->
+        <div class="chart-row cols-2">
+            <div class="chart-card">
+                <h3><i class="fas fa-percentage"></i> Proyección fin de mes — Cumplimiento por área</h3>
+                <div class="subtitle">% de meta proyectado al ritmo actual</div>
+                <div class="chart-container" id="chartProjection"></div>
+            </div>
+            <div class="chart-card">
+                <h3><i class="fas fa-table"></i> Detalle por Área</h3>
+                <div class="subtitle">Disponibilidad, rendimiento y pérdidas</div>
+                <div style="max-height:320px;overflow-y:auto;">
+                    <table class="goals-list" id="areaDetailTable">
+                        <thead>
+                            <tr>
+                                <th>Área</th>
+                                <th>Disp. Actual</th>
+                                <th>Disp. Requerida</th>
+                                <th>FS</th>
+                                <th>TM Perdidas</th>
+                                <th>Sacos</th>
+                                <th>Proyección</th>
+                            </tr>
+                        </thead>
+                        <tbody></tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+
+        <!-- Panel diagnóstico IA -->
+        <div class="ai-panel">
+            <h3>
+                <span><i class="fas fa-robot"></i> Diagnóstico Ejecutivo Automático</span>
+                <button class="btn-prod" onclick="loadAiDiagnosis()"><i class="fas fa-magic"></i> Regenerar</button>
+            </h3>
+            <div class="ai-body" id="aiDiagnosisBody">
+                Haz click en "Regenerar" para obtener el diagnóstico ejecutivo basado en el periodo seleccionado.
+            </div>
+            <div class="ai-source" id="aiSource"></div>
+        </div>
+    </div>
+</section>
+
+<!-- Modal captura meta -->
+<div class="modal-backdrop" id="goalModal">
+    <div class="modal-box">
+        <h2><i class="fas fa-bullseye"></i> Capturar / Actualizar Meta de Producción</h2>
+
+        <label>Periodo (YYYY-MM)</label>
+        <input type="month" id="goalPeriod" />
+
+        <label>Área</label>
+        <select id="goalAreaId"></select>
+
+        <label>Rendimiento promedio mensual (TM de harina procesada)</label>
+        <input type="number" id="goalYield" step="0.01" min="0" placeholder="Ej: 2800" />
+
+        <label>Meta mensual (TM de harina procesada)</label>
+        <input type="number" id="goalTarget" step="0.01" min="0" placeholder="Ej: 3000" />
+
+        <label>Horas operativas del mes (opcional — default 720h)</label>
+        <input type="number" id="goalHours" step="1" min="1" placeholder="720" />
+
+        <label>Notas (opcional)</label>
+        <textarea id="goalNotes" placeholder="Comentarios del período..."></textarea>
+
+        <div class="modal-hint">
+            <strong>Tip:</strong> Si ya existe una meta para este período y área, se actualizará automáticamente.
+            Con 2 turnos (día + noche) y operación continua, 720h ≈ 30 días × 24h.
+        </div>
+
+        <h2 style="margin-top:20px;font-size:1rem;"><i class="fas fa-list"></i> Metas existentes</h2>
+        <table class="goals-list" id="goalsList">
+            <thead>
+                <tr><th>Periodo</th><th>Área</th><th>Rend.</th><th>Meta</th><th></th></tr>
+            </thead>
+            <tbody></tbody>
+        </table>
+
+        <div class="modal-actions">
+            <button class="btn-prod" onclick="closeGoalModal()">Cerrar</button>
+            <button class="btn-prod primary" onclick="saveGoal()"><i class="fas fa-save"></i> Guardar</button>
+        </div>
+    </div>
+</div>
+
+<script src="/static/js/sidebar.js?v={{ v }}"></script>
+<script src="/static/js/produccion.js?v={{ v }}"></script>
+</body>
+</html>

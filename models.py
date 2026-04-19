@@ -1491,3 +1491,51 @@ class ShutdownArea(db.Model):
             "area_id": self.area_id,
             "area_name": self.area.name if self.area else None,
         }
+
+
+# ============= PRODUCTION GOALS (Módulo Confiabilidad de Producción) =============
+
+class ProductionGoal(db.Model):
+    """Meta y rendimiento mensual de producción por área.
+
+    Producción entrega dos números por mes/área:
+      - monthly_avg_yield_tons  → TM de harina procesada producidas en promedio
+      - monthly_target_tons     → meta mensual TM
+    Con eso se calculan:
+      - tons_per_hour           = yield / operating_hours_month
+      - tons_lost               = Σ(downtime_hours × tons_per_hour) de OTs con paro
+      - sacks_lost              = (tons_lost × 1000) / 50
+      - required_availability   = (target / tons_per_hour) / operating_hours × 100
+    """
+    __tablename__ = 'production_goals'
+    __table_args__ = (
+        Index('ix_prod_goal_period_area', 'goal_period', 'area_id'),
+    )
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    goal_period: Mapped[str] = mapped_column(String(7), nullable=False)  # 'YYYY-MM'
+    area_id: Mapped[int | None] = mapped_column(ForeignKey('areas.id'), nullable=True)
+    monthly_avg_yield_tons: Mapped[float] = mapped_column(Float, nullable=False)
+    monthly_target_tons: Mapped[float] = mapped_column(Float, nullable=False)
+    operating_hours_month: Mapped[float] = mapped_column(Float, default=720.0)
+    notes: Mapped[str | None] = mapped_column(Text, nullable=True)
+    created_by: Mapped[str | None] = mapped_column(String(120), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+    updated_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+    area = relationship("Area")
+
+    def to_dict(self):
+        return {
+            "id": self.id,
+            "goal_period": self.goal_period,
+            "area_id": self.area_id,
+            "area_name": self.area.name if self.area else None,
+            "monthly_avg_yield_tons": self.monthly_avg_yield_tons,
+            "monthly_target_tons": self.monthly_target_tons,
+            "operating_hours_month": self.operating_hours_month,
+            "notes": self.notes,
+            "created_by": self.created_by,
+            "created_at": self.created_at.isoformat() if self.created_at else None,
+            "updated_at": self.updated_at.isoformat() if self.updated_at else None,
+        }
