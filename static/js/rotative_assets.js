@@ -335,46 +335,148 @@ async function toggleAsset(id) {
     await reloadRotative();
 }
 
+// Estado del historial del rotativo (para filtros y toggle vista)
+let _rotHistoryState = { events: [], bom: [], counts: {}, view: 'timeline', category: 'ALL' };
+
 async function showAssetHistory(id) {
     const asset = rotState.assets.find(a => a.id === id);
     const title = document.getElementById('historyTitle');
-    title.innerHTML = `<i class="fas fa-history" style="color:#5AC8FA;margin-right:8px"></i>Historial — ${asset ? (asset.code || '') + ' ' + (asset.name || '') : 'Activo'}`;
+    title.innerHTML = `<i class="fas fa-history" style="color:#5AC8FA;margin-right:8px"></i>Historial Completo — ${asset ? (asset.code || '') + ' ' + (asset.name || '') : 'Activo'}`;
 
     const container = document.getElementById('historyTimeline');
+    container.innerHTML = '<p style="color:rgba(255,255,255,.35);text-align:center;padding:20px"><i class="fas fa-spinner fa-spin"></i> Cargando historial...</p>';
+
     try {
         const data = await rFetch(`/api/rotative-assets/${id}/full-history`);
-        const events = data.events || [];
-
-        if (!events.length) {
-            container.innerHTML = '<p style="color:rgba(255,255,255,.35);text-align:center;padding:20px">Sin historial registrado.</p>';
-        } else {
-            container.innerHTML = events.map(e => {
-                const dotClass = `tl-dot-${e.category}`;
-                const typeClass = `tl-type-${e.category}`;
-                return `<div class="tl-item">
-                    <div class="tl-dot ${dotClass}"></div>
-                    <div class="tl-body">
-                        <div><span class="tl-type ${typeClass}">${e.category} — ${e.type || ''}</span><span class="tl-date">${e.date || '-'}</span></div>
-                        ${e.location ? `<div class="tl-location"><i class="fas fa-map-marker-alt" style="margin-right:4px"></i>${e.location}</div>` : ''}
-                        ${e.description ? `<div class="tl-comment">${e.description}</div>` : ''}
-                        ${e.status ? `<div style="margin-top:2px"><span style="font-size:.72rem;padding:1px 6px;border-radius:4px;background:rgba(255,255,255,.08);color:rgba(255,255,255,.50)">${e.status}</span></div>` : ''}
-                    </div>
-                </div>`;
-            }).join('');
-        }
-
-        // Show BOM summary if available
-        if (data.bom && data.bom.length) {
-            container.innerHTML += `<div style="border-top:1px solid rgba(255,255,255,.08);padding-top:12px;margin-top:12px">
-                <h4 style="color:rgba(255,255,255,.60);font-size:.85rem;margin:0 0 8px"><i class="fas fa-boxes" style="margin-right:5px"></i>Repuestos asociados (${data.bom.length})</h4>
-                ${data.bom.map(b => `<div style="font-size:.82rem;color:rgba(255,255,255,.65);padding:3px 0">${b.item_code || '-'} ${b.item_name || '-'} <span style="color:rgba(255,255,255,.35)">(x${b.quantity} ${b.category})</span> <span style="color:${(b.item_stock||0)>0?'#30D158':'#FF453A'};font-size:.75rem">Stock: ${b.item_stock||0}</span></div>`).join('')}
-            </div>`;
-        }
+        _rotHistoryState.events = data.events || [];
+        _rotHistoryState.bom = data.bom || [];
+        _rotHistoryState.counts = data.counts || {};
+        _rotHistoryState.view = 'timeline';
+        _rotHistoryState.category = 'ALL';
+        renderRotHistoryControls();
+        renderRotHistory();
     } catch (e) {
         container.innerHTML = `<p style="color:#FF6B61;text-align:center;padding:20px">Error: ${e.message}</p>`;
     }
     document.getElementById('historyModal').showModal();
 }
+
+function renderRotHistoryControls() {
+    const container = document.getElementById('historyTimeline');
+    const c = _rotHistoryState.counts;
+    const total = _rotHistoryState.events.length;
+    const catChip = (key, label, color) => {
+        const count = (key === 'ALL') ? total : (c[key.toLowerCase()] || 0);
+        const active = _rotHistoryState.category === key;
+        return `<button onclick="setRotHistoryCategory('${key}')" style="background:${active ? color : 'rgba(255,255,255,.06)'};color:${active ? '#fff' : 'rgba(255,255,255,.75)'};border:1px solid ${active ? color : 'rgba(255,255,255,.12)'};padding:4px 10px;border-radius:16px;font-size:.78rem;cursor:pointer;margin-right:6px;margin-bottom:6px;">${label} <span style="background:rgba(0,0,0,.25);padding:0 6px;border-radius:8px;margin-left:4px;font-weight:700;">${count}</span></button>`;
+    };
+
+    const controlsHTML = `<div id="rotHistoryControls" style="padding:10px 0 12px 0;border-bottom:1px solid rgba(255,255,255,.08);margin-bottom:12px;">
+        <div style="display:flex;flex-wrap:wrap;gap:4px;align-items:center;">
+            ${catChip('ALL', 'Todo', '#5AC8FA')}
+            ${catChip('MOVIMIENTO', 'Movimientos', '#BF5AF2')}
+            ${catChip('OT', 'OTs', '#0A84FF')}
+            ${catChip('AVISO', 'Avisos', '#FF9F0A')}
+            ${catChip('LUBRICACION', 'Lubricación', '#FFD60A')}
+            ${catChip('INSPECCION', 'Inspección', '#30D158')}
+            ${catChip('MONITOREO', 'Monitoreo', '#FF453A')}
+        </div>
+        <div style="margin-top:8px;display:flex;gap:6px;align-items:center;">
+            <span style="font-size:.75rem;color:rgba(255,255,255,.45);margin-right:4px;">Vista:</span>
+            <button onclick="setRotHistoryView('timeline')" style="background:${_rotHistoryState.view === 'timeline' ? '#5AC8FA' : 'rgba(255,255,255,.06)'};color:${_rotHistoryState.view === 'timeline' ? '#000' : 'rgba(255,255,255,.75)'};border:1px solid rgba(255,255,255,.12);padding:4px 10px;border-radius:6px;font-size:.78rem;cursor:pointer;font-weight:600;"><i class="fas fa-stream"></i> Línea de tiempo</button>
+            <button onclick="setRotHistoryView('grouped')" style="background:${_rotHistoryState.view === 'grouped' ? '#5AC8FA' : 'rgba(255,255,255,.06)'};color:${_rotHistoryState.view === 'grouped' ? '#000' : 'rgba(255,255,255,.75)'};border:1px solid rgba(255,255,255,.12);padding:4px 10px;border-radius:6px;font-size:.78rem;cursor:pointer;font-weight:600;"><i class="fas fa-layer-group"></i> Agrupado por categoría</button>
+        </div>
+    </div>`;
+    container.innerHTML = controlsHTML + '<div id="rotHistoryBody"></div>';
+}
+
+function setRotHistoryCategory(cat) {
+    _rotHistoryState.category = cat;
+    renderRotHistoryControls();
+    renderRotHistory();
+}
+
+function setRotHistoryView(view) {
+    _rotHistoryState.view = view;
+    renderRotHistoryControls();
+    renderRotHistory();
+}
+
+function renderRotHistory() {
+    const body = document.getElementById('rotHistoryBody');
+    if (!body) return;
+    let events = _rotHistoryState.events;
+    if (_rotHistoryState.category !== 'ALL') {
+        events = events.filter(e => e.category === _rotHistoryState.category);
+    }
+
+    if (!events.length) {
+        body.innerHTML = '<p style="color:rgba(255,255,255,.35);text-align:center;padding:20px">Sin eventos en esta categoría.</p>';
+        renderRotHistoryBom();
+        return;
+    }
+
+    if (_rotHistoryState.view === 'timeline') {
+        body.innerHTML = events.map(e => _rotEventTimelineHTML(e)).join('');
+    } else {
+        // Agrupado por categoría
+        const groups = {};
+        events.forEach(e => { (groups[e.category] = groups[e.category] || []).push(e); });
+        const catOrder = ['OT', 'AVISO', 'MOVIMIENTO', 'LUBRICACION', 'INSPECCION', 'MONITOREO'];
+        const catColors = { OT: '#0A84FF', AVISO: '#FF9F0A', MOVIMIENTO: '#BF5AF2', LUBRICACION: '#FFD60A', INSPECCION: '#30D158', MONITOREO: '#FF453A' };
+        body.innerHTML = catOrder.filter(c => groups[c]).map(cat => `
+            <div style="margin-bottom:16px;">
+                <h4 style="margin:0 0 8px 0;font-size:.9rem;color:${catColors[cat]};padding-bottom:4px;border-bottom:1px solid ${catColors[cat]}44;"><i class="fas fa-circle" style="font-size:.6rem;vertical-align:middle;margin-right:6px;"></i>${cat} <span style="color:rgba(255,255,255,.45);font-weight:400;font-size:.8rem;">(${groups[cat].length})</span></h4>
+                ${groups[cat].map(e => _rotEventCardHTML(e)).join('')}
+            </div>`).join('');
+    }
+    renderRotHistoryBom();
+}
+
+function _rotEventTimelineHTML(e) {
+    const dotClass = `tl-dot-${e.category}`;
+    const typeClass = `tl-type-${e.category}`;
+    return `<div class="tl-item">
+        <div class="tl-dot ${dotClass}"></div>
+        <div class="tl-body">
+            <div><span class="tl-type ${typeClass}">${e.category}${e.code ? ' · ' + e.code : ''}${e.type ? ' — ' + e.type : ''}</span><span class="tl-date">${e.date || '-'}</span></div>
+            ${e.location ? `<div class="tl-location"><i class="fas fa-map-marker-alt" style="margin-right:4px"></i>${e.location}</div>` : ''}
+            ${e.description ? `<div class="tl-comment">${e.description}</div>` : ''}
+            ${e.failure_mode ? `<div style="margin-top:3px;font-size:.75rem;color:#FF9F0A;"><i class="fas fa-exclamation-circle"></i> ${e.failure_mode}</div>` : ''}
+            ${e.status ? `<div style="margin-top:2px"><span style="font-size:.72rem;padding:1px 6px;border-radius:4px;background:rgba(255,255,255,.08);color:rgba(255,255,255,.70)">${e.status}</span>${e.duration_h ? ` <span style="font-size:.72rem;color:rgba(255,255,255,.5);margin-left:6px;"><i class="far fa-clock"></i> ${e.duration_h}h</span>` : ''}</div>` : ''}
+        </div>
+    </div>`;
+}
+
+function _rotEventCardHTML(e) {
+    return `<div style="padding:8px 12px;margin-bottom:6px;background:rgba(255,255,255,.03);border-left:3px solid rgba(255,255,255,.15);border-radius:4px;font-size:.85rem;">
+        <div style="display:flex;justify-content:space-between;gap:12px;color:rgba(255,255,255,.85);">
+            <div><b>${e.code || e.type || '-'}</b> ${e.type && e.code ? `<span style="color:rgba(255,255,255,.5);">· ${e.type}</span>` : ''}</div>
+            <div style="color:rgba(255,255,255,.45);font-size:.78rem;">${e.date || '-'}</div>
+        </div>
+        ${e.description ? `<div style="color:rgba(255,255,255,.65);margin-top:3px;font-size:.82rem;">${e.description}</div>` : ''}
+        <div style="margin-top:4px;display:flex;gap:8px;font-size:.72rem;color:rgba(255,255,255,.5);flex-wrap:wrap;">
+            ${e.status ? `<span>Estado: <b style="color:rgba(255,255,255,.75);">${e.status}</b></span>` : ''}
+            ${e.failure_mode ? `<span>Falla: <b style="color:#FF9F0A;">${e.failure_mode}</b></span>` : ''}
+            ${e.duration_h ? `<span><i class="far fa-clock"></i> ${e.duration_h}h</span>` : ''}
+            ${e.location ? `<span><i class="fas fa-map-marker-alt"></i> ${e.location}</span>` : ''}
+        </div>
+    </div>`;
+}
+
+function renderRotHistoryBom() {
+    const body = document.getElementById('rotHistoryBody');
+    if (!body || !_rotHistoryState.bom.length) return;
+    // Solo mostrar BOM al ver "Todo" para no ensuciar filtros
+    if (_rotHistoryState.category !== 'ALL') return;
+    body.insertAdjacentHTML('beforeend', `<div style="border-top:1px solid rgba(255,255,255,.08);padding-top:12px;margin-top:16px">
+        <h4 style="color:rgba(255,255,255,.60);font-size:.85rem;margin:0 0 8px"><i class="fas fa-boxes" style="margin-right:5px"></i>Repuestos asociados (${_rotHistoryState.bom.length})</h4>
+        ${_rotHistoryState.bom.map(b => `<div style="font-size:.82rem;color:rgba(255,255,255,.65);padding:3px 0">${b.item_code || '-'} ${b.item_name || '-'} <span style="color:rgba(255,255,255,.35)">(x${b.quantity} ${b.category})</span> <span style="color:${(b.item_stock||0)>0?'#30D158':'#FF453A'};font-size:.75rem">Stock: ${b.item_stock||0}</span></div>`).join('')}
+    </div>`);
+}
+
+window.setRotHistoryCategory = setRotHistoryCategory;
+window.setRotHistoryView = setRotHistoryView;
 
 // ── BOM (Bill of Materials) ──────────────────────────────────────────────────
 

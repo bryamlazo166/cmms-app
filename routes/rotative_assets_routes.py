@@ -388,10 +388,18 @@ def register_rotative_assets_routes(
 
     @app.route('/api/rotative-assets/<int:asset_id>/full-history', methods=['GET'])
     def get_asset_full_history(asset_id):
+        """Historial consolidado del activo rotativo incluyendo:
+        - Movimientos (instalación, retiro, actualización)
+        - OTs vinculadas (rotative_asset_id)
+        - Avisos vinculados
+        - Lubricación / Inspecciones / Monitoreo del equipo donde está instalado
+        Estructura idéntica a /api/equipment/<id>/history para reuso de UI."""
         try:
+            from models import MaintenanceNotice, InspectionRoute, InspectionExecution, MonitoringPoint, MonitoringReading
             asset = RotativeAsset.query.get_or_404(asset_id)
             events = []
 
+            # 1. Movimientos del propio rotativo
             for h in (asset.history or []):
                 loc = ' / '.join(filter(None, [
                     h.area.name if h.area else None,
@@ -399,34 +407,133 @@ def register_rotative_assets_routes(
                     h.equipment.name if h.equipment else None,
                 ]))
                 events.append({
-                    'date': h.event_date, 'category': 'MOVIMIENTO',
-                    'type': h.event_type.replace('_', ' '),
-                    'description': h.comments, 'location': loc,
+                    'date': h.event_date or '',
+                    'category': 'MOVIMIENTO',
+                    'code': None,
+                    'type': (h.event_type or '').replace('_', ' '),
+                    'status': None,
+                    'description': h.comments or '-',
+                    'failure_mode': None,
+                    'duration_h': None,
+                    'source_type': None,
+                    'location': loc,
                 })
 
+            # 2. OTs vinculadas directamente al rotativo
             if WorkOrder:
-                ots = WorkOrder.query.filter_by(rotative_asset_id=asset_id).all()
+                ots = WorkOrder.query.filter_by(rotative_asset_id=asset_id).order_by(WorkOrder.id.desc()).all()
                 for ot in ots:
                     events.append({
-                        'date': ot.real_start_date or ot.scheduled_date,
-                        'category': 'OT', 'type': ot.maintenance_type,
-                        'description': f"{ot.code}: {ot.description or ot.failure_mode or ''}",
-                        'location': None, 'status': ot.status,
+                        'date': ot.real_start_date or ot.scheduled_date or '',
+                        'category': 'OT',
+                        'code': ot.code,
+                        'type': ot.maintenance_type,
+                        'status': ot.status,
+                        'description': ot.description,
+                        'failure_mode': ot.failure_mode,
+                        'duration_h': ot.real_duration,
+                        'source_type': getattr(ot, 'source_type', None),
                     })
 
-            if asset.equipment_id and LubricationExecution and LubricationPoint:
-                lub_points = LubricationPoint.query.filter_by(equipment_id=asset.equipment_id).all()
-                lub_ids = [p.id for p in lub_points]
-                if lub_ids:
-                    lub_map = {p.id: p for p in lub_points}
-                    for e in LubricationExecution.query.filter(LubricationExecution.point_id.in_(lub_ids)).all():
-                        pt = lub_map.get(e.point_id)
-                        events.append({
-                            'date': e.execution_date, 'category': 'LUBRICACION',
-                            'type': e.action_type,
-                            'description': f"{pt.name if pt else ''}: {pt.lubricant_name if pt else ''} {e.quantity_used or ''} {e.quantity_unit or ''}",
-                            'location': None,
-                        })
+            # 3. Avisos vinculados al rotativo
+            try:
+                notices = MaintenanceNotice.query.filter(
+                    (MaintenanceNotice.rotative_asset_id == asset_id) |
+                    (MaintenanceNotice.rotable_asset_id == asset_id)
+                ).order_by(MaintenanceNotice.id.desc()).all()
+            except Exception:
+                notices = MaintenanceNotice.query.filter_by(rotative_asset_id=asset_id).all()
+            for n in notices:
+                events.append({
+                    'date': n.request_date or '',
+                    'category': 'AVISO',
+                    'code': n.code,
+                    'type': n.maintenance_type,
+                    'status': n.status,
+                    'description': n.description,
+                    'failure_mode': getattr(n, 'failure_mode', None),
+                    'duration_h': None,
+                    'source_type': getattr(n, 'source_type', None),
+                })
+
+            # 4-6. Eventos del equipo donde está actualmente instalado (solo desde install_date si existe)
+            if asset.equipment_id:
+                install_date = (asset.install_date or '')[:10]
+
+                def _after_install(d):
+                    if not d or not install_date:
+                        return True
+                    return (d or '')[:10] >= install_date
+
+                # 4. Lubricación
+                if LubricationExecution and LubricationPoint:
+                    lub_points = LubricationPoint.query.filter_by(equipment_id=asset.equipment_id).all()
+                    lub_ids = [p.id for p in lub_points]
+                    if lub_ids:
+                        lub_map = {p.id: p for p in lub_points}
+                        for e in LubricationExecution.query.filter(LubricationExecution.point_id.in_(lub_ids)).order_by(LubricationExecution.id.desc()).all():
+                            if not _after_install(e.execution_date):
+                                continue
+                            pt = lub_map.get(e.point_id)
+                            events.append({
+                                'date': e.execution_date or '',
+                                'category': 'LUBRICACION',
+                                'code': pt.code if pt else None,
+                                'type': e.action_type,
+                                'status': (('Fuga ' if e.leak_detected else '') + ('Anomalia' if e.anomaly_detected else '')).strip() or 'Normal',
+                                'description': f"{pt.name if pt else ''}: {pt.lubricant_name if pt else ''} {e.quantity_used or ''} {e.quantity_unit or ''}".strip(),
+                                'failure_mode': None,
+                                'duration_h': None,
+                                'source_type': None,
+                            })
+
+                # 5. Inspecciones
+                if InspectionRoute and InspectionExecution:
+                    insp_routes = InspectionRoute.query.filter_by(equipment_id=asset.equipment_id).all()
+                    route_ids = [r.id for r in insp_routes]
+                    if route_ids:
+                        route_map = {r.id: r for r in insp_routes}
+                        for ex in InspectionExecution.query.filter(
+                            InspectionExecution.route_id.in_(route_ids)
+                        ).order_by(InspectionExecution.id.desc()).all():
+                            if not _after_install(ex.execution_date):
+                                continue
+                            rt = route_map.get(ex.route_id)
+                            events.append({
+                                'date': ex.execution_date or '',
+                                'category': 'INSPECCION',
+                                'code': rt.code if rt else None,
+                                'type': ex.overall_result,
+                                'status': f"{ex.findings_count} hallazgo(s)" if ex.findings_count else 'OK',
+                                'description': rt.name if rt else '',
+                                'failure_mode': None,
+                                'duration_h': None,
+                                'source_type': None,
+                            })
+
+                # 6. Monitoreo
+                if MonitoringPoint and MonitoringReading:
+                    mon_points = MonitoringPoint.query.filter_by(equipment_id=asset.equipment_id).all()
+                    mon_ids = [p.id for p in mon_points]
+                    if mon_ids:
+                        mon_map = {p.id: p for p in mon_points}
+                        for r in MonitoringReading.query.filter(
+                            MonitoringReading.point_id.in_(mon_ids)
+                        ).order_by(MonitoringReading.id.desc()).limit(100).all():
+                            if not _after_install(r.reading_date):
+                                continue
+                            pt = mon_map.get(r.point_id)
+                            events.append({
+                                'date': r.reading_date or '',
+                                'category': 'MONITOREO',
+                                'code': pt.code if pt else None,
+                                'type': pt.measurement_type if pt else None,
+                                'status': f"{r.value} {pt.unit if pt else ''}".strip(),
+                                'description': pt.name if pt else '',
+                                'failure_mode': None,
+                                'duration_h': None,
+                                'source_type': None,
+                            })
 
             events.sort(key=lambda x: x.get('date') or '', reverse=True)
 
@@ -434,6 +541,19 @@ def register_rotative_assets_routes(
             if RotativeAssetBOM:
                 bom_items = [b.to_dict() for b in RotativeAssetBOM.query.filter_by(asset_id=asset_id).all()]
 
-            return jsonify({'asset': asset.to_dict(), 'events': events[:100], 'bom': bom_items})
+            return jsonify({
+                'asset': asset.to_dict(),
+                'events': events[:200],
+                'bom': bom_items,
+                'counts': {
+                    'movimientos': len([e for e in events if e['category'] == 'MOVIMIENTO']),
+                    'ots':          len([e for e in events if e['category'] == 'OT']),
+                    'avisos':       len([e for e in events if e['category'] == 'AVISO']),
+                    'lubricacion':  len([e for e in events if e['category'] == 'LUBRICACION']),
+                    'inspeccion':   len([e for e in events if e['category'] == 'INSPECCION']),
+                    'monitoreo':    len([e for e in events if e['category'] == 'MONITOREO']),
+                },
+            })
         except Exception as exc:
+            import traceback; traceback.print_exc()
             return jsonify({"error": str(exc)}), 500
