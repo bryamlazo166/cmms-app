@@ -9,9 +9,27 @@ Costos: text-embedding-3-small ~ $0.02 por millon de tokens (muy barato).
 Un OT cerrado tipico = ~80 tokens = $0.0000016 cada uno.
 """
 import os
+import re
 import json
 import logging
 import requests
+
+_URL_RE = re.compile(r'https?://[^\s)\]}<>"\'`,]+', re.IGNORECASE)
+
+
+def extract_urls(*texts):
+    """Extrae URLs de uno o varios textos. Devuelve lista sin duplicados, orden original."""
+    seen = set()
+    out = []
+    for t in texts:
+        if not t:
+            continue
+        for m in _URL_RE.finditer(t):
+            url = m.group(0).rstrip('.,;:)')
+            if url not in seen:
+                seen.add(url)
+                out.append(url)
+    return out
 
 logger = logging.getLogger(__name__)
 
@@ -181,6 +199,42 @@ def build_ot_text(wo, equipment=None, area=None, line=None, system=None, compone
         parts.append(f"Causo parada: {wo['downtime_hours']} h\n")
     if notice:
         parts.append(f"Aviso origen: {notice.code or notice.id} — {notice.description or ''}\n")
+    # URLs encontradas en descripcion o bitacora (informes, fotos, PDFs)
+    urls = extract_urls(wo.get('description'), wo.get('execution_comments'))
+    if urls:
+        parts.append("Documentos reportados:\n")
+        for u in urls:
+            parts.append(f"  - {u}\n")
+    return ''.join(parts).strip()
+
+
+def build_document_link_text(doc, parent_name=None, parent_tag=None, parent_type=None,
+                              category=None, brand=None, model=None,
+                              area=None, line=None):
+    """Construye texto descriptivo para indexar un DocumentLink.
+
+    doc: dict con campos title, url, doc_type.
+    parent_*: contexto de la entidad padre (activo rotativo, equipo o componente).
+    """
+    parts = []
+    tipo = (doc.get('doc_type') or 'documento').upper()
+    parts.append(f"{tipo}: {doc.get('title', '')}\n")
+    if parent_tag or parent_name:
+        label = f"[{parent_tag}] {parent_name}" if parent_tag and parent_name else (parent_tag or parent_name or '')
+        pt = {'rotative_asset': 'Activo rotativo', 'equipment': 'Equipo', 'component': 'Componente'}.get(
+            parent_type, parent_type or 'Entidad')
+        parts.append(f"Pertenece a: {label} ({pt})\n")
+    if area:
+        parts.append(f"Area: {area}\n")
+    if line:
+        parts.append(f"Linea: {line}\n")
+    if category:
+        parts.append(f"Categoria: {category}\n")
+    if brand or model:
+        bm = ' '.join(filter(None, [brand, model]))
+        parts.append(f"Marca/Modelo: {bm}\n")
+    if doc.get('url'):
+        parts.append(f"URL: {doc['url']}\n")
     return ''.join(parts).strip()
 
 

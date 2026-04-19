@@ -698,6 +698,12 @@ def register_core_routes(app, db, logger, app_build_tag,
             )
             db.session.add(doc)
             db.session.commit()
+            # Indexar para busqueda semantica (bot de Telegram)
+            try:
+                from bot.telegram_bot import _index_entity_async
+                _index_entity_async(app, 'document_link', doc.id)
+            except Exception as _ei:
+                logger.warning(f"RAG index doc_link {doc.id} fallo: {_ei}")
             return jsonify(doc.to_dict()), 201
 
         docs = DocumentLink.query.filter_by(entity_type=entity_type, entity_id=entity_id).order_by(DocumentLink.id.desc()).all()
@@ -709,6 +715,13 @@ def register_core_routes(app, db, logger, app_build_tag,
         doc = DocumentLink.query.get_or_404(doc_id)
         db.session.delete(doc)
         db.session.commit()
+        # Borrar del indice RAG
+        try:
+            from utils.embeddings import delete_embedding
+            delete_embedding(db.session, 'document_link', doc_id)
+            db.session.commit()
+        except Exception as _ed:
+            logger.warning(f"RAG delete doc_link {doc_id} fallo: {_ed}")
         return jsonify({"ok": True})
 
     # ── Failure Recurrence Dashboard ────────────────────────────────────

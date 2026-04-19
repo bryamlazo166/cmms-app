@@ -2101,22 +2101,47 @@ def _build_rag_context(app, query_text):
         from utils.embeddings import semantic_search
         with app.app_context():
             from database import db as _db
-            results = semantic_search(_db.session, query_text, top_k=4)
+            # top_k=6 para dar espacio a documentos + casos historicos
+            results = semantic_search(_db.session, query_text, top_k=6)
         if not results:
             return ''
         # Filtrar resultados con baja similitud (ruido)
         results = [r for r in results if r.get('similarity', 0) >= 0.35]
         if not results:
             return ''
-        lines = ["=== CASOS HISTORICOS SIMILARES (encontrados por busqueda semantica) ==="]
-        lines.append("INSTRUCCION: si el usuario pregunta '¿como se arreglo la ultima vez?' o pide")
-        lines.append("comparar con casos pasados, USA estos como referencia y citalos por codigo.")
-        lines.append("")
-        for i, r in enumerate(results, 1):
-            sim_pct = int(r['similarity'] * 100)
-            lines.append(f"#{i} [{r['entity_type']}] similitud {sim_pct}%:")
-            lines.append(r['text_chunk'])
+        # Separar documentos (manuales/planos/informes) de casos historicos (OTs/avisos)
+        doc_results = [r for r in results if r['entity_type'] == 'document_link']
+        case_results = [r for r in results if r['entity_type'] != 'document_link']
+        lines = []
+        if doc_results:
+            lines.append("=== DOCUMENTOS / MANUALES / PLANOS / INFORMES RELACIONADOS ===")
+            lines.append("INSTRUCCION: si el usuario pide un manual, plano, ficha o informe, devuelve")
+            lines.append("el(los) link(s) de abajo en formato Markdown [titulo](url) para que sean")
+            lines.append("clickeables en Telegram. Usa exactamente la URL tal como aparece.")
             lines.append("")
+            for r in doc_results:
+                md = r.get('metadata') or {}
+                title = md.get('title') or '(sin titulo)'
+                doc_type = (md.get('doc_type') or 'doc').upper()
+                url = md.get('url') or ''
+                parent = md.get('parent_tag') or md.get('parent_name') or '-'
+                sim_pct = int(r['similarity'] * 100)
+                lines.append(f"- [{doc_type}] {title} (de {parent}, similitud {sim_pct}%)")
+                if url:
+                    lines.append(f"  URL: {url}")
+            lines.append("")
+        if case_results:
+            lines.append("=== CASOS HISTORICOS SIMILARES (encontrados por busqueda semantica) ===")
+            lines.append("INSTRUCCION: si el usuario pregunta '¿como se arreglo la ultima vez?' o pide")
+            lines.append("comparar con casos pasados, USA estos como referencia y citalos por codigo.")
+            lines.append("Si el texto del caso incluye 'Documentos reportados:' con URLs, preservalas")
+            lines.append("en la respuesta como enlaces clickeables [informe](url).")
+            lines.append("")
+            for i, r in enumerate(case_results, 1):
+                sim_pct = int(r['similarity'] * 100)
+                lines.append(f"#{i} [{r['entity_type']}] similitud {sim_pct}%:")
+                lines.append(r['text_chunk'])
+                lines.append("")
         return '\n'.join(lines) + '\n\n'
     except Exception as e:
         logger.warning(f"_build_rag_context error: {e}")
@@ -2170,6 +2195,54 @@ def _index_entity_async(app, entity_type, entity_id):
                         'criticality': n.criticality,
                     }
                     upsert_embedding(_db.session, 'notice', n.id, text, metadata)
+                    _db.session.commit()
+                elif entity_type == 'document_link':
+                    from utils.embeddings import build_document_link_text
+                    from models import DocumentLink, RotativeAsset
+                    doc = DocumentLink.query.get(entity_id)
+                    if not doc:
+                        return
+                    parent_name = None; parent_tag = None
+                    category = None; brand = None; model = None
+                    area_name = None; line_name = None
+                    if doc.entity_type == 'rotative_asset':
+                        ra = RotativeAsset.query.get(doc.entity_id)
+                        if ra:
+                            parent_name = ra.name
+                            parent_tag = ra.code
+                            category = ra.category
+                            brand = ra.brand
+                            model = ra.model
+                            area_name = ra.area.name if ra.area else None
+                            line_name = ra.line.name if ra.line else None
+                    elif doc.entity_type == 'equipment':
+                        eq = Equipment.query.get(doc.entity_id)
+                        if eq:
+                            parent_name = eq.name
+                            parent_tag = eq.tag
+                            area_name = eq.area.name if getattr(eq, 'area', None) else None
+                            line_name = eq.line.name if getattr(eq, 'line', None) else None
+                    elif doc.entity_type == 'component':
+                        co = Component.query.get(doc.entity_id)
+                        if co:
+                            parent_name = co.name
+                    text = build_document_link_text(
+                        doc.to_dict(),
+                        parent_name=parent_name, parent_tag=parent_tag,
+                        parent_type=doc.entity_type,
+                        category=category, brand=brand, model=model,
+                        area=area_name, line=line_name,
+                    )
+                    metadata = {
+                        'url': doc.url,
+                        'title': doc.title,
+                        'doc_type': doc.doc_type,
+                        'parent_type': doc.entity_type,
+                        'parent_id': doc.entity_id,
+                        'parent_tag': parent_tag,
+                        'parent_name': parent_name,
+                    }
+                    upsert_embedding(_db.session, 'document_link', doc.id, text, metadata)
                     _db.session.commit()
         except Exception as e:
             logger.warning(f"_index_entity_async error ({entity_type}/{entity_id}): {e}")
