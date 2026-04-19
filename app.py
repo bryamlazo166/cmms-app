@@ -727,6 +727,7 @@ _ENSURE_COLUMNS = [
     ("technicians", "user_id", "INTEGER"),
     ("thickness_inspections", "pdf_url", "VARCHAR(500)"),
     ("work_orders", "shutdown_id", "INTEGER"),
+    ("shutdowns", "code", "VARCHAR(30)"),
 ]
 
 
@@ -758,6 +759,35 @@ def _init_schema_on_startup():
             except Exception:
                 pass
             db.session.commit()
+
+            # Backfill de códigos de parada (PP-YYYY-MM-NNN) para registros legacy
+            try:
+                from models import Shutdown
+                legacy_shutdowns = Shutdown.query.filter(
+                    (Shutdown.code.is_(None)) | (Shutdown.code == '')
+                ).order_by(Shutdown.shutdown_date, Shutdown.id).all()
+                counters = {}
+                for sh in legacy_shutdowns:
+                    ym = (sh.shutdown_date or '')[:7] or datetime.now().strftime('%Y-%m')
+                    prefix = f"PP-{ym}-"
+                    if ym not in counters:
+                        existing = Shutdown.query.filter(Shutdown.code.like(f"{prefix}%")).all()
+                        max_n = 0
+                        for s in existing:
+                            try:
+                                n = int((s.code or '').rsplit('-', 1)[-1])
+                                max_n = max(max_n, n)
+                            except Exception:
+                                pass
+                        counters[ym] = max_n
+                    counters[ym] += 1
+                    sh.code = f"{prefix}{counters[ym]:03d}"
+                db.session.commit()
+                if legacy_shutdowns:
+                    logger.info(f"Backfilled codes for {len(legacy_shutdowns)} shutdowns.")
+            except Exception as bf_err:
+                logger.warning(f"Shutdown code backfill skipped: {bf_err}")
+                db.session.rollback()
         logger.info("Database schema and indexes checked/created on startup.")
     except Exception as e:
         logger.error(f"DB startup schema check error: {e}")

@@ -851,10 +851,12 @@ def register_work_orders_routes(
             if sh_id and sh_id in shutdown_map:
                 sh = shutdown_map[sh_id]
                 data['shutdown_id'] = sh.id
+                data['shutdown_code'] = sh.code
                 data['shutdown_name'] = sh.name
                 data['shutdown_date'] = sh.shutdown_date
                 data['shutdown_status'] = sh.status
             else:
+                data['shutdown_code'] = None
                 data['shutdown_name'] = None
 
             reqs_for_ot = purchase_by_ot.get(wo.id, [])

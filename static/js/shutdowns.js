@@ -47,10 +47,13 @@ function renderList() {
     }
     container.innerHTML = _allShutdowns.map(s => {
         const areas = (s.areas || []).map(a => `<span class="area-badge">${a.area_name || '?'}</span>`).join('');
+        const codeBadge = s.code
+            ? `<span style="background:rgba(10,132,255,.18);color:#5ac8fa;padding:2px 10px;border-radius:10px;font-size:.72rem;font-weight:700;letter-spacing:.5px;margin-right:8px;">${s.code}</span>`
+            : '';
         return `
         <div class="shutdown-card" onclick="openDetail(${s.id})">
             <div style="display:flex;justify-content:space-between;align-items:center;">
-                <div class="title">${s.name || 'Sin nombre'}</div>
+                <div class="title">${codeBadge}${s.name || 'Sin nombre'}</div>
                 <span class="pill ${s.status}">${s.status}</span>
             </div>
             <div class="meta">
@@ -89,20 +92,23 @@ function backToList() {
 
 function renderDetail() {
     const s = _activeShutdown;
+    const codeBadge = s.code
+        ? `<span style="background:rgba(10,132,255,.18);color:#5ac8fa;padding:3px 12px;border-radius:10px;font-size:.78rem;font-weight:700;letter-spacing:.5px;margin-right:10px;vertical-align:middle;">${s.code}</span>`
+        : '';
 
     // Info general
     document.getElementById('detailInfo').innerHTML = `
         <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:10px;">
             <div>
-                <h3 style="margin:0;color:#FF9F0A;">${s.name}</h3>
-                <div style="color:#9ab0cb;font-size:.88rem;margin-top:4px;">
+                <h3 style="margin:0;color:#FF9F0A;">${codeBadge}${s.name}</h3>
+                <div style="color:#9ab0cb;font-size:.88rem;margin-top:6px;">
                     <i class="fas fa-calendar"></i> ${s.shutdown_date} | ${s.start_time} — ${s.end_time}
                     ${s.overtime ? ' <span style="color:#FF9F0A;">(+Horas Extra)</span>' : ''}
                     | <span class="pill ${s.status}">${s.status}</span>
                 </div>
                 <div style="margin-top:6px;">${(s.areas || []).map(a => `<span class="area-badge">${a.area_name}</span>`).join('')}</div>
             </div>
-            <div style="display:flex;gap:16px;text-align:center;">
+            <div style="display:flex;gap:16px;text-align:center;flex-wrap:wrap;">
                 <div><div style="font-size:1.8rem;font-weight:700;color:#5ac8fa;">${s.ot_count || 0}</div><div style="font-size:.75rem;color:#9ab0cb;">OTs Total</div></div>
                 <div><div style="font-size:1.8rem;font-weight:700;color:#30D158;">${s.ot_closed || 0}</div><div style="font-size:.75rem;color:#9ab0cb;">Cerradas</div></div>
                 <div><div style="font-size:1.8rem;font-weight:700;color:#FF9F0A;">${s.total_hours || 0}h</div><div style="font-size:.75rem;color:#9ab0cb;">Horas Est.</div></div>
@@ -120,7 +126,22 @@ function renderDetail() {
         prodReq.style.display = 'none';
     }
 
-    // OTs por área
+    // Alerta de faltantes de repuestos
+    if (s.materials_shortage && s.materials_shortage > 0) {
+        const alertBanner = `<div class="panel" style="background:linear-gradient(90deg,#3d1414,#240c0c);border:1px solid #FF453A;color:#ffb8b0;">
+            <i class="fas fa-exclamation-triangle" style="color:#FF453A;"></i>
+            <b>Atención:</b> ${s.materials_shortage} repuesto(s) requerido(s) tienen stock insuficiente. Revise "Repuestos Necesarios" abajo.
+        </div>`;
+        const info = document.getElementById('detailInfo');
+        if (!document.getElementById('shortageBanner')) {
+            info.insertAdjacentHTML('afterend', `<div id="shortageBanner">${alertBanner}</div>`);
+        }
+    } else {
+        const existing = document.getElementById('shortageBanner');
+        if (existing) existing.remove();
+    }
+
+    // OTs por área — con columnas Área / Línea / Equipo y orden jerárquico
     const container = document.getElementById('detailOTsByArea');
     const byArea = s.by_area || {};
     if (!Object.keys(byArea).length) {
@@ -128,16 +149,25 @@ function renderDetail() {
     } else {
         container.innerHTML = Object.entries(byArea).map(([area, ots]) => `
             <div class="panel">
-                <h3><i class="fas fa-industry"></i> ${area} (${ots.length} actividades)</h3>
-                <div class="ot-row head" style="grid-template-columns: 1fr 1fr 2fr 1fr 0.6fr 0.8fr 0.6fr;">
-                    <div>OT</div><div>Equipo</div><div>Actividad</div><div>Técnico</div><div>Hrs</div><div>Estado</div><div></div>
+                <h3><i class="fas fa-industry"></i> ${area} <span style="color:#9ab0cb;font-weight:400;font-size:.85rem;">(${ots.length} actividades)</span></h3>
+                <div class="ot-row head" style="grid-template-columns: 0.9fr 1fr 1.2fr 2.2fr 0.8fr 0.6fr 0.8fr 0.5fr;">
+                    <div>OT</div><div>Línea</div><div>Equipo</div><div>Actividad</div><div>Tipo</div><div>Hrs</div><div>Estado</div><div></div>
                 </div>
-                ${ots.map(ot => `
-                    <div class="ot-row" style="grid-template-columns: 1fr 1fr 2fr 1fr 0.6fr 0.8fr 0.6fr;">
-                        <div style="font-weight:700;color:#5ac8fa;">${ot.code || 'OT-' + ot.id}</div>
-                        <div style="color:#FF9F0A;">${ot.equipment_tag || '-'}</div>
+                ${ots.map(ot => {
+                    const hasMaterials = (ot.materials || []).length > 0;
+                    const hasShortage = (ot.materials || []).some(m => m.stock !== null && m.stock !== undefined && !m.sufficient);
+                    const matBadge = hasMaterials
+                        ? `<button onclick="event.stopPropagation();toggleMaterials(${ot.id})" style="background:${hasShortage ? 'rgba(255,69,58,.15)' : 'rgba(48,209,88,.15)'};color:${hasShortage ? '#ff6b63' : '#30D158'};border:1px solid ${hasShortage ? 'rgba(255,69,58,.4)' : 'rgba(48,209,88,.4)'};border-radius:10px;padding:1px 8px;font-size:.68rem;cursor:pointer;margin-left:6px;" title="Ver repuestos">
+                            <i class="fas fa-box"></i> ${ot.materials.length}${hasShortage ? ' ⚠' : ''}
+                        </button>`
+                        : '';
+                    return `
+                    <div class="ot-row" style="grid-template-columns: 0.9fr 1fr 1.2fr 2.2fr 0.8fr 0.6fr 0.8fr 0.5fr;">
+                        <div style="font-weight:700;color:#5ac8fa;">${ot.code || 'OT-' + ot.id}${matBadge}</div>
+                        <div style="color:#d5e2f5;font-size:.84rem;">${ot.line_name || '-'}</div>
+                        <div style="color:#FF9F0A;">${ot.equipment_tag || '-'} <span style="color:#9ab0cb;font-size:.78rem;">${ot.equipment_name && ot.equipment_name !== '-' ? '— ' + ot.equipment_name : ''}</span></div>
                         <div style="color:#d5e2f5;">${ot.description || '-'}</div>
-                        <div style="color:#bfd2ec;">${ot.technician_name || '-'}</div>
+                        <div style="color:#9ab0cb;font-size:.82rem;">${ot.maintenance_type || '-'}</div>
                         <div>${ot.estimated_duration || '-'}</div>
                         <div><span class="pill ${ot.status === 'Cerrada' ? 'COMPLETADA' : (ot.status === 'En Progreso' ? 'EN_CURSO' : 'PLANIFICADA')}">${ot.status || '-'}</span></div>
                         <div style="text-align:right;">
@@ -149,7 +179,26 @@ function renderDetail() {
                             </button>
                         </div>
                     </div>
-                `).join('')}
+                    ${hasMaterials ? `
+                    <div id="mats-${ot.id}" style="display:none;padding:8px 14px;background:rgba(10,132,255,.05);border-left:3px solid #0a84ff;margin:0 8px 8px 8px;border-radius:4px;">
+                        <div style="color:#5ac8fa;font-size:.78rem;font-weight:700;margin-bottom:4px;"><i class="fas fa-box"></i> Repuestos requeridos para esta OT</div>
+                        ${ot.materials.map(m => `
+                            <div style="display:grid;grid-template-columns:100px 1fr 80px 100px;gap:10px;padding:4px 0;border-bottom:1px solid rgba(255,255,255,.05);font-size:.82rem;align-items:center;">
+                                <div style="color:#FF9F0A;font-family:monospace;">${m.code}</div>
+                                <div style="color:#d5e2f5;">${m.name}</div>
+                                <div style="text-align:right;color:#fff;"><b>${m.quantity}</b> ${m.unit || ''}</div>
+                                <div style="text-align:right;">
+                                    ${m.stock === null || m.stock === undefined
+                                        ? '<span style="color:#9ab0cb;font-size:.75rem;">Sin stock BD</span>'
+                                        : m.sufficient
+                                            ? `<span style="color:#30D158;font-size:.75rem;"><i class="fas fa-check"></i> Stock ${m.stock}</span>`
+                                            : `<span style="color:#FF453A;font-size:.75rem;"><i class="fas fa-exclamation-triangle"></i> Solo ${m.stock}</span>`
+                                    }
+                                </div>
+                            </div>`).join('')}
+                    </div>` : ''}
+                    `;
+                }).join('')}
             </div>
         `).join('');
     }
@@ -160,12 +209,20 @@ function renderDetail() {
         <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(200px,1fr));gap:10px;font-size:.88rem;">
             <div style="padding:8px;background:#1b212b;border-radius:8px;">Total actividades: <strong>${s.ot_count || 0}</strong></div>
             <div style="padding:8px;background:#1b212b;border-radius:8px;">Horas-hombre estimadas: <strong>${s.total_hours || 0} h</strong></div>
-            <div style="padding:8px;background:#1b212b;border-radius:8px;">Técnicos involucrados: <strong>${s.technician_count || 0}</strong></div>
+            <div style="padding:8px;background:#1b212b;border-radius:8px;">Horas reales: <strong>${s.total_real_hours || 0} h</strong></div>
+            <div style="padding:8px;background:#1b212b;border-radius:8px;">OTs con repuestos: <strong>${s.ots_with_materials || 0}</strong></div>
             <div style="padding:8px;background:#1b212b;border-radius:8px;">Cumplimiento: <strong>${s.compliance || 0}%</strong></div>
+            ${s.materials_shortage ? `<div style="padding:8px;background:rgba(255,69,58,.12);border:1px solid rgba(255,69,58,.3);border-radius:8px;color:#ff6b63;">⚠ Faltantes de stock: <strong>${s.materials_shortage}</strong></div>` : ''}
             ${s.observations ? `<div style="padding:8px;background:#1b212b;border-radius:8px;grid-column:span 2;">Observaciones: ${s.observations}</div>` : ''}
         </div>
     `;
 }
+
+function toggleMaterials(otId) {
+    const el = document.getElementById(`mats-${otId}`);
+    if (el) el.style.display = el.style.display === 'none' ? 'block' : 'none';
+}
+window.toggleMaterials = toggleMaterials;
 
 // ── Modal Crear/Editar ──────────────────────────────────
 function openCreateModal() {
@@ -294,33 +351,19 @@ async function confirmAddOTs() {
     } catch (e) { console.error(e); }
 }
 
-// ── Exportar PDF ────────────────────────────────────────
-async function exportShutdownPdf() {
-    const content = document.getElementById('printArea');
-    if (!content) return;
-    try {
-        const canvas = await html2canvas(content, { backgroundColor: '#0a0e14', scale: 1.5, useCORS: true, logging: false });
-        const imgData = canvas.toDataURL('image/png');
-        const { jsPDF } = window.jspdf;
-        const pdf = new jsPDF({ orientation: 'landscape', unit: 'mm', format: 'a4' });
-        const pageW = pdf.internal.pageSize.getWidth();
-        const imgW = pageW - 10;
-        const imgH = (canvas.height * imgW) / canvas.width;
-        const pageH = pdf.internal.pageSize.getHeight();
-        let heightLeft = imgH;
-        let position = 5;
-        pdf.addImage(imgData, 'PNG', 5, position, imgW, imgH);
-        heightLeft -= (pageH - 10);
-        while (heightLeft > 0) {
-            position = heightLeft - imgH + 5;
-            pdf.addPage();
-            pdf.addImage(imgData, 'PNG', 5, position, imgW, imgH);
-            heightLeft -= (pageH - 10);
-        }
-        const date = _activeShutdown ? _activeShutdown.shutdown_date : new Date().toISOString().slice(0, 10);
-        pdf.save(`Programa_Parada_${date}.pdf`);
-    } catch (e) { console.error('exportPdf error:', e); alert('Error al generar PDF'); }
+// ── Exportar Reporte Ejecutivo PDF (servidor) ───────────
+function exportShutdownPdf() {
+    if (!_activeShutdown || !_activeShutdown.id) return;
+    window.open(`/api/shutdowns/${_activeShutdown.id}/report/pdf`, '_blank');
 }
+
+// ── Exportar Reporte Ejecutivo Excel ────────────────────
+function exportShutdownExcel() {
+    if (!_activeShutdown || !_activeShutdown.id) return;
+    window.location.href = `/api/shutdowns/${_activeShutdown.id}/report/excel`;
+}
+
+window.exportShutdownExcel = exportShutdownExcel;
 
 window.loadShutdowns = loadShutdowns;
 window.openCreateModal = openCreateModal;

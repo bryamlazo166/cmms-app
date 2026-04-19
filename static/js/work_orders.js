@@ -361,6 +361,32 @@ function getCriticalityColor(crit) {
     return '#777';
 }
 
+window.filterByShutdown = (shutdownId, label) => {
+    window._activeShutdownIdFilter = shutdownId;
+    let banner = document.getElementById('shutdownFilterBanner');
+    if (!banner) {
+        banner = document.createElement('div');
+        banner.id = 'shutdownFilterBanner';
+        banner.style.cssText = 'background:linear-gradient(90deg,#3d2b00,#241d0c);border:1px solid #FF9F0A;color:#FFD48A;padding:10px 14px;border-radius:8px;margin:8px 0;display:flex;align-items:center;gap:10px;font-size:.88rem;';
+        const anchor = document.getElementById('planningSearch') || document.getElementById('searchPlanning')?.parentElement || document.querySelector('.filter-bar, .toolbar, .page-content, main');
+        if (anchor && anchor.parentElement) anchor.parentElement.insertBefore(banner, anchor);
+        else document.body.prepend(banner);
+    }
+    banner.innerHTML = `<i class="fas fa-hard-hat" style="color:#FF9F0A;"></i>
+        <span>Mostrando solo OTs de la parada <b>${label || '#' + shutdownId}</b></span>
+        <button onclick="clearShutdownFilter()" style="margin-left:auto;background:#FF9F0A;color:#000;border:none;padding:4px 12px;border-radius:6px;cursor:pointer;font-weight:600;font-size:.78rem;"><i class="fas fa-times"></i> Quitar filtro</button>`;
+    banner.style.display = 'flex';
+    window.applyFilters();
+    banner.scrollIntoView({ behavior: 'smooth', block: 'start' });
+};
+
+window.clearShutdownFilter = () => {
+    window._activeShutdownIdFilter = null;
+    const banner = document.getElementById('shutdownFilterBanner');
+    if (banner) banner.style.display = 'none';
+    window.applyFilters();
+};
+
 window.applyFilters = () => {
     const getSelected = (type) => {
         const container = document.getElementById(`list-${type}`);
@@ -411,6 +437,9 @@ window.applyFilters = () => {
         const hasShutdown = !!ot.shutdown_id;
         if (shutdownFilter === 'with' && !hasShutdown) return false;
         if (shutdownFilter === 'without' && hasShutdown) return false;
+
+        // Filtro por parada específica (clic en chip PP-YYYY-MM-NNN)
+        if (window._activeShutdownIdFilter && Number(ot.shutdown_id) !== Number(window._activeShutdownIdFilter)) return false;
 
         if (search) {
             const code = (ot.code || '').toLowerCase();
@@ -501,7 +530,7 @@ function renderPlanningTable(data = null) {
             <td><span class="badge ${priorityClass}">${ot.priority || '-'}</span></td>
             <td>${ot.scheduled_date || '-'}</td>
             <td>${ot.real_end_date || '-'}</td>
-            <td>${ot.shutdown_name ? `<a href="/paradas#${ot.shutdown_id}" style="color:#FF9F0A;text-decoration:underline;font-size:.78rem;" title="${ot.shutdown_name}">${ot.shutdown_name.substring(0, 22)}${ot.shutdown_name.length > 22 ? '…' : ''}</a>` : '<span style="color:rgba(255,255,255,.2);font-size:.78rem">-</span>'}</td>
+            <td>${ot.shutdown_id ? `<a href="/paradas#${ot.shutdown_id}" onclick="event.stopPropagation();filterByShutdown(${ot.shutdown_id},'${(ot.shutdown_code||ot.shutdown_name||'').replace(/'/g,"&#39;")}');return false;" style="color:#FF9F0A;text-decoration:none;font-size:.72rem;display:inline-block;padding:2px 8px;border:1px solid #FF9F0A;border-radius:10px;background:rgba(255,159,10,.08);" title="${(ot.shutdown_name||'').replace(/"/g,'&quot;')} — click para filtrar OTs de esta parada">${ot.shutdown_code || ot.shutdown_name || 'Parada'}</a>` : '<span style="color:rgba(255,255,255,.2);font-size:.78rem">-</span>'}</td>
             <td>${assignedTo}</td>
             <td>
                 <span class="logistics-chip ${logisticsClass}">${logisticsLabel}</span>

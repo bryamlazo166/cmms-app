@@ -1440,6 +1440,8 @@ class Shutdown(db.Model):
         Index('ix_shutdown_date', 'shutdown_date'),
     )
     id: Mapped[int] = mapped_column(primary_key=True)
+    code: Mapped[Optional[str]] = mapped_column(String(30), unique=True, nullable=True)
+    # Código automático: PP-YYYY-MM-NNN (PP = Parada Planta, correlativo mensual)
     name: Mapped[str] = mapped_column(String(200), nullable=False)
     shutdown_date: Mapped[str] = mapped_column(String(20), nullable=False)
     shutdown_type: Mapped[str] = mapped_column(String(20), default='TOTAL')
@@ -1460,6 +1462,7 @@ class Shutdown(db.Model):
     def to_dict(self):
         return {
             "id": self.id,
+            "code": self.code,
             "name": self.name,
             "shutdown_date": self.shutdown_date,
             "shutdown_type": self.shutdown_type,
