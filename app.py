@@ -741,24 +741,30 @@ def _init_schema_on_startup():
     try:
         with app.app_context():
             db.create_all()
+            # Cada CREATE INDEX en su propia transacción: en PostgreSQL un error
+            # aborta toda la transacción y las siguientes sentencias fallan.
             for stmt in _ENSURE_INDEXES_SQL:
                 try:
                     db.session.execute(text(stmt))
+                    db.session.commit()
                 except Exception as idx_err:
+                    db.session.rollback()
                     logger.warning(f"Index creation skipped: {idx_err}")
-            # Auto-add missing columns to existing tables
+            # Auto-add missing columns to existing tables — cada ALTER en su
+            # propia transacción para no envenenar la sesión si la columna ya existe.
             for table, col, col_type in _ENSURE_COLUMNS:
                 try:
                     db.session.execute(text(f"ALTER TABLE {table} ADD COLUMN {col} {col_type}"))
+                    db.session.commit()
                     logger.info(f"Column {table}.{col} added.")
                 except Exception:
-                    pass  # Column already exists
+                    db.session.rollback()  # CRÍTICO en PostgreSQL
             # Make warehouse_item_id nullable in BOM
             try:
                 db.session.execute(text("ALTER TABLE rotative_asset_bom ALTER COLUMN warehouse_item_id DROP NOT NULL"))
+                db.session.commit()
             except Exception:
-                pass
-            db.session.commit()
+                db.session.rollback()
 
             # Backfill de códigos de parada (PP-YYYY-MM-NNN) para registros legacy
             try:
