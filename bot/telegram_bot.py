@@ -125,6 +125,18 @@ def _get_focused_equipment_context(app, message):
         for m in re.finditer(kw + r'\s*#?\s*(\d+)', msg_norm):
             inferred_tags.add(prefix + m.group(1))
 
+    # Tambien capturar tags cortos LITERALES escritos directamente por el usuario
+    # (ej: "TH2", "TH7", "D5", "MOLI2", "SEC2"). Sin necesidad de "TRANSPORTADOR".
+    # Estos se usan ademas para FILTRAR estrictamente cuando un prefijo de linea
+    # como "SEC2" matchea muchos hijos (SEC2-TH1..SEC2-TH10).
+    explicit_short_tags = set()
+    for m in re.finditer(
+        r'\b(TH\d+|MR\d+|MOLI\d+|TRI\d+|PER\d+|VAHO\d+|SEC\d+|D\d+|H\d+)\b',
+        msg_norm,
+    ):
+        explicit_short_tags.add(m.group(1))
+    inferred_tags.update(explicit_short_tags)
+
     lines = []
     with app.app_context():
         from database import db as _db
@@ -215,10 +227,32 @@ def _get_focused_equipment_context(app, message):
             if not matched_ids:
                 return ''
 
+            # ── FILTRO ESTRICTO POR TAG CORTO LITERAL ──────────────────
+            # Si el usuario escribio "TH2" / "TH7" / "D5" textualmente, y la
+            # inferencia de la linea (ej: SEC2 desde "secador 2") trajo todos
+            # los hijos de esa linea, restringir al tag corto exacto.
+            # Ej: "TH2 secador 2" -> NO traer SEC2-TH10, solo SEC2-TH2.
+            if explicit_short_tags and len(matched_ids) > 1:
+                try:
+                    eqs_for_filter = _db.session.execute(text(
+                        "SELECT id, tag FROM equipments WHERE id = ANY(:ids)"
+                    ), {"ids": list(matched_ids)}).fetchall()
+                    filtered_strict = set()
+                    for ef in eqs_for_filter:
+                        segs = set(((ef[1] or '').upper()).split('-'))
+                        if explicit_short_tags & segs:
+                            filtered_strict.add(ef[0])
+                    if filtered_strict:
+                        matched_ids = filtered_strict
+                except Exception:
+                    pass
+
             # ── DESAMBIGUACION: si hay multiples equipos del mismo nombre,
             # filtrar por LINEA o AREA mencionada en el mensaje, y priorizar
             # los que TIENEN component_specs (mas utiles para responder).
-            if len(matched_ids) > 3:
+            # Umbral bajo (>=2) cuando el usuario menciona una linea/area:
+            # asi "TH2 secador 2" elige SEC2-TH2 sobre TH2 (cocción).
+            if len(matched_ids) >= 2:
                 lines_db = _db.session.execute(text("SELECT id, name, area_id FROM lines")).fetchall()
                 areas_db = _db.session.execute(text("SELECT id, name FROM areas")).fetchall()
                 line_hits = set()
