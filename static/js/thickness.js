@@ -131,15 +131,15 @@ function renderCaptureSections() {
 
     // PALETAS DE TRIPODE (5 secciones × 3 posiciones A,B,C)
     if (groups['PALETA']) {
-        html += renderTripodeTable('PALETAS DE TRIPODE', groups['PALETA'], ['A', 'B', 'C']);
+        html += renderTripodeTable('PALETAS DE TRIPODE', groups['PALETA'], ['A', 'B', 'C'], 'PALETA');
     }
     // REFUERZO DE TRIPODE (5 secciones × 3 posiciones X,Y,Z)
     if (groups['REFUERZO']) {
-        html += renderTripodeTable('REFUERZO DE TRIPODE', groups['REFUERZO'], ['X', 'Y', 'Z']);
+        html += renderTripodeTable('REFUERZO DE TRIPODE', groups['REFUERZO'], ['X', 'Y', 'Z'], 'REFUERZO');
     }
     // EJES DE TRIPODE (5 secciones × 4 posiciones A,B,C,EJE_CENTRAL)
     if (groups['EJE']) {
-        html += renderTripodeTable('EJES DE TRIPODE', groups['EJE'], ['A', 'B', 'C', 'EJE_CENTRAL']);
+        html += renderTripodeTable('EJES DE TRIPODE', groups['EJE'], ['A', 'B', 'C', 'EJE_CENTRAL'], 'EJE');
     }
     // CHAQUETA INTERNA (5 secciones × 4 ángulos)
     if (groups['CHAQUETA']) {
@@ -147,10 +147,10 @@ function renderCaptureSections() {
     }
     // TAPAS
     if (groups['TAPA_MOTRIZ']) {
-        html += renderTapaTable('TAPA BOMBEADA MOTRIZ (Transmisión)', groups['TAPA_MOTRIZ']);
+        html += renderTapaTable('TAPA BOMBEADA MOTRIZ (Transmisión)', groups['TAPA_MOTRIZ'], 'TAPA_MOTRIZ');
     }
     if (groups['TAPA_CONDUCIDA']) {
-        html += renderTapaTable('TAPA BOMBEADA CONDUCIDA (Descarga)', groups['TAPA_CONDUCIDA']);
+        html += renderTapaTable('TAPA BOMBEADA CONDUCIDA (Descarga)', groups['TAPA_CONDUCIDA'], 'TAPA_CONDUCIDA');
     }
 
     container.innerHTML = html;
@@ -172,10 +172,42 @@ function renderCaptureSections() {
     });
 }
 
-function renderTripodeTable(title, points, positions) {
+const REF_IMAGES = {
+    PALETA:         { src: '/static/images/thickness/tripode.png',        alt: 'Vista lateral del trípode — secciones 1 a 5' },
+    REFUERZO:       { src: '/static/images/thickness/tripode.png',        alt: 'Vista lateral del trípode — secciones 1 a 5' },
+    EJE:            { src: '/static/images/thickness/tripode.png',        alt: 'Vista lateral del trípode — ejes A/B/C y eje central' },
+    CHAQUETA:       { src: '/static/images/thickness/chaqueta.png',       alt: 'Chaqueta interna — lados Superior/Derecho/Inferior/Izquierdo' },
+    TAPA_MOTRIZ:    { src: '/static/images/thickness/tapa_motriz.png',    alt: 'Tapa motriz (Transmisión) — 10 puntos perimetrales' },
+    TAPA_CONDUCIDA: { src: '/static/images/thickness/tapa_conducida.png', alt: 'Tapa conducida (Descarga) — 10 puntos perimetrales' },
+};
+
+function refImageHTML(groupKey) {
+    const m = REF_IMAGES[groupKey];
+    if (!m) return '';
+    const alt = (m.alt || '').replace(/'/g, '&#39;').replace(/"/g, '&quot;');
+    return `<div class="ref-img-wrap"><img src="${m.src}" alt="${alt}" class="ref-img" title="Click para ampliar" onclick="openRefImage(this.src, this.alt)" onerror="this.parentElement.style.display='none'"></div>`;
+}
+
+function openRefImage(src, alt) {
+    const existing = document.getElementById('refLightbox');
+    if (existing) { existing.remove(); return; }
+    const box = document.createElement('div');
+    box.id = 'refLightbox';
+    box.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,.9);display:flex;flex-direction:column;align-items:center;justify-content:center;z-index:9999;cursor:zoom-out;padding:20px;gap:10px;';
+    box.innerHTML = `
+        <img src="${src}" alt="${(alt||'').replace(/"/g,'&quot;')}" style="max-width:95%;max-height:88%;border-radius:8px;box-shadow:0 20px 60px rgba(0,0,0,.6);background:#fff;" onclick="event.stopPropagation()">
+        <div style="color:#bfd2ec;font-size:.85rem;">${alt || ''} — Click fuera para cerrar</div>
+    `;
+    box.onclick = () => box.remove();
+    const escHandler = (e) => { if (e.key === 'Escape') { box.remove(); document.removeEventListener('keydown', escHandler); } };
+    document.addEventListener('keydown', escHandler);
+    document.body.appendChild(box);
+}
+
+function renderTripodeTable(title, points, positions, groupKey) {
     // Filas = posiciones (A,B,C o X,Y,Z), columnas = secciones 1..5
     const sections = [...new Set(points.map(p => p.section))].sort((a, b) => a - b);
-    let html = `<div class="panel"><h4>${title}</h4><table class="thk-table"><thead><tr><th></th>`;
+    let html = `<div class="panel"><h4>${title}</h4>${refImageHTML(groupKey)}<table class="thk-table"><thead><tr><th></th>`;
     sections.forEach(s => html += `<th>${s}</th>`);
     html += '</tr></thead><tbody>';
     positions.forEach(pos => {
@@ -203,7 +235,7 @@ function renderChaquetaTable(title, points) {
         { code: 'INFERIOR', label: 'INFERIOR (180°)' },
         { code: 'IZQUIERDO', label: 'IZQUIERDO (270°)' },
     ];
-    let html = `<div class="panel"><h4>${title}</h4><table class="thk-table"><thead><tr><th>LADO DE CHAQUETA</th>`;
+    let html = `<div class="panel"><h4>${title}</h4>${refImageHTML('CHAQUETA')}<table class="thk-table"><thead><tr><th>LADO DE CHAQUETA</th>`;
     sections.forEach(s => html += `<th>${s}</th>`);
     html += '</tr></thead><tbody>';
     positions.forEach(pos => {
@@ -222,14 +254,14 @@ function renderChaquetaTable(title, points) {
     return html;
 }
 
-function renderTapaTable(title, points) {
+function renderTapaTable(title, points, groupKey) {
     // 10 puntos perimetrales
     points.sort((a, b) => {
         const na = parseInt(a.position.replace(/\D/g, '')) || 0;
         const nb = parseInt(b.position.replace(/\D/g, '')) || 0;
         return na - nb;
     });
-    let html = `<div class="panel"><h4>${title}</h4><table class="thk-table"><thead><tr>`;
+    let html = `<div class="panel"><h4>${title}</h4>${refImageHTML(groupKey)}<table class="thk-table"><thead><tr>`;
     points.forEach(p => html += `<th>${p.position}</th>`);
     html += '</tr></thead><tbody><tr>';
     points.forEach(p => {
@@ -641,3 +673,4 @@ window.editInspection = editInspection;
 window.deleteInspection = deleteInspection;
 window.openAnalysisFor = openAnalysisFor;
 window.renderPointChart = renderPointChart;
+window.openRefImage = openRefImage;
