@@ -1,0 +1,219 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <link rel="icon" type="image/svg+xml" href="/static/favicon.svg">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Programa Nocturno - CMMS</title>
+    <link rel="stylesheet" href="/static/css/style.css?v={{ v }}">
+    <link rel="stylesheet" href="/static/css/sidebar.css?v={{ v }}">
+    <link href="https://fonts.googleapis.com/css2?family=Roboto:wght@300;400;500;700&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css">
+    <script src="https://cdn.jsdelivr.net/npm/sortablejs@1.15.0/Sortable.min.js"></script>
+    <style>
+        body{background:#0a0e14;}
+        .wn-wrap{max-width:1700px;margin:0 auto;padding:16px;}
+        .wn-header{background:linear-gradient(120deg,#1e2430,#151b24);border:1px solid #2d3f56;border-radius:14px;padding:18px 22px;margin-bottom:16px;display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:14px;}
+        .wn-header h1{margin:0;color:#BF5AF2;font-size:1.4rem;display:flex;align-items:center;gap:10px;}
+        .wn-header p{margin:4px 0 0;color:#9ab0cb;font-size:.85rem;}
+        .wn-tools{display:flex;gap:8px;align-items:center;flex-wrap:wrap;}
+        .wn-tools select,.wn-tools input{height:36px;background:#0f1319;color:#d5e2f5;border:1px solid #344964;border-radius:8px;padding:6px 10px;font-size:.86rem;}
+        .btn-wn{height:36px;border:1px solid #385273;border-radius:8px;background:#193451;color:#d7e9ff;padding:0 14px;font-weight:600;cursor:pointer;font-size:.84rem;display:inline-flex;align-items:center;gap:6px;}
+        .btn-wn:hover{background:#234870;}
+        .btn-wn.primary{background:#0a84ff;border-color:#0a84ff;color:#fff;}
+        .btn-wn.magic{background:#BF5AF2;border-color:#BF5AF2;color:#fff;}
+        .btn-wn.publish{background:#30D158;border-color:#30D158;color:#fff;}
+        .btn-wn.pdf{background:#FF453A;border-color:#FF453A;color:#fff;}
+        .btn-wn:disabled{opacity:.4;cursor:not-allowed;}
+
+        /* Info cards */
+        .info-row{display:grid;grid-template-columns:repeat(5,1fr);gap:10px;margin-bottom:14px;}
+        .info-card{background:linear-gradient(135deg,#1b212b,#151a23);border:1px solid #31455f;border-radius:12px;padding:12px 14px;position:relative;overflow:hidden;}
+        .info-card::before{content:'';position:absolute;top:0;left:0;right:0;height:3px;background:var(--c,#BF5AF2);}
+        .info-card .lbl{font-size:.68rem;color:#9ab3d0;text-transform:uppercase;letter-spacing:.5px;font-weight:600;margin-bottom:6px;}
+        .info-card .val{font-size:1.5rem;font-weight:700;color:#eff6ff;line-height:1;}
+        .info-card .sub{font-size:.7rem;color:#9ab0cb;margin-top:4px;}
+
+        /* Calendar grid */
+        .cal-grid{display:grid;grid-template-columns:90px repeat(7, 1fr);gap:2px;background:#1b212b;border:1px solid #2f4257;border-radius:12px;overflow:hidden;}
+        .cal-head{background:#0f1319;padding:10px 8px;font-weight:700;color:#5ac8fa;font-size:.8rem;text-align:center;border-bottom:1px solid #2f4257;}
+        .cal-head .date{display:block;color:#9ab0cb;font-weight:400;font-size:.7rem;margin-top:2px;}
+        .cal-head-day{background:linear-gradient(180deg,#1b1d3a,#151828);}
+        .cal-head-day.weekend{background:linear-gradient(180deg,#2b1d1d,#1d1515);}
+        .cal-head-hours{font-size:.7rem;color:#9ab0cb;margin-top:4px;}
+        .cal-head-hours .bar{height:4px;background:#2a3a50;border-radius:2px;margin-top:3px;overflow:hidden;}
+        .cal-head-hours .bar > span{display:block;height:100%;background:#BF5AF2;transition:width .3s;}
+        .cal-head-hours .bar > span.over{background:#FF453A;}
+        .area-cell{background:#0f1319;padding:10px 6px;color:#FF9F0A;font-weight:700;font-size:.78rem;text-align:center;display:flex;align-items:center;justify-content:center;writing-mode:horizontal-tb;}
+        .cell{background:#141a22;padding:6px;min-height:110px;display:flex;flex-direction:column;gap:4px;border:1px dashed transparent;transition:border-color .15s, background .15s;}
+        .cell:hover{background:#171f28;}
+        .cell.drag-over{border-color:#5ac8fa;background:rgba(90,200,250,.06);}
+        .cell-add-btn{background:transparent;border:1px dashed rgba(255,255,255,.15);color:rgba(255,255,255,.4);border-radius:6px;padding:4px;cursor:pointer;font-size:.7rem;text-align:center;margin-top:auto;transition:color .15s,border-color .15s;}
+        .cell-add-btn:hover{color:#5ac8fa;border-color:#5ac8fa;}
+        .item{background:linear-gradient(135deg,#1e2a3c,#172130);border:1px solid #2f4257;border-left:3px solid var(--border-c, #BF5AF2);border-radius:6px;padding:5px 7px;cursor:grab;font-size:.74rem;position:relative;}
+        .item:active{cursor:grabbing;}
+        .item.type-lubrication{--border-c:#FFD60A;}
+        .item.type-inspection{--border-c:#30D158;}
+        .item.type-monitoring{--border-c:#FF453A;}
+        .item.type-custom{--border-c:#5AC8FA;}
+        .item.done{opacity:.5;background:linear-gradient(135deg,#1a2a1d,#112116);}
+        .item.done .item-code::after{content:' ✓';color:#30D158;}
+        .item-code{font-weight:700;color:#5ac8fa;font-size:.72rem;}
+        .item-desc{color:#d5e2f5;font-size:.72rem;margin-top:2px;line-height:1.25;overflow:hidden;text-overflow:ellipsis;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;}
+        .item-meta{display:flex;justify-content:space-between;align-items:center;margin-top:3px;font-size:.66rem;color:#9ab0cb;}
+        .item-actions{position:absolute;top:2px;right:2px;display:none;gap:2px;}
+        .item:hover .item-actions{display:flex;}
+        .item-actions button{background:rgba(0,0,0,.4);border:none;color:rgba(255,255,255,.7);padding:1px 4px;border-radius:3px;cursor:pointer;font-size:.64rem;}
+        .item-actions button:hover{background:rgba(10,132,255,.5);color:#fff;}
+        .item-actions button.del:hover{background:#FF453A;}
+
+        /* Modal */
+        .modal-bd{position:fixed;inset:0;background:rgba(0,0,0,.72);display:none;justify-content:center;align-items:center;z-index:1000;}
+        .modal-bd.open{display:flex;}
+        .modal-box{background:#151b24;border:1px solid #2f4257;border-radius:14px;padding:20px;width:92%;max-width:560px;max-height:90vh;overflow-y:auto;}
+        .modal-box h2{margin:0 0 14px;color:#BF5AF2;font-size:1.1rem;}
+        .modal-box label{display:block;color:#9ab0cb;font-size:.78rem;margin:10px 0 4px;font-weight:600;}
+        .modal-box input,.modal-box select,.modal-box textarea{width:100%;box-sizing:border-box;background:#0f1319;color:#d5e2f5;border:1px solid #344964;border-radius:8px;padding:7px 10px;font-size:.86rem;}
+        .modal-box textarea{min-height:60px;resize:vertical;}
+        .modal-actions{display:flex;gap:10px;justify-content:flex-end;margin-top:16px;}
+
+        /* Publish banner */
+        .publish-banner{background:linear-gradient(90deg,#143823,#0f2618);border:1px solid #30D158;border-radius:10px;padding:12px 16px;margin-bottom:14px;display:flex;align-items:center;gap:12px;flex-wrap:wrap;}
+        .publish-banner i{color:#30D158;font-size:1.1rem;}
+        .publish-banner .url{background:#0f1319;padding:6px 10px;border-radius:6px;color:#5ac8fa;font-family:monospace;font-size:.78rem;flex:1;min-width:200px;word-break:break-all;}
+        .publish-banner button{background:#30D158;color:#fff;border:none;padding:6px 14px;border-radius:6px;cursor:pointer;font-size:.8rem;font-weight:600;}
+
+        .empty{padding:60px 20px;text-align:center;color:#9ab0cb;}
+
+        @media(max-width:1200px){
+            .info-row{grid-template-columns:repeat(2,1fr);}
+            .cal-grid{grid-template-columns:70px repeat(7, minmax(130px, 1fr));overflow-x:auto;}
+        }
+    </style>
+</head>
+<body>
+<nav class="sidebar">
+    <div class="logo-details"><i class="fas fa-industry icon"></i><div class="logo_name">CMMS Pro</div><i class="fas fa-bars" id="btn_toggle"></i></div>
+    <ul class="nav-list"></ul>
+</nav>
+
+<section class="home-section">
+    <div class="wn-wrap">
+        <div class="wn-header">
+            <div>
+                <h1><i class="fas fa-moon"></i> Programa Nocturno Semanal</h1>
+                <p>Distribución de preventivos para proveedor turno noche · 4 áreas × 7 días</p>
+            </div>
+            <div class="wn-tools">
+                <select id="planSelect" onchange="onPlanChange()"></select>
+                <button class="btn-wn primary" onclick="openNewPlanModal()"><i class="fas fa-plus"></i> Nueva Semana</button>
+                <button class="btn-wn magic" onclick="autoPlan()" id="btnAuto" disabled><i class="fas fa-magic"></i> Auto-planificar</button>
+                <button class="btn-wn publish" onclick="publishPlan()" id="btnPublish" disabled><i class="fas fa-link"></i> Publicar</button>
+                <button class="btn-wn pdf" onclick="exportPdf()" id="btnPdf" disabled><i class="fas fa-file-pdf"></i> PDF</button>
+                <button class="btn-wn" onclick="deletePlan()" id="btnDel" disabled style="background:rgba(255,69,58,.15);color:#ff6b63;border-color:rgba(255,69,58,.4);"><i class="fas fa-trash"></i></button>
+            </div>
+        </div>
+
+        <!-- Banner publicación -->
+        <div id="publishBanner" class="publish-banner" style="display:none;">
+            <i class="fas fa-check-circle"></i>
+            <span>Plan publicado. URL para el proveedor:</span>
+            <span class="url" id="publicUrl"></span>
+            <button onclick="copyPublicUrl()"><i class="fas fa-copy"></i> Copiar</button>
+        </div>
+
+        <!-- Info cards -->
+        <div class="info-row" id="infoRow" style="display:none;">
+            <div class="info-card" style="--c:#BF5AF2;">
+                <div class="lbl">Semana</div>
+                <div class="val" id="infoWeek">—</div>
+                <div class="sub" id="infoCode">—</div>
+            </div>
+            <div class="info-card" style="--c:#5AC8FA;">
+                <div class="lbl">Capacidad Semanal</div>
+                <div class="val" id="infoCapacity">—</div>
+                <div class="sub" id="infoTech">—</div>
+            </div>
+            <div class="info-card" style="--c:#FF9F0A;">
+                <div class="lbl">Tareas Programadas</div>
+                <div class="val" id="infoTasks">—</div>
+                <div class="sub" id="infoHours">—</div>
+            </div>
+            <div class="info-card" style="--c:#30D158;">
+                <div class="lbl">Ejecutadas</div>
+                <div class="val" id="infoDone">—</div>
+                <div class="sub">Por el proveedor</div>
+            </div>
+            <div class="info-card" style="--c:#FF453A;">
+                <div class="lbl">Ocupación</div>
+                <div class="val" id="infoFill">—</div>
+                <div class="sub">% capacidad usada</div>
+            </div>
+        </div>
+
+        <!-- Calendario 7 × 4 -->
+        <div id="calContainer">
+            <div class="empty" id="emptyMsg">
+                <i class="fas fa-moon" style="font-size:2rem;color:#444;"></i>
+                <p>Selecciona un plan o crea uno nuevo con el botón "Nueva Semana".</p>
+            </div>
+            <div id="calGrid" class="cal-grid" style="display:none;"></div>
+        </div>
+    </div>
+</section>
+
+<!-- Modal nueva semana -->
+<div class="modal-bd" id="newPlanModal">
+    <div class="modal-box">
+        <h2><i class="fas fa-plus"></i> Crear nueva semana</h2>
+        <label>Fecha de referencia (se usa el lunes de esa semana)</label>
+        <input type="date" id="npDate" />
+        <label>Proveedor</label>
+        <select id="npProvider"><option value="">- Sin asignar -</option></select>
+        <label>Técnicos por noche</label>
+        <input type="number" id="npTech" value="2" min="1" max="10" />
+        <label>Horas por técnico por noche</label>
+        <input type="number" id="npHours" value="12" step="0.5" min="1" max="24" />
+        <label>Notas (opcional)</label>
+        <textarea id="npNotes" placeholder="Observaciones generales del plan..."></textarea>
+        <div class="modal-actions">
+            <button class="btn-wn" onclick="closeModal('newPlanModal')">Cancelar</button>
+            <button class="btn-wn primary" onclick="createPlan()"><i class="fas fa-save"></i> Crear</button>
+        </div>
+    </div>
+</div>
+
+<!-- Modal agregar ítem manual -->
+<div class="modal-bd" id="addItemModal">
+    <div class="modal-box">
+        <h2><i class="fas fa-plus"></i> Agregar ítem manual</h2>
+        <div id="addItemContext" style="color:#9ab0cb;font-size:.82rem;margin-bottom:8px;"></div>
+
+        <label>Tipo de preventivo</label>
+        <div style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:6px;">
+            <button type="button" class="btn-item-src" data-src="lubrication" onclick="setAddItemSrc('lubrication')" style="background:rgba(255,214,10,.15);color:#FFD60A;border:1px solid rgba(255,214,10,.4);padding:5px 10px;border-radius:6px;cursor:pointer;font-size:.78rem;">Lubricación</button>
+            <button type="button" class="btn-item-src" data-src="inspection" onclick="setAddItemSrc('inspection')" style="background:rgba(48,209,88,.15);color:#30D158;border:1px solid rgba(48,209,88,.4);padding:5px 10px;border-radius:6px;cursor:pointer;font-size:.78rem;">Inspección</button>
+            <button type="button" class="btn-item-src" data-src="monitoring" onclick="setAddItemSrc('monitoring')" style="background:rgba(255,69,58,.15);color:#FF453A;border:1px solid rgba(255,69,58,.4);padding:5px 10px;border-radius:6px;cursor:pointer;font-size:.78rem;">Monitoreo</button>
+            <button type="button" class="btn-item-src" data-src="custom" onclick="setAddItemSrc('custom')" style="background:rgba(90,200,250,.15);color:#5AC8FA;border:1px solid rgba(90,200,250,.4);padding:5px 10px;border-radius:6px;cursor:pointer;font-size:.78rem;">Otro (manual)</button>
+        </div>
+        <input type="hidden" id="aiSourceType">
+
+        <div id="aiSourcePicker" style="display:none;">
+            <label>Seleccionar punto</label>
+            <select id="aiSourceId" onchange="aiOnSourceSelected()"><option value="">- Cargando -</option></select>
+        </div>
+        <label>Descripción</label>
+        <textarea id="aiDesc" rows="2"></textarea>
+        <label>Horas estimadas</label>
+        <input type="number" id="aiHours" step="0.5" min="0.5" value="1" />
+        <div class="modal-actions">
+            <button class="btn-wn" onclick="closeModal('addItemModal')">Cancelar</button>
+            <button class="btn-wn primary" onclick="confirmAddItem()"><i class="fas fa-save"></i> Agregar</button>
+        </div>
+    </div>
+</div>
+
+<script src="/static/js/sidebar.js?v={{ v }}"></script>
+<script src="/static/js/programa_nocturno.js?v={{ v }}"></script>
+</body>
+</html>

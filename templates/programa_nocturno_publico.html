@@ -1,0 +1,259 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Programa Nocturno - Proveedor</title>
+    <link href="https://fonts.googleapis.com/css2?family=Roboto:wght@400;500;700&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css">
+    <style>
+        *{box-sizing:border-box;}
+        body{margin:0;background:#0a0e14;color:#d5e2f5;font-family:'Roboto',sans-serif;}
+        .wrap{max-width:780px;margin:0 auto;padding:12px;}
+        .header{background:linear-gradient(120deg,#1e2430,#151b24);border:1px solid #2d3f56;border-radius:12px;padding:14px 16px;margin-bottom:12px;}
+        .header h1{margin:0;color:#BF5AF2;font-size:1.1rem;display:flex;align-items:center;gap:8px;}
+        .header .meta{color:#9ab0cb;font-size:.78rem;margin-top:4px;}
+        .header .chip{background:rgba(48,209,88,.15);color:#30D158;padding:2px 8px;border-radius:8px;font-size:.72rem;font-weight:700;}
+
+        .progress{margin-top:8px;background:#1b212b;border-radius:8px;overflow:hidden;height:8px;}
+        .progress > span{display:block;height:100%;background:linear-gradient(90deg,#30D158,#5AC8FA);transition:width .4s;}
+        .progress-txt{font-size:.74rem;color:#9ab0cb;margin-top:3px;text-align:right;}
+
+        .day-tabs{display:flex;gap:4px;overflow-x:auto;margin-bottom:12px;padding-bottom:4px;}
+        .day-tab{background:#1b212b;border:1px solid #2f4257;border-radius:10px;padding:8px 12px;min-width:85px;text-align:center;cursor:pointer;flex-shrink:0;font-size:.78rem;color:#9ab0cb;}
+        .day-tab.active{background:#BF5AF2;border-color:#BF5AF2;color:#fff;font-weight:700;}
+        .day-tab .date{display:block;font-size:.7rem;opacity:.75;margin-top:2px;}
+        .day-tab .count{display:inline-block;background:rgba(0,0,0,.3);padding:1px 6px;border-radius:8px;margin-top:3px;font-size:.66rem;}
+        .day-tab.done{opacity:.6;}
+
+        .area-group{background:#141a22;border:1px solid #2f4257;border-radius:12px;padding:10px;margin-bottom:10px;}
+        .area-title{font-size:.82rem;color:#FF9F0A;font-weight:700;margin-bottom:8px;display:flex;align-items:center;gap:6px;}
+        .task{background:linear-gradient(135deg,#1e2a3c,#172130);border:1px solid #2f4257;border-left:4px solid var(--c,#BF5AF2);border-radius:10px;padding:10px 12px;margin-bottom:8px;}
+        .task.lubrication{--c:#FFD60A;}
+        .task.inspection{--c:#30D158;}
+        .task.monitoring{--c:#FF453A;}
+        .task.custom{--c:#5AC8FA;}
+        .task.done{opacity:.55;background:linear-gradient(135deg,#1a2a1d,#112116);border-left-color:#30D158;}
+        .task-head{display:flex;justify-content:space-between;align-items:flex-start;gap:8px;}
+        .task-code{font-weight:700;color:#5ac8fa;font-size:.8rem;}
+        .task-hours{background:rgba(255,255,255,.06);padding:2px 8px;border-radius:8px;font-size:.72rem;color:#9ab0cb;white-space:nowrap;}
+        .task-desc{color:#d5e2f5;font-size:.84rem;margin-top:6px;line-height:1.35;white-space:pre-wrap;}
+        .task-equip{color:#FF9F0A;font-size:.72rem;margin-top:3px;}
+        .task-actions{margin-top:10px;display:flex;gap:8px;}
+        .btn-done{background:#30D158;color:#fff;border:none;padding:10px 14px;border-radius:8px;font-weight:700;cursor:pointer;flex:1;font-size:.86rem;}
+        .btn-done:hover{background:#3ee074;}
+        .btn-done:disabled{background:#2a4a30;color:rgba(255,255,255,.5);cursor:not-allowed;}
+        .badge-done{background:#30D158;color:#fff;padding:4px 10px;border-radius:8px;font-size:.78rem;font-weight:700;display:inline-flex;align-items:center;gap:4px;width:100%;justify-content:center;}
+
+        .empty{text-align:center;padding:40px 20px;color:#9ab0cb;font-size:.88rem;}
+
+        .modal-bd{position:fixed;inset:0;background:rgba(0,0,0,.8);display:none;justify-content:center;align-items:flex-end;z-index:1000;}
+        .modal-bd.open{display:flex;}
+        .modal-box{background:#151b24;border:1px solid #2f4257;border-radius:14px 14px 0 0;padding:18px;width:100%;max-width:600px;max-height:80vh;overflow-y:auto;}
+        .modal-box h3{margin:0 0 12px;color:#30D158;font-size:1rem;}
+        .modal-box label{display:block;color:#9ab0cb;font-size:.78rem;margin:10px 0 4px;font-weight:600;}
+        .modal-box input,.modal-box textarea{width:100%;box-sizing:border-box;background:#0f1319;color:#d5e2f5;border:1px solid #344964;border-radius:8px;padding:10px;font-size:.9rem;}
+        .modal-actions{display:flex;gap:8px;justify-content:flex-end;margin-top:14px;}
+        .btn{padding:10px 16px;border:1px solid #385273;border-radius:8px;background:#193451;color:#d7e9ff;font-weight:600;cursor:pointer;font-size:.84rem;}
+        .btn.primary{background:#30D158;border-color:#30D158;color:#fff;}
+    </style>
+</head>
+<body>
+<div class="wrap">
+    <div class="header" id="header">
+        <h1><i class="fas fa-moon"></i> Programa Nocturno</h1>
+        <div class="meta" id="metaLine">Cargando...</div>
+    </div>
+
+    <div class="day-tabs" id="dayTabs"></div>
+
+    <div id="dayContent"></div>
+</div>
+
+<!-- Modal confirmar ejecución -->
+<div class="modal-bd" id="doneModal">
+    <div class="modal-box">
+        <h3 id="doneTitle">Confirmar ejecución</h3>
+        <div id="doneContext" style="color:#9ab0cb;font-size:.8rem;margin-bottom:8px;"></div>
+        <label>Su nombre</label>
+        <input type="text" id="doneBy" placeholder="Ej: Juan Pérez" />
+        <label>Observaciones (opcional)</label>
+        <textarea id="doneNotes" rows="3" placeholder="Cualquier hallazgo, dificultad o comentario..."></textarea>
+        <div class="modal-actions">
+            <button class="btn" onclick="closeDoneModal()">Cancelar</button>
+            <button class="btn primary" onclick="confirmDone()"><i class="fas fa-check"></i> Confirmar</button>
+        </div>
+    </div>
+</div>
+
+<script>
+const TOKEN = "{{ token }}";
+const DAY_NAMES = ['LUN', 'MAR', 'MIÉ', 'JUE', 'VIE', 'SÁB', 'DOM'];
+const DAY_FULL = ['Lunes', 'Martes', 'Miércoles', 'Jueves', 'Viernes', 'Sábado', 'Domingo'];
+let _plan = null;
+let _activeDay = 0;
+let _currentItemId = null;
+
+document.addEventListener('DOMContentLoaded', loadPlan);
+
+async function loadPlan() {
+    try {
+        const r = await fetch(`/api/public/weekly-plans/${TOKEN}`);
+        if (!r.ok) throw new Error('No se pudo cargar el plan');
+        _plan = await r.json();
+        // Día activo = hoy si está en rango, sino lunes
+        const today = new Date();
+        const start = new Date(_plan.week_start + 'T00:00:00');
+        const diff = Math.floor((today - start) / (1000*60*60*24));
+        _activeDay = (diff >= 0 && diff < 7) ? diff : 0;
+        renderHeader();
+        renderTabs();
+        renderDay();
+    } catch (e) {
+        document.getElementById('header').innerHTML =
+            `<h1 style="color:#FF453A"><i class="fas fa-times-circle"></i> Error</h1>
+             <div class="meta">No se pudo cargar el plan. Verifica el enlace.</div>`;
+    }
+}
+
+function renderHeader() {
+    const p = _plan;
+    const total = p.items.length;
+    const done = p.items.filter(it => it.status === 'EJECUTADO').length;
+    const pct = total ? Math.round((done/total)*100) : 0;
+    document.getElementById('header').innerHTML = `
+        <h1><i class="fas fa-moon"></i> Programa Nocturno
+            <span class="chip">${p.status}</span>
+        </h1>
+        <div class="meta">
+            <b>${p.code}</b> · Semana ${p.week_start} al ${p.week_end}
+            ${p.provider_name ? ' · ' + p.provider_name : ''}
+        </div>
+        <div class="meta" style="margin-top:3px;">${p.tech_count} técnicos × ${p.hours_per_night}h por noche</div>
+        <div class="progress"><span style="width:${pct}%;"></span></div>
+        <div class="progress-txt">${done}/${total} tareas completadas (${pct}%)</div>
+    `;
+}
+
+function renderTabs() {
+    const container = document.getElementById('dayTabs');
+    const weekStart = new Date(_plan.week_start + 'T00:00:00');
+    container.innerHTML = '';
+    for (let d = 0; d < 7; d++) {
+        const date = new Date(weekStart);
+        date.setDate(weekStart.getDate() + d);
+        const items = _plan.items.filter(it => it.day_of_week === d);
+        const done = items.filter(it => it.status === 'EJECUTADO').length;
+        const allDone = items.length > 0 && done === items.length;
+        container.innerHTML += `
+            <div class="day-tab ${d === _activeDay ? 'active' : ''} ${allDone ? 'done' : ''}" onclick="setDay(${d})">
+                ${DAY_NAMES[d]}
+                <span class="date">${date.getDate()}/${date.getMonth()+1}</span>
+                <span class="count">${done}/${items.length}</span>
+            </div>
+        `;
+    }
+}
+
+function setDay(d) {
+    _activeDay = d;
+    renderTabs();
+    renderDay();
+}
+
+function renderDay() {
+    const dayItems = _plan.items.filter(it => it.day_of_week === _activeDay);
+    const container = document.getElementById('dayContent');
+    if (!dayItems.length) {
+        container.innerHTML = `<div class="empty">
+            <i class="fas fa-bed" style="font-size:2rem;color:#444;"></i>
+            <p>No hay tareas para ${DAY_FULL[_activeDay]}</p>
+        </div>`;
+        return;
+    }
+
+    // Agrupar por área
+    const byArea = {};
+    dayItems.forEach(it => {
+        const area = it.area_name || 'Sin área';
+        (byArea[area] = byArea[area] || []).push(it);
+    });
+
+    let html = '';
+    Object.entries(byArea).forEach(([area, items]) => {
+        items.sort((a,b) => (a.order_index||0) - (b.order_index||0));
+        html += `<div class="area-group">
+            <div class="area-title"><i class="fas fa-industry"></i> ${area}
+                <span style="color:#9ab0cb;font-weight:400;font-size:.72rem;margin-left:auto;">
+                    ${items.filter(i => i.status === 'EJECUTADO').length}/${items.length}
+                </span>
+            </div>`;
+        items.forEach(it => {
+            const done = it.status === 'EJECUTADO';
+            html += `<div class="task ${it.source_type || 'custom'} ${done ? 'done' : ''}">
+                <div class="task-head">
+                    <div>
+                        <div class="task-code">${it.source_code || it.source_type || '—'}</div>
+                        ${it.equipment_tag ? `<div class="task-equip">${it.equipment_tag}</div>` : ''}
+                    </div>
+                    <div class="task-hours"><i class="far fa-clock"></i> ${it.estimated_hours}h</div>
+                </div>
+                <div class="task-desc">${escapeHtml(it.description || it.source_name || '')}</div>
+                <div class="task-actions">
+                    ${done
+                        ? `<div class="badge-done"><i class="fas fa-check-circle"></i> Ejecutado el ${it.executed_at || '-'} por ${it.executed_by || '-'}</div>`
+                        : `<button class="btn-done" onclick="openDoneModal(${it.id})"><i class="fas fa-check"></i> Marcar ejecutado</button>`
+                    }
+                </div>
+            </div>`;
+        });
+        html += `</div>`;
+    });
+    container.innerHTML = html;
+}
+
+function openDoneModal(itemId) {
+    _currentItemId = itemId;
+    const it = _plan.items.find(x => x.id === itemId);
+    document.getElementById('doneTitle').textContent = `Confirmar: ${it.source_code || it.source_type || 'tarea'}`;
+    document.getElementById('doneContext').textContent = (it.description || it.source_name || '').substring(0, 200);
+    document.getElementById('doneBy').value = localStorage.getItem('wn_exec_by') || '';
+    document.getElementById('doneNotes').value = '';
+    document.getElementById('doneModal').classList.add('open');
+}
+
+function closeDoneModal() {
+    document.getElementById('doneModal').classList.remove('open');
+    _currentItemId = null;
+}
+
+async function confirmDone() {
+    if (!_currentItemId) return;
+    const executedBy = document.getElementById('doneBy').value.trim();
+    const notes = document.getElementById('doneNotes').value.trim();
+    if (!executedBy) return alert('Por favor ingrese su nombre.');
+    localStorage.setItem('wn_exec_by', executedBy);
+    try {
+        const r = await fetch(`/api/public/weekly-plans/${TOKEN}/items/${_currentItemId}/execute`, {
+            method: 'POST',
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify({ executed_by: executedBy, notes }),
+        });
+        const j = await r.json();
+        if (!r.ok) return alert('Error: ' + (j.error || 'desconocido'));
+        closeDoneModal();
+        await loadPlan();  // recarga el estado
+    } catch (e) { alert('Error de red: ' + e.message); }
+}
+
+function escapeHtml(s) {
+    return (s || '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+}
+
+window.setDay = setDay;
+window.openDoneModal = openDoneModal;
+window.closeDoneModal = closeDoneModal;
+window.confirmDone = confirmDone;
+</script>
+</body>
+</html>

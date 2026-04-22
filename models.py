@@ -1496,6 +1496,123 @@ class ShutdownArea(db.Model):
         }
 
 
+# ============= PROGRAMA NOCTURNO SEMANAL =============
+
+class WeeklyPlan(db.Model):
+    """Programa semanal de mantenimiento preventivo (turno noche).
+
+    Un plan por semana con 2 técnicos × 12 h = 24 h-h por noche (ajustable).
+    El proveedor lo ejecuta mediante un link público tokenizado.
+    """
+    __tablename__ = 'weekly_plans'
+    __table_args__ = (
+        Index('ix_wplan_week_start', 'week_start'),
+    )
+    id: Mapped[int] = mapped_column(primary_key=True)
+    code: Mapped[str | None] = mapped_column(String(20), unique=True, nullable=True)
+    # PN-YYYY-WW (Programa Nocturno, año, semana ISO)
+    week_start: Mapped[str] = mapped_column(String(20), nullable=False)  # 'YYYY-MM-DD' lunes
+    week_end: Mapped[str] = mapped_column(String(20), nullable=False)    # 'YYYY-MM-DD' domingo
+    provider_id: Mapped[int | None] = mapped_column(ForeignKey('providers.id'), nullable=True)
+    tech_count: Mapped[int] = mapped_column(Integer, default=2)
+    hours_per_night: Mapped[float] = mapped_column(Float, default=12.0)
+    status: Mapped[str] = mapped_column(String(20), default='BORRADOR')
+    # BORRADOR | PUBLICADO | EN_CURSO | CERRADO
+    public_token: Mapped[str | None] = mapped_column(String(64), unique=True, nullable=True)
+    # Token URL-safe para que el proveedor acceda sin login
+    notes: Mapped[str | None] = mapped_column(Text, nullable=True)
+    created_by: Mapped[str | None] = mapped_column(String(120), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+    updated_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+    provider = relationship("Provider")
+    items = relationship("WeeklyPlanItem", backref="plan", cascade="all, delete-orphan")
+
+    def to_dict(self, include_items=False):
+        d = {
+            "id": self.id,
+            "code": self.code,
+            "week_start": self.week_start,
+            "week_end": self.week_end,
+            "provider_id": self.provider_id,
+            "provider_name": self.provider.name if self.provider else None,
+            "tech_count": self.tech_count,
+            "hours_per_night": self.hours_per_night,
+            "weekly_capacity_hours": round(self.tech_count * self.hours_per_night * 7, 2),
+            "status": self.status,
+            "public_token": self.public_token,
+            "notes": self.notes,
+            "created_by": self.created_by,
+            "created_at": self.created_at.isoformat() if self.created_at else None,
+            "updated_at": self.updated_at.isoformat() if self.updated_at else None,
+        }
+        if include_items:
+            d["items"] = [it.to_dict() for it in self.items]
+        return d
+
+
+class WeeklyPlanItem(db.Model):
+    """Tarea específica dentro del programa nocturno.
+
+    Cada ítem vincula a un punto preventivo (lub/insp/mon) que se debe
+    ejecutar en un día y área específicos de la semana.
+    Al marcarlo como EJECUTADO se crea una OT con source_type/source_id
+    y se actualiza automáticamente la próxima fecha del punto origen.
+    """
+    __tablename__ = 'weekly_plan_items'
+    __table_args__ = (
+        Index('ix_wpi_plan', 'plan_id'),
+    )
+    id: Mapped[int] = mapped_column(primary_key=True)
+    plan_id: Mapped[int] = mapped_column(ForeignKey('weekly_plans.id'), nullable=False)
+    day_of_week: Mapped[int] = mapped_column(Integer, nullable=False)  # 0=Lun, 6=Dom
+    area_id: Mapped[int | None] = mapped_column(ForeignKey('areas.id'), nullable=True)
+    order_index: Mapped[int] = mapped_column(Integer, default=0)
+
+    # Origen del preventivo (lubrication | inspection | monitoring | custom)
+    source_type: Mapped[str | None] = mapped_column(String(20), nullable=True)
+    source_id: Mapped[int | None] = mapped_column(Integer, nullable=True)
+
+    # Denormalizado para velocidad de render (evita joins constantes)
+    source_code: Mapped[str | None] = mapped_column(String(50), nullable=True)
+    source_name: Mapped[str | None] = mapped_column(String(250), nullable=True)
+    equipment_tag: Mapped[str | None] = mapped_column(String(50), nullable=True)
+    description: Mapped[str | None] = mapped_column(Text, nullable=True)
+    estimated_hours: Mapped[float] = mapped_column(Float, default=1.0)
+
+    status: Mapped[str] = mapped_column(String(20), default='PLANIFICADO')
+    # PLANIFICADO | EJECUTADO | OMITIDO
+    executed_at: Mapped[str | None] = mapped_column(String(20), nullable=True)
+    executed_by: Mapped[str | None] = mapped_column(String(120), nullable=True)
+    execution_notes: Mapped[str | None] = mapped_column(Text, nullable=True)
+    work_order_id: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    # OT que se crea automáticamente al marcarlo como ejecutado
+
+    area = relationship("Area")
+
+    def to_dict(self):
+        return {
+            "id": self.id,
+            "plan_id": self.plan_id,
+            "day_of_week": self.day_of_week,
+            "area_id": self.area_id,
+            "area_name": self.area.name if self.area else None,
+            "order_index": self.order_index,
+            "source_type": self.source_type,
+            "source_id": self.source_id,
+            "source_code": self.source_code,
+            "source_name": self.source_name,
+            "equipment_tag": self.equipment_tag,
+            "description": self.description,
+            "estimated_hours": self.estimated_hours,
+            "status": self.status,
+            "executed_at": self.executed_at,
+            "executed_by": self.executed_by,
+            "execution_notes": self.execution_notes,
+            "work_order_id": self.work_order_id,
+        }
+
+
 # ============= PRODUCTION GOALS (Módulo Confiabilidad de Producción) =============
 
 class ProductionGoal(db.Model):

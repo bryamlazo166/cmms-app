@@ -24,6 +24,7 @@ from models import (
     ThicknessPoint, ThicknessInspection, ThicknessReading,
     Shutdown, ShutdownArea,
     ProductionGoal,
+    WeeklyPlan, WeeklyPlanItem,
 )
 from utils.crud_helpers import create_entry, get_entries, update_entry, delete_entry
 from utils.reporting_helpers import (
@@ -58,6 +59,7 @@ from routes.purchasing_routes import register_purchasing_routes
 from routes.warehouse_routes import register_warehouse_routes
 from routes.work_orders_routes import register_work_orders_routes
 from routes.production_routes import register_production_routes
+from routes.weekly_plan_routes import register_weekly_plan_routes
 
 logging.basicConfig(level=logging.DEBUG)
 logger = logging.getLogger(__name__)
@@ -208,6 +210,7 @@ _MODULE_ROUTES = {
     'indicadores': {'view': False, 'edit': False},
     'indicadores':      {'pages': ['/indicadores'], 'api': ['/api/indicators']},
     'produccion':       {'pages': ['/produccion'], 'api': ['/api/production']},
+    'programa_nocturno': {'pages': ['/programa-nocturno'], 'api': ['/api/weekly-plans', '/api/preventive-sources']},
     'paradas':          {'pages': ['/paradas'], 'api': ['/api/shutdowns']},
     'seguimiento':      {'pages': ['/seguimiento'], 'api': ['/api/activities', '/api/milestones']},
     'reportes':         {'pages': ['/reportes'], 'api': ['/api/reports']},
@@ -227,6 +230,7 @@ _DEFAULT_PERMS = {
         'espesores': {'view': True, 'edit': True}, 'cockpit': {'view': True, 'edit': False},
         'indicadores': {'view': True, 'edit': False},
         'produccion': {'view': True, 'edit': True},
+        'programa_nocturno': {'view': True, 'edit': True},
         'seguimiento': {'view': True, 'edit': True}, 'reportes': {'view': True, 'edit': True},
         'activos_rotativos': {'view': True, 'edit': True}, 'activos_config': {'view': True, 'edit': False},
         'historial_equipo': {'view': True, 'edit': False}, 'exportar': {'view': False, 'edit': False},
@@ -240,6 +244,7 @@ _DEFAULT_PERMS = {
         'espesores': {'view': True, 'edit': True},
         'paradas': {'view': True, 'edit': True},
         'produccion': {'view': True, 'edit': True},
+        'programa_nocturno': {'view': True, 'edit': True},
         'seguimiento': {'view': True, 'edit': True}, 'reportes': {'view': True, 'edit': False},
         'activos_rotativos': {'view': True, 'edit': False}, 'activos_config': {'view': True, 'edit': False},
         'historial_equipo': {'view': True, 'edit': False}, 'exportar': {'view': False, 'edit': False},
@@ -301,6 +306,7 @@ _DEFAULT_PERMS = {
         'espesores': {'view': True, 'edit': False}, 'cockpit': {'view': True, 'edit': False},
         'indicadores': {'view': True, 'edit': False},
         'produccion': {'view': True, 'edit': True},
+        'programa_nocturno': {'view': True, 'edit': False},
         'paradas': {'view': True, 'edit': False},
         'seguimiento': {'view': True, 'edit': False}, 'reportes': {'view': True, 'edit': False},
         'activos_rotativos': {'view': True, 'edit': False}, 'activos_config': {'view': True, 'edit': False},
@@ -357,6 +363,10 @@ def _find_module_for_path(path):
 
 @app.before_request
 def require_login():
+    # Rutas públicas tokenizadas (proveedor turno noche) — sin login requerido
+    if request.path.startswith('/programa-nocturno/publico/') or request.path.startswith('/api/public/'):
+        return
+
     if current_user.is_authenticated:
         role = getattr(current_user, 'role', None)
 
@@ -610,6 +620,24 @@ register_production_routes(
     Area=Area,
     Line=Line,
     Equipment=Equipment,
+)
+
+register_weekly_plan_routes(
+    app=app,
+    db=db,
+    logger=logger,
+    WeeklyPlan=WeeklyPlan,
+    WeeklyPlanItem=WeeklyPlanItem,
+    Area=Area,
+    Line=Line,
+    Equipment=Equipment,
+    WorkOrder=WorkOrder,
+    Provider=Provider,
+    LubricationPoint=LubricationPoint,
+    InspectionRoute=InspectionRoute,
+    MonitoringPoint=MonitoringPoint,
+    _calculate_lubrication_schedule=_calculate_lubrication_schedule,
+    _calculate_monitoring_schedule=_calculate_monitoring_schedule,
 )
 
 register_rotative_assets_routes(
