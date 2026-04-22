@@ -71,11 +71,11 @@ def register_weekly_plan_routes(
     # ── Página web (solo dashboard del jefe) ─────────────────────────────
 
     @app.route('/programa-nocturno', methods=['GET'])
-    def weekly_plan_page():
+    def wp_page():
         return render_template('programa_nocturno.html')
 
     @app.route('/api/preventive-sources', methods=['GET'])
-    def list_preventive_sources():
+    def wp_list_preventive_sources():
         """Endpoint auxiliar para el selector de ítems manuales.
         Filtros: ?source_type=lubrication|inspection|monitoring&area_id=N
         """
@@ -99,7 +99,7 @@ def register_weekly_plan_routes(
     # ── CRUD de planes ───────────────────────────────────────────────────
 
     @app.route('/api/weekly-plans', methods=['GET'])
-    def list_weekly_plans():
+    def wp_list():
         try:
             plans = WeeklyPlan.query.order_by(WeeklyPlan.week_start.desc()).limit(20).all()
             out = []
@@ -115,7 +115,7 @@ def register_weekly_plan_routes(
             return jsonify({"error": str(e)}), 500
 
     @app.route('/api/weekly-plans', methods=['POST'])
-    def create_weekly_plan():
+    def wp_create():
         try:
             data = request.get_json() or {}
             ref_date = data.get('week_start') or dt.date.today().isoformat()
@@ -146,7 +146,7 @@ def register_weekly_plan_routes(
             return jsonify({"error": str(e)}), 500
 
     @app.route('/api/weekly-plans/<int:plan_id>', methods=['GET'])
-    def get_weekly_plan(plan_id):
+    def wp_detail(plan_id):
         try:
             p = WeeklyPlan.query.get_or_404(plan_id)
             d = p.to_dict(include_items=True)
@@ -171,7 +171,7 @@ def register_weekly_plan_routes(
             return jsonify({"error": str(e)}), 500
 
     @app.route('/api/weekly-plans/<int:plan_id>', methods=['PUT'])
-    def update_weekly_plan(plan_id):
+    def wp_update(plan_id):
         try:
             p = WeeklyPlan.query.get_or_404(plan_id)
             data = request.get_json() or {}
@@ -192,7 +192,7 @@ def register_weekly_plan_routes(
             return jsonify({"error": str(e)}), 500
 
     @app.route('/api/weekly-plans/<int:plan_id>', methods=['DELETE'])
-    def delete_weekly_plan(plan_id):
+    def wp_delete(plan_id):
         try:
             p = WeeklyPlan.query.get_or_404(plan_id)
             db.session.delete(p)
@@ -204,7 +204,7 @@ def register_weekly_plan_routes(
             return jsonify({"error": str(e)}), 500
 
     @app.route('/api/weekly-plans/<int:plan_id>/publish', methods=['POST'])
-    def publish_weekly_plan(plan_id):
+    def wp_publish(plan_id):
         """Cambia estado a PUBLICADO y genera token público para el proveedor."""
         try:
             p = WeeklyPlan.query.get_or_404(plan_id)
@@ -228,7 +228,7 @@ def register_weekly_plan_routes(
     # ── Auto-planner ─────────────────────────────────────────────────────
 
     @app.route('/api/weekly-plans/<int:plan_id>/auto-plan', methods=['POST'])
-    def auto_plan_week(plan_id):
+    def wp_auto_plan(plan_id):
         """Distribuye puntos preventivos en las 4 áreas × 7 noches llenando la capacidad.
 
         Algoritmo:
@@ -371,7 +371,7 @@ def register_weekly_plan_routes(
     # ── CRUD de ítems ────────────────────────────────────────────────────
 
     @app.route('/api/weekly-plans/<int:plan_id>/items', methods=['POST'])
-    def add_plan_item(plan_id):
+    def wp_item_add(plan_id):
         """Agregar ítem manual al plan (sin pasar por auto-planner)."""
         try:
             p = WeeklyPlan.query.get_or_404(plan_id)
@@ -398,7 +398,7 @@ def register_weekly_plan_routes(
             return jsonify({"error": str(e)}), 500
 
     @app.route('/api/weekly-plans/<int:plan_id>/items/<int:item_id>', methods=['PUT'])
-    def update_plan_item(plan_id, item_id):
+    def wp_item_update(plan_id, item_id):
         """Actualizar ítem (usado para drag & drop y edición manual)."""
         try:
             item = WeeklyPlanItem.query.filter_by(id=item_id, plan_id=plan_id).first_or_404()
@@ -421,7 +421,7 @@ def register_weekly_plan_routes(
             return jsonify({"error": str(e)}), 500
 
     @app.route('/api/weekly-plans/<int:plan_id>/items/<int:item_id>', methods=['DELETE'])
-    def delete_plan_item(plan_id, item_id):
+    def wp_item_delete(plan_id, item_id):
         try:
             item = WeeklyPlanItem.query.filter_by(id=item_id, plan_id=plan_id).first_or_404()
             db.session.delete(item)
@@ -530,7 +530,7 @@ def register_weekly_plan_routes(
         return wo
 
     @app.route('/api/weekly-plans/<int:plan_id>/items/<int:item_id>/execute', methods=['POST'])
-    def execute_plan_item(plan_id, item_id):
+    def wp_item_execute(plan_id, item_id):
         """Marcar ítem como ejecutado → crea OT y actualiza el punto origen."""
         try:
             item = WeeklyPlanItem.query.filter_by(id=item_id, plan_id=plan_id).first_or_404()
@@ -555,14 +555,14 @@ def register_weekly_plan_routes(
     # ── Vista pública tokenizada (para el proveedor, sin login) ──────────
 
     @app.route('/programa-nocturno/publico/<token>', methods=['GET'])
-    def public_weekly_plan_view(token):
+    def wp_public_view(token):
         p = WeeklyPlan.query.filter_by(public_token=token).first()
         if not p:
             return "Enlace inválido o plan cerrado.", 404
         return render_template('programa_nocturno_publico.html', token=token)
 
     @app.route('/api/public/weekly-plans/<token>', methods=['GET'])
-    def public_weekly_plan_data(token):
+    def wp_public_data(token):
         """API pública: datos del plan por token (sin login)."""
         try:
             p = WeeklyPlan.query.filter_by(public_token=token).first()
@@ -580,7 +580,7 @@ def register_weekly_plan_routes(
             return jsonify({"error": str(e)}), 500
 
     @app.route('/api/public/weekly-plans/<token>/items/<int:item_id>/execute', methods=['POST'])
-    def public_execute_item(token, item_id):
+    def wp_public_execute(token, item_id):
         """Proveedor marca ítem ejecutado desde el link público."""
         try:
             p = WeeklyPlan.query.filter_by(public_token=token).first()
@@ -607,7 +607,7 @@ def register_weekly_plan_routes(
     # ── Export PDF ───────────────────────────────────────────────────────
 
     @app.route('/api/weekly-plans/<int:plan_id>/report/pdf', methods=['GET'])
-    def export_weekly_plan_pdf(plan_id):
+    def wp_export_pdf(plan_id):
         """PDF con 7 secciones (una por noche), listo para entregar al proveedor."""
         try:
             from reportlab.lib import colors
