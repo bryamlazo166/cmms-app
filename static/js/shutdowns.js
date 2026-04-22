@@ -388,6 +388,9 @@ async function openCreateOTInShutdownModal() {
     if (!_activeShutdown || !_activeShutdown.id) return alert('No hay parada seleccionada');
     document.getElementById('cotShutdownId').value = _activeShutdown.id;
 
+    // Reset selector de fuente preventiva
+    cotSetSourceType('none');
+
     // Limpiar formulario
     document.getElementById('cotDesc').value = '';
     document.getElementById('cotDuration').value = '4';
@@ -498,6 +501,9 @@ async function confirmCreateOTInShutdown() {
     if (!equip) return alert('Selecciona un equipo');
     if (!desc) return alert('Escribe una descripcion');
 
+    const sourceType = document.getElementById('cotSourceType').value || null;
+    const sourceId = parseInt(document.getElementById('cotSourceId').value || 0, 10) || null;
+
     const payload = {
         area_id: parseInt(area, 10),
         line_id: parseInt(document.getElementById('cotLine').value, 10) || null,
@@ -509,6 +515,8 @@ async function confirmCreateOTInShutdown() {
         estimated_duration: parseFloat(document.getElementById('cotDuration').value) || 0,
         tech_count: parseInt(document.getElementById('cotTechs').value, 10) || 1,
         provider_id: parseInt(document.getElementById('cotProvider').value, 10) || null,
+        source_type: sourceType,
+        source_id: sourceId,
         status: 'Programada',
     };
 
@@ -535,6 +543,129 @@ window.cotOnLineChange = cotOnLineChange;
 window.cotOnEquipChange = cotOnEquipChange;
 window.cotOnSystemChange = cotOnSystemChange;
 window.confirmCreateOTInShutdown = confirmCreateOTInShutdown;
+
+
+// ── Selector de fuente preventiva (lubricacion / inspeccion / monitoreo) ─
+let _cotPreventiveSources = [];
+
+async function cotSetSourceType(type) {
+    // Actualizar estado visual de los botones
+    document.querySelectorAll('#createOTModal .btn-source').forEach(btn => {
+        const t = btn.getAttribute('data-source');
+        if (t === type) {
+            btn.classList.add('active');
+            btn.style.filter = 'none';
+            btn.style.opacity = '1';
+            btn.style.outline = '2px solid rgba(255,255,255,.35)';
+        } else {
+            btn.classList.remove('active');
+            btn.style.filter = 'grayscale(50%)';
+            btn.style.opacity = '0.6';
+            btn.style.outline = 'none';
+        }
+    });
+
+    const picker = document.getElementById('cotPreventivePicker');
+    const srcHid = document.getElementById('cotSourceType');
+    const idHid = document.getElementById('cotSourceId');
+    const info = document.getElementById('cotSourceInfo');
+    info.textContent = '';
+    idHid.value = '';
+
+    if (type === 'none') {
+        picker.style.display = 'none';
+        srcHid.value = '';
+        return;
+    }
+
+    srcHid.value = type;
+    picker.style.display = 'block';
+
+    // Cargar puntos disponibles
+    const sel = document.getElementById('cotSourceSelect');
+    sel.innerHTML = '<option value="">- Cargando puntos disponibles... -</option>';
+    try {
+        const shId = document.getElementById('cotShutdownId').value;
+        const res = await fetch(`/api/shutdowns/${shId}/preventive-sources?source_type=${type}`);
+        const data = await res.json();
+        _cotPreventiveSources = Array.isArray(data) ? data : [];
+
+        if (_cotPreventiveSources.length === 0) {
+            sel.innerHTML = '<option value="">Sin puntos disponibles en las areas de esta parada</option>';
+            info.innerHTML = '<i class="fas fa-info-circle"></i> Todos los puntos estan al dia o ya tienen OT vinculada.';
+            return;
+        }
+
+        // Emoji segun semaforo
+        const semIcon = s => s === 'ROJO' ? '🔴' : (s === 'AMARILLO' ? '🟡' : '🟢');
+        sel.innerHTML = '<option value="">- Selecciona un punto -</option>' +
+            _cotPreventiveSources.map(s =>
+                `<option value="${s.source_id}">${semIcon(s.semaphore)} ${s.code || ''} — ${s.name} [${s.equipment_tag}] · venc: ${s.next_due_date}</option>`
+            ).join('');
+    } catch (e) {
+        sel.innerHTML = '<option value="">Error al cargar puntos</option>';
+        info.innerHTML = `<span style="color:#FF453A;">Error: ${e.message}</span>`;
+    }
+}
+
+function cotOnSourceSelected() {
+    const sel = document.getElementById('cotSourceSelect');
+    const sid = parseInt(sel.value, 10);
+    const idHid = document.getElementById('cotSourceId');
+    const info = document.getElementById('cotSourceInfo');
+
+    if (!sid) {
+        idHid.value = '';
+        info.textContent = '';
+        return;
+    }
+
+    const src = _cotPreventiveSources.find(s => s.source_id === sid);
+    if (!src) return;
+
+    idHid.value = sid;
+
+    // Auto-llenar descripcion
+    document.getElementById('cotDesc').value = src.description || '';
+
+    // Forzar tipo = Preventivo
+    document.getElementById('cotType').value = 'Preventivo';
+
+    // Auto-seleccionar taxonomia (area -> linea -> equipo -> sistema/comp)
+    if (src.area_id) {
+        document.getElementById('cotArea').value = src.area_id;
+        cotOnAreaChange();
+        setTimeout(() => {
+            if (src.line_id) {
+                document.getElementById('cotLine').value = src.line_id;
+                cotOnLineChange();
+                setTimeout(() => {
+                    if (src.equipment_id) {
+                        document.getElementById('cotEquip').value = src.equipment_id;
+                        cotOnEquipChange();
+                        setTimeout(() => {
+                            if (src.system_id) {
+                                document.getElementById('cotSystem').value = src.system_id;
+                                cotOnSystemChange();
+                                setTimeout(() => {
+                                    if (src.component_id) {
+                                        document.getElementById('cotComponent').value = src.component_id;
+                                    }
+                                }, 50);
+                            }
+                        }, 50);
+                    }
+                }, 50);
+            }
+        }, 50);
+    }
+
+    info.innerHTML = `<i class="fas fa-check-circle" style="color:#30D158;"></i>
+        Vinculado a <b>${src.code || ''} ${src.name}</b> · al cerrar esta OT se actualiza automaticamente la proxima fecha del punto.`;
+}
+
+window.cotSetSourceType = cotSetSourceType;
+window.cotOnSourceSelected = cotOnSourceSelected;
 
 
 // ── Desvincular OT de una parada ─────────────────────────────────

@@ -262,6 +262,10 @@ def register_shutdown_routes(
         Uso tipico: planificador arma una parada con varios trabajos
         aprovechados (cambio de tapa, chaqueta, etc.) sin que haya una
         falla concreta que los origine.
+
+        Si se pasan source_type y source_id, la OT queda vinculada a un
+        punto preventivo (lubricacion, inspeccion, monitoreo) y al
+        cerrarla se actualiza automaticamente la proxima fecha del punto.
         """
         try:
             data = request.json or {}
@@ -274,10 +278,23 @@ def register_shutdown_routes(
             if not description:
                 return jsonify({"error": "Falta descripcion"}), 400
 
+            # Normalizar source_type / source_id
+            source_type = data.get('source_type') or None
+            source_id_raw = data.get('source_id')
+            try:
+                source_id = int(source_id_raw) if source_id_raw not in (None, '', 0) else None
+            except Exception:
+                source_id = None
+
+            # Si viene de un plan preventivo, forzar tipo = Preventivo
+            maint_type = data.get('maintenance_type') or 'Correctivo'
+            if source_type in ('lubrication', 'inspection', 'monitoring'):
+                maint_type = 'Preventivo'
+
             # Sanitizar y construir
             clean = {
                 'description': description,
-                'maintenance_type': data.get('maintenance_type') or 'Correctivo',
+                'maintenance_type': maint_type,
                 'status': data.get('status') or 'Programada',
                 'scheduled_date': data.get('scheduled_date') or sh.shutdown_date,
                 'estimated_duration': data.get('estimated_duration') or 0,
@@ -290,6 +307,8 @@ def register_shutdown_routes(
                 'equipment_id': data.get('equipment_id'),
                 'system_id': data.get('system_id'),
                 'component_id': data.get('component_id'),
+                'source_type': source_type if source_id else None,
+                'source_id': source_id,
                 'shutdown_id': shutdown_id,
             }
             # Convertir '' a None
@@ -673,6 +692,177 @@ def register_shutdown_routes(
             )
         except Exception as e:
             logger.error(f"export_shutdown_pdf error: {e}")
+            import traceback; traceback.print_exc()
+            return jsonify({"error": str(e)}), 500
+
+    @app.route('/api/shutdowns/<int:shutdown_id>/preventive-sources', methods=['GET'])
+    def get_shutdown_preventive_sources(shutdown_id):
+        """Lista puntos preventivos (lubricacion, inspeccion, monitoreo) que
+        se pueden agregar a esta parada, filtrados por las areas de la parada.
+
+        Prioriza puntos VENCIDOS/PROXIMOS y excluye los que ya tienen OT
+        abierta vinculada (para no duplicar).
+
+        Query param opcional: ?source_type=lubrication|inspection|monitoring
+        """
+        try:
+            from models import (
+                LubricationPoint, InspectionRoute, MonitoringPoint,
+            )
+            sh = Shutdown.query.get_or_404(shutdown_id)
+            filter_type = request.args.get('source_type')
+
+            # Areas de la parada (vacio = todas las areas)
+            area_ids = [sa.area_id for sa in sh.areas] if sh.shutdown_type == 'PARCIAL' else []
+
+            # Mapas auxiliares
+            line_map = {l.id: l for l in Line.query.all()}
+            equip_map = {e.id: e for e in Equipment.query.all()}
+            area_map = {a.id: a for a in Area.query.all()}
+
+            def _resolve_area_id(point):
+                if point.area_id:
+                    return point.area_id
+                if point.line_id and point.line_id in line_map:
+                    return line_map[point.line_id].area_id
+                if point.equipment_id and point.equipment_id in equip_map:
+                    eq = equip_map[point.equipment_id]
+                    if eq.line_id and eq.line_id in line_map:
+                        return line_map[eq.line_id].area_id
+                return None
+
+            def _in_area_filter(aid):
+                if not area_ids:
+                    return True  # parada TOTAL
+                return aid in area_ids
+
+            # OTs abiertas por source (para excluir duplicados)
+            open_ots = WorkOrder.query.filter(
+                WorkOrder.status.in_(['Abierta', 'Programada', 'En Progreso']),
+                WorkOrder.source_type.isnot(None),
+            ).all()
+            occupied = {(o.source_type, o.source_id) for o in open_ots if o.source_id}
+
+            sources = []
+
+            # Lubricacion
+            if not filter_type or filter_type == 'lubrication':
+                for p in LubricationPoint.query.filter_by(is_active=True).all():
+                    aid = _resolve_area_id(p)
+                    if not _in_area_filter(aid):
+                        continue
+                    if ('lubrication', p.id) in occupied:
+                        continue
+                    eq = equip_map.get(p.equipment_id) if p.equipment_id else None
+                    ln = line_map.get(p.line_id) if p.line_id else (line_map.get(eq.line_id) if eq else None)
+                    desc = f"[PREVENTIVO - LUBRICACION] {p.code or ''} {p.name or p.task_name or ''}".strip()
+                    if p.lubricant_name:
+                        desc += f"\nLubricante: {p.lubricant_name}"
+                        if p.quantity_nominal:
+                            desc += f" | Cantidad: {p.quantity_nominal} {p.quantity_unit or ''}".strip()
+                    if p.last_service_date:
+                        desc += f"\nUltimo servicio: {p.last_service_date}"
+                    sources.append({
+                        'source_type': 'lubrication',
+                        'source_id': p.id,
+                        'code': p.code or '',
+                        'name': p.name or p.task_name or '(sin nombre)',
+                        'semaphore': p.semaphore_status or 'VERDE',
+                        'next_due_date': p.next_due_date or '-',
+                        'frequency_days': p.frequency_days,
+                        'last_execution': p.last_service_date or '-',
+                        'area_id': aid,
+                        'area_name': area_map.get(aid).name if aid in area_map else '-',
+                        'line_id': p.line_id or (eq.line_id if eq else None),
+                        'line_name': ln.name if ln else '-',
+                        'equipment_id': p.equipment_id,
+                        'equipment_tag': eq.tag if eq else '-',
+                        'equipment_name': eq.name if eq else '-',
+                        'system_id': p.system_id,
+                        'component_id': p.component_id,
+                        'description': desc,
+                    })
+
+            # Inspeccion
+            if not filter_type or filter_type == 'inspection':
+                for r in InspectionRoute.query.filter_by(is_active=True).all():
+                    aid = _resolve_area_id(r)
+                    if not _in_area_filter(aid):
+                        continue
+                    if ('inspection', r.id) in occupied:
+                        continue
+                    eq = equip_map.get(r.equipment_id) if r.equipment_id else None
+                    ln = line_map.get(r.line_id) if r.line_id else (line_map.get(eq.line_id) if eq else None)
+                    desc = f"[PREVENTIVO - INSPECCION] {r.code or ''} {r.name or ''}".strip()
+                    desc += f"\nFrecuencia: cada {r.frequency_days} dias"
+                    if r.last_execution_date:
+                        desc += f" | Ultima ejecucion: {r.last_execution_date}"
+                    sources.append({
+                        'source_type': 'inspection',
+                        'source_id': r.id,
+                        'code': r.code or '',
+                        'name': r.name or '',
+                        'semaphore': r.semaphore_status or 'VERDE',
+                        'next_due_date': r.next_due_date or '-',
+                        'frequency_days': r.frequency_days,
+                        'last_execution': r.last_execution_date or '-',
+                        'area_id': aid,
+                        'area_name': area_map.get(aid).name if aid in area_map else '-',
+                        'line_id': r.line_id or (eq.line_id if eq else None),
+                        'line_name': ln.name if ln else '-',
+                        'equipment_id': r.equipment_id,
+                        'equipment_tag': eq.tag if eq else '-',
+                        'equipment_name': eq.name if eq else '-',
+                        'system_id': None,
+                        'component_id': None,
+                        'description': desc,
+                    })
+
+            # Monitoreo
+            if not filter_type or filter_type == 'monitoring':
+                for p in MonitoringPoint.query.filter_by(is_active=True).all():
+                    aid = _resolve_area_id(p)
+                    if not _in_area_filter(aid):
+                        continue
+                    if ('monitoring', p.id) in occupied:
+                        continue
+                    eq = equip_map.get(p.equipment_id) if p.equipment_id else None
+                    ln = line_map.get(p.line_id) if p.line_id else (line_map.get(eq.line_id) if eq else None)
+                    desc = f"[PREVENTIVO - MONITOREO] {p.code or ''} {p.name or ''}".strip()
+                    if p.measurement_type:
+                        desc += f"\nTipo: {p.measurement_type}"
+                        if p.axis:
+                            desc += f" Eje: {p.axis}"
+                    if p.alarm_min is not None or p.alarm_max is not None:
+                        desc += f"\nAlarma: {p.alarm_min or '-'} a {p.alarm_max or '-'} {p.unit or ''}".strip()
+                    sources.append({
+                        'source_type': 'monitoring',
+                        'source_id': p.id,
+                        'code': p.code or '',
+                        'name': p.name or '',
+                        'semaphore': p.semaphore_status or 'VERDE',
+                        'next_due_date': p.next_due_date or '-',
+                        'frequency_days': p.frequency_days,
+                        'last_execution': p.last_measurement_date or '-',
+                        'area_id': aid,
+                        'area_name': area_map.get(aid).name if aid in area_map else '-',
+                        'line_id': p.line_id or (eq.line_id if eq else None),
+                        'line_name': ln.name if ln else '-',
+                        'equipment_id': p.equipment_id,
+                        'equipment_tag': eq.tag if eq else '-',
+                        'equipment_name': eq.name if eq else '-',
+                        'system_id': p.system_id,
+                        'component_id': p.component_id,
+                        'description': desc,
+                    })
+
+            # Orden: ROJO primero, luego AMARILLO, luego VERDE; por next_due_date
+            sem_rank = {'ROJO': 0, 'AMARILLO': 1, 'VERDE': 2}
+            sources.sort(key=lambda s: (sem_rank.get(s['semaphore'], 9), s['next_due_date'] or 'zzz'))
+
+            return jsonify(sources)
+        except Exception as e:
+            logger.error(f"get_shutdown_preventive_sources error: {e}")
             import traceback; traceback.print_exc()
             return jsonify({"error": str(e)}), 500
 

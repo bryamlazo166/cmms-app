@@ -182,13 +182,41 @@
     </dialog>
 
     <!-- MODAL CREAR OT NUEVA EN PARADA -->
-    <dialog id="createOTModal" style="max-width:720px;">
+    <dialog id="createOTModal" style="max-width:760px;">
         <h2><i class="fas fa-plus-circle"></i> Crear OT nueva en esta parada</h2>
         <p style="color:#9ab0cb;font-size:.85rem;">
             Trabajos planificados dentro de la parada (no requieren aviso previo).
             Ejemplo: cambio de tapa bombeada, reparacion de chaqueta, renovacion de linea de vapor.
         </p>
         <input type="hidden" id="cotShutdownId">
+        <input type="hidden" id="cotSourceType">
+        <input type="hidden" id="cotSourceId">
+
+        <!-- Selector de origen: manual o desde plan preventivo -->
+        <div class="form-group" style="background:rgba(10,132,255,.05);border:1px solid rgba(10,132,255,.2);border-radius:8px;padding:10px;margin-bottom:10px;">
+            <label style="color:#5ac8fa;font-weight:600;margin-bottom:8px;"><i class="fas fa-magic"></i> ¿Esta OT viene de un plan preventivo?</label>
+            <div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:8px;">
+                <button type="button" class="btn-source active" data-source="none" onclick="cotSetSourceType('none')" style="background:#5ac8fa;color:#000;border:1px solid #5ac8fa;padding:6px 12px;border-radius:6px;cursor:pointer;font-size:.82rem;font-weight:600;">
+                    <i class="fas fa-edit"></i> Manual (trabajo aprovechado)
+                </button>
+                <button type="button" class="btn-source" data-source="lubrication" onclick="cotSetSourceType('lubrication')" style="background:rgba(255,214,10,.12);color:#FFD60A;border:1px solid rgba(255,214,10,.4);padding:6px 12px;border-radius:6px;cursor:pointer;font-size:.82rem;font-weight:600;">
+                    <i class="fas fa-oil-can"></i> Lubricacion
+                </button>
+                <button type="button" class="btn-source" data-source="inspection" onclick="cotSetSourceType('inspection')" style="background:rgba(48,209,88,.12);color:#30D158;border:1px solid rgba(48,209,88,.4);padding:6px 12px;border-radius:6px;cursor:pointer;font-size:.82rem;font-weight:600;">
+                    <i class="fas fa-clipboard-check"></i> Inspeccion
+                </button>
+                <button type="button" class="btn-source" data-source="monitoring" onclick="cotSetSourceType('monitoring')" style="background:rgba(255,69,58,.12);color:#FF453A;border:1px solid rgba(255,69,58,.4);padding:6px 12px;border-radius:6px;cursor:pointer;font-size:.82rem;font-weight:600;">
+                    <i class="fas fa-wave-square"></i> Monitoreo
+                </button>
+            </div>
+            <div id="cotPreventivePicker" style="display:none;">
+                <label style="color:#9ab0cb;font-size:.78rem;margin-bottom:4px;">Seleccionar punto (se llena descripcion y taxonomia automaticamente)</label>
+                <select id="cotSourceSelect" onchange="cotOnSourceSelected()" style="width:100%;">
+                    <option value="">- Cargando... -</option>
+                </select>
+                <div id="cotSourceInfo" style="margin-top:6px;font-size:.78rem;color:#9ab0cb;"></div>
+            </div>
+        </div>
 
         <div class="form-row">
             <div class="form-group">
