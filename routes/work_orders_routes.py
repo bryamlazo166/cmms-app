@@ -81,110 +81,17 @@ def register_work_orders_routes(
     def generate_preventive_ots():
         """Scan all overdue lub/insp/mon points and create preventive OTs."""
         try:
+            from utils.preventive_sources import collect_sources
             created = []
             skipped = 0
 
-            sources = []
-
-            # Collect overdue lubrication points
-            if LubricationPoint:
-                for p in LubricationPoint.query.filter_by(is_active=True).all():
-                    if _calculate_lubrication_schedule:
-                        _, sem = _calculate_lubrication_schedule(
-                            p.last_service_date, p.frequency_days, p.warning_days)
-                    else:
-                        sem = p.semaphore_status
-                    if sem in ('ROJO', 'AMARILLO'):
-                        lub_desc = f"[PREVENTIVO - LUBRICACION] {p.code} {p.name}"
-                        if p.lubricant_name:
-                            lub_desc += f"\nLubricante: {p.lubricant_name}"
-                        if p.quantity_nominal:
-                            lub_desc += f" | Cantidad: {p.quantity_nominal} {p.quantity_unit or 'L'}"
-                        lub_desc += f"\nFrecuencia: cada {p.frequency_days} dias"
-                        if p.last_service_date:
-                            lub_desc += f" | Ultimo servicio: {p.last_service_date}"
-                        sources.append({
-                            'source_type': 'lubrication',
-                            'source_id': p.id,
-                            'source_code': p.code,
-                            'source_name': p.name,
-                            'semaphore': sem,
-                            'equipment_id': p.equipment_id,
-                            'area_id': p.area_id,
-                            'line_id': p.line_id,
-                            'system_id': p.system_id,
-                            'component_id': p.component_id,
-                            'description': lub_desc,
-                        })
-
-            # Collect overdue inspection routes
-            if InspectionRoute:
-                for r in InspectionRoute.query.filter_by(is_active=True).all():
-                    if _calculate_lubrication_schedule:
-                        _, sem = _calculate_lubrication_schedule(
-                            r.last_execution_date, r.frequency_days, r.warning_days)
-                    else:
-                        sem = r.semaphore_status
-                    if sem in ('ROJO', 'AMARILLO'):
-                        # Build item list for description
-                        item_list = ""
-                        if hasattr(r, 'items') and r.items:
-                            active_items = [i for i in r.items if i.is_active]
-                            if active_items:
-                                item_list = "\nChecklist: " + " | ".join(
-                                    f"{i.description}{' ('+i.unit+')' if i.unit else ''}"
-                                    for i in active_items[:8]
-                                )
-                        insp_desc = f"[PREVENTIVO - INSPECCION] {r.code} {r.name}"
-                        insp_desc += f"\nFrecuencia: cada {r.frequency_days} dias"
-                        if r.last_execution_date:
-                            insp_desc += f" | Ultima ejecucion: {r.last_execution_date}"
-                        insp_desc += item_list
-                        sources.append({
-                            'source_type': 'inspection',
-                            'source_id': r.id,
-                            'source_code': r.code,
-                            'source_name': r.name,
-                            'semaphore': sem,
-                            'equipment_id': r.equipment_id,
-                            'area_id': r.area_id,
-                            'line_id': r.line_id,
-                            'system_id': None,
-                            'component_id': None,
-                            'description': insp_desc,
-                        })
-
-            # Collect overdue monitoring points
-            if MonitoringPoint and _calculate_monitoring_schedule:
-                for p in MonitoringPoint.query.filter_by(is_active=True).all():
-                    _, sem = _calculate_monitoring_schedule(
-                        p.last_measurement_date, p.frequency_days, p.warning_days)
-                    if sem in ('ROJO', 'AMARILLO'):
-                        mon_desc = f"[PREVENTIVO - MONITOREO] {p.code} {p.name}"
-                        mon_desc += f"\nTipo: {p.measurement_type or 'VIBRACION'}"
-                        if p.axis:
-                            mon_desc += f" Eje: {p.axis}"
-                        mon_desc += f" | Unidad: {p.unit or 'mm/s'}"
-                        if p.normal_min is not None or p.normal_max is not None:
-                            mon_desc += f"\nRango normal: {p.normal_min or '-'} a {p.normal_max or '-'} {p.unit or ''}"
-                        if p.alarm_min is not None or p.alarm_max is not None:
-                            mon_desc += f" | Alarma: {p.alarm_min or '-'} a {p.alarm_max or '-'}"
-                        mon_desc += f"\nFrecuencia: cada {p.frequency_days} dias"
-                        if p.last_measurement_date:
-                            mon_desc += f" | Ultima medicion: {p.last_measurement_date}"
-                        sources.append({
-                            'source_type': 'monitoring',
-                            'source_id': p.id,
-                            'source_code': p.code,
-                            'source_name': p.name,
-                            'semaphore': sem,
-                            'equipment_id': p.equipment_id,
-                            'area_id': p.area_id,
-                            'line_id': p.line_id,
-                            'system_id': p.system_id,
-                            'component_id': p.component_id,
-                            'description': mon_desc,
-                        })
+            # Recolecta puntos vencidos/próximos (ROJO/AMARILLO) de las 3 fuentes.
+            sources = collect_sources(
+                LubricationPoint, InspectionRoute, MonitoringPoint,
+                _calc_lub_schedule=_calculate_lubrication_schedule,
+                _calc_mon_schedule=_calculate_monitoring_schedule,
+                only_overdue=True,
+            )
 
             # Create AVISOS (not OTs) for sources that don't already have an open aviso/OT
             for src in sources:
@@ -244,7 +151,7 @@ def register_work_orders_routes(
                 notice.code = f"AV-{notice.id:04d}"
                 created.append({
                     'code': notice.code,
-                    'source': f"{src['source_code']} {src['source_name']}",
+                    'source': f"{src['code']} {src['name']}".strip(),
                     'type': src['source_type'],
                     'semaphore': src['semaphore'],
                 })

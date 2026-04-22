@@ -369,144 +369,28 @@ def register_shutdown_routes(
             db.session.rollback()
             return jsonify({"error": str(e)}), 500
 
+    # ── Reportes ejecutivos (delegados a utils/shutdown_reports.py) ──────
+
     def _build_report_payload(shutdown_id):
-        """Arma el payload completo del reporte ejecutivo de una parada."""
-        sh = Shutdown.query.get_or_404(shutdown_id)
-        # Reutilizamos el endpoint de detalle
-        with app.test_request_context():
-            pass
-        ots = WorkOrder.query.filter_by(shutdown_id=shutdown_id).all()
-        area_map = {a.id: a.name for a in Area.query.all()}
-        line_map = {l.id: l for l in Line.query.all()}
-        equip_map = {e.id: e for e in Equipment.query.all()}
-
         from models import OTMaterial, WarehouseItem, SparePart
-        ot_ids = [o.id for o in ots]
-        mats_by_ot = {}
-        if ot_ids:
-            all_mats = OTMaterial.query.filter(OTMaterial.work_order_id.in_(ot_ids)).all()
-            wh_ids = {m.item_id for m in all_mats if m.item_type == 'warehouse'}
-            sp_ids = {m.item_id for m in all_mats if m.item_type == 'spare_part'}
-            wh_map = {w.id: w for w in WarehouseItem.query.filter(WarehouseItem.id.in_(wh_ids)).all()} if wh_ids else {}
-            sp_map = {s.id: s for s in SparePart.query.filter(SparePart.id.in_(sp_ids)).all()} if sp_ids else {}
-            for m in all_mats:
-                name = m.item_name_free or ''
-                code = '-'
-                if m.item_type == 'warehouse' and m.item_id in wh_map:
-                    wi = wh_map[m.item_id]; name = name or wi.name; code = wi.code or '-'
-                elif m.item_type == 'spare_part' and m.item_id in sp_map:
-                    sp = sp_map[m.item_id]; name = name or sp.name; code = sp.code or '-'
-                mats_by_ot.setdefault(m.work_order_id, []).append({
-                    'code': code, 'name': name or '(sin descripción)',
-                    'quantity': m.quantity, 'unit': m.unit or '',
-                })
-
-        ot_rows = []
-        for ot in ots:
-            eq = equip_map.get(ot.equipment_id)
-            ln = line_map.get(ot.line_id)
-            aname = area_map.get(ot.area_id, '-') if ot.area_id else (area_map.get(ln.area_id, '-') if ln else '-')
-            ot_rows.append({
-                'code': ot.code or f'OT-{ot.id}',
-                'area': aname,
-                'line': ln.name if ln else '-',
-                'equipment': f"{eq.tag} — {eq.name}" if eq else '-',
-                'description': ot.description or '-',
-                'type': ot.maintenance_type or '-',
-                'status': ot.status or '-',
-                'estimated_h': ot.estimated_duration or 0,
-                'real_h': ot.real_duration or 0,
-                'failure_mode': ot.failure_mode or '-',
-                'materials': mats_by_ot.get(ot.id, []),
-            })
-        ot_rows.sort(key=lambda r: (r['area'].upper(), r['line'].upper(), r['equipment'].upper(), r['code']))
-
-        est_total = sum(r['estimated_h'] for r in ot_rows)
-        real_total = sum(r['real_h'] for r in ot_rows)
-        closed = sum(1 for r in ot_rows if r['status'] == 'Cerrada')
-        compliance = round((closed / len(ot_rows) * 100) if ot_rows else 0, 1)
-
-        return {
-            'shutdown': sh,
-            'areas': [sa.area.name for sa in sh.areas if sa.area],
-            'ot_rows': ot_rows,
-            'kpis': {
-                'ot_count': len(ot_rows),
-                'ot_closed': closed,
-                'compliance': compliance,
-                'estimated_hours': round(est_total, 2),
-                'real_hours': round(real_total, 2),
-                'deviation_hours': round(real_total - est_total, 2),
-                'deviation_pct': round(((real_total - est_total) / est_total * 100) if est_total else 0, 1),
-            },
-        }
+        from utils.shutdown_reports import build_payload
+        return build_payload(
+            shutdown_id,
+            Shutdown=Shutdown, WorkOrder=WorkOrder,
+            Area=Area, Line=Line, Equipment=Equipment,
+            OTMaterial=OTMaterial, WarehouseItem=WarehouseItem, SparePart=SparePart,
+        )
 
     @app.route('/api/shutdowns/<int:shutdown_id>/report/excel', methods=['GET'])
     def export_shutdown_excel(shutdown_id):
         """Reporte ejecutivo de parada en Excel (múltiples hojas)."""
         try:
-            from io import BytesIO
-            import pandas as pd
-            payload = _build_report_payload(shutdown_id)
-            sh = payload['shutdown']
-            k = payload['kpis']
-
-            bio = BytesIO()
-            with pd.ExcelWriter(bio, engine='openpyxl') as writer:
-                # Resumen
-                pd.DataFrame([{
-                    'Código': sh.code or '-',
-                    'Parada': sh.name,
-                    'Fecha': sh.shutdown_date,
-                    'Horario': f"{sh.start_time} — {sh.end_time}",
-                    'Tipo': sh.shutdown_type,
-                    'Áreas': ', '.join(payload['areas']) if payload['areas'] else 'TODAS',
-                    'Estado': sh.status,
-                    'OTs Total': k['ot_count'],
-                    'OTs Cerradas': k['ot_closed'],
-                    'Cumplimiento %': k['compliance'],
-                    'Horas Estimadas': k['estimated_hours'],
-                    'Horas Reales': k['real_hours'],
-                    'Desviación h': k['deviation_hours'],
-                    'Desviación %': k['deviation_pct'],
-                    'Requerimientos Prod.': sh.production_requirements or '-',
-                    'Observaciones': sh.observations or '-',
-                }]).to_excel(writer, sheet_name='Resumen', index=False)
-
-                # OTs
-                ot_df = pd.DataFrame([{
-                    'Código OT': r['code'],
-                    'Área': r['area'],
-                    'Línea': r['line'],
-                    'Equipo': r['equipment'],
-                    'Tipo': r['type'],
-                    'Descripción': r['description'],
-                    'Modo de falla': r['failure_mode'],
-                    'Horas Est.': r['estimated_h'],
-                    'Horas Reales': r['real_h'],
-                    'Estado': r['status'],
-                } for r in payload['ot_rows']])
-                ot_df.to_excel(writer, sheet_name='OTs', index=False)
-
-                # Repuestos detallado por OT
-                rep_rows = []
-                for r in payload['ot_rows']:
-                    for m in r['materials']:
-                        rep_rows.append({
-                            'OT': r['code'],
-                            'Área': r['area'],
-                            'Equipo': r['equipment'],
-                            'Código Repuesto': m['code'],
-                            'Descripción': m['name'],
-                            'Cantidad': m['quantity'],
-                            'Unidad': m['unit'],
-                        })
-                if rep_rows:
-                    pd.DataFrame(rep_rows).to_excel(writer, sheet_name='Repuestos por OT', index=False)
-
-            bio.seek(0)
-            filename = f"Parada_{sh.code or sh.id}_{sh.shutdown_date}.xlsx"
+            from utils.shutdown_reports import generate_excel
             from flask import send_file
+            payload = _build_report_payload(shutdown_id)
+            bio = generate_excel(payload)
+            sh = payload['shutdown']
+            filename = f"Parada_{sh.code or sh.id}_{sh.shutdown_date}.xlsx"
             return send_file(
                 bio, as_attachment=True, download_name=filename,
                 mimetype='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
@@ -520,172 +404,12 @@ def register_shutdown_routes(
     def export_shutdown_pdf(shutdown_id):
         """Reporte ejecutivo de parada en PDF."""
         try:
-            from io import BytesIO
-            from reportlab.lib import colors
-            from reportlab.lib.pagesizes import A4, landscape
-            from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
-            from reportlab.lib.units import mm
-            from reportlab.platypus import (
-                SimpleDocTemplate, Paragraph, Spacer, Table, TableStyle, PageBreak, KeepTogether
-            )
-
-            payload = _build_report_payload(shutdown_id)
-            sh = payload['shutdown']
-            k = payload['kpis']
-
-            bio = BytesIO()
-            doc = SimpleDocTemplate(
-                bio, pagesize=landscape(A4),
-                leftMargin=12*mm, rightMargin=12*mm,
-                topMargin=12*mm, bottomMargin=12*mm,
-                title=f"Reporte Parada {sh.code or sh.id}",
-            )
-            styles = getSampleStyleSheet()
-            title_style = ParagraphStyle('t', parent=styles['Title'], fontSize=18, textColor=colors.HexColor('#FF9F0A'), alignment=1)
-            subtitle_style = ParagraphStyle('s', parent=styles['Normal'], fontSize=10, textColor=colors.HexColor('#5a6570'), alignment=1)
-            section_style = ParagraphStyle('sec', parent=styles['Heading2'], fontSize=12, textColor=colors.HexColor('#0a84ff'), spaceBefore=10)
-            body_style = ParagraphStyle('b', parent=styles['Normal'], fontSize=9)
-            body_small = ParagraphStyle('bs', parent=styles['Normal'], fontSize=8)
-
-            story = []
-
-            # Portada / Cabecera
-            story.append(Paragraph(f"REPORTE EJECUTIVO DE PARADA DE PLANTA", title_style))
-            story.append(Paragraph(f"<b>{sh.code or ''}</b> — {sh.name}", subtitle_style))
-            story.append(Spacer(1, 4*mm))
-
-            info_data = [
-                ['Fecha', sh.shutdown_date, 'Horario', f"{sh.start_time} — {sh.end_time}"],
-                ['Tipo', sh.shutdown_type, 'Estado', sh.status],
-                ['Áreas', ', '.join(payload['areas']) if payload['areas'] else 'TODAS', 'Responsable', sh.created_by or '-'],
-            ]
-            info_table = Table(info_data, colWidths=[30*mm, 90*mm, 30*mm, 90*mm])
-            info_table.setStyle(TableStyle([
-                ('BACKGROUND', (0, 0), (0, -1), colors.HexColor('#e7f1fd')),
-                ('BACKGROUND', (2, 0), (2, -1), colors.HexColor('#e7f1fd')),
-                ('FONT', (0, 0), (-1, -1), 'Helvetica', 9),
-                ('FONT', (0, 0), (0, -1), 'Helvetica-Bold', 9),
-                ('FONT', (2, 0), (2, -1), 'Helvetica-Bold', 9),
-                ('GRID', (0, 0), (-1, -1), 0.3, colors.HexColor('#cccccc')),
-                ('VALIGN', (0, 0), (-1, -1), 'MIDDLE'),
-                ('PADDING', (0, 0), (-1, -1), 5),
-            ]))
-            story.append(info_table)
-            story.append(Spacer(1, 5*mm))
-
-            # KPIs
-            story.append(Paragraph("INDICADORES CLAVE", section_style))
-            kpi_data = [
-                ['OTs Total', 'Cerradas', 'Cumplimiento', 'Horas Est.', 'Horas Reales', 'Desviación'],
-                [str(k['ot_count']), str(k['ot_closed']), f"{k['compliance']}%",
-                 f"{k['estimated_hours']}h", f"{k['real_hours']}h",
-                 f"{k['deviation_hours']:+.1f}h ({k['deviation_pct']:+.1f}%)"],
-            ]
-            kpi_table = Table(kpi_data, colWidths=[45*mm]*6)
-            kpi_table.setStyle(TableStyle([
-                ('BACKGROUND', (0, 0), (-1, 0), colors.HexColor('#0a84ff')),
-                ('TEXTCOLOR', (0, 0), (-1, 0), colors.white),
-                ('FONT', (0, 0), (-1, 0), 'Helvetica-Bold', 10),
-                ('FONT', (0, 1), (-1, -1), 'Helvetica-Bold', 14),
-                ('ALIGN', (0, 0), (-1, -1), 'CENTER'),
-                ('VALIGN', (0, 0), (-1, -1), 'MIDDLE'),
-                ('GRID', (0, 0), (-1, -1), 0.3, colors.HexColor('#cccccc')),
-                ('PADDING', (0, 0), (-1, -1), 8),
-                ('TEXTCOLOR', (2, 1), (2, 1),
-                    colors.HexColor('#30a14e') if k['compliance'] >= 80 else colors.HexColor('#d93b3b')),
-            ]))
-            story.append(kpi_table)
-            story.append(Spacer(1, 5*mm))
-
-            # Requerimientos a producción
-            if sh.production_requirements:
-                story.append(Paragraph("REQUERIMIENTOS A PRODUCCIÓN", section_style))
-                story.append(Paragraph(sh.production_requirements.replace('\n', '<br/>'), body_style))
-                story.append(Spacer(1, 4*mm))
-
-            # Tabla de OTs agrupada por área
-            story.append(Paragraph("DETALLE DE ÓRDENES DE TRABAJO", section_style))
-            # Estilo compacto para celdas con wrap automático
-            cell_style = ParagraphStyle(
-                'cell', parent=styles['Normal'], fontSize=7, leading=9,
-            )
-            cell_bold = ParagraphStyle(
-                'cellb', parent=styles['Normal'], fontSize=7, leading=9,
-                fontName='Helvetica-Bold',
-            )
-            ot_header = ['OT', 'Área', 'Línea', 'Equipo', 'Descripción', 'Tipo', 'Hrs Est.', 'Hrs Real', 'Estado']
-            ot_table_data = [ot_header]
-            for r in payload['ot_rows']:
-                ot_table_data.append([
-                    Paragraph(r['code'], cell_bold),
-                    Paragraph(r['area'] or '-', cell_style),
-                    Paragraph(r['line'] or '-', cell_style),
-                    Paragraph(r['equipment'] or '-', cell_style),
-                    Paragraph((r['description'] or '-')[:300], cell_style),
-                    Paragraph(r['type'] or '-', cell_style),
-                    f"{r['estimated_h']}h",
-                    f"{r['real_h']}h",
-                    Paragraph(r['status'] or '-', cell_style),
-                ])
-            ot_table = Table(
-                ot_table_data,
-                colWidths=[18*mm, 28*mm, 30*mm, 38*mm, 78*mm, 20*mm, 14*mm, 14*mm, 22*mm],
-                repeatRows=1,
-            )
-            ot_table.setStyle(TableStyle([
-                ('BACKGROUND', (0, 0), (-1, 0), colors.HexColor('#0a84ff')),
-                ('TEXTCOLOR', (0, 0), (-1, 0), colors.white),
-                ('FONT', (0, 0), (-1, 0), 'Helvetica-Bold', 8),
-                ('FONT', (0, 1), (-1, -1), 'Helvetica', 8),
-                ('GRID', (0, 0), (-1, -1), 0.3, colors.HexColor('#cccccc')),
-                ('VALIGN', (0, 0), (-1, -1), 'TOP'),
-                ('PADDING', (0, 0), (-1, -1), 4),
-                ('ROWBACKGROUNDS', (0, 1), (-1, -1), [colors.white, colors.HexColor('#f5f7fa')]),
-            ]))
-            story.append(ot_table)
-            story.append(Spacer(1, 5*mm))
-
-            # Repuestos por OT
-            rep_rows = [(r, m) for r in payload['ot_rows'] for m in r['materials']]
-            if rep_rows:
-                story.append(PageBreak())
-                story.append(Paragraph("REPUESTOS REQUERIDOS POR OT", section_style))
-                rep_data = [['OT', 'Equipo', 'Código', 'Descripción', 'Cant.', 'Unidad']]
-                for r, m in rep_rows:
-                    rep_data.append([
-                        Paragraph(r['code'], cell_bold),
-                        Paragraph(r['equipment'] or '-', cell_style),
-                        Paragraph(m['code'] or '-', cell_style),
-                        Paragraph((m['name'] or '-')[:200], cell_style),
-                        str(m['quantity']),
-                        m['unit'] or '-',
-                    ])
-                rep_table = Table(
-                    rep_data,
-                    colWidths=[22*mm, 55*mm, 28*mm, 130*mm, 15*mm, 20*mm],
-                    repeatRows=1,
-                )
-                rep_table.setStyle(TableStyle([
-                    ('BACKGROUND', (0, 0), (-1, 0), colors.HexColor('#30d158')),
-                    ('TEXTCOLOR', (0, 0), (-1, 0), colors.white),
-                    ('FONT', (0, 0), (-1, 0), 'Helvetica-Bold', 8),
-                    ('FONT', (0, 1), (-1, -1), 'Helvetica', 8),
-                    ('GRID', (0, 0), (-1, -1), 0.3, colors.HexColor('#cccccc')),
-                    ('VALIGN', (0, 0), (-1, -1), 'TOP'),
-                    ('PADDING', (0, 0), (-1, -1), 4),
-                ]))
-                story.append(rep_table)
-
-            # Observaciones
-            if sh.observations:
-                story.append(Spacer(1, 5*mm))
-                story.append(Paragraph("OBSERVACIONES / LECCIONES APRENDIDAS", section_style))
-                story.append(Paragraph(sh.observations.replace('\n', '<br/>'), body_style))
-
-            doc.build(story)
-            bio.seek(0)
-            filename = f"Parada_{sh.code or sh.id}_{sh.shutdown_date}.pdf"
+            from utils.shutdown_reports import generate_pdf
             from flask import send_file
+            payload = _build_report_payload(shutdown_id)
+            bio = generate_pdf(payload)
+            sh = payload['shutdown']
+            filename = f"Parada_{sh.code or sh.id}_{sh.shutdown_date}.pdf"
             return send_file(
                 bio, as_attachment=True, download_name=filename,
                 mimetype='application/pdf',
@@ -699,167 +423,41 @@ def register_shutdown_routes(
     def get_shutdown_preventive_sources(shutdown_id):
         """Lista puntos preventivos (lubricacion, inspeccion, monitoreo) que
         se pueden agregar a esta parada, filtrados por las areas de la parada.
-
-        Prioriza puntos VENCIDOS/PROXIMOS y excluye los que ya tienen OT
-        abierta vinculada (para no duplicar).
-
+        Excluye puntos ya ocupados en otras OTs abiertas para no duplicar.
         Query param opcional: ?source_type=lubrication|inspection|monitoring
         """
         try:
-            from models import (
-                LubricationPoint, InspectionRoute, MonitoringPoint,
+            from models import LubricationPoint, InspectionRoute, MonitoringPoint
+            from utils.preventive_sources import collect_sources
+            from utils.schedule_helpers import (
+                _calculate_lubrication_schedule, _calculate_monitoring_schedule,
             )
+
             sh = Shutdown.query.get_or_404(shutdown_id)
             filter_type = request.args.get('source_type')
 
-            # Areas de la parada (vacio = todas las areas)
-            area_ids = [sa.area_id for sa in sh.areas] if sh.shutdown_type == 'PARCIAL' else []
+            # Areas de la parada (vacio = todas las areas = sin filtro)
+            area_ids = [sa.area_id for sa in sh.areas] if sh.shutdown_type == 'PARCIAL' else None
 
-            # Mapas auxiliares
-            line_map = {l.id: l for l in Line.query.all()}
-            equip_map = {e.id: e for e in Equipment.query.all()}
-            area_map = {a.id: a for a in Area.query.all()}
+            # Source types a incluir
+            source_types = {filter_type} if filter_type else None
 
-            def _resolve_area_id(point):
-                if point.area_id:
-                    return point.area_id
-                if point.line_id and point.line_id in line_map:
-                    return line_map[point.line_id].area_id
-                if point.equipment_id and point.equipment_id in equip_map:
-                    eq = equip_map[point.equipment_id]
-                    if eq.line_id and eq.line_id in line_map:
-                        return line_map[eq.line_id].area_id
-                return None
-
-            def _in_area_filter(aid):
-                if not area_ids:
-                    return True  # parada TOTAL
-                return aid in area_ids
-
-            # OTs abiertas por source (para excluir duplicados)
+            # Excluir puntos que ya tienen OT abierta vinculada
             open_ots = WorkOrder.query.filter(
                 WorkOrder.status.in_(['Abierta', 'Programada', 'En Progreso']),
                 WorkOrder.source_type.isnot(None),
             ).all()
-            occupied = {(o.source_type, o.source_id) for o in open_ots if o.source_id}
+            exclude = {(o.source_type, o.source_id) for o in open_ots if o.source_id}
 
-            sources = []
-
-            # Lubricacion
-            if not filter_type or filter_type == 'lubrication':
-                for p in LubricationPoint.query.filter_by(is_active=True).all():
-                    aid = _resolve_area_id(p)
-                    if not _in_area_filter(aid):
-                        continue
-                    if ('lubrication', p.id) in occupied:
-                        continue
-                    eq = equip_map.get(p.equipment_id) if p.equipment_id else None
-                    ln = line_map.get(p.line_id) if p.line_id else (line_map.get(eq.line_id) if eq else None)
-                    desc = f"[PREVENTIVO - LUBRICACION] {p.code or ''} {p.name or p.task_name or ''}".strip()
-                    if p.lubricant_name:
-                        desc += f"\nLubricante: {p.lubricant_name}"
-                        if p.quantity_nominal:
-                            desc += f" | Cantidad: {p.quantity_nominal} {p.quantity_unit or ''}".strip()
-                    if p.last_service_date:
-                        desc += f"\nUltimo servicio: {p.last_service_date}"
-                    sources.append({
-                        'source_type': 'lubrication',
-                        'source_id': p.id,
-                        'code': p.code or '',
-                        'name': p.name or p.task_name or '(sin nombre)',
-                        'semaphore': p.semaphore_status or 'VERDE',
-                        'next_due_date': p.next_due_date or '-',
-                        'frequency_days': p.frequency_days,
-                        'last_execution': p.last_service_date or '-',
-                        'area_id': aid,
-                        'area_name': area_map.get(aid).name if aid in area_map else '-',
-                        'line_id': p.line_id or (eq.line_id if eq else None),
-                        'line_name': ln.name if ln else '-',
-                        'equipment_id': p.equipment_id,
-                        'equipment_tag': eq.tag if eq else '-',
-                        'equipment_name': eq.name if eq else '-',
-                        'system_id': p.system_id,
-                        'component_id': p.component_id,
-                        'description': desc,
-                    })
-
-            # Inspeccion
-            if not filter_type or filter_type == 'inspection':
-                for r in InspectionRoute.query.filter_by(is_active=True).all():
-                    aid = _resolve_area_id(r)
-                    if not _in_area_filter(aid):
-                        continue
-                    if ('inspection', r.id) in occupied:
-                        continue
-                    eq = equip_map.get(r.equipment_id) if r.equipment_id else None
-                    ln = line_map.get(r.line_id) if r.line_id else (line_map.get(eq.line_id) if eq else None)
-                    desc = f"[PREVENTIVO - INSPECCION] {r.code or ''} {r.name or ''}".strip()
-                    desc += f"\nFrecuencia: cada {r.frequency_days} dias"
-                    if r.last_execution_date:
-                        desc += f" | Ultima ejecucion: {r.last_execution_date}"
-                    sources.append({
-                        'source_type': 'inspection',
-                        'source_id': r.id,
-                        'code': r.code or '',
-                        'name': r.name or '',
-                        'semaphore': r.semaphore_status or 'VERDE',
-                        'next_due_date': r.next_due_date or '-',
-                        'frequency_days': r.frequency_days,
-                        'last_execution': r.last_execution_date or '-',
-                        'area_id': aid,
-                        'area_name': area_map.get(aid).name if aid in area_map else '-',
-                        'line_id': r.line_id or (eq.line_id if eq else None),
-                        'line_name': ln.name if ln else '-',
-                        'equipment_id': r.equipment_id,
-                        'equipment_tag': eq.tag if eq else '-',
-                        'equipment_name': eq.name if eq else '-',
-                        'system_id': None,
-                        'component_id': None,
-                        'description': desc,
-                    })
-
-            # Monitoreo
-            if not filter_type or filter_type == 'monitoring':
-                for p in MonitoringPoint.query.filter_by(is_active=True).all():
-                    aid = _resolve_area_id(p)
-                    if not _in_area_filter(aid):
-                        continue
-                    if ('monitoring', p.id) in occupied:
-                        continue
-                    eq = equip_map.get(p.equipment_id) if p.equipment_id else None
-                    ln = line_map.get(p.line_id) if p.line_id else (line_map.get(eq.line_id) if eq else None)
-                    desc = f"[PREVENTIVO - MONITOREO] {p.code or ''} {p.name or ''}".strip()
-                    if p.measurement_type:
-                        desc += f"\nTipo: {p.measurement_type}"
-                        if p.axis:
-                            desc += f" Eje: {p.axis}"
-                    if p.alarm_min is not None or p.alarm_max is not None:
-                        desc += f"\nAlarma: {p.alarm_min or '-'} a {p.alarm_max or '-'} {p.unit or ''}".strip()
-                    sources.append({
-                        'source_type': 'monitoring',
-                        'source_id': p.id,
-                        'code': p.code or '',
-                        'name': p.name or '',
-                        'semaphore': p.semaphore_status or 'VERDE',
-                        'next_due_date': p.next_due_date or '-',
-                        'frequency_days': p.frequency_days,
-                        'last_execution': p.last_measurement_date or '-',
-                        'area_id': aid,
-                        'area_name': area_map.get(aid).name if aid in area_map else '-',
-                        'line_id': p.line_id or (eq.line_id if eq else None),
-                        'line_name': ln.name if ln else '-',
-                        'equipment_id': p.equipment_id,
-                        'equipment_tag': eq.tag if eq else '-',
-                        'equipment_name': eq.name if eq else '-',
-                        'system_id': p.system_id,
-                        'component_id': p.component_id,
-                        'description': desc,
-                    })
-
-            # Orden: ROJO primero, luego AMARILLO, luego VERDE; por next_due_date
-            sem_rank = {'ROJO': 0, 'AMARILLO': 1, 'VERDE': 2}
-            sources.sort(key=lambda s: (sem_rank.get(s['semaphore'], 9), s['next_due_date'] or 'zzz'))
-
+            sources = collect_sources(
+                LubricationPoint, InspectionRoute, MonitoringPoint,
+                _calc_lub_schedule=_calculate_lubrication_schedule,
+                _calc_mon_schedule=_calculate_monitoring_schedule,
+                source_types=source_types,
+                area_ids=area_ids,
+                exclude=exclude,
+                enrich_names=True,
+            )
             return jsonify(sources)
         except Exception as e:
             logger.error(f"get_shutdown_preventive_sources error: {e}")
