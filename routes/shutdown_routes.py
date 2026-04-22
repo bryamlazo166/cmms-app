@@ -586,23 +586,31 @@ def register_shutdown_routes(
 
             # Tabla de OTs agrupada por área
             story.append(Paragraph("DETALLE DE ÓRDENES DE TRABAJO", section_style))
+            # Estilo compacto para celdas con wrap automático
+            cell_style = ParagraphStyle(
+                'cell', parent=styles['Normal'], fontSize=7, leading=9,
+            )
+            cell_bold = ParagraphStyle(
+                'cellb', parent=styles['Normal'], fontSize=7, leading=9,
+                fontName='Helvetica-Bold',
+            )
             ot_header = ['OT', 'Área', 'Línea', 'Equipo', 'Descripción', 'Tipo', 'Hrs Est.', 'Hrs Real', 'Estado']
             ot_table_data = [ot_header]
             for r in payload['ot_rows']:
                 ot_table_data.append([
-                    r['code'],
-                    r['area'],
-                    r['line'],
-                    r['equipment'],
-                    Paragraph((r['description'] or '')[:200], body_small),
-                    r['type'],
+                    Paragraph(r['code'], cell_bold),
+                    Paragraph(r['area'] or '-', cell_style),
+                    Paragraph(r['line'] or '-', cell_style),
+                    Paragraph(r['equipment'] or '-', cell_style),
+                    Paragraph((r['description'] or '-')[:300], cell_style),
+                    Paragraph(r['type'] or '-', cell_style),
                     f"{r['estimated_h']}h",
                     f"{r['real_h']}h",
-                    r['status'],
+                    Paragraph(r['status'] or '-', cell_style),
                 ])
             ot_table = Table(
                 ot_table_data,
-                colWidths=[20*mm, 25*mm, 20*mm, 30*mm, 90*mm, 25*mm, 15*mm, 15*mm, 25*mm],
+                colWidths=[18*mm, 28*mm, 30*mm, 38*mm, 78*mm, 20*mm, 14*mm, 14*mm, 22*mm],
                 repeatRows=1,
             )
             ot_table.setStyle(TableStyle([
@@ -626,13 +634,16 @@ def register_shutdown_routes(
                 rep_data = [['OT', 'Equipo', 'Código', 'Descripción', 'Cant.', 'Unidad']]
                 for r, m in rep_rows:
                     rep_data.append([
-                        r['code'], r['equipment'], m['code'],
-                        Paragraph(m['name'][:150], body_small),
-                        str(m['quantity']), m['unit'],
+                        Paragraph(r['code'], cell_bold),
+                        Paragraph(r['equipment'] or '-', cell_style),
+                        Paragraph(m['code'] or '-', cell_style),
+                        Paragraph((m['name'] or '-')[:200], cell_style),
+                        str(m['quantity']),
+                        m['unit'] or '-',
                     ])
                 rep_table = Table(
                     rep_data,
-                    colWidths=[20*mm, 35*mm, 25*mm, 150*mm, 15*mm, 20*mm],
+                    colWidths=[22*mm, 55*mm, 28*mm, 130*mm, 15*mm, 20*mm],
                     repeatRows=1,
                 )
                 rep_table.setStyle(TableStyle([
