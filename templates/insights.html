@@ -194,29 +194,40 @@ async function loadSummary() {
         document.getElementById('loading').style.display = 'none';
         document.getElementById('content').style.display = 'block';
 
-        // 2. En background, pedir narrativa IA (puede demorar hasta 30s)
+        // 2. En background, pedir narrativa IA (puede demorar 5-15s)
         try {
             const nr = await fetch('/api/insights/narrative', {
                 method: 'POST',
                 headers: {'Content-Type': 'application/json'},
                 body: JSON.stringify({ metrics: m }),
             });
-            const nj = await nr.json();
+            let nj;
+            try {
+                nj = await nr.json();
+            } catch (parseErr) {
+                // El gateway cortó la respuesta → usar fallback local inmediatamente
+                document.getElementById('narrativeBody').textContent = buildLocalFallback(m);
+                document.getElementById('narrativeSrc').textContent =
+                    '⚠ El análisis IA tomó demasiado — se muestra análisis interno generado en cliente.';
+                return;
+            }
             if (nr.ok) {
                 document.getElementById('narrativeBody').textContent = nj.narrative;
                 const src = nj.narrative_source;
                 document.getElementById('narrativeSrc').textContent =
                     '🤖 ' + (src === 'ai' ? 'Análisis IA automático' :
-                            src === 'internal' ? 'Análisis interno (DeepSeek no configurado)' :
-                            'Análisis fallback') +
+                            src === 'internal' ? 'Análisis interno (sin IA)' :
+                            'Análisis fallback interno') +
                     ' · ' + new Date().toLocaleString('es-PE');
             } else {
-                document.getElementById('narrativeBody').textContent =
-                    'No se pudo generar la narrativa IA: ' + (nj.error || 'error desconocido');
+                document.getElementById('narrativeBody').textContent = buildLocalFallback(m);
+                document.getElementById('narrativeSrc').textContent =
+                    '⚠ Error del servicio IA: ' + (nj.error || 'desconocido');
             }
         } catch (nerr) {
-            document.getElementById('narrativeBody').textContent =
-                'No se pudo generar la narrativa IA: ' + nerr.message;
+            document.getElementById('narrativeBody').textContent = buildLocalFallback(m);
+            document.getElementById('narrativeSrc').textContent =
+                '⚠ ' + nerr.message + ' — se muestra análisis interno';
         }
     } catch (e) {
         document.getElementById('loading').style.display = 'none';
@@ -224,6 +235,29 @@ async function loadSummary() {
         alert('Error: ' + e.message);
     }
 }
+
+// Fallback local (JS) para cuando el backend no puede responder a tiempo
+function buildLocalFallback(m) {
+    const parts = [
+        `📊 Resumen ${m.period}`,
+        '',
+        `Se cerraron ${m.ots_closed} OTs (${m.ots_preventive} preventivas, ${m.ots_corrective} correctivas). Downtime acumulado: ${m.downtime_hours}h.`,
+    ];
+    if (m.critical_area) {
+        parts.push(`⚠ Área crítica: ${m.critical_area} concentra ${m.critical_area_hours}h de parada.`);
+    }
+    if (m.overdue_preventive.total > 0) {
+        parts.push(`⚠ ${m.overdue_preventive.total} preventivos vencidos sin ejecutar.`);
+    }
+    if (m.top_equipments && m.top_equipments.length) {
+        const top = m.top_equipments[0];
+        parts.push(`🔧 Equipo más problemático: ${top.tag} (${top.name}) con ${top.failures} fallas.`);
+    }
+    parts.push('');
+    parts.push('Recomendaciones: (1) Priorizar preventivos vencidos. (2) Analizar causas recurrentes en equipo top. (3) Revisar avisos abiertos antes del cierre de periodo.');
+    return parts.join('\n');
+}
+
 </script>
 </body>
 </html>

@@ -210,52 +210,43 @@ def register_insights_routes(
                     {
                         'role': 'system',
                         'content': (
-                            "Eres un analista senior de confiabilidad industrial (CMRP) "
-                            "en una planta procesadora. Redactas resúmenes ejecutivos "
-                            "BREVES (máx 8 líneas) para gerencia general. "
-                            "Lenguaje directo, 2-3 recomendaciones accionables al final. "
-                            "Usa bullets con •"
+                            "Eres analista CMRP de planta. Escribe resumen ejecutivo "
+                            "MUY BREVE (máx 5 líneas) en español, con bullets •, "
+                            "terminando en 2 recomendaciones accionables."
                         ),
                     },
                     {'role': 'user', 'content': prompt},
                 ],
                 'temperature': 0.3,
-                'max_tokens': 600,
+                'max_tokens': 350,  # respuesta corta → menor latencia
             }
-            r = requests.post(DEEPSEEK_URL, headers=headers, json=payload, timeout=30)
+            # Timeout agresivo (15s) para no superar el gateway timeout de Render
+            r = requests.post(DEEPSEEK_URL, headers=headers, json=payload, timeout=15)
             r.raise_for_status()
             j = r.json()
             return {'text': j['choices'][0]['message']['content'].strip(), 'source': 'ai'}
+        except requests.Timeout:
+            logger.warning("IA narrative timeout (15s) — using fallback")
+            return {'text': _fallback_narrative(m) + "\n\n(DeepSeek tardó demasiado — se usó análisis interno)", 'source': 'fallback'}
         except Exception as e:
             logger.warning(f"IA narrative fallback: {e}")
             return {'text': _fallback_narrative(m), 'source': 'fallback'}
 
     def _build_narrative_prompt(m):
-        lines = [
-            f"Periodo: {m['period']}",
-            "",
-            f"- OTs totales: {m['ots_total']} | Cerradas: {m['ots_closed']}",
-            f"- Preventivas cerradas: {m['ots_preventive']} | Correctivas: {m['ots_corrective']}",
-            f"- Horas de parada por fallas: {m['downtime_hours']}",
-            f"- Avisos abiertos al cierre: {m['open_notices']}",
-            f"- Paradas de planta: {m['shutdowns_count']} (de las cuales {m['unplanned_shutdowns']} no planificadas)",
-            f"- Preventivos vencidos: Lub {m['overdue_preventive']['lubrication']}, "
-            f"Insp {m['overdue_preventive']['inspection']}, "
-            f"Mon {m['overdue_preventive']['monitoring']} (total {m['overdue_preventive']['total']})",
-        ]
-        if m['critical_area']:
-            lines.append(f"- Área con más downtime: {m['critical_area']} ({m['critical_area_hours']}h)")
-        if m['top_equipments']:
-            lines.append("")
-            lines.append("Top 5 equipos con más fallas:")
-            for e in m['top_equipments']:
-                lines.append(f"  • {e['tag']} ({e['name']}) — área {e['area']}: {e['failures']} fallas")
-        lines.append("")
-        lines.append(
-            "Redacta un resumen ejecutivo con: estado general, alertas de riesgo, "
-            "equipos críticos, y 2-3 recomendaciones priorizadas."
+        """Prompt compacto (menos tokens → menos latencia)."""
+        top = ", ".join(f"{e['tag']}({e['failures']})" for e in m['top_equipments'][:3]) or "ninguno"
+        critical = f"{m['critical_area']} con {m['critical_area_hours']}h" if m['critical_area'] else "sin área dominante"
+        return (
+            f"Periodo {m['period']}. "
+            f"OTs cerradas {m['ots_closed']} ({m['ots_preventive']} prev / {m['ots_corrective']} corr). "
+            f"Downtime {m['downtime_hours']}h. "
+            f"Avisos abiertos {m['open_notices']}. "
+            f"Paradas {m['shutdowns_count']} ({m['unplanned_shutdowns']} no planif). "
+            f"Preventivos vencidos {m['overdue_preventive']['total']}. "
+            f"Área crítica: {critical}. "
+            f"Top fallas: {top}. "
+            f"Redacta resumen ejecutivo breve con estado, riesgos y 2 recomendaciones."
         )
-        return "\n".join(lines)
 
     def _fallback_narrative(m):
         parts = [
