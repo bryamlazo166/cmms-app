@@ -212,7 +212,7 @@ _MODULE_ROUTES = {
     'indicadores':      {'pages': ['/indicadores'], 'api': ['/api/indicators']},
     'produccion':       {'pages': ['/produccion'], 'api': ['/api/production']},
     'programa_nocturno': {'pages': ['/programa-nocturno'], 'api': ['/api/weekly-plans', '/api/preventive-sources']},
-    'insights':          {'pages': ['/insights'], 'api': ['/api/insights']},
+    'insights':          {'pages': ['/insights', '/optimizacion-preventivos'], 'api': ['/api/insights']},
     'paradas':          {'pages': ['/paradas'], 'api': ['/api/shutdowns']},
     'seguimiento':      {'pages': ['/seguimiento'], 'api': ['/api/activities', '/api/milestones']},
     'reportes':         {'pages': ['/reportes'], 'api': ['/api/reports']},
@@ -658,6 +658,9 @@ register_insights_routes(
     InspectionRoute=InspectionRoute,
     MonitoringPoint=MonitoringPoint,
     Shutdown=Shutdown,
+    LubricationExecution=LubricationExecution,
+    InspectionExecution=InspectionExecution,
+    MonitoringReading=MonitoringReading,
 )
 
 register_rotative_assets_routes(

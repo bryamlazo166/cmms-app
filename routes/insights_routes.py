@@ -24,11 +24,89 @@ def register_insights_routes(
     WorkOrder, MaintenanceNotice, Area, Line, Equipment,
     LubricationPoint, InspectionRoute, MonitoringPoint,
     Shutdown,
+    LubricationExecution=None, InspectionExecution=None, MonitoringReading=None,
 ):
 
     @app.route('/insights', methods=['GET'])
     def insights_page():
         return render_template('insights.html')
+
+    @app.route('/optimizacion-preventivos', methods=['GET'])
+    def prev_optimization_page():
+        return render_template('optimizacion_preventivos.html')
+
+    # ── Optimización del plan preventivo ────────────────────────────────
+
+    @app.route('/api/insights/preventive-optimization', methods=['GET'])
+    def preventive_optimization():
+        """Analiza puntos preventivos y detecta sobre/sub-mantenimiento."""
+        try:
+            from utils.preventive_optimization import analyze_preventive_plan
+            window_days = int(request.args.get('window_days', 90))
+            min_over = int(request.args.get('min_executions_over', 3))
+            min_under = int(request.args.get('min_failures_under', 2))
+
+            data = analyze_preventive_plan(
+                LubricationPoint, LubricationExecution,
+                InspectionRoute, InspectionExecution,
+                MonitoringPoint, MonitoringReading,
+                WorkOrder,
+                window_days=window_days,
+                min_executions_over=min_over,
+                min_failures_under=min_under,
+            )
+
+            # Enriquecer con nombres de equipo/área para UI
+            equip_ids = {r['equipment_id'] for r in data['recommendations'] if r.get('equipment_id')}
+            area_ids = {r['area_id'] for r in data['recommendations'] if r.get('area_id')}
+            equip_map = ({e.id: e for e in Equipment.query.filter(Equipment.id.in_(equip_ids)).all()}
+                         if equip_ids else {})
+            # Si área no viene explícita, resolver vía equipo→línea→área
+            line_ids = {e.line_id for e in equip_map.values() if e.line_id}
+            line_map = ({l.id: l for l in Line.query.filter(Line.id.in_(line_ids)).all()}
+                        if line_ids else {})
+            area_ids |= {l.area_id for l in line_map.values() if l.area_id}
+            area_map = ({a.id: a.name for a in Area.query.filter(Area.id.in_(area_ids)).all()}
+                        if area_ids else {})
+
+            for r in data['recommendations']:
+                eq = equip_map.get(r.get('equipment_id'))
+                r['equipment_tag'] = eq.tag if eq else '-'
+                r['equipment_name'] = eq.name if eq else '-'
+                aid = r.get('area_id')
+                if not aid and eq and eq.line_id and eq.line_id in line_map:
+                    aid = line_map[eq.line_id].area_id
+                r['area_name'] = area_map.get(aid, '-') if aid else '-'
+
+            return jsonify(data)
+        except Exception as e:
+            logger.error(f"preventive_optimization error: {e}")
+            import traceback; traceback.print_exc()
+            return jsonify({"error": str(e)}), 500
+
+    @app.route('/api/insights/preventive-optimization/apply', methods=['POST'])
+    def apply_optimization():
+        """Aplica una recomendación — cambia la frecuencia del punto."""
+        try:
+            from utils.preventive_optimization import apply_recommendation
+            data = request.get_json() or {}
+            source_type = data.get('source_type')
+            source_id = int(data.get('source_id') or 0)
+            new_freq = int(data.get('new_frequency_days') or 0)
+            if not source_type or not source_id or new_freq <= 0:
+                return jsonify({"error": "source_type, source_id y new_frequency_days requeridos"}), 400
+            result = apply_recommendation(
+                source_type, source_id, new_freq,
+                LubricationPoint=LubricationPoint,
+                InspectionRoute=InspectionRoute,
+                MonitoringPoint=MonitoringPoint,
+                db=db,
+            )
+            return jsonify(result)
+        except Exception as e:
+            db.session.rollback()
+            logger.error(f"apply_optimization error: {e}")
+            return jsonify({"error": str(e)}), 500
 
     @app.route('/api/insights/weekly-summary', methods=['GET'])
     def weekly_summary():

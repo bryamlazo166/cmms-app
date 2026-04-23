@@ -1,0 +1,307 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <link rel="icon" type="image/svg+xml" href="/static/favicon.svg">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Optimización Plan Preventivo - CMMS</title>
+    <link rel="stylesheet" href="/static/css/style.css?v={{ v }}">
+    <link rel="stylesheet" href="/static/css/sidebar.css?v={{ v }}">
+    <link href="https://fonts.googleapis.com/css2?family=Roboto:wght@300;400;500;700&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css">
+    <style>
+        body{background:#0a0e14;}
+        .wrap{max-width:1500px;margin:0 auto;padding:16px;}
+        .header{background:linear-gradient(120deg,#1e2430,#151b24);border:1px solid #2d3f56;border-radius:14px;padding:18px 22px;margin-bottom:14px;display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:12px;}
+        .header h1{margin:0;color:#30D158;font-size:1.35rem;display:flex;align-items:center;gap:10px;}
+        .header p{margin:4px 0 0;color:#9ab0cb;font-size:.82rem;}
+        .tools{display:flex;gap:10px;align-items:center;flex-wrap:wrap;}
+        .tools select,.tools input{height:34px;background:#0f1319;color:#d5e2f5;border:1px solid #344964;border-radius:7px;padding:5px 10px;font-size:.82rem;}
+        .btn{height:34px;border:1px solid #385273;border-radius:7px;background:#193451;color:#d7e9ff;padding:0 14px;font-weight:600;cursor:pointer;font-size:.82rem;display:inline-flex;align-items:center;gap:6px;}
+        .btn.primary{background:#30D158;border-color:#30D158;color:#000;}
+        .btn.primary:hover{background:#3de070;}
+
+        .summary-row{display:grid;grid-template-columns:repeat(4,1fr);gap:10px;margin-bottom:14px;}
+        .summary-card{background:linear-gradient(135deg,#1b212b,#151a23);border:1px solid #31455f;border-radius:10px;padding:12px;position:relative;overflow:hidden;}
+        .summary-card::before{content:'';position:absolute;top:0;left:0;right:0;height:3px;background:var(--c,#30D158);}
+        .summary-card.over{--c:#FF9F0A;}
+        .summary-card.under{--c:#FF453A;}
+        .summary-card.normal{--c:#30D158;}
+        .summary-card.ins{--c:#5AC8FA;}
+        .summary-card .lbl{font-size:.66rem;color:#9ab3d0;text-transform:uppercase;letter-spacing:.4px;font-weight:600;margin-bottom:5px;}
+        .summary-card .val{font-size:1.6rem;font-weight:700;color:#eff6ff;line-height:1;}
+        .summary-card .sub{font-size:.7rem;color:#9ab0cb;margin-top:3px;}
+
+        .tabs{display:flex;gap:4px;margin-bottom:12px;border-bottom:1px solid #2a3a50;}
+        .tab{background:transparent;color:#9ab0cb;border:none;padding:10px 14px;cursor:pointer;font-size:.86rem;font-weight:600;border-bottom:2px solid transparent;}
+        .tab.active{color:#30D158;border-bottom-color:#30D158;}
+        .tab .count{background:rgba(255,255,255,.08);padding:1px 7px;border-radius:8px;margin-left:4px;font-size:.7rem;}
+
+        .panel{background:#181d24;border:1px solid #2f4257;border-radius:12px;padding:14px;overflow-x:auto;}
+        .rec-table{width:100%;border-collapse:collapse;font-size:.84rem;}
+        .rec-table th,.rec-table td{padding:8px 10px;border-bottom:1px solid #2a3a50;color:#d5e2f5;text-align:left;vertical-align:top;}
+        .rec-table th{color:#9ab0cb;font-weight:600;font-size:.72rem;text-transform:uppercase;background:#121821;position:sticky;top:0;}
+        .rec-table tr:hover{background:rgba(48,209,88,.04);}
+
+        .sev{display:inline-block;padding:2px 8px;border-radius:8px;font-size:.7rem;font-weight:700;}
+        .sev.HIGH{background:rgba(255,69,58,.18);color:#ff6b61;border:1px solid rgba(255,69,58,.4);}
+        .sev.MEDIUM{background:rgba(255,159,10,.18);color:#FFA834;border:1px solid rgba(255,159,10,.4);}
+        .sev.OK{background:rgba(48,209,88,.18);color:#30D158;border:1px solid rgba(48,209,88,.4);}
+        .sev.INFO{background:rgba(90,200,250,.18);color:#5AC8FA;border:1px solid rgba(90,200,250,.4);}
+
+        .type-chip{padding:1px 7px;border-radius:6px;font-size:.7rem;font-weight:700;}
+        .type-chip.lubrication{background:rgba(255,214,10,.15);color:#FFD60A;}
+        .type-chip.inspection{background:rgba(48,209,88,.15);color:#30D158;}
+        .type-chip.monitoring{background:rgba(255,69,58,.15);color:#FF453A;}
+
+        .arrow{color:#9ab0cb;margin:0 4px;}
+        .freq-new{color:#30D158;font-weight:700;}
+        .freq-new.down{color:#FF9F0A;}
+
+        .btn-apply{background:#30D158;color:#000;border:none;padding:5px 11px;border-radius:6px;cursor:pointer;font-size:.74rem;font-weight:700;}
+        .btn-apply:hover{background:#3de070;}
+        .btn-apply:disabled{background:#2a3a50;color:#888;cursor:not-allowed;}
+
+        .reason{font-size:.76rem;color:#bfd2ec;font-style:italic;margin-top:3px;}
+
+        .loading{text-align:center;padding:40px;color:#9ab0cb;}
+        .loading i{font-size:2rem;color:#30D158;}
+
+        @media(max-width:900px){
+            .summary-row{grid-template-columns:repeat(2,1fr);}
+        }
+    </style>
+</head>
+<body>
+<nav class="sidebar">
+    <div class="logo-details"><i class="fas fa-industry icon"></i><div class="logo_name">CMMS Pro</div><i class="fas fa-bars" id="btn_toggle"></i></div>
+    <ul class="nav-list"></ul>
+</nav>
+
+<section class="home-section">
+    <div class="wrap">
+        <div class="header">
+            <div>
+                <h1><i class="fas fa-sliders-h"></i> Optimización del Plan Preventivo</h1>
+                <p>Detecta puntos sobre o sub-mantenidos cruzando ejecuciones con fallas correctivas</p>
+            </div>
+            <div class="tools">
+                <label style="color:#9ab0cb;font-size:.8rem;">Ventana:</label>
+                <select id="windowDays">
+                    <option value="60">60 días</option>
+                    <option value="90" selected>90 días</option>
+                    <option value="180">180 días</option>
+                    <option value="365">1 año</option>
+                </select>
+                <button class="btn primary" onclick="analyze()"><i class="fas fa-search"></i> Analizar</button>
+            </div>
+        </div>
+
+        <div id="loading" class="loading" style="display:none;">
+            <i class="fas fa-spinner fa-spin"></i>
+            <p>Analizando ${activePointsCount} puntos preventivos y cruzando con historial de fallas…</p>
+        </div>
+
+        <div id="content" style="display:none;">
+            <!-- Summary -->
+            <div class="summary-row">
+                <div class="summary-card under">
+                    <div class="lbl"><i class="fas fa-exclamation-triangle"></i> Sub-mantenidos</div>
+                    <div class="val" id="cUnder">—</div>
+                    <div class="sub">Muchas fallas, pocas ejecuciones</div>
+                </div>
+                <div class="summary-card over">
+                    <div class="lbl"><i class="fas fa-hourglass-half"></i> Sobre-mantenidos</div>
+                    <div class="val" id="cOver">—</div>
+                    <div class="sub">Muchas ejecuciones sin fallas</div>
+                </div>
+                <div class="summary-card normal">
+                    <div class="lbl"><i class="fas fa-check-circle"></i> Plan balanceado</div>
+                    <div class="val" id="cNormal">—</div>
+                    <div class="sub">Ratio ejecución/falla OK</div>
+                </div>
+                <div class="summary-card ins">
+                    <div class="lbl"><i class="fas fa-question-circle"></i> Sin data suficiente</div>
+                    <div class="val" id="cIns">—</div>
+                    <div class="sub">Esperar más historial</div>
+                </div>
+            </div>
+
+            <!-- Tabs -->
+            <div class="tabs">
+                <button class="tab active" data-cat="under" onclick="setTab('under')">🔴 Sub-mantenidos <span class="count" id="tabUnder">0</span></button>
+                <button class="tab" data-cat="over" onclick="setTab('over')">🟠 Sobre-mantenidos <span class="count" id="tabOver">0</span></button>
+                <button class="tab" data-cat="normal" onclick="setTab('normal')">🟢 Balanceados <span class="count" id="tabNormal">0</span></button>
+                <button class="tab" data-cat="insufficient_data" onclick="setTab('insufficient_data')">🔵 Sin data <span class="count" id="tabIns">0</span></button>
+                <button class="tab" data-cat="all" onclick="setTab('all')">📊 Todos <span class="count" id="tabAll">0</span></button>
+            </div>
+
+            <!-- Table -->
+            <div class="panel">
+                <table class="rec-table" id="recTable">
+                    <thead>
+                        <tr>
+                            <th>Severidad</th>
+                            <th>Tipo</th>
+                            <th>Código</th>
+                            <th>Descripción</th>
+                            <th>Equipo / Área</th>
+                            <th style="text-align:center;">Ejec / Fallas</th>
+                            <th style="text-align:center;">Frecuencia (días)</th>
+                            <th>Acción recomendada</th>
+                            <th></th>
+                        </tr>
+                    </thead>
+                    <tbody id="recBody">
+                        <tr><td colspan="9" style="text-align:center;color:#9ab0cb;padding:30px;">Click en Analizar para empezar</td></tr>
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    </div>
+</section>
+
+<script src="/static/js/sidebar.js?v={{ v }}"></script>
+<script>
+let _allRecs = [];
+let _activeTab = 'under';
+
+async function analyze() {
+    const wd = document.getElementById('windowDays').value;
+    document.getElementById('loading').style.display = 'block';
+    document.getElementById('content').style.display = 'none';
+
+    try {
+        const r = await fetch(`/api/insights/preventive-optimization?window_days=${wd}`);
+        const j = await r.json();
+        if (!r.ok) throw new Error(j.error || 'Error');
+
+        _allRecs = j.recommendations || [];
+        const s = j.summary;
+
+        document.getElementById('cUnder').textContent = s.under;
+        document.getElementById('cOver').textContent = s.over;
+        document.getElementById('cNormal').textContent = s.normal;
+        document.getElementById('cIns').textContent = s.insufficient_data;
+
+        document.getElementById('tabUnder').textContent = s.under;
+        document.getElementById('tabOver').textContent = s.over;
+        document.getElementById('tabNormal').textContent = s.normal;
+        document.getElementById('tabIns').textContent = s.insufficient_data;
+        document.getElementById('tabAll').textContent = _allRecs.length;
+
+        // Por defecto, ir a la categoría con más items
+        if (s.under > 0) _activeTab = 'under';
+        else if (s.over > 0) _activeTab = 'over';
+        else _activeTab = 'all';
+        updateTabUI();
+        renderTable();
+
+        document.getElementById('loading').style.display = 'none';
+        document.getElementById('content').style.display = 'block';
+    } catch (e) {
+        document.getElementById('loading').style.display = 'none';
+        alert('Error: ' + e.message);
+    }
+}
+
+function setTab(cat) {
+    _activeTab = cat;
+    updateTabUI();
+    renderTable();
+}
+
+function updateTabUI() {
+    document.querySelectorAll('.tab').forEach(t => {
+        t.classList.toggle('active', t.dataset.cat === _activeTab);
+    });
+}
+
+function renderTable() {
+    const tbody = document.getElementById('recBody');
+    const filtered = _activeTab === 'all' ? _allRecs : _allRecs.filter(r => r.category === _activeTab);
+
+    if (filtered.length === 0) {
+        tbody.innerHTML = `<tr><td colspan="9" style="text-align:center;color:#9ab0cb;padding:30px;">Sin recomendaciones en esta categoría — buena señal</td></tr>`;
+        return;
+    }
+
+    tbody.innerHTML = filtered.map(r => {
+        const canApply = r.recommended_frequency_days !== r.current_frequency_days &&
+                         ['under', 'over'].includes(r.category);
+        const freqChange = canApply ? `
+            ${r.current_frequency_days}
+            <span class="arrow">→</span>
+            <span class="freq-new ${r.recommended_frequency_days < r.current_frequency_days ? 'down' : ''}">
+                ${r.recommended_frequency_days}
+            </span>
+        ` : r.current_frequency_days;
+
+        return `<tr>
+            <td><span class="sev ${r.severity}">${r.severity}</span></td>
+            <td><span class="type-chip ${r.source_type}">${r.source_type.toUpperCase()}</span></td>
+            <td style="color:#5AC8FA;font-weight:700;">${r.code || '-'}</td>
+            <td>
+                ${r.name}
+                <div class="reason">${r.reason}</div>
+            </td>
+            <td>
+                <b style="color:#FF9F0A;">${r.equipment_tag}</b><br/>
+                <span style="color:#9ab0cb;font-size:.75rem;">${r.area_name}</span>
+            </td>
+            <td style="text-align:center;">
+                <span style="color:#30D158;font-weight:700;">${r.executions_in_window}</span>
+                /
+                <span style="color:#FF453A;font-weight:700;">${r.failures_in_window}</span>
+            </td>
+            <td style="text-align:center;">${freqChange}</td>
+            <td>${r.action}</td>
+            <td>${canApply
+                ? `<button class="btn-apply" onclick='applyRec(${JSON.stringify(r).replace(/'/g,"&#39;")})'><i class="fas fa-check"></i> Aplicar</button>`
+                : '<span style="color:#555;font-size:.75rem;">—</span>'}
+            </td>
+        </tr>`;
+    }).join('');
+}
+
+async function applyRec(rec) {
+    if (!confirm(
+        `Aplicar recomendación:\n\n` +
+        `Punto: ${rec.code} - ${rec.name}\n` +
+        `Frecuencia actual: ${rec.current_frequency_days} días\n` +
+        `Nueva frecuencia: ${rec.recommended_frequency_days} días\n\n` +
+        `¿Confirmas el cambio?`
+    )) return;
+
+    try {
+        const r = await fetch('/api/insights/preventive-optimization/apply', {
+            method: 'POST',
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify({
+                source_type: rec.source_type,
+                source_id: rec.source_id,
+                new_frequency_days: rec.recommended_frequency_days,
+            }),
+        });
+        const j = await r.json();
+        if (!r.ok) throw new Error(j.error || 'Error');
+
+        // Actualizar la recomendación en memoria y re-renderizar
+        rec.current_frequency_days = rec.recommended_frequency_days;
+        rec.category = 'normal';
+        rec.action = 'Aplicado ✓';
+        rec.severity = 'OK';
+        renderTable();
+
+        alert(`Frecuencia actualizada: ${j.old_frequency_days} → ${j.new_frequency_days} días`);
+    } catch (e) {
+        alert('Error aplicando: ' + e.message);
+    }
+}
+
+window.analyze = analyze;
+window.setTab = setTab;
+window.applyRec = applyRec;
+</script>
+</body>
+</html>
