@@ -146,17 +146,19 @@ async function loadSummary() {
     document.getElementById('emptyMsg').style.display = 'none';
 
     try {
+        // 1. Cargar métricas (rápido, <5s)
         const r = await fetch(`/api/insights/weekly-summary?weeks=${weeks}`);
-        const j = await r.json();
-        if (!r.ok) throw new Error(j.error || 'Error');
+        let j;
+        try {
+            j = await r.json();
+        } catch (parseErr) {
+            throw new Error('Respuesta inválida del servidor (posible timeout)');
+        }
+        if (!r.ok) throw new Error(j.error || 'Error del servidor');
 
         const m = j.metrics;
-        // Narrativa
-        document.getElementById('narrativeBody').textContent = j.narrative;
-        const src = j.narrative_source;
-        document.getElementById('narrativeSrc').textContent =
-            '🤖 ' + (src === 'ai' ? 'Generado con IA' : src === 'internal' ? 'Análisis interno' : 'Análisis fallback') +
-            ' · ' + new Date(j.generated_at).toLocaleString('es-PE');
+        document.getElementById('narrativeBody').textContent = '⏳ Generando análisis ejecutivo con IA...';
+        document.getElementById('narrativeSrc').textContent = '';
         document.getElementById('period').textContent = '· ' + m.period;
 
         // Métricas
@@ -191,6 +193,31 @@ async function loadSummary() {
 
         document.getElementById('loading').style.display = 'none';
         document.getElementById('content').style.display = 'block';
+
+        // 2. En background, pedir narrativa IA (puede demorar hasta 30s)
+        try {
+            const nr = await fetch('/api/insights/narrative', {
+                method: 'POST',
+                headers: {'Content-Type': 'application/json'},
+                body: JSON.stringify({ metrics: m }),
+            });
+            const nj = await nr.json();
+            if (nr.ok) {
+                document.getElementById('narrativeBody').textContent = nj.narrative;
+                const src = nj.narrative_source;
+                document.getElementById('narrativeSrc').textContent =
+                    '🤖 ' + (src === 'ai' ? 'Análisis IA automático' :
+                            src === 'internal' ? 'Análisis interno (DeepSeek no configurado)' :
+                            'Análisis fallback') +
+                    ' · ' + new Date().toLocaleString('es-PE');
+            } else {
+                document.getElementById('narrativeBody').textContent =
+                    'No se pudo generar la narrativa IA: ' + (nj.error || 'error desconocido');
+            }
+        } catch (nerr) {
+            document.getElementById('narrativeBody').textContent =
+                'No se pudo generar la narrativa IA: ' + nerr.message;
+        }
     } catch (e) {
         document.getElementById('loading').style.display = 'none';
         document.getElementById('emptyMsg').style.display = 'block';

@@ -145,11 +145,23 @@ function renderOrders(list) {
             itemsHtml += `<div style="font-size:0.85em;">� ${name} (x${r.quantity}) - <span style="color:#9ad0ff">${r.status || '-'}</span></div>`;
         });
 
+        // Chips de OTs asociadas (clickeables → modal de detalle)
+        const otChips = (po.work_orders || []).map(w => {
+            const title = (w.description || '').replace(/"/g,'&quot;').replace(/'/g,"&#39;");
+            return `<button onclick="viewOTFromPurchase('${w.code}')"
+                style="background:rgba(10,132,255,.15);color:#5ac8fa;border:1px solid rgba(10,132,255,.4);
+                       border-radius:10px;padding:2px 8px;font-size:.75rem;cursor:pointer;margin:2px;
+                       font-weight:600;" title="${title} — click para ver detalle">
+                <i class="fas fa-tools" style="font-size:.68rem;"></i> ${w.code}
+            </button>`;
+        }).join('') || '<span style="color:rgba(255,255,255,.25);font-size:.8em;">-</span>';
+
         tr.innerHTML = `
             <td><b style="color:#0A84FF;">${po.po_code}</b></td>
             <td>${po.provider_name}</td>
             <td>${po.issue_date || '-'}</td>
             <td><span class="status-pill status-${(po.status || '').toLowerCase()}">${po.status}</span></td>
+            <td>${otChips}</td>
             <td>${itemsHtml || '-'}</td>
             <td>
                 ${po.status !== 'CERRADA'

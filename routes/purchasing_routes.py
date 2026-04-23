@@ -82,7 +82,41 @@ def register_purchasing_routes(
                 return jsonify({"error": str(e)}), 500
 
         orders = PurchaseOrder.query.order_by(PurchaseOrder.id.desc()).all()
-        return jsonify([o.to_dict() for o in orders])
+
+        # Enriquecer cada OC con sus OTs asociadas (para mostrar link en UI)
+        from models import WorkOrder
+        all_requests = PurchaseRequest.query.filter(
+            PurchaseRequest.purchase_order_id.in_([o.id for o in orders])
+        ).all() if orders else []
+        reqs_by_po = {}
+        ot_ids = set()
+        for r in all_requests:
+            reqs_by_po.setdefault(r.purchase_order_id, []).append(r)
+            if r.work_order_id:
+                ot_ids.add(r.work_order_id)
+        wo_map = ({w.id: w for w in WorkOrder.query.filter(WorkOrder.id.in_(ot_ids)).all()}
+                  if ot_ids else {})
+
+        result = []
+        for o in orders:
+            d = o.to_dict()
+            ot_list = []
+            seen_wo_ids = set()
+            for r in reqs_by_po.get(o.id, []):
+                if not r.work_order_id or r.work_order_id in seen_wo_ids:
+                    continue
+                seen_wo_ids.add(r.work_order_id)
+                wo = wo_map.get(r.work_order_id)
+                if wo:
+                    ot_list.append({
+                        'id': wo.id,
+                        'code': wo.code or f'OT-{wo.id}',
+                        'description': (wo.description or '')[:80],
+                        'status': wo.status,
+                    })
+            d['work_orders'] = ot_list
+            result.append(d)
+        return jsonify(result)
 
     def _receive_po_items(po, request_ids=None):
         selected_ids = set(request_ids or [])

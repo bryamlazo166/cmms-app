@@ -1570,9 +1570,18 @@ async function handlePauseSubmit() {
 window.openPauseModal = openPauseModal;
 window.handlePauseSubmit = handlePauseSubmit;
 
-function openCloseModal() {
+async function openCloseModal() {
     if (!activeExecutionOT) return;
     document.getElementById('closeOtId').value = activeExecutionOT.id;
+
+    // Asegurarse de tener el personal planificado cargado (puede estar vacío
+    // si el usuario llegó aquí sin pasar por la pestaña de ejecución).
+    try {
+        const res = await fetch(`/api/work_orders/${activeExecutionOT.id}/personnel`);
+        if (res.ok) {
+            currentOTPersonnel = await res.json();
+        }
+    } catch (e) { /* si falla, dejar lo que haya */ }
 
     const now = getLocalISOString();
     const start = activeExecutionOT.real_start_date || now;
