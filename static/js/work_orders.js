@@ -2607,6 +2607,68 @@ window.openAddMaterialModal = async function (type, subtype) {
 
     document.getElementById('addMaterialModal').showModal();
     searchInput.focus();
+
+    // Cargar sugerencias de repuestos basadas en historial del equipo
+    loadMaterialSuggestions(type);
+};
+
+// Sugerencia automática basada en OTs cerradas históricas del mismo equipo
+async function loadMaterialSuggestions(type) {
+    const ot = currentEditingOT;
+    const container = document.getElementById('materialSuggestions');
+    if (!container) return;
+    container.innerHTML = '';
+
+    if (!ot || !ot.equipment_id || type === 'tool' || type === 'free') {
+        container.style.display = 'none';
+        return;
+    }
+
+    try {
+        const r = await fetch(`/api/work-orders/spare-suggestions?equipment_id=${ot.equipment_id}&limit=6`);
+        const j = await r.json();
+        const sug = (j.suggestions || []).filter(s =>
+            type === 'warehouse' ? s.item_type === 'warehouse' :
+            type === 'spare_part' ? s.item_type === 'spare_part' : true
+        );
+        if (!sug.length) { container.style.display = 'none'; return; }
+
+        container.style.display = 'block';
+        container.innerHTML = `
+            <div style="font-size:.72rem;color:#9ab0cb;margin-bottom:6px;font-weight:600;">
+                <i class="fas fa-magic" style="color:#BF5AF2;"></i>
+                SUGERENCIAS (historial del equipo · ${j.source_ots} OTs cerradas)
+            </div>
+            <div style="display:flex;flex-wrap:wrap;gap:6px;">
+                ${sug.map(s => {
+                    const stockTxt = s.current_stock != null
+                        ? `<span style="color:${s.current_stock > 0 ? '#30D158' : '#FF453A'};font-size:.68rem;"> stock ${s.current_stock}</span>`
+                        : '';
+                    return `<button type="button" class="btn-sug"
+                        onclick='applySuggestion(${JSON.stringify(s).replace(/'/g,"&#39;")})'
+                        style="background:rgba(191,90,242,.12);border:1px solid rgba(191,90,242,.35);
+                               color:#d5c5f5;border-radius:16px;padding:4px 10px;font-size:.74rem;
+                               cursor:pointer;">
+                        <b>${s.code}</b> ${s.name.substring(0, 30)}
+                        <span style="color:#BF5AF2;font-weight:700;">· ${s.times_used}×</span>${stockTxt}
+                    </button>`;
+                }).join('')}
+            </div>`;
+    } catch (e) {
+        container.style.display = 'none';
+    }
+}
+
+window.applySuggestion = function(s) {
+    document.getElementById('materialItemId').value = s.item_id;
+    document.getElementById('materialQuantity').value = s.avg_quantity || 1;
+    document.getElementById('materialUnit').value = s.unit || '';
+    document.getElementById('materialFreeText').value = '';
+    const disp = document.getElementById('materialSelectedDisplay');
+    disp.innerHTML = `<b>${s.code}</b> ${s.name} <span style="color:#9ab0cb;font-size:.74rem;">(${s.unit || 'ud'})</span>`;
+    disp.style.display = 'block';
+    document.getElementById('materialSearchInput').value = '';
+    document.getElementById('materialSearchList').style.display = 'none';
 };
 
 // Close dropdown when clicking outside

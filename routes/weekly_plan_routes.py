@@ -24,7 +24,32 @@ from flask import jsonify, request, render_template, send_file
 
 # ── Estimación de duración por tarea ─────────────────────────────────────────
 
-def _estimate_hours(source_type, obj):
+def _estimate_hours(source_type, obj, WorkOrder=None):
+    """Estima horas de una tarea preventiva.
+
+    Estrategia:
+      1. Si hay ≥2 OTs cerradas del mismo source → promedio de las últimas 3
+         (rolling average auto-aprendiente)
+      2. Si no hay suficiente histórico → heurística por tipo.
+    """
+    source_id = getattr(obj, 'id', None)
+    if WorkOrder is not None and source_type and source_id:
+        try:
+            recent = WorkOrder.query.filter(
+                WorkOrder.source_type == source_type,
+                WorkOrder.source_id == source_id,
+                WorkOrder.status == 'Cerrada',
+                WorkOrder.real_duration.isnot(None),
+                WorkOrder.real_duration > 0,
+            ).order_by(WorkOrder.id.desc()).limit(3).all()
+            if len(recent) >= 2:
+                avg = sum(float(w.real_duration) for w in recent) / len(recent)
+                # Caps defensivos: no menor a 0.25h ni mayor a 8h
+                return round(max(0.25, min(avg, 8.0)), 2)
+        except Exception:
+            pass
+
+    # Fallback heurístico (primer preventivo sin historial)
     if source_type == 'lubrication':
         base = 0.5
         qty = getattr(obj, 'quantity_nominal', None) or 0
@@ -311,7 +336,7 @@ def register_weekly_plan_routes(
                 candidate_days.sort(key=lambda d: (load[d].get(aid, 0), day_totals[d]))
 
                 obj = _get_source_obj(src)
-                hours = _estimate_hours(src['source_type'], obj) if obj else 1.0
+                hours = _estimate_hours(src['source_type'], obj, WorkOrder=WorkOrder) if obj else 1.0
 
                 chosen_day = None
                 for d in candidate_days:

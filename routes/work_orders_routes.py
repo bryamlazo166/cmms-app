@@ -1,4 +1,4 @@
-from datetime import datetime
+from datetime import datetime, timedelta
 from io import BytesIO
 
 import pandas as pd
@@ -506,6 +506,116 @@ def register_work_orders_routes(
         db.session.delete(material)
         db.session.commit()
         return jsonify({"message": "Material removed"})
+
+    @app.route('/api/work-orders/spare-suggestions', methods=['GET'])
+    def suggest_spares_for_ot():
+        """Sugerir repuestos basados en historial de OTs cerradas del mismo equipo.
+
+        Params:
+          - equipment_id (requerido)
+          - months (opcional, default 12): ventana histórica
+          - limit (opcional, default 10)
+
+        Retorna los ítems más usados en OTs cerradas del equipo, ordenados
+        por frecuencia de uso. Útil para sugerir al crear una nueva OT.
+        """
+        try:
+            from collections import Counter
+            equipment_id = request.args.get('equipment_id', type=int)
+            if not equipment_id:
+                return jsonify({"error": "equipment_id requerido"}), 400
+            months = int(request.args.get('months', 12))
+            limit = int(request.args.get('limit', 10))
+
+            cutoff = (datetime.now() - timedelta(days=30 * months)).strftime('%Y-%m-%d')
+
+            # OTs cerradas del equipo en la ventana
+            ots = WorkOrder.query.filter(
+                WorkOrder.equipment_id == equipment_id,
+                WorkOrder.status == 'Cerrada',
+            ).all()
+            # Filtrar por fecha real_end_date >= cutoff
+            ots_ids = [
+                o.id for o in ots
+                if (o.real_end_date or '') >= cutoff
+            ]
+
+            if not ots_ids:
+                return jsonify({'suggestions': [], 'source_ots': 0})
+
+            # Contar materiales
+            materials = OTMaterial.query.filter(
+                OTMaterial.work_order_id.in_(ots_ids)
+            ).all()
+
+            counter = Counter()
+            details = {}
+            for m in materials:
+                key = (m.item_type, m.item_id, m.item_name_free or '')
+                counter[key] += (m.quantity or 0)
+                if key not in details:
+                    details[key] = {
+                        'item_type': m.item_type,
+                        'item_id': m.item_id,
+                        'item_name_free': m.item_name_free,
+                        'unit': m.unit,
+                        'occurrences': 0,
+                    }
+                details[key]['occurrences'] += 1
+
+            # Enriquecer con nombre/código del catálogo
+            wh_ids = [k[1] for k in counter if k[0] == 'warehouse']
+            sp_ids = [k[1] for k in counter if k[0] == 'spare_part']
+            wh_map = {}
+            sp_map = {}
+            if wh_ids:
+                wh_map = {w.id: w for w in WarehouseItem.query.filter(
+                    WarehouseItem.id.in_(wh_ids)
+                ).all()}
+            if sp_ids:
+                from models import SparePart
+                sp_map = {s.id: s for s in SparePart.query.filter(
+                    SparePart.id.in_(sp_ids)
+                ).all()}
+
+            results = []
+            for key, total_qty in counter.most_common(limit):
+                d = details[key]
+                name = d['item_name_free'] or '-'
+                code = '-'
+                stock = None
+                if d['item_type'] == 'warehouse' and d['item_id'] in wh_map:
+                    wi = wh_map[d['item_id']]
+                    name = wi.name
+                    code = wi.code or '-'
+                    stock = wi.stock
+                elif d['item_type'] == 'spare_part' and d['item_id'] in sp_map:
+                    sp = sp_map[d['item_id']]
+                    name = sp.name
+                    code = sp.code or '-'
+                    stock = sp.quantity
+                results.append({
+                    'item_type': d['item_type'],
+                    'item_id': d['item_id'],
+                    'code': code,
+                    'name': name,
+                    'unit': d['unit'] or '-',
+                    'times_used': d['occurrences'],
+                    'total_quantity': total_qty,
+                    'avg_quantity': round(total_qty / d['occurrences'], 2),
+                    'current_stock': stock,
+                })
+
+            return jsonify({
+                'equipment_id': equipment_id,
+                'months_window': months,
+                'source_ots': len(ots_ids),
+                'suggestions': results,
+            })
+        except Exception as e:
+            logger.error(f"suggest_spares_for_ot error: {e}")
+            import traceback; traceback.print_exc()
+            return jsonify({"error": str(e)}), 500
 
     @app.route('/api/work-orders/mine', methods=['GET'])
     def handle_my_work_orders():

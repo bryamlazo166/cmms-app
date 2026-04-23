@@ -60,6 +60,7 @@ from routes.warehouse_routes import register_warehouse_routes
 from routes.work_orders_routes import register_work_orders_routes
 from routes.production_routes import register_production_routes
 from routes.weekly_plan_routes import register_weekly_plan_routes
+from routes.insights_routes import register_insights_routes
 
 logging.basicConfig(level=logging.DEBUG)
 logger = logging.getLogger(__name__)
@@ -211,6 +212,7 @@ _MODULE_ROUTES = {
     'indicadores':      {'pages': ['/indicadores'], 'api': ['/api/indicators']},
     'produccion':       {'pages': ['/produccion'], 'api': ['/api/production']},
     'programa_nocturno': {'pages': ['/programa-nocturno'], 'api': ['/api/weekly-plans', '/api/preventive-sources']},
+    'insights':          {'pages': ['/insights'], 'api': ['/api/insights']},
     'paradas':          {'pages': ['/paradas'], 'api': ['/api/shutdowns']},
     'seguimiento':      {'pages': ['/seguimiento'], 'api': ['/api/activities', '/api/milestones']},
     'reportes':         {'pages': ['/reportes'], 'api': ['/api/reports']},
@@ -231,6 +233,7 @@ _DEFAULT_PERMS = {
         'indicadores': {'view': True, 'edit': False},
         'produccion': {'view': True, 'edit': True},
         'programa_nocturno': {'view': True, 'edit': True},
+        'insights': {'view': True, 'edit': False},
         'seguimiento': {'view': True, 'edit': True}, 'reportes': {'view': True, 'edit': True},
         'activos_rotativos': {'view': True, 'edit': True}, 'activos_config': {'view': True, 'edit': False},
         'historial_equipo': {'view': True, 'edit': False}, 'exportar': {'view': False, 'edit': False},
@@ -245,6 +248,7 @@ _DEFAULT_PERMS = {
         'paradas': {'view': True, 'edit': True},
         'produccion': {'view': True, 'edit': True},
         'programa_nocturno': {'view': True, 'edit': True},
+        'insights': {'view': True, 'edit': False},
         'seguimiento': {'view': True, 'edit': True}, 'reportes': {'view': True, 'edit': False},
         'activos_rotativos': {'view': True, 'edit': False}, 'activos_config': {'view': True, 'edit': False},
         'historial_equipo': {'view': True, 'edit': False}, 'exportar': {'view': False, 'edit': False},
@@ -307,6 +311,7 @@ _DEFAULT_PERMS = {
         'indicadores': {'view': True, 'edit': False},
         'produccion': {'view': True, 'edit': True},
         'programa_nocturno': {'view': True, 'edit': False},
+        'insights': {'view': True, 'edit': False},
         'paradas': {'view': True, 'edit': False},
         'seguimiento': {'view': True, 'edit': False}, 'reportes': {'view': True, 'edit': False},
         'activos_rotativos': {'view': True, 'edit': False}, 'activos_config': {'view': True, 'edit': False},
@@ -638,6 +643,21 @@ register_weekly_plan_routes(
     MonitoringPoint=MonitoringPoint,
     _calculate_lubrication_schedule=_calculate_lubrication_schedule,
     _calculate_monitoring_schedule=_calculate_monitoring_schedule,
+)
+
+register_insights_routes(
+    app=app,
+    db=db,
+    logger=logger,
+    WorkOrder=WorkOrder,
+    MaintenanceNotice=MaintenanceNotice,
+    Area=Area,
+    Line=Line,
+    Equipment=Equipment,
+    LubricationPoint=LubricationPoint,
+    InspectionRoute=InspectionRoute,
+    MonitoringPoint=MonitoringPoint,
+    Shutdown=Shutdown,
 )
 
 register_rotative_assets_routes(

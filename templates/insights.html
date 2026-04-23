@@ -1,0 +1,202 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <link rel="icon" type="image/svg+xml" href="/static/favicon.svg">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Resumen Ejecutivo - CMMS</title>
+    <link rel="stylesheet" href="/static/css/style.css?v={{ v }}">
+    <link rel="stylesheet" href="/static/css/sidebar.css?v={{ v }}">
+    <link href="https://fonts.googleapis.com/css2?family=Roboto:wght@300;400;500;700&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css">
+    <style>
+        body{background:#0a0e14;}
+        .wrap{max-width:1200px;margin:0 auto;padding:16px;}
+        .header{background:linear-gradient(120deg,#1e2430,#151b24);border:1px solid #2d3f56;border-radius:14px;padding:20px 24px;margin-bottom:16px;display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:14px;}
+        .header h1{margin:0;color:#BF5AF2;font-size:1.5rem;display:flex;align-items:center;gap:10px;}
+        .header p{margin:4px 0 0;color:#9ab0cb;font-size:.85rem;}
+        .tools{display:flex;gap:10px;align-items:center;flex-wrap:wrap;}
+        .tools select,.tools input{height:36px;background:#0f1319;color:#d5e2f5;border:1px solid #344964;border-radius:8px;padding:6px 12px;font-size:.86rem;}
+        .btn{height:36px;border:1px solid #385273;border-radius:8px;background:#193451;color:#d7e9ff;padding:0 14px;font-weight:600;cursor:pointer;font-size:.86rem;display:inline-flex;align-items:center;gap:6px;}
+        .btn.primary{background:#BF5AF2;border-color:#BF5AF2;color:#fff;}
+        .btn.primary:hover{background:#ca6dfa;}
+
+        .metric-row{display:grid;grid-template-columns:repeat(4,1fr);gap:12px;margin-bottom:14px;}
+        .metric{background:linear-gradient(135deg,#1b212b,#151a23);border:1px solid #31455f;border-radius:12px;padding:14px;position:relative;overflow:hidden;}
+        .metric::before{content:'';position:absolute;top:0;left:0;right:0;height:3px;background:var(--c,#BF5AF2);}
+        .metric .lbl{font-size:.7rem;color:#9ab3d0;text-transform:uppercase;letter-spacing:.5px;font-weight:600;margin-bottom:6px;}
+        .metric .val{font-size:1.9rem;font-weight:700;color:#eff6ff;line-height:1;}
+        .metric .sub{font-size:.72rem;color:#9ab0cb;margin-top:4px;}
+
+        .narrative{background:linear-gradient(135deg,#1b1d3a,#151828);border:1px solid #4a5cbd;border-radius:14px;padding:22px;margin-bottom:16px;}
+        .narrative h3{margin:0 0 12px;color:#9aa8ff;font-size:1.05rem;display:flex;align-items:center;gap:8px;}
+        .narrative .body{background:#0f1220;border-radius:10px;padding:18px;color:#d5e2f5;font-size:.95rem;line-height:1.7;white-space:pre-wrap;min-height:120px;}
+        .narrative .src{font-size:.72rem;color:#7a86b5;margin-top:8px;text-align:right;}
+
+        .panel{background:#181d24;border:1px solid #2f4257;border-radius:14px;padding:16px 18px;margin-bottom:14px;}
+        .panel h3{margin:0 0 12px;color:#5ac8fa;font-size:.98rem;display:flex;align-items:center;gap:8px;}
+        .top-table{width:100%;border-collapse:collapse;font-size:.88rem;}
+        .top-table th,.top-table td{padding:8px 10px;border-bottom:1px solid #2a3a50;color:#d5e2f5;text-align:left;}
+        .top-table th{color:#9ab0cb;font-weight:600;font-size:.75rem;text-transform:uppercase;}
+
+        @media(max-width:900px){
+            .metric-row{grid-template-columns:repeat(2,1fr);}
+        }
+    </style>
+</head>
+<body>
+<nav class="sidebar">
+    <div class="logo-details"><i class="fas fa-industry icon"></i><div class="logo_name">CMMS Pro</div><i class="fas fa-bars" id="btn_toggle"></i></div>
+    <ul class="nav-list"></ul>
+</nav>
+
+<section class="home-section">
+    <div class="wrap">
+        <div class="header">
+            <div>
+                <h1><i class="fas fa-brain"></i> Resumen Ejecutivo</h1>
+                <p>Análisis automático del CMMS — para gerencia general</p>
+            </div>
+            <div class="tools">
+                <select id="weeksBack">
+                    <option value="1">Última semana</option>
+                    <option value="2">Últimas 2 semanas</option>
+                    <option value="4" selected>Último mes (4 semanas)</option>
+                    <option value="12">Último trimestre (12 semanas)</option>
+                </select>
+                <button class="btn primary" onclick="loadSummary()"><i class="fas fa-magic"></i> Generar</button>
+            </div>
+        </div>
+
+        <div id="loading" style="display:none;text-align:center;padding:40px;color:#9ab0cb;">
+            <i class="fas fa-spinner fa-spin" style="font-size:2rem;color:#BF5AF2;"></i>
+            <p>Analizando datos del CMMS y redactando resumen ejecutivo...</p>
+        </div>
+
+        <div id="content" style="display:none;">
+            <!-- Narrativa IA -->
+            <div class="narrative">
+                <h3><i class="fas fa-robot"></i> Diagnóstico ejecutivo <span id="period" style="color:#9ab0cb;font-weight:400;font-size:.85rem;margin-left:auto;"></span></h3>
+                <div class="body" id="narrativeBody">—</div>
+                <div class="src" id="narrativeSrc"></div>
+            </div>
+
+            <!-- Métricas principales -->
+            <div class="metric-row">
+                <div class="metric" style="--c:#5AC8FA;">
+                    <div class="lbl"><i class="fas fa-tasks"></i> OTs Cerradas</div>
+                    <div class="val" id="mOts">—</div>
+                    <div class="sub" id="mOtsMix">—</div>
+                </div>
+                <div class="metric" style="--c:#FF453A;">
+                    <div class="lbl"><i class="fas fa-stopwatch"></i> Downtime</div>
+                    <div class="val" id="mDowntime">—<span style="font-size:1rem;color:#9ab0cb;">h</span></div>
+                    <div class="sub">Por fallas no planificadas</div>
+                </div>
+                <div class="metric" style="--c:#FF9F0A;">
+                    <div class="lbl"><i class="fas fa-bell"></i> Avisos Abiertos</div>
+                    <div class="val" id="mNotices">—</div>
+                    <div class="sub">Al cierre del periodo</div>
+                </div>
+                <div class="metric" style="--c:#FFD60A;">
+                    <div class="lbl"><i class="fas fa-exclamation-triangle"></i> Preventivos Vencidos</div>
+                    <div class="val" id="mOverdue">—</div>
+                    <div class="sub" id="mOverdueBreak">—</div>
+                </div>
+            </div>
+
+            <div class="metric-row">
+                <div class="metric" style="--c:#30D158;">
+                    <div class="lbl"><i class="fas fa-hard-hat"></i> Paradas</div>
+                    <div class="val" id="mShutdowns">—</div>
+                    <div class="sub" id="mUnplanned">—</div>
+                </div>
+                <div class="metric" style="--c:#BF5AF2;grid-column:span 3;">
+                    <div class="lbl"><i class="fas fa-industry"></i> Área Crítica</div>
+                    <div class="val" id="mCriticalArea">—</div>
+                    <div class="sub" id="mCriticalHours">—</div>
+                </div>
+            </div>
+
+            <!-- Top equipos -->
+            <div class="panel">
+                <h3><i class="fas fa-exclamation-triangle"></i> Top 5 Equipos con más fallas</h3>
+                <table class="top-table" id="topTable">
+                    <thead>
+                        <tr><th>Tag</th><th>Equipo</th><th>Área</th><th>Fallas</th></tr>
+                    </thead>
+                    <tbody></tbody>
+                </table>
+            </div>
+        </div>
+
+        <div id="emptyMsg" style="text-align:center;padding:60px;color:#9ab0cb;">
+            <i class="fas fa-brain" style="font-size:2.5rem;color:#4a5cbd;"></i>
+            <p style="margin-top:12px;">Selecciona un periodo y haz click en <strong>Generar</strong> para el resumen ejecutivo.</p>
+        </div>
+    </div>
+</section>
+
+<script src="/static/js/sidebar.js?v={{ v }}"></script>
+<script>
+async function loadSummary() {
+    const weeks = document.getElementById('weeksBack').value;
+    document.getElementById('loading').style.display = 'block';
+    document.getElementById('content').style.display = 'none';
+    document.getElementById('emptyMsg').style.display = 'none';
+
+    try {
+        const r = await fetch(`/api/insights/weekly-summary?weeks=${weeks}`);
+        const j = await r.json();
+        if (!r.ok) throw new Error(j.error || 'Error');
+
+        const m = j.metrics;
+        // Narrativa
+        document.getElementById('narrativeBody').textContent = j.narrative;
+        const src = j.narrative_source;
+        document.getElementById('narrativeSrc').textContent =
+            '🤖 ' + (src === 'ai' ? 'Generado con IA' : src === 'internal' ? 'Análisis interno' : 'Análisis fallback') +
+            ' · ' + new Date(j.generated_at).toLocaleString('es-PE');
+        document.getElementById('period').textContent = '· ' + m.period;
+
+        // Métricas
+        document.getElementById('mOts').textContent = m.ots_closed;
+        document.getElementById('mOtsMix').textContent =
+            `${m.ots_preventive} prev · ${m.ots_corrective} corr · ${m.ots_total} total`;
+        document.getElementById('mDowntime').innerHTML =
+            `${m.downtime_hours}<span style="font-size:1rem;color:#9ab0cb;">h</span>`;
+        document.getElementById('mNotices').textContent = m.open_notices;
+        document.getElementById('mOverdue').textContent = m.overdue_preventive.total;
+        document.getElementById('mOverdueBreak').textContent =
+            `Lub ${m.overdue_preventive.lubrication} · Insp ${m.overdue_preventive.inspection} · Mon ${m.overdue_preventive.monitoring}`;
+        document.getElementById('mShutdowns').textContent = m.shutdowns_count;
+        document.getElementById('mUnplanned').textContent = `${m.unplanned_shutdowns} no planificadas`;
+        document.getElementById('mCriticalArea').textContent = m.critical_area || '—';
+        document.getElementById('mCriticalHours').textContent =
+            m.critical_area ? `${m.critical_area_hours}h de downtime` : 'Sin datos';
+
+        // Top equipos
+        const tbody = document.querySelector('#topTable tbody');
+        if (m.top_equipments.length === 0) {
+            tbody.innerHTML = '<tr><td colspan="4" style="text-align:center;color:#9ab0cb;">Sin fallas registradas</td></tr>';
+        } else {
+            tbody.innerHTML = m.top_equipments.map(e => `
+                <tr>
+                    <td><b style="color:#FF9F0A;">${e.tag}</b></td>
+                    <td>${e.name}</td>
+                    <td>${e.area}</td>
+                    <td><b style="color:#FF453A;">${e.failures}</b></td>
+                </tr>`).join('');
+        }
+
+        document.getElementById('loading').style.display = 'none';
+        document.getElementById('content').style.display = 'block';
+    } catch (e) {
+        document.getElementById('loading').style.display = 'none';
+        document.getElementById('emptyMsg').style.display = 'block';
+        alert('Error: ' + e.message);
+    }
+}
+</script>
+</body>
+</html>

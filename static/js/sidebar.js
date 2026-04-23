@@ -18,6 +18,7 @@
         { href: '/cockpit', icon: 'fas fa-chart-pie', label: 'Cockpit Gerencial', tip: 'Cockpit Gerencial', restricted: true },
         { href: '/produccion', icon: 'fas fa-seedling', label: 'Produccion vs Mtto', tip: 'Confiabilidad de Produccion', restricted: true },
         { href: '/programa-nocturno', icon: 'fas fa-moon', label: 'Programa Nocturno', tip: 'Preventivos turno noche', restricted: true },
+        { href: '/insights', icon: 'fas fa-brain', label: 'Resumen Ejecutivo', tip: 'Resumen IA para gerencia', restricted: true },
         { href: '/seguimiento', icon: 'fas fa-tasks', label: 'Seguimiento', tip: 'Seguimiento' },
         { href: '/calendario', icon: 'fas fa-calendar-alt', label: 'Calendario', tip: 'Plan Mtto' },
         { href: '/reportes', icon: 'fas fa-file-contract', label: 'Reportes', tip: 'Reportes' }
@@ -107,6 +108,7 @@
         'paradas': '/paradas', 'indicadores': '/indicadores', 'cockpit': '/cockpit',
         'produccion': '/produccion',
         'programa_nocturno': '/programa-nocturno',
+        'insights': '/insights',
         'seguimiento': '/seguimiento',
         'reportes': '/reportes', 'historial_equipo': '/equipo-historial',
     };
