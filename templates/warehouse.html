@@ -131,17 +131,17 @@
                 <div id="tab-master" class="tab-content active">
                     <!-- Toolbar -->
                     <div class="toolbar">
-                        <button class="btn-primary" onclick="openItemModal()">
+                        <button class="btn-primary" data-perm="almacen.create" onclick="openItemModal()">
                             <i class="fas fa-plus"></i> Nuevo Item
                         </button>
                         <div style="display:flex; gap:10px; flex-wrap: wrap;">
-                            <a href="/api/warehouse/export" target="_blank" style="text-decoration:none;">
+                            <a href="/api/warehouse/export" target="_blank" style="text-decoration:none;" data-perm="almacen.export">
                                 <button class="btn-secondary"
                                     style="background:#30D158; color:white; border:none; padding: 8px 15px;">
                                     <i class="fas fa-file-excel"></i> Exportar Maestro
                                 </button>
                             </a>
-                            <a href="/api/warehouse/export-kardex" target="_blank" style="text-decoration:none;">
+                            <a href="/api/warehouse/export-kardex" target="_blank" style="text-decoration:none;" data-perm="almacen.export">
                                 <button class="btn-secondary"
                                     style="background:#17a2b8; color:white; border:none; padding: 8px 15px;">
                                     <i class="fas fa-history"></i> Exportar Kardex

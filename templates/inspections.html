@@ -93,7 +93,7 @@
             <div><label>Equipo</label><select id="fEquipment"></select></div>
             <div><label>Frecuencia (dias)</label><input id="fFreq" type="number" min="1" value="7"></div>
             <div><label>Alerta (dias)</label><input id="fWarn" type="number" min="0" value="1"></div>
-            <div style="display:flex;align-items:flex-end"><button class="btn btn-primary" onclick="withLoading(this, createRoute)"><i class="fas fa-plus"></i> Crear Ruta</button></div>
+            <div style="display:flex;align-items:flex-end"><button class="btn btn-primary" data-perm="inspecciones.create" onclick="withLoading(this, createRoute)"><i class="fas fa-plus"></i> Crear Ruta</button></div>
         </div>
     </div>
 
@@ -120,7 +120,7 @@
             <div><label>Selecciona Ruta</label><select id="fExecRoute"></select></div>
             <div><label>Fecha</label><input id="fExecDate" type="date"></div>
             <div><label>Inspector</label><input id="fExecBy" placeholder="Nombre del inspector"></div>
-            <div style="display:flex;align-items:flex-end"><button class="btn btn-success" onclick="openExecutionModal()"><i class="fas fa-clipboard-list"></i> Abrir Checklist</button></div>
+            <div style="display:flex;align-items:flex-end"><button class="btn btn-success" data-perm="inspecciones.create" onclick="openExecutionModal()"><i class="fas fa-clipboard-list"></i> Abrir Checklist</button></div>
         </div>
     </div>
 

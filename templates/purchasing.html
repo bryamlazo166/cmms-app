@@ -166,7 +166,7 @@
                 <div id="tab-requests" class="tab-content" style="display: block;">
                     <div class="toolbar" style="justify-content: space-between;">
                         <h3>Bandeja de Entrada de Solicitudes</h3>
-                        <button class="btn-primary" onclick="withLoading(this, createPurchaseOrder)">
+                        <button class="btn-primary" data-perm="compras.create" onclick="withLoading(this, createPurchaseOrder)">
                             <i class="fas fa-plus"></i> Generar Orden de Compra
                         </button>
                     </div>
@@ -256,7 +256,7 @@
         </div>
         <div class="modal-actions" style="margin-top:12px;">
             <button type="button" class="btn-secondary" onclick="document.getElementById('receiveModal').close()">Cancelar</button>
-            <button type="button" class="btn-primary" onclick="confirmReceiveSelection()">Confirmar recepcion</button>
+            <button type="button" class="btn-primary" data-perm="compras.close" onclick="confirmReceiveSelection()">Confirmar recepcion</button>
         </div>
     </dialog>
 

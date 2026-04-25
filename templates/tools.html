@@ -133,10 +133,10 @@
                 </div>
 
                 <div class="toolbar">
-                    <button class="btn-primary" onclick="openToolModal()"><i class="fas fa-plus"></i> Nueva Herramienta</button>
-                    <button class="btn-secondary" onclick="downloadToolsExcel()"><i class="fas fa-file-excel"></i> Exportar Excel</button>
-                    <button class="btn-secondary" onclick="downloadTemplate()"><i class="fas fa-download"></i> Descargar Plantilla</button>
-                    <button class="btn-secondary" onclick="triggerImport()"><i class="fas fa-file-import"></i> Carga Masiva</button>
+                    <button class="btn-primary" data-perm="herramientas.create" onclick="openToolModal()"><i class="fas fa-plus"></i> Nueva Herramienta</button>
+                    <button class="btn-secondary" data-perm="herramientas.export" onclick="downloadToolsExcel()"><i class="fas fa-file-excel"></i> Exportar Excel</button>
+                    <button class="btn-secondary" data-perm="herramientas.import" onclick="downloadTemplate()"><i class="fas fa-download"></i> Descargar Plantilla</button>
+                    <button class="btn-secondary" data-perm="herramientas.import" onclick="triggerImport()"><i class="fas fa-file-import"></i> Carga Masiva</button>
                     <input type="file" id="importFile" accept=".xlsx,.xls" style="display:none" onchange="importToolsFile(this)">
                     <div class="search-bar" style="max-width: 260px;">
                         <input type="text" id="searchTools" placeholder="Buscar herramienta..." onkeyup="filterTools()">

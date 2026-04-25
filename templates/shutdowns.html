@@ -74,7 +74,7 @@
         <!-- LISTA DE PARADAS -->
         <div id="viewList">
             <div class="toolbar">
-                <button class="btn primary" onclick="openCreateModal()"><i class="fas fa-plus"></i> Nueva Parada</button>
+                <button class="btn primary" data-perm="paradas.create" onclick="openCreateModal()"><i class="fas fa-plus"></i> Nueva Parada</button>
                 <select id="filterYear" onchange="loadShutdowns()"></select>
                 <select id="filterStatus" onchange="loadShutdowns()">
                     <option value="">Todos</option>
@@ -92,12 +92,12 @@
                 <button class="btn secondary" onclick="backToList()"><i class="fas fa-arrow-left"></i> Volver</button>
                 <span id="detailTitle" style="color:#FF9F0A;font-weight:700;font-size:1.1rem;"></span>
                 <div style="margin-left:auto;display:flex;gap:8px;">
-                    <button class="btn success" onclick="exportShutdownPdf()" style="background:#FF453A;border-color:#FF453A;"><i class="fas fa-file-pdf"></i> Reporte PDF</button>
-                    <button class="btn success" onclick="exportShutdownExcel()" style="background:#1d8a4a;"><i class="fas fa-file-excel"></i> Reporte Excel</button>
-                    <button class="btn success" onclick="openCreateOTInShutdownModal()" style="background:#0A84FF;"><i class="fas fa-plus-circle"></i> Crear OT Nueva</button>
-                    <button class="btn warning" onclick="openAddOTModal()"><i class="fas fa-link"></i> Vincular OTs</button>
-                    <button class="btn primary" onclick="editCurrentShutdown()"><i class="fas fa-edit"></i> Editar</button>
-                    <button onclick="deleteCurrentShutdown()"
+                    <button class="btn success" data-perm="paradas.export" onclick="exportShutdownPdf()" style="background:#FF453A;border-color:#FF453A;"><i class="fas fa-file-pdf"></i> Reporte PDF</button>
+                    <button class="btn success" data-perm="paradas.export" onclick="exportShutdownExcel()" style="background:#1d8a4a;"><i class="fas fa-file-excel"></i> Reporte Excel</button>
+                    <button class="btn success" data-perm="paradas.create" onclick="openCreateOTInShutdownModal()" style="background:#0A84FF;"><i class="fas fa-plus-circle"></i> Crear OT Nueva</button>
+                    <button class="btn warning" data-perm="paradas.edit" onclick="openAddOTModal()"><i class="fas fa-link"></i> Vincular OTs</button>
+                    <button class="btn primary" data-perm="paradas.edit" onclick="editCurrentShutdown()"><i class="fas fa-edit"></i> Editar</button>
+                    <button onclick="deleteCurrentShutdown()" data-perm="paradas.delete"
                         title="Eliminar esta parada (desvincula todas sus OTs)"
                         style="background:rgba(255,69,58,.15);color:#ff6b63;border:1px solid rgba(255,69,58,.4);
                                border-radius:8px;padding:8px 14px;cursor:pointer;font-size:.88rem;">

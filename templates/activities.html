@@ -106,7 +106,7 @@
     <p class="subtitle">Control de actividades pendientes, reuniones, compras criticas, fabricaciones y proyectos con hitos de seguimiento.</p>
 
     <div class="toolbar">
-        <button class="btn btn-primary" onclick="openCreateModal()"><i class="fas fa-plus"></i> Nueva Actividad</button>
+        <button class="btn btn-primary" data-perm="seguimiento.create" onclick="openCreateModal()"><i class="fas fa-plus"></i> Nueva Actividad</button>
         <select id="filterStatus" onchange="loadActivities()">
             <option value="">Activas</option>
             <option value="all">Todas</option>

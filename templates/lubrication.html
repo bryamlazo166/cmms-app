@@ -83,7 +83,7 @@
                 <div><label>Lubricante</label><input id="fLub" type="text" placeholder="ISO VG 220"></div>
                 <div><label>Frecuencia (dias)</label><input id="fFreq" type="number" value="30" min="1"></div>
                 <div><label>Alerta (dias)</label><input id="fWarn" type="number" value="3" min="0"></div>
-                <div><label>&nbsp;</label><button class="btn" id="btnCreate">Agregar Punto</button></div>
+                <div><label>&nbsp;</label><button class="btn" id="btnCreate" data-perm="lubricacion.create">Agregar Punto</button></div>
             </div>
             <div class="toolbar" style="grid-template-columns:repeat(6,minmax(120px,1fr));margin-top:6px;">
                 <div><label>Fecha ejecucion</label><input id="fExecDate" type="date"></div>
@@ -91,7 +91,7 @@
                 <div><label>Cantidad</label><input id="fQty" type="number" step="0.1" min="0"></div>
                 <div><label>Selecciona punto</label><select id="fPoint"></select></div>
                 <div><label>Anomalia</label><select id="fAnom"><option value="0">No</option><option value="1">Si</option></select></div>
-                <div><label>&nbsp;</label><button class="btn secondary" id="btnExec">Registrar Ejecucion</button></div>
+                <div><label>&nbsp;</label><button class="btn secondary" id="btnExec" data-perm="lubricacion.create">Registrar Ejecucion</button></div>
             </div>
         </div>
 
