@@ -1,0 +1,526 @@
+/* ═══════════════════════════════════════════════════════════════════
+   CMMS PRO — Theme System
+   - Default (no attribute):       Developer Mode  (Apple Dark)
+   - [data-theme="management"]:    Management Mode (SAP Fiori-like)
+
+   Implemented as CSS variable overrides on :root, so every component
+   that already uses var(--bg-base, ...) etc. picks up the new palette
+   automatically. Inline styles in templates that hardcode dark colors
+   are caught with attribute-selector overrides at the bottom of this
+   file.
+═══════════════════════════════════════════════════════════════════ */
+
+/* ────────────────────────────────────────────────────────────────
+   MANAGEMENT MODE — Light, corporate, SAP Fiori inspired
+──────────────────────────────────────────────────────────────── */
+:root[data-theme="management"] {
+    /* Accent / system colors — sober, corporate */
+    --sys-blue:    #004085;   /* primary corporate blue */
+    --sys-blue-soft: #1565C0; /* lighter accent for hover/links */
+    --sys-green:   #2E7D32;
+    --sys-orange:  #E65100;
+    --sys-red:     #C62828;
+    --sys-yellow:  #F9A825;
+    --sys-purple:  #5E35B1;
+    --sys-teal:    #00695C;
+    --sys-indigo:  #283593;
+    --sys-pink:    #AD1457;
+
+    /* Backgrounds */
+    --bg-base:      #F7F7F7;   /* page background */
+    --bg-primary:   #FFFFFF;   /* cards / surfaces */
+    --bg-secondary: #FAFBFC;   /* inputs, table head */
+    --bg-tertiary:  #F0F2F5;   /* hover surface */
+    --bg-hover:     rgba(0, 64, 133, 0.05);
+    --bg-active:    rgba(0, 64, 133, 0.10);
+    --bg-selected:  rgba(0, 64, 133, 0.14);
+
+    /* Labels / text */
+    --label-primary:    #333333;
+    --label-secondary:  #555555;
+    --label-tertiary:   #777777;
+    --label-quaternary: #9AA0A6;
+
+    /* Separators / borders */
+    --sep:        #E5E7EB;
+    --sep-strong: #C8CDD3;
+
+    /* Fills (tinted neutrals for buttons/badges) */
+    --fill-1: rgba(0, 0, 0, 0.10);
+    --fill-2: rgba(0, 0, 0, 0.06);
+    --fill-3: rgba(0, 0, 0, 0.04);
+    --fill-4: rgba(0, 0, 0, 0.02);
+
+    /* Shadows — soft, subtle (no heavy black halos) */
+    --shadow-xs: 0 1px 2px rgba(15, 23, 42, 0.05);
+    --shadow-sm: 0 1px 3px rgba(15, 23, 42, 0.07);
+    --shadow-md: 0 2px 8px rgba(15, 23, 42, 0.06), 0 1px 2px rgba(15, 23, 42, 0.04);
+    --shadow-lg: 0 6px 20px rgba(15, 23, 42, 0.08);
+    --shadow-xl: 0 16px 40px rgba(15, 23, 42, 0.12);
+
+    /* Whitespace bump — used by components that read --sp-* */
+    --sp-card-padding: 24px;
+    --sp-table-cell:   14px;
+
+    /* Chart palette (read by JS to update Chart.defaults) */
+    --chart-text:    #4B5563;
+    --chart-grid:    #E5E7EB;
+    --chart-tooltip: #FFFFFF;
+    --chart-tooltip-text: #333333;
+}
+
+/* ────────────────────────────────────────────────────────────────
+   MANAGEMENT MODE — Typography (sober Sans-Serif, no neon)
+──────────────────────────────────────────────────────────────── */
+:root[data-theme="management"],
+:root[data-theme="management"] body,
+:root[data-theme="management"] input,
+:root[data-theme="management"] button,
+:root[data-theme="management"] select,
+:root[data-theme="management"] textarea {
+    font-family: 'Inter', 'Roboto', 'Segoe UI', Arial, sans-serif !important;
+    -webkit-font-smoothing: antialiased;
+}
+
+:root[data-theme="management"] body {
+    background-color: var(--bg-base);
+    color: var(--label-primary);
+}
+
+:root[data-theme="management"] h1,
+:root[data-theme="management"] h2,
+:root[data-theme="management"] h3,
+:root[data-theme="management"] h4 {
+    color: var(--label-primary);
+    font-weight: 600;
+    letter-spacing: -0.2px;
+}
+
+/* ────────────────────────────────────────────────────────────────
+   MANAGEMENT MODE — Component refinements
+   (more whitespace, softer borders, no neon)
+──────────────────────────────────────────────────────────────── */
+
+/* Cards — generous padding, soft border */
+:root[data-theme="management"] .card,
+:root[data-theme="management"] .chart-box,
+:root[data-theme="management"] .activity-list,
+:root[data-theme="management"] .kpi-card-dash {
+    background: var(--bg-primary);
+    border: 1px solid var(--sep);
+    box-shadow: var(--shadow-sm);
+    padding: 22px 24px;
+}
+
+:root[data-theme="management"] .kpi-card-dash:hover {
+    transform: translateY(-1px);
+    border-color: var(--sep-strong);
+    box-shadow: var(--shadow-md);
+}
+
+:root[data-theme="management"] .kpi-info h3 {
+    color: var(--label-primary) !important;
+    font-weight: 600;
+}
+
+:root[data-theme="management"] .kpi-info p {
+    color: var(--label-tertiary) !important;
+}
+
+/* Top bar */
+:root[data-theme="management"] .top-bar {
+    background: var(--bg-primary);
+    border: 1px solid var(--sep);
+    box-shadow: var(--shadow-sm);
+}
+
+:root[data-theme="management"] .top-bar h1 {
+    color: var(--label-primary);
+    font-weight: 600;
+}
+
+/* Sidebar — light variant */
+:root[data-theme="management"] .sidebar {
+    background: #FFFFFF;
+    backdrop-filter: none;
+    -webkit-backdrop-filter: none;
+    border-right: 1px solid var(--sep);
+    box-shadow: var(--shadow-md);
+}
+
+:root[data-theme="management"] .sidebar .logo-details .icon {
+    background: rgba(0, 64, 133, 0.08);
+    border-color: rgba(0, 64, 133, 0.18);
+    color: var(--sys-blue);
+}
+
+:root[data-theme="management"] .sidebar .logo-details .logo_name,
+:root[data-theme="management"] .sidebar li a {
+    color: var(--label-primary);
+}
+
+:root[data-theme="management"] .sidebar li i {
+    color: var(--label-secondary);
+}
+
+:root[data-theme="management"] .sidebar li a:hover {
+    background: var(--bg-hover);
+}
+
+:root[data-theme="management"] .sidebar li a.active {
+    background: var(--bg-active);
+}
+
+:root[data-theme="management"] .sidebar #btn_toggle {
+    background: var(--bg-primary);
+    color: var(--label-primary);
+    border: 1px solid var(--sep);
+    box-shadow: var(--shadow-sm);
+}
+
+:root[data-theme="management"] .sidebar-profile {
+    background: var(--bg-tertiary);
+    border-top: 1px solid var(--sep);
+}
+
+:root[data-theme="management"] .profile-name { color: var(--label-primary); }
+:root[data-theme="management"] .profile-role { color: var(--label-tertiary); }
+
+/* Buttons — solid corporate look, soft borders */
+:root[data-theme="management"] button:not(.btn-secondary):not(.btn-danger):not(.btn-success):not(.btn-icon):not(#btn_toggle):not(.btn-logout),
+:root[data-theme="management"] .btn-primary {
+    background: var(--sys-blue);
+    color: #FFFFFF;
+    border: 1px solid var(--sys-blue);
+    box-shadow: var(--shadow-xs);
+    font-weight: 500;
+}
+
+:root[data-theme="management"] button:hover:not(.btn-secondary):not(.btn-danger):not(.btn-success):not(.btn-icon),
+:root[data-theme="management"] .btn-primary:hover {
+    filter: brightness(1.08);
+}
+
+:root[data-theme="management"] .btn-secondary {
+    background: var(--bg-primary);
+    color: var(--label-primary);
+    border: 1px solid var(--sep-strong);
+}
+
+:root[data-theme="management"] .btn-secondary:hover {
+    background: var(--bg-tertiary);
+}
+
+:root[data-theme="management"] .btn-icon {
+    color: var(--label-secondary);
+}
+
+:root[data-theme="management"] .btn-icon:hover {
+    background: var(--bg-tertiary);
+    color: var(--label-primary);
+}
+
+/* Inputs */
+:root[data-theme="management"] input,
+:root[data-theme="management"] select,
+:root[data-theme="management"] textarea {
+    background: var(--bg-secondary);
+    border: 1px solid var(--sep-strong);
+    color: var(--label-primary);
+}
+
+:root[data-theme="management"] input:focus,
+:root[data-theme="management"] select:focus,
+:root[data-theme="management"] textarea:focus {
+    border-color: var(--sys-blue);
+    box-shadow: 0 0 0 3px rgba(0, 64, 133, 0.15);
+}
+
+:root[data-theme="management"] input::placeholder,
+:root[data-theme="management"] textarea::placeholder {
+    color: var(--label-quaternary);
+}
+
+:root[data-theme="management"] select option {
+    background: var(--bg-primary);
+    color: var(--label-primary);
+}
+
+:root[data-theme="management"] .form-group label {
+    color: var(--label-secondary);
+}
+
+/* Tabs */
+:root[data-theme="management"] .tabs {
+    border-bottom: 1px solid var(--sep);
+}
+
+:root[data-theme="management"] .tab-link {
+    color: var(--label-secondary);
+}
+
+:root[data-theme="management"] .tab-link:hover {
+    color: var(--label-primary);
+    background: var(--bg-tertiary);
+}
+
+:root[data-theme="management"] .tab-link.active {
+    color: var(--sys-blue);
+    border-bottom-color: var(--sys-blue);
+}
+
+/* Tables — light header, generous padding */
+:root[data-theme="management"] .table-container {
+    background: var(--bg-primary);
+    border: 1px solid var(--sep);
+    border-radius: var(--r-lg);
+    box-shadow: var(--shadow-sm);
+}
+
+:root[data-theme="management"] .data-table thead th {
+    background: #EEF2F7;
+    color: var(--label-secondary);
+    border-bottom: 1px solid var(--sep);
+    padding: 12px 16px;
+}
+
+:root[data-theme="management"] .data-table tbody td {
+    color: var(--label-primary);
+    border-bottom: 1px solid var(--sep);
+    padding: 14px 16px;
+}
+
+:root[data-theme="management"] .data-table tbody tr:hover td {
+    background: var(--bg-hover);
+}
+
+/* Dialogs */
+:root[data-theme="management"] dialog {
+    background: var(--bg-primary) !important;
+    backdrop-filter: none !important;
+    -webkit-backdrop-filter: none !important;
+    border: 1px solid var(--sep) !important;
+    color: var(--label-primary) !important;
+    box-shadow: var(--shadow-xl) !important;
+}
+
+:root[data-theme="management"] dialog::backdrop {
+    background: rgba(15, 23, 42, 0.45);
+    backdrop-filter: blur(2px);
+    -webkit-backdrop-filter: blur(2px);
+}
+
+:root[data-theme="management"] dialog h2,
+:root[data-theme="management"] dialog h3 {
+    border-bottom: 1px solid var(--sep);
+    color: var(--label-primary);
+}
+
+/* Notification bell (injected by sidebar.js) */
+:root[data-theme="management"] #notif-bell {
+    background: var(--bg-primary);
+    border: 1px solid var(--sep);
+    color: var(--label-secondary);
+    box-shadow: var(--shadow-sm);
+}
+
+:root[data-theme="management"] #notif-bell:hover {
+    color: var(--sys-orange);
+    border-color: rgba(230, 81, 0, 0.30);
+}
+
+:root[data-theme="management"] #notif-panel {
+    background: var(--bg-primary);
+    backdrop-filter: none;
+    border: 1px solid var(--sep);
+    box-shadow: var(--shadow-lg);
+}
+
+:root[data-theme="management"] .notif-title { color: var(--label-primary); }
+:root[data-theme="management"] .notif-msg   { color: var(--label-secondary); }
+:root[data-theme="management"] .notif-time  { color: var(--label-tertiary); }
+:root[data-theme="management"] .notif-item:hover { background: var(--bg-hover); }
+:root[data-theme="management"] .notif-item.unread { background: rgba(0, 64, 133, 0.05); }
+
+/* Mobile menu button */
+:root[data-theme="management"] #mobile-menu-btn {
+    background: var(--bg-primary);
+    color: var(--label-primary);
+    border: 1px solid var(--sep);
+    box-shadow: var(--shadow-md);
+}
+
+/* Tree nodes */
+:root[data-theme="management"] .node-location { color: #B45309; }
+:root[data-theme="management"] .node-equipment { color: var(--sys-teal); }
+:root[data-theme="management"] .caret { color: var(--sys-blue); }
+:root[data-theme="management"] .nested { border-left: 1px solid var(--sep); }
+
+/* Kanban */
+:root[data-theme="management"] .kanban-card {
+    background: var(--bg-primary);
+    border: 1px solid var(--sep);
+    box-shadow: var(--shadow-xs);
+}
+:root[data-theme="management"] .kanban-card-title { color: var(--label-primary); }
+:root[data-theme="management"] .kanban-card-desc  { color: var(--label-secondary); }
+:root[data-theme="management"] .kanban-card-footer { color: var(--label-tertiary); border-top-color: var(--sep); }
+
+/* ────────────────────────────────────────────────────────────────
+   MANAGEMENT MODE — Inline-style overrides
+   Templates contain ~250 inline styles using rgba(255,255,255,...) for
+   text color and hex dark backgrounds. We catch the most common
+   patterns here so the management theme remains readable on a white
+   surface without editing every template.
+──────────────────────────────────────────────────────────────── */
+
+/* Force dark text wherever an inline white rgba is set on color */
+:root[data-theme="management"] [style*="color:rgba(255,255,255"],
+:root[data-theme="management"] [style*="color: rgba(255,255,255"],
+:root[data-theme="management"] [style*="color:rgba(255, 255, 255"],
+:root[data-theme="management"] [style*="color: rgba(255, 255, 255"] {
+    color: var(--label-primary) !important;
+}
+
+/* Lower-emphasis inline white text -> secondary label */
+:root[data-theme="management"] [style*="rgba(255,255,255,.30)"],
+:root[data-theme="management"] [style*="rgba(255,255,255,0.30)"],
+:root[data-theme="management"] [style*="rgba(255,255,255,.35)"],
+:root[data-theme="management"] [style*="rgba(255,255,255,0.35)"],
+:root[data-theme="management"] [style*="rgba(255,255,255,.40)"],
+:root[data-theme="management"] [style*="rgba(255,255,255,0.40)"],
+:root[data-theme="management"] [style*="rgba(255,255,255,.45)"],
+:root[data-theme="management"] [style*="rgba(255,255,255,0.45)"],
+:root[data-theme="management"] [style*="rgba(255,255,255,.50)"],
+:root[data-theme="management"] [style*="rgba(255,255,255,0.50)"],
+:root[data-theme="management"] [style*="rgba(255,255,255,.55)"],
+:root[data-theme="management"] [style*="rgba(255,255,255,0.55)"],
+:root[data-theme="management"] [style*="rgba(255,255,255,.60)"],
+:root[data-theme="management"] [style*="rgba(255,255,255,0.60)"],
+:root[data-theme="management"] [style*="rgba(255,255,255,.65)"],
+:root[data-theme="management"] [style*="rgba(255,255,255,0.65)"],
+:root[data-theme="management"] [style*="rgba(255,255,255,.70)"],
+:root[data-theme="management"] [style*="rgba(255,255,255,0.70)"] {
+    color: var(--label-secondary) !important;
+}
+
+/* Override the most common hardcoded dark surfaces inline */
+:root[data-theme="management"] [style*="background:#1C1C1E"],
+:root[data-theme="management"] [style*="background: #1C1C1E"],
+:root[data-theme="management"] [style*="background:var(--bg-primary,#1C1C1E)"],
+:root[data-theme="management"] [style*="background:#1c1c1e"],
+:root[data-theme="management"] [style*="background:#252526"],
+:root[data-theme="management"] [style*="background:#1e1e1e"] {
+    background: var(--bg-primary) !important;
+    border-color: var(--sep) !important;
+}
+
+:root[data-theme="management"] [style*="background:#2C2C2E"],
+:root[data-theme="management"] [style*="background: #2C2C2E"],
+:root[data-theme="management"] [style*="background:#2c2c2e"],
+:root[data-theme="management"] [style*="background:#3a3a3e"],
+:root[data-theme="management"] [style*="background:#37373d"] {
+    background: #EEF2F7 !important;
+    color: var(--label-primary) !important;
+}
+
+/* Tinted dark backgrounds (rgba 44,44,46 etc.) -> light tint */
+:root[data-theme="management"] [style*="background:rgba(44,44,46"],
+:root[data-theme="management"] [style*="background: rgba(44,44,46"],
+:root[data-theme="management"] [style*="background:rgba(255,255,255,.04)"],
+:root[data-theme="management"] [style*="background:rgba(255,255,255,0.04)"],
+:root[data-theme="management"] [style*="background:rgba(255,255,255,.06)"],
+:root[data-theme="management"] [style*="background:rgba(255,255,255,0.06)"],
+:root[data-theme="management"] [style*="background:rgba(255,255,255,.08)"],
+:root[data-theme="management"] [style*="background:rgba(255,255,255,0.08)"] {
+    background: var(--bg-tertiary) !important;
+}
+
+/* Borders that hardcode rgba(255,255,255,.X) */
+:root[data-theme="management"] [style*="border:1px solid rgba(255,255,255"],
+:root[data-theme="management"] [style*="border: 1px solid rgba(255,255,255"],
+:root[data-theme="management"] [style*="border-color:rgba(255,255,255"],
+:root[data-theme="management"] [style*="border-bottom:1px solid rgba(255,255,255"] {
+    border-color: var(--sep) !important;
+}
+
+/* Old-school dark hex borders */
+:root[data-theme="management"] [style*="border:1px solid #444"],
+:root[data-theme="management"] [style*="border: 1px solid #444"],
+:root[data-theme="management"] [style*="border:1px solid #333"],
+:root[data-theme="management"] [style*="border: 1px solid #333"] {
+    border-color: var(--sep) !important;
+}
+
+/* Light-text hex inline (#ddd, #ccc, #aaa) -> dark text */
+:root[data-theme="management"] [style*="color:#ddd"],
+:root[data-theme="management"] [style*="color: #ddd"],
+:root[data-theme="management"] [style*="color:#ccc"],
+:root[data-theme="management"] [style*="color: #ccc"],
+:root[data-theme="management"] [style*="color:#fff"],
+:root[data-theme="management"] [style*="color: #fff"],
+:root[data-theme="management"] [style*="color:#FFF"],
+:root[data-theme="management"] [style*="color: #FFF"] {
+    color: var(--label-primary) !important;
+}
+
+/* Anything declaring background:#000 inline -> light surface */
+:root[data-theme="management"] [style*="background:#000"],
+:root[data-theme="management"] [style*="background: #000"] {
+    background: var(--bg-base) !important;
+}
+
+/* Mobile / dialog table heads using inline #2C2C2E */
+:root[data-theme="management"] thead tr[style*="background:#2C2C2E"],
+:root[data-theme="management"] thead tr[style*="background:#2c2c2e"] {
+    background: #EEF2F7 !important;
+}
+
+/* ────────────────────────────────────────────────────────────────
+   THEME TOGGLE BUTTON (injected by sidebar.js)
+──────────────────────────────────────────────────────────────── */
+#theme-toggle {
+    position: fixed;
+    top: 12px;
+    right: 64px;
+    width: 40px;
+    height: 40px;
+    background: rgba(20,20,22,0.94);
+    backdrop-filter: blur(16px);
+    border: 1px solid rgba(255,255,255,0.10);
+    border-radius: 50%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    cursor: pointer;
+    z-index: 2002;
+    color: rgba(255,255,255,0.70);
+    font-size: 1rem;
+    transition: all 150ms ease;
+}
+
+#theme-toggle:hover {
+    color: #FFD60A;
+    border-color: rgba(255,214,10,0.35);
+    transform: rotate(15deg);
+}
+
+:root[data-theme="management"] #theme-toggle {
+    background: var(--bg-primary);
+    border: 1px solid var(--sep);
+    color: var(--sys-blue);
+    box-shadow: var(--shadow-sm);
+}
+
+:root[data-theme="management"] #theme-toggle:hover {
+    color: var(--sys-blue);
+    border-color: var(--sys-blue);
+    background: var(--bg-tertiary);
+}
+
+@media (max-width: 768px) {
+    #theme-toggle {
+        top: 60px;
+        right: 14px;
+    }
+}

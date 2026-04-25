@@ -3,6 +3,10 @@
    Apple Enterprise Design System
 ═══════════════════════════════════════════════════ */
 
+/* Theme overrides (Developer / Management mode) — must come first
+   so management tokens override the legacy fallbacks below. */
+@import url('themes.css');
+
 /* Legacy variable bridge */
 :root {
     --bg-color:      var(--bg-base,      #000);

@@ -1,3 +1,119 @@
+// ── THEME SYSTEM (Developer / Management mode) ────────────────────────────────
+// Runs synchronously when sidebar.js is parsed so data-theme is on <html>
+// before paint-relevant DOM is mutated. style.css uses CSS variable
+// overrides keyed off [data-theme="management"], so applying the attribute
+// is sufficient to switch the entire UI.
+(function initTheme() {
+    const KEY = 'cmms.theme';
+    const saved = (() => {
+        try { return localStorage.getItem(KEY); } catch (_) { return null; }
+    })();
+    if (saved === 'management' || saved === 'developer') {
+        document.documentElement.setAttribute('data-theme', saved);
+    }
+    // Expose helpers for the toggle and Chart.js retheming
+    window.CMMS_THEME = {
+        get: () => document.documentElement.getAttribute('data-theme') || 'developer',
+        set(theme) {
+            const v = (theme === 'management') ? 'management' : 'developer';
+            if (v === 'developer') {
+                document.documentElement.removeAttribute('data-theme');
+            } else {
+                document.documentElement.setAttribute('data-theme', v);
+            }
+            try { localStorage.setItem(KEY, v); } catch (_) {}
+            applyChartTheme();
+            window.dispatchEvent(new CustomEvent('cmms:themechange', { detail: { theme: v } }));
+        },
+        toggle() { this.set(this.get() === 'management' ? 'developer' : 'management'); }
+    };
+
+    function readVar(name, fallback) {
+        const v = getComputedStyle(document.documentElement).getPropertyValue(name).trim();
+        return v || fallback;
+    }
+
+    function applyChartTheme() {
+        if (typeof Chart === 'undefined') return;
+        const text = readVar('--chart-text', '') || readVar('--label-primary', '#333');
+        const grid = readVar('--chart-grid', '') || readVar('--sep', '#E5E7EB');
+        Chart.defaults.color = text;
+        Chart.defaults.borderColor = grid;
+        if (Chart.defaults.scale && Chart.defaults.scale.grid) {
+            Chart.defaults.scale.grid.color = grid;
+        }
+        if (Chart.defaults.scales) {
+            ['x', 'y', 'r', 'linear', 'category', 'time', 'logarithmic'].forEach(k => {
+                if (Chart.defaults.scales[k]) {
+                    Chart.defaults.scales[k].grid = Chart.defaults.scales[k].grid || {};
+                    Chart.defaults.scales[k].grid.color = grid;
+                    Chart.defaults.scales[k].ticks = Chart.defaults.scales[k].ticks || {};
+                    Chart.defaults.scales[k].ticks.color = text;
+                }
+            });
+        }
+        // Refresh existing chart instances
+        try {
+            const reg = (Chart.instances || {});
+            const list = Array.isArray(reg) ? reg : Object.values(reg);
+            list.forEach(c => {
+                if (!c) return;
+                if (c.options && c.options.scales) {
+                    Object.values(c.options.scales).forEach(sc => {
+                        if (sc.ticks) sc.ticks.color = text;
+                        if (sc.grid)  sc.grid.color  = grid;
+                        if (sc.title) sc.title.color = text;
+                    });
+                }
+                if (c.options && c.options.plugins && c.options.plugins.legend && c.options.plugins.legend.labels) {
+                    c.options.plugins.legend.labels.color = text;
+                }
+                c.update('none');
+            });
+        } catch (_) {}
+    }
+
+    // Apply once Chart.js finishes loading (it's a separate <script> on the page)
+    function whenChartReady(cb) {
+        if (typeof Chart !== 'undefined') return cb();
+        let tries = 0;
+        const t = setInterval(() => {
+            if (typeof Chart !== 'undefined' || tries++ > 40) {
+                clearInterval(t);
+                if (typeof Chart !== 'undefined') cb();
+            }
+        }, 100);
+    }
+    whenChartReady(applyChartTheme);
+    window.addEventListener('cmms:themechange', () => whenChartReady(applyChartTheme));
+
+    // Inject toggle button (next to the notification bell)
+    function injectToggle() {
+        if (document.getElementById('theme-toggle')) return;
+        const btn = document.createElement('div');
+        btn.id = 'theme-toggle';
+        btn.title = 'Cambiar a Modo Gerencial / Desarrollador';
+        btn.setAttribute('role', 'button');
+        btn.setAttribute('tabindex', '0');
+        const renderIcon = () => {
+            const isMgmt = window.CMMS_THEME.get() === 'management';
+            btn.innerHTML = `<i class="fas ${isMgmt ? 'fa-moon' : 'fa-briefcase'}"></i>`;
+            btn.title = isMgmt ? 'Cambiar a Modo Desarrollador' : 'Cambiar a Modo Gerencial';
+        };
+        renderIcon();
+        btn.onclick = () => { window.CMMS_THEME.toggle(); renderIcon(); };
+        btn.onkeydown = (e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); btn.click(); } };
+        document.body.appendChild(btn);
+        window.addEventListener('cmms:themechange', renderIcon);
+    }
+
+    if (document.readyState === 'loading') {
+        document.addEventListener('DOMContentLoaded', injectToggle);
+    } else {
+        injectToggle();
+    }
+})();
+
 (function () {
     const MENU_ITEMS = [
         { href: '/', icon: 'fas fa-chart-line', label: 'Dashboard', tip: 'Dashboard' },
