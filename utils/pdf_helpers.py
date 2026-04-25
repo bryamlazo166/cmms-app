@@ -68,10 +68,10 @@ def _status_color(status):
 
 def build_ots_table(ots):
     """ots: lista de dicts con campos: code, equipment_name, equipment_tag, area_name,
-       maintenance_type, status, priority, criticality, scheduled_date,
-       technician_name, description"""
-    headers = ['#', 'Codigo', 'Equipo', 'Area', 'Tipo', 'Estado', 'Prio',
-               'Fecha Prog', 'Tecnico', 'Descripcion']
+       component_name, maintenance_type, status, priority, criticality,
+       scheduled_date, technician_name, description"""
+    headers = ['#', 'Codigo', 'Equipo', 'Componente', 'Area', 'Tipo', 'Estado',
+               'Prio', 'Fecha Prog', 'Tecnico', 'Descripcion']
     data = [[_p(h, _cell_bold) for h in headers]]
 
     for i, ot in enumerate(ots, 1):
@@ -80,6 +80,7 @@ def build_ots_table(ots):
             _p(str(i)),
             _p(ot.get('code') or '-', _cell_bold),
             _p(equip),
+            _p(ot.get('component_name') or '-'),
             _p(ot.get('area_name') or '-'),
             _p(ot.get('maintenance_type') or '-'),
             _p(ot.get('status') or '-'),
@@ -91,7 +92,8 @@ def build_ots_table(ots):
         data.append(row)
 
     # Anchos en mm: total ~277 (A4 landscape sin margenes ~277mm)
-    col_widths = [8*mm, 18*mm, 38*mm, 22*mm, 18*mm, 18*mm, 12*mm, 18*mm, 30*mm, 95*mm]
+    col_widths = [8*mm, 18*mm, 35*mm, 25*mm, 20*mm, 16*mm, 16*mm,
+                  10*mm, 16*mm, 25*mm, 88*mm]
 
     table = Table(data, colWidths=col_widths, repeatRows=1)
     style = TableStyle([
@@ -116,9 +118,10 @@ def build_ots_table(ots):
 
 def build_notices_table(notices):
     """notices: lista de dicts con campos: code, equipment_name, equipment_tag, area_name,
-       failure_mode, criticality, priority, status, created_date, reporter, description, blockage_object"""
-    headers = ['#', 'Codigo', 'Equipo', 'Area', 'Modo Falla', 'Bloqueo',
-               'Crit', 'Estado', 'Fecha', 'Reportado', 'Descripcion']
+       component_name, failure_mode, criticality, priority, status,
+       created_date, reporter, description, blockage_object"""
+    headers = ['#', 'Codigo', 'Equipo', 'Componente', 'Area', 'Modo Falla',
+               'Bloqueo', 'Crit', 'Estado', 'Fecha', 'Reportado', 'Descripcion']
     data = [[_p(h, _cell_bold) for h in headers]]
 
     for i, n in enumerate(notices, 1):
@@ -127,6 +130,7 @@ def build_notices_table(notices):
             _p(str(i)),
             _p(n.get('code') or n.get('id_str') or '-', _cell_bold),
             _p(equip),
+            _p(n.get('component_name') or '-'),
             _p(n.get('area_name') or '-'),
             _p(n.get('failure_mode') or '-'),
             _p(n.get('blockage_object') or '-'),
@@ -138,7 +142,8 @@ def build_notices_table(notices):
         ]
         data.append(row)
 
-    col_widths = [8*mm, 18*mm, 38*mm, 22*mm, 22*mm, 18*mm, 12*mm, 18*mm, 18*mm, 26*mm, 77*mm]
+    col_widths = [8*mm, 18*mm, 35*mm, 22*mm, 20*mm, 22*mm, 16*mm,
+                  12*mm, 16*mm, 16*mm, 22*mm, 70*mm]
 
     table = Table(data, colWidths=col_widths, repeatRows=1)
     style = TableStyle([

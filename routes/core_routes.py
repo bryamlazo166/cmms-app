@@ -1295,9 +1295,11 @@ def register_core_routes(app, db, logger, app_build_tag,
             include_closed = request.args.get('include_closed', '0') == '1'
 
             # Pre-cargar taxonomia para enriquecer
+            from models import Component
             areas = {a.id: a for a in Area.query.all()}
             lines = {l.id: l for l in Line.query.all()}
             equips = {e.id: e for e in Equipment.query.all()}
+            comps = {c.id: c for c in Component.query.all()}
             techs = {t.id: t for t in Technician.query.all()}
 
             # OTs activas
@@ -1322,6 +1324,7 @@ def register_core_routes(app, db, logger, app_build_tag,
             for wo in ots_db:
                 eq = equips.get(wo.equipment_id) if wo.equipment_id else None
                 ar = areas.get(wo.area_id) if wo.area_id else None
+                cp = comps.get(wo.component_id) if getattr(wo, 'component_id', None) else None
                 tech_name = None
                 try:
                     if wo.technician_id:
@@ -1337,6 +1340,7 @@ def register_core_routes(app, db, logger, app_build_tag,
                     'code': wo.code or f"OT-{wo.id}",
                     'equipment_name': eq.name if eq else None,
                     'equipment_tag': eq.tag if eq else None,
+                    'component_name': cp.name if cp else None,
                     'area_name': ar.name if ar else None,
                     'maintenance_type': wo.maintenance_type,
                     'status': wo.status,
@@ -1365,10 +1369,12 @@ def register_core_routes(app, db, logger, app_build_tag,
             for n in notices_db:
                 eq = equips.get(n.equipment_id) if n.equipment_id else None
                 ar = areas.get(n.area_id) if n.area_id else None
+                cp = comps.get(n.component_id) if getattr(n, 'component_id', None) else None
                 notices_data.append({
                     'code': n.code or f"AV-{n.id:04d}",
                     'equipment_name': eq.name if eq else None,
                     'equipment_tag': eq.tag if eq else None,
+                    'component_name': cp.name if cp else None,
                     'area_name': ar.name if ar else None,
                     'failure_mode': getattr(n, 'failure_mode', None),
                     'blockage_object': getattr(n, 'blockage_object', None),
