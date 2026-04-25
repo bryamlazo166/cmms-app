@@ -843,6 +843,328 @@
     color: var(--label-primary);
 }
 
+/* ════════════════════════════════════════════════════════════════
+   MANAGEMENT MODE — Per-template named overrides
+   Templates have local <style> blocks declaring custom classes with
+   hardcoded dark hex (e.g. .pipeline-step{background:#252526}).
+   Mi attribute-selector approach does not reach them, so we map each
+   class explicitly here.
+════════════════════════════════════════════════════════════════ */
+
+/* ── Banner-style headers (linear-gradient #1e2430 -> #151b24) ── */
+:root[data-theme="management"] .header,
+:root[data-theme="management"] .cockpit-header,
+:root[data-theme="management"] .prod-header,
+:root[data-theme="management"] .wn-header {
+    background: var(--bg-primary) !important;
+    border: 1px solid var(--sep) !important;
+    color: var(--label-primary) !important;
+    box-shadow: var(--shadow-sm);
+}
+
+:root[data-theme="management"] .header h1,
+:root[data-theme="management"] .cockpit-header h1,
+:root[data-theme="management"] .prod-header h1,
+:root[data-theme="management"] .wn-header h1,
+:root[data-theme="management"] .header h2,
+:root[data-theme="management"] .header h3 {
+    color: var(--label-primary) !important;
+}
+
+:root[data-theme="management"] .header p,
+:root[data-theme="management"] .header .sub,
+:root[data-theme="management"] .cockpit-header p,
+:root[data-theme="management"] .prod-header p,
+:root[data-theme="management"] .wn-header p {
+    color: var(--label-secondary) !important;
+}
+
+/* ── Cards / panels with hardcoded dark hex backgrounds ── */
+:root[data-theme="management"] .pipeline-step,
+:root[data-theme="management"] .item-list,
+:root[data-theme="management"] .eq-card,
+:root[data-theme="management"] .shutdown-card,
+:root[data-theme="management"] .chart-panel,
+:root[data-theme="management"] .failures-panel,
+:root[data-theme="management"] .kpi-item,
+:root[data-theme="management"] .chart-card,
+:root[data-theme="management"] .area-tile,
+:root[data-theme="management"] .ai-panel,
+:root[data-theme="management"] .ai-panel .ai-body,
+:root[data-theme="management"] .modal-box,
+:root[data-theme="management"] .modal-hint,
+:root[data-theme="management"] .info-card,
+:root[data-theme="management"] .eq-header,
+:root[data-theme="management"] .group-section,
+:root[data-theme="management"] .timeline-event,
+:root[data-theme="management"] .cal-grid,
+:root[data-theme="management"] .cal-head {
+    background: var(--bg-primary) !important;
+    border: 1px solid var(--sep) !important;
+    color: var(--label-primary) !important;
+}
+
+/* Pipeline-step header (taxonomy/configuracion) */
+:root[data-theme="management"] .pipeline-step h3 {
+    color: var(--sys-blue) !important;
+    border-bottom: 1px solid var(--sep) !important;
+}
+
+:root[data-theme="management"] .pipeline-step label,
+:root[data-theme="management"] label {
+    color: var(--label-secondary) !important;
+}
+
+/* Tree-node levels (taxonomy global tree) — keep accent tints but
+   raise contrast on white background */
+:root[data-theme="management"] .tree-node.level-area     { background: rgba(0, 64, 133, 0.08) !important; border-left-color: var(--sys-blue) !important; }
+:root[data-theme="management"] .tree-node.level-line     { background: rgba(46, 125, 50, 0.08) !important; border-left-color: var(--sys-green) !important; }
+:root[data-theme="management"] .tree-node.level-equip    { background: rgba(230, 81, 0, 0.08) !important; border-left-color: var(--sys-orange) !important; }
+:root[data-theme="management"] .tree-node.level-system   { background: rgba(94, 53, 177, 0.08) !important; border-left-color: var(--sys-purple) !important; }
+:root[data-theme="management"] .tree-node.level-comp     { background: var(--bg-tertiary) !important; border-left-color: var(--label-quaternary) !important; }
+:root[data-theme="management"] .tree-node                { color: var(--label-primary) !important; }
+
+/* Equipment cards (thickness etc.) */
+:root[data-theme="management"] .eq-card .tag        { color: var(--sys-blue) !important; }
+:root[data-theme="management"] .eq-card .name       { color: var(--label-primary) !important; }
+:root[data-theme="management"] .eq-card .row        { color: var(--label-secondary) !important; }
+
+/* Indicators KPI strip */
+:root[data-theme="management"] .kpi-item .label,
+:root[data-theme="management"] .kpi-item .unit { color: var(--label-secondary) !important; }
+:root[data-theme="management"] .kpi-item .value { color: var(--label-primary) !important; }
+:root[data-theme="management"] .kpi-item.avail .value { color: var(--sys-green)  !important; }
+:root[data-theme="management"] .kpi-item.mtbf  .value { color: var(--sys-purple) !important; }
+:root[data-theme="management"] .kpi-item.mttr  .value { color: var(--sys-orange) !important; }
+:root[data-theme="management"] .kpi-item.rel   .value { color: var(--sys-blue)   !important; }
+
+/* Breadcrumb (indicators) */
+:root[data-theme="management"] .breadcrumb       { color: var(--label-secondary) !important; }
+:root[data-theme="management"] .breadcrumb span  { color: var(--sys-blue) !important; }
+:root[data-theme="management"] .breadcrumb .sep  { color: var(--label-quaternary) !important; }
+:root[data-theme="management"] .breadcrumb .current { color: var(--sys-purple) !important; }
+
+/* Programa Nocturno calendar grid */
+:root[data-theme="management"] .cal-grid       { background: var(--bg-primary) !important; }
+:root[data-theme="management"] .cal-head       { background: #EEF2F7 !important; color: var(--sys-blue) !important; }
+:root[data-theme="management"] .cal-head .date { color: var(--label-secondary) !important; }
+:root[data-theme="management"] .cal-head-day        { background: var(--bg-tertiary) !important; }
+:root[data-theme="management"] .cal-head-day.weekend{ background: rgba(230, 81, 0, 0.06) !important; }
+:root[data-theme="management"] .cal-head-hours      { color: var(--label-secondary) !important; }
+:root[data-theme="management"] .cal-head-hours .bar { background: var(--sep) !important; }
+:root[data-theme="management"] .area-cell      { background: var(--bg-tertiary) !important; color: var(--sys-orange) !important; }
+:root[data-theme="management"] .cell           { background: var(--bg-secondary) !important; border-color: transparent; }
+:root[data-theme="management"] .cell:hover     { background: var(--bg-tertiary) !important; }
+:root[data-theme="management"] .cell.drag-over { background: var(--bg-active) !important; border-color: var(--sys-blue) !important; }
+:root[data-theme="management"] .cell-add-btn   { background: transparent; border: 1px dashed var(--sep-strong) !important; color: var(--label-tertiary) !important; }
+:root[data-theme="management"] .item           { background: var(--bg-primary) !important; border: 1px solid var(--sep) !important; color: var(--label-primary) !important; }
+:root[data-theme="management"] .item.done      { background: #F0F5F0 !important; opacity: .55; }
+
+:root[data-theme="management"] .info-card .lbl { color: var(--label-secondary) !important; }
+:root[data-theme="management"] .info-card .val { color: var(--label-primary) !important; }
+:root[data-theme="management"] .info-card .sub { color: var(--label-tertiary) !important; }
+
+/* Risk banner (produccion) */
+:root[data-theme="management"] .risk-banner.ok   { background: rgba(46, 125, 50, 0.10) !important; border: 1px solid var(--sys-green) !important; color: #1B5E20 !important; }
+:root[data-theme="management"] .risk-banner.risk { background: rgba(198, 40, 40, 0.10) !important; border: 1px solid var(--sys-red)   !important; color: #8B1313 !important; }
+
+/* AI panel (produccion) */
+:root[data-theme="management"] .ai-panel,
+:root[data-theme="management"] .ai-panel .ai-body { color: var(--label-primary) !important; }
+
+/* ── Inputs / selects scoped via toolbar/tools wrappers ── */
+:root[data-theme="management"] .toolbar select,
+:root[data-theme="management"] .toolbar input,
+:root[data-theme="management"] .tools select,
+:root[data-theme="management"] .tools input,
+:root[data-theme="management"] .cockpit-tools select,
+:root[data-theme="management"] .cockpit-tools input,
+:root[data-theme="management"] .prod-tools select,
+:root[data-theme="management"] .prod-tools input,
+:root[data-theme="management"] .wn-tools select,
+:root[data-theme="management"] .wn-tools input,
+:root[data-theme="management"] .modal-box input,
+:root[data-theme="management"] .modal-box select,
+:root[data-theme="management"] .modal-box textarea,
+:root[data-theme="management"] .selector-bar select,
+:root[data-theme="management"] .pipeline-step input,
+:root[data-theme="management"] .pipeline-step select {
+    background: var(--bg-secondary) !important;
+    color: var(--label-primary) !important;
+    border: 1px solid var(--sep-strong) !important;
+}
+
+:root[data-theme="management"] .toolbar input::placeholder,
+:root[data-theme="management"] .tools input::placeholder,
+:root[data-theme="management"] .pipeline-step input::placeholder,
+:root[data-theme="management"] .modal-box input::placeholder,
+:root[data-theme="management"] .modal-box textarea::placeholder {
+    color: var(--label-quaternary) !important;
+}
+
+/* Universal input/select/textarea fallback (catches inline-styled
+   inputs in equipment_history, rotative_assets, etc.). High specificity
+   with !important so it wins over template-internal rules. */
+:root[data-theme="management"] input:not([type="checkbox"]):not([type="radio"]):not([type="color"]):not([type="range"]):not([type="file"]),
+:root[data-theme="management"] select,
+:root[data-theme="management"] textarea {
+    background: var(--bg-secondary) !important;
+    color: var(--label-primary) !important;
+    border: 1px solid var(--sep-strong) !important;
+}
+
+:root[data-theme="management"] input::placeholder,
+:root[data-theme="management"] textarea::placeholder {
+    color: var(--label-quaternary) !important;
+}
+
+/* ── Buttons in template-internal styles ── */
+:root[data-theme="management"] .btn,
+:root[data-theme="management"] .btn-cockpit,
+:root[data-theme="management"] .btn-prod,
+:root[data-theme="management"] .btn-wn {
+    background: var(--bg-primary) !important;
+    color: var(--label-primary) !important;
+    border: 1px solid var(--sep-strong) !important;
+}
+
+:root[data-theme="management"] .btn:hover,
+:root[data-theme="management"] .btn-cockpit:hover,
+:root[data-theme="management"] .btn-prod:hover,
+:root[data-theme="management"] .btn-wn:hover {
+    background: var(--bg-tertiary) !important;
+}
+
+/* Primary / success / danger / warning variants keep accent color */
+:root[data-theme="management"] .btn.primary,
+:root[data-theme="management"] .btn-cockpit.primary,
+:root[data-theme="management"] .btn-prod.primary,
+:root[data-theme="management"] .btn-wn.primary {
+    background: var(--sys-blue) !important;
+    color: #FFFFFF !important;
+    border-color: var(--sys-blue) !important;
+}
+
+:root[data-theme="management"] .btn.success,
+:root[data-theme="management"] .btn.export,
+:root[data-theme="management"] .btn-cockpit.export,
+:root[data-theme="management"] .btn-prod.export,
+:root[data-theme="management"] .btn-wn.publish {
+    background: var(--sys-green) !important;
+    color: #FFFFFF !important;
+    border-color: var(--sys-green) !important;
+}
+
+:root[data-theme="management"] .btn.danger,
+:root[data-theme="management"] .btn-wn.pdf {
+    background: var(--sys-red) !important;
+    color: #FFFFFF !important;
+    border-color: var(--sys-red) !important;
+}
+
+:root[data-theme="management"] .btn.warning,
+:root[data-theme="management"] .btn-prod.goal,
+:root[data-theme="management"] .btn-wn.magic {
+    background: var(--sys-orange) !important;
+    color: #FFFFFF !important;
+    border-color: var(--sys-orange) !important;
+}
+
+:root[data-theme="management"] .btn.secondary,
+:root[data-theme="management"] .btn.back,
+:root[data-theme="management"] .btn-micro {
+    background: var(--bg-primary) !important;
+    color: var(--label-primary) !important;
+    border: 1px solid var(--sep-strong) !important;
+}
+
+:root[data-theme="management"] .tree-controls button {
+    background: var(--bg-primary) !important;
+    border: 1px solid var(--sep-strong) !important;
+    color: var(--label-primary) !important;
+}
+
+:root[data-theme="management"] .tree-controls button:hover {
+    background: var(--bg-tertiary) !important;
+}
+
+/* ── Light-text hex colors used on dark hardcoded surfaces ──
+   In management mode the surfaces become white, so these gray-blue
+   text colors disappear. Force dark text. */
+:root[data-theme="management"] [style*="color:#9ab0cb"],
+:root[data-theme="management"] [style*="color: #9ab0cb"],
+:root[data-theme="management"] [style*="color:#9ab3d0"],
+:root[data-theme="management"] [style*="color: #9ab3d0"],
+:root[data-theme="management"] [style*="color:#bfd2ec"],
+:root[data-theme="management"] [style*="color:#d5e2f5"],
+:root[data-theme="management"] [style*="color:#d7e9ff"],
+:root[data-theme="management"] [style*="color:#d7e7fa"],
+:root[data-theme="management"] [style*="color:#eff6ff"],
+:root[data-theme="management"] [style*="color:#bbb"],
+:root[data-theme="management"] [style*="color: #bbb"],
+:root[data-theme="management"] [style*="color:#888"],
+:root[data-theme="management"] [style*="color: #888"],
+:root[data-theme="management"] [style*="color:#666"],
+:root[data-theme="management"] [style*="color: #666"] {
+    color: var(--label-secondary) !important;
+}
+
+/* Same: declared color values via CSS class targets */
+:root[data-theme="management"] .header p,
+:root[data-theme="management"] .header .sub,
+:root[data-theme="management"] .toolbar select,
+:root[data-theme="management"] .toolbar input,
+:root[data-theme="management"] .tools select,
+:root[data-theme="management"] .tools input,
+:root[data-theme="management"] .modal-hint,
+:root[data-theme="management"] .modal-box label,
+:root[data-theme="management"] .ai-panel .ai-body,
+:root[data-theme="management"] .area-cell,
+:root[data-theme="management"] .cal-head,
+:root[data-theme="management"] .cal-head .date,
+:root[data-theme="management"] .info-card .lbl,
+:root[data-theme="management"] .info-card .sub {
+    color: var(--label-secondary);
+}
+
+/* Status badges (rotative assets) */
+:root[data-theme="management"] .status-disponible { background: rgba(0, 64, 133, 0.10) !important;  color: var(--sys-blue)   !important; border-color: var(--sys-blue)   !important; }
+:root[data-theme="management"] .status-instalado  { background: rgba(46, 125, 50, 0.10) !important; color: var(--sys-green)  !important; border-color: var(--sys-green)  !important; }
+:root[data-theme="management"] .status-taller     { background: rgba(230, 81, 0, 0.10) !important;  color: var(--sys-orange) !important; border-color: var(--sys-orange) !important; }
+:root[data-theme="management"] .status-baja       { background: rgba(198, 40, 40, 0.10) !important; color: var(--sys-red)    !important; border-color: var(--sys-red)    !important; }
+
+/* History timeline (equipment_history) */
+:root[data-theme="management"] .cat-OT          { background: rgba(0, 64, 133, 0.10)  !important; color: var(--sys-blue)   !important; }
+:root[data-theme="management"] .cat-AVISO       { background: rgba(230, 81, 0, 0.10)  !important; color: var(--sys-orange) !important; }
+:root[data-theme="management"] .cat-LUBRICACION { background: rgba(46, 125, 50, 0.10) !important; color: var(--sys-green)  !important; }
+:root[data-theme="management"] .cat-INSPECCION  { background: rgba(94, 53, 177, 0.10) !important; color: var(--sys-purple) !important; }
+:root[data-theme="management"] .cat-MONITOREO   { background: rgba(0, 105, 92, 0.10)  !important; color: var(--sys-teal)   !important; }
+:root[data-theme="management"] .cat-ALL         { background: var(--bg-tertiary)      !important; color: var(--label-secondary) !important; }
+:root[data-theme="management"] .tl-line         { background: var(--sep) !important; }
+:root[data-theme="management"] .view-btn        { background: var(--bg-primary) !important; border: 1px solid var(--sep-strong) !important; color: var(--label-secondary) !important; }
+:root[data-theme="management"] .view-btn:hover  { background: var(--bg-tertiary) !important; }
+:root[data-theme="management"] .view-btn.active { background: var(--bg-active) !important; border-color: var(--sys-blue) !important; color: var(--sys-blue) !important; }
+
+/* Pill colors retain accent tint */
+:root[data-theme="management"] .pill.VERDE    { background: rgba(46, 125, 50, 0.12) !important; color: #1B5E20 !important; }
+:root[data-theme="management"] .pill.AMARILLO { background: rgba(249, 168, 37, 0.18) !important; color: #6B4D00 !important; }
+:root[data-theme="management"] .pill.ROJO     { background: rgba(198, 40, 40, 0.12) !important; color: #8B1313 !important; }
+:root[data-theme="management"] .pill.INACTIVO { background: var(--bg-tertiary) !important; color: var(--label-secondary) !important; }
+
+/* Modal backdrop in produccion */
+:root[data-theme="management"] .modal-backdrop {
+    background: rgba(15, 23, 42, 0.45) !important;
+    backdrop-filter: blur(2px);
+}
+
+/* Ensure all text inside flattened banner headers is readable */
+:root[data-theme="management"] .cockpit-header *,
+:root[data-theme="management"] .prod-header *,
+:root[data-theme="management"] .wn-header *,
+:root[data-theme="management"] .header * {
+    color: inherit;
+}
+
 /* ────────────────────────────────────────────────────────────────
    THEME TOGGLE BUTTON (injected by sidebar.js)
 ──────────────────────────────────────────────────────────────── */
