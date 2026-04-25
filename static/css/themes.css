@@ -476,6 +476,373 @@
     background: #EEF2F7 !important;
 }
 
+/* ════════════════════════════════════════════════════════════════
+   MANAGEMENT MODE — Aggressive layer (catches template-internal
+   <style> blocks + inline gradients that the rules above miss).
+   Applied last for high specificity + !important.
+════════════════════════════════════════════════════════════════ */
+
+/* ── 1. Inline linear-gradient backgrounds (KPI/decor cards) ──
+   Any inline gradient with a dark hex is flattened to a white card.
+   Covers patterns like:
+     linear-gradient(135deg, #1e3a5f 0%, #2a5298 100%)
+     linear-gradient(135deg, #1e1e1e 0%, #2d2d2d 100%)
+     linear-gradient(180deg, #1a222f 0%, #151b26 100%)
+     linear-gradient(120deg, #1e2430, #151b24)
+     linear-gradient(135deg, #4a1942 0%, #7b2869 100%)
+     linear-gradient(135deg, #1a472a 0%, #2d6a4f 100%)
+*/
+:root[data-theme="management"] [style*="linear-gradient(135deg, #1"],
+:root[data-theme="management"] [style*="linear-gradient(135deg,#1"],
+:root[data-theme="management"] [style*="linear-gradient(135deg, #2"],
+:root[data-theme="management"] [style*="linear-gradient(135deg,#2"],
+:root[data-theme="management"] [style*="linear-gradient(135deg, #3"],
+:root[data-theme="management"] [style*="linear-gradient(135deg,#3"],
+:root[data-theme="management"] [style*="linear-gradient(135deg, #4"],
+:root[data-theme="management"] [style*="linear-gradient(135deg,#4"],
+:root[data-theme="management"] [style*="linear-gradient(180deg, #1"],
+:root[data-theme="management"] [style*="linear-gradient(180deg,#1"],
+:root[data-theme="management"] [style*="linear-gradient(120deg,#1"],
+:root[data-theme="management"] [style*="linear-gradient(120deg, #1"],
+:root[data-theme="management"] [style*="linear-gradient(145deg,#1"],
+:root[data-theme="management"] [style*="linear-gradient(145deg, #1"],
+:root[data-theme="management"] [style*="linear-gradient(145deg,#0"],
+:root[data-theme="management"] [style*="linear-gradient(145deg, #0"] {
+    background: var(--bg-primary) !important;
+    border: 1px solid var(--sep) !important;
+    color: var(--label-primary) !important;
+    box-shadow: var(--shadow-sm) !important;
+}
+
+/* Force descendants of those flattened cards to be readable */
+:root[data-theme="management"] [style*="linear-gradient(135deg, #1"] *,
+:root[data-theme="management"] [style*="linear-gradient(135deg,#1"] *,
+:root[data-theme="management"] [style*="linear-gradient(135deg, #2"] *,
+:root[data-theme="management"] [style*="linear-gradient(135deg, #4"] *,
+:root[data-theme="management"] [style*="linear-gradient(180deg, #1"] *,
+:root[data-theme="management"] [style*="linear-gradient(120deg,#1"] *,
+:root[data-theme="management"] [style*="linear-gradient(145deg,#1"] *,
+:root[data-theme="management"] [style*="linear-gradient(145deg,#0"] * {
+    color: inherit;
+}
+
+/* Numbers/values inside KPI cards */
+:root[data-theme="management"] .kpi-card,
+:root[data-theme="management"] .kpi-card-pro,
+:root[data-theme="management"] .kpi-card-dash {
+    background: var(--bg-primary) !important;
+    border: 1px solid var(--sep) !important;
+    color: var(--label-primary) !important;
+    box-shadow: var(--shadow-sm) !important;
+}
+
+:root[data-theme="management"] .kpi-card *,
+:root[data-theme="management"] .kpi-card-pro *,
+:root[data-theme="management"] .kpi-card-dash .kpi-info h3,
+:root[data-theme="management"] .kpi-card-dash .kpi-info p {
+    color: var(--label-primary) !important;
+}
+
+:root[data-theme="management"] .kpi-card-dash .kpi-info p,
+:root[data-theme="management"] .kpi-card .kpi-label,
+:root[data-theme="management"] .kpi-card-pro .kpi-label {
+    color: var(--label-tertiary) !important;
+}
+
+/* ── 2. Generic table override (covers #noticesTable, #planningTable,
+   .tools-table, and any custom <table> with template-internal style) ── */
+:root[data-theme="management"] table {
+    background: var(--bg-primary) !important;
+    color: var(--label-primary) !important;
+}
+
+:root[data-theme="management"] table thead,
+:root[data-theme="management"] table thead tr,
+:root[data-theme="management"] table thead th {
+    background: #EEF2F7 !important;
+    color: var(--label-secondary) !important;
+    border-color: var(--sep) !important;
+}
+
+:root[data-theme="management"] table tbody tr {
+    background: var(--bg-primary) !important;
+}
+
+:root[data-theme="management"] table tbody tr:nth-child(even) {
+    background: #FAFBFC !important;
+}
+
+:root[data-theme="management"] table tbody td,
+:root[data-theme="management"] table tbody th {
+    color: var(--label-primary) !important;
+    border-color: var(--sep) !important;
+}
+
+:root[data-theme="management"] table tbody tr:hover td {
+    background: var(--bg-hover) !important;
+}
+
+/* Status pills retain their tinted color but text becomes dark for
+   readability when the backdrop is flat-colored (.btn etc). */
+:root[data-theme="management"] .status-badge,
+:root[data-theme="management"] .pill,
+:root[data-theme="management"] .badge {
+    color: var(--label-primary) !important;
+}
+
+/* ── 3. Common template-internal selectors ── */
+
+/* Notices avisos page */
+:root[data-theme="management"] .scope-tabs,
+:root[data-theme="management"] .scope-tab {
+    color: var(--label-primary) !important;
+}
+:root[data-theme="management"] .scope-tab {
+    background: var(--bg-primary) !important;
+    border: 1px solid var(--sep) !important;
+}
+:root[data-theme="management"] .scope-tab.active {
+    background: var(--bg-active) !important;
+    color: var(--sys-blue) !important;
+    border-color: var(--sys-blue) !important;
+}
+
+/* Tree picker modal (notices, lubrication, inspections, thickness, shutdowns) */
+:root[data-theme="management"] #treeModal,
+:root[data-theme="management"] #editModal,
+:root[data-theme="management"] #printArea {
+    background: var(--bg-primary) !important;
+    border: 1px solid var(--sep) !important;
+    color: var(--label-primary) !important;
+    box-shadow: var(--shadow-xl) !important;
+}
+
+:root[data-theme="management"] #treeModal::backdrop,
+:root[data-theme="management"] #editModal::backdrop {
+    background: rgba(15, 23, 42, 0.45) !important;
+    backdrop-filter: blur(2px);
+    -webkit-backdrop-filter: blur(2px);
+}
+
+:root[data-theme="management"] #treeModal h3,
+:root[data-theme="management"] #treeModal .tree-help,
+:root[data-theme="management"] #editModal h3 {
+    color: var(--label-primary) !important;
+}
+
+:root[data-theme="management"] #selectionTree {
+    background: var(--bg-secondary) !important;
+    color: var(--label-primary) !important;
+    border: 1px solid var(--sep) !important;
+}
+
+:root[data-theme="management"] #selectionTree span.node-label {
+    color: var(--label-primary) !important;
+}
+
+:root[data-theme="management"] #selectionTree span.node-label:hover {
+    background: var(--bg-active) !important;
+    color: var(--sys-blue) !important;
+}
+
+:root[data-theme="management"] #selectionTree .node-area     { color: var(--sys-blue) !important; }
+:root[data-theme="management"] #selectionTree .node-line     { color: var(--sys-indigo) !important; }
+:root[data-theme="management"] #selectionTree .node-equipment{ color: #B45309 !important; }
+:root[data-theme="management"] #selectionTree .node-system   { color: var(--sys-green) !important; }
+:root[data-theme="management"] #selectionTree .node-component{ color: var(--sys-red) !important; }
+
+/* Calendar (FullCalendar.js) */
+:root[data-theme="management"] #calendar,
+:root[data-theme="management"] .fc {
+    background: var(--bg-primary) !important;
+    color: var(--label-primary) !important;
+}
+
+:root[data-theme="management"] .fc .fc-toolbar-title,
+:root[data-theme="management"] .fc th,
+:root[data-theme="management"] .fc td,
+:root[data-theme="management"] .fc-col-header-cell-cushion,
+:root[data-theme="management"] .fc-daygrid-day-number,
+:root[data-theme="management"] .fc-list-day-text,
+:root[data-theme="management"] .fc-list-day-side-text {
+    color: var(--label-primary) !important;
+}
+
+:root[data-theme="management"] .fc-theme-standard td,
+:root[data-theme="management"] .fc-theme-standard th,
+:root[data-theme="management"] .fc-theme-standard .fc-scrollgrid {
+    border-color: var(--sep) !important;
+}
+
+:root[data-theme="management"] .fc .fc-button {
+    background: var(--bg-primary) !important;
+    color: var(--label-primary) !important;
+    border: 1px solid var(--sep-strong) !important;
+}
+
+:root[data-theme="management"] .fc .fc-button:hover {
+    background: var(--bg-tertiary) !important;
+}
+
+:root[data-theme="management"] .fc .fc-button-primary:not(:disabled).fc-button-active,
+:root[data-theme="management"] .fc .fc-button-primary:not(:disabled):active {
+    background: var(--sys-blue) !important;
+    color: #FFFFFF !important;
+    border-color: var(--sys-blue) !important;
+}
+
+/* Generic panel / wrap / kpi / kpis containers used across templates */
+:root[data-theme="management"] .panel,
+:root[data-theme="management"] .wrap,
+:root[data-theme="management"] .kpi,
+:root[data-theme="management"] .kpis,
+:root[data-theme="management"] .breadcrumb,
+:root[data-theme="management"] .checklist,
+:root[data-theme="management"] .legend,
+:root[data-theme="management"] .toolbar,
+:root[data-theme="management"] .header,
+:root[data-theme="management"] .item,
+:root[data-theme="management"] .cell,
+:root[data-theme="management"] .mfield,
+:root[data-theme="management"] .mrow,
+:root[data-theme="management"] .subtitle {
+    background-color: transparent;
+    color: var(--label-primary) !important;
+}
+
+:root[data-theme="management"] .panel,
+:root[data-theme="management"] .wrap > .panel,
+:root[data-theme="management"] .kpi,
+:root[data-theme="management"] .checklist,
+:root[data-theme="management"] .legend {
+    background: var(--bg-primary) !important;
+    border: 1px solid var(--sep) !important;
+    box-shadow: var(--shadow-sm);
+}
+
+/* Tools list cards (tools.html) */
+:root[data-theme="management"] .tools .item,
+:root[data-theme="management"] .tools-grid .item,
+:root[data-theme="management"] .tool-card {
+    background: var(--bg-primary) !important;
+    border: 1px solid var(--sep) !important;
+    color: var(--label-primary) !important;
+}
+
+/* Common explicit selectors with hardcoded background hex in <style> blocks */
+:root[data-theme="management"] [class*="card"],
+:root[data-theme="management"] [class*="-box"],
+:root[data-theme="management"] [class*="-panel"],
+:root[data-theme="management"] [class*="-wrap"] {
+    /* Only adjust text color universally; backgrounds are handled by
+       more specific rules above to avoid flattening colored badges. */
+    color: var(--label-primary);
+}
+
+/* Buttons with hardcoded green/red gradient backgrounds — keep tinted */
+:root[data-theme="management"] [style*="linear-gradient(145deg,#1d6b35"],
+:root[data-theme="management"] [style*="linear-gradient(145deg, #1d6b35"] {
+    background: var(--sys-green) !important;
+    color: #FFFFFF !important;
+    border-color: var(--sys-green) !important;
+}
+
+/* Status colors dot/badges that hardcode rgba dark tints — keep accent */
+:root[data-theme="management"] [style*="background:rgba(10,132,255"],
+:root[data-theme="management"] [style*="background: rgba(10,132,255"] {
+    background: rgba(0, 64, 133, 0.10) !important;
+    color: var(--sys-blue) !important;
+}
+
+:root[data-theme="management"] [style*="background:rgba(255,69,58"],
+:root[data-theme="management"] [style*="background: rgba(255,69,58"] {
+    background: rgba(198, 40, 40, 0.10) !important;
+    color: var(--sys-red) !important;
+}
+
+:root[data-theme="management"] [style*="background:rgba(255,159,10"],
+:root[data-theme="management"] [style*="background: rgba(255,159,10"] {
+    background: rgba(230, 81, 0, 0.10) !important;
+    color: var(--sys-orange) !important;
+}
+
+:root[data-theme="management"] [style*="background:rgba(48,209,88"],
+:root[data-theme="management"] [style*="background: rgba(48,209,88"] {
+    background: rgba(46, 125, 50, 0.10) !important;
+    color: var(--sys-green) !important;
+}
+
+:root[data-theme="management"] [style*="background:rgba(191,90,242"],
+:root[data-theme="management"] [style*="background: rgba(191,90,242"] {
+    background: rgba(94, 53, 177, 0.10) !important;
+    color: var(--sys-purple) !important;
+}
+
+/* Hardcoded hex dark backgrounds inline (deeper variant set) */
+:root[data-theme="management"] [style*="background:#0d1320"],
+:root[data-theme="management"] [style*="background:#0f1319"],
+:root[data-theme="management"] [style*="background:#151b26"],
+:root[data-theme="management"] [style*="background:#181d24"],
+:root[data-theme="management"] [style*="background:#193451"],
+:root[data-theme="management"] [style*="background:#1a1a1e"],
+:root[data-theme="management"] [style*="background:#1a222f"],
+:root[data-theme="management"] [style*="background:#1b212b"],
+:root[data-theme="management"] [style*="background:#1e2430"],
+:root[data-theme="management"] [style*="background:#1e2530"],
+:root[data-theme="management"] [style*="background:#1e2535"],
+:root[data-theme="management"] [style*="background:#213147"],
+:root[data-theme="management"] [style*="background:#234870"],
+:root[data-theme="management"] [style*="background:#243047"],
+:root[data-theme="management"] [style*="background:#2a2a2e"],
+:root[data-theme="management"] [style*="background:#2a2d35"],
+:root[data-theme="management"] [style*="background:#2d2d2d"],
+:root[data-theme="management"] [style*="background:#332b00"],
+:root[data-theme="management"] [style*="background:#3e2723"],
+:root[data-theme="management"] [style*="background: #0d1320"],
+:root[data-theme="management"] [style*="background: #1a222f"],
+:root[data-theme="management"] [style*="background: #1e2530"] {
+    background: var(--bg-primary) !important;
+    color: var(--label-primary) !important;
+    border-color: var(--sep) !important;
+}
+
+/* Lighten any inline border that hardcodes dark accents */
+:root[data-theme="management"] [style*="border:1px solid #2a"],
+:root[data-theme="management"] [style*="border:1px solid #1e"],
+:root[data-theme="management"] [style*="border:1px solid #213"],
+:root[data-theme="management"] [style*="border:1px solid #355"],
+:root[data-theme="management"] [style*="border:1px solid #2f"],
+:root[data-theme="management"] [style*="border:1px solid #234"] {
+    border-color: var(--sep) !important;
+}
+
+/* Inputs/selects sometimes have hardcoded dark inline */
+:root[data-theme="management"] input[style*="#2C2C2E"],
+:root[data-theme="management"] input[style*="#2c2c2e"],
+:root[data-theme="management"] select[style*="#2C2C2E"],
+:root[data-theme="management"] select[style*="#2c2c2e"],
+:root[data-theme="management"] textarea[style*="#2C2C2E"] {
+    background: var(--bg-secondary) !important;
+    color: var(--label-primary) !important;
+    border: 1px solid var(--sep-strong) !important;
+}
+
+/* Top bar headers in pages with their own scoped <style> often rely on
+   --label-primary being a near-white token; force the corporate gray. */
+:root[data-theme="management"] .top-bar h1,
+:root[data-theme="management"] .top-bar h2,
+:root[data-theme="management"] .top-bar i {
+    color: var(--label-primary) !important;
+}
+
+/* Container fluid in custom pages */
+:root[data-theme="management"] .container-fluid,
+:root[data-theme="management"] .main-container,
+:root[data-theme="management"] .home-section {
+    background: var(--bg-base);
+    color: var(--label-primary);
+}
+
 /* ────────────────────────────────────────────────────────────────
    THEME TOGGLE BUTTON (injected by sidebar.js)
 ──────────────────────────────────────────────────────────────── */
