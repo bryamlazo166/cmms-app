@@ -46,6 +46,23 @@ def _p(txt, style=None):
     return Paragraph(s, style or _cell_style)
 
 
+def _esc(value):
+    """Escapa <, >, & en strings para uso seguro dentro de un Paragraph
+    cuando se va a interpolar en HTML controlado por nosotros."""
+    s = '' if value is None else str(value)
+    return s.replace('&', '&amp;').replace('<', '&lt;').replace('>', '&gt;')
+
+
+def _equip_paragraph(tag, name, style=None):
+    """Devuelve un Paragraph con '[TAG]' en negrita en la primera linea
+    y el nombre del equipo abajo. Escapa los valores de usuario pero
+    mantiene los tags de formato (<b>, <br/>)."""
+    safe_tag = _esc(tag) if tag else '-'
+    safe_name = _esc(name) if name else '-'
+    html = f"<b>[{safe_tag}]</b><br/>{safe_name}"
+    return Paragraph(html, style or _cell_style)
+
+
 def _short_date(value):
     """Convierte una fecha (str ISO YYYY-MM-DD o datetime/date) a 'DD-mmm'
     en español. Ej: 2026-04-15 -> '15-abr'. Si no se puede parsear,
@@ -109,14 +126,10 @@ def build_ots_table(ots):
 
     for i, ot in enumerate(ots, 1):
         # Equipo en 2 lineas: [TAG] arriba, nombre del equipo abajo.
-        # Permite reducir el ancho de la columna sin truncar.
-        tag = ot.get('equipment_tag') or '-'
-        eqname = ot.get('equipment_name') or '-'
-        equip_html = f"<b>[{tag}]</b><br/>{eqname}"
         row = [
             _p(str(i)),
             _p(ot.get('code') or '-', _cell_bold),
-            _p(equip_html),
+            _equip_paragraph(ot.get('equipment_tag'), ot.get('equipment_name')),
             _p(ot.get('component_name') or '-'),
             _p(ot.get('area_name') or '-'),
             _p(ot.get('maintenance_type') or '-'),
@@ -163,13 +176,10 @@ def build_notices_table(notices):
     data = [[_p(h, _cell_bold) for h in headers]]
 
     for i, n in enumerate(notices, 1):
-        tag = n.get('equipment_tag') or '-'
-        eqname = n.get('equipment_name') or '-'
-        equip_html = f"<b>[{tag}]</b><br/>{eqname}"
         row = [
             _p(str(i)),
             _p(n.get('code') or n.get('id_str') or '-', _cell_bold),
-            _p(equip_html),
+            _equip_paragraph(n.get('equipment_tag'), n.get('equipment_name')),
             _p(n.get('component_name') or '-'),
             _p(n.get('area_name') or '-'),
             _p(n.get('failure_mode') or '-'),
