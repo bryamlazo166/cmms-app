@@ -20,6 +20,12 @@ def build_payload(
     area_map = {a.id: a.name for a in Area.query.all()}
     line_map = {l.id: l for l in Line.query.all()}
     equip_map = {e.id: e for e in Equipment.query.all()}
+    # Componentes para enriquecer cada OT
+    try:
+        from models import Component
+        comp_map = {c.id: c for c in Component.query.all()}
+    except Exception:
+        comp_map = {}
 
     # Repuestos por OT
     ot_ids = [o.id for o in ots]
@@ -56,12 +62,14 @@ def build_payload(
     for ot in ots:
         eq = equip_map.get(ot.equipment_id)
         ln = line_map.get(ot.line_id)
+        cp = comp_map.get(getattr(ot, 'component_id', None))
         aname = area_map.get(ot.area_id, '-') if ot.area_id else (area_map.get(ln.area_id, '-') if ln else '-')
         ot_rows.append({
             'code': ot.code or f'OT-{ot.id}',
             'area': aname,
             'line': ln.name if ln else '-',
             'equipment': f"{eq.tag} — {eq.name}" if eq else '-',
+            'component': cp.name if cp else '-',
             'description': ot.description or '-',
             'type': ot.maintenance_type or '-',
             'status': ot.status or '-',
@@ -126,6 +134,7 @@ def generate_excel(payload):
             'Área': r['area'],
             'Línea': r['line'],
             'Equipo': r['equipment'],
+            'Componente': r.get('component') or '-',
             'Tipo': r['type'],
             'Descripción': r['description'],
             'Modo de falla': r['failure_mode'],
@@ -141,6 +150,7 @@ def generate_excel(payload):
                     'OT': r['code'],
                     'Área': r['area'],
                     'Equipo': r['equipment'],
+                    'Componente': r.get('component') or '-',
                     'Código Repuesto': m['code'],
                     'Descripción': m['name'],
                     'Cantidad': m['quantity'],
@@ -246,7 +256,8 @@ def generate_pdf(payload):
         'cellmat', parent=cell_style, fontSize=7, leading=9,
         textColor=colors.HexColor('#2c5282'),
     )
-    ot_header = ['OT', 'Área', 'Línea', 'Equipo', 'Descripción', 'Tipo', 'Hrs Est.', 'Hrs Real', 'Estado']
+    ot_header = ['OT', 'Área', 'Línea', 'Equipo', 'Componente',
+                 'Descripción', 'Tipo', 'Hrs Est.', 'Hrs Real', 'Estado']
     ot_table_data = [ot_header]
     # Indices de filas que son sub-filas de repuestos (para aplicar SPAN
     # y un fondo distinto)
@@ -257,6 +268,7 @@ def generate_pdf(payload):
             Paragraph(r['area'] or '-', cell_style),
             Paragraph(r['line'] or '-', cell_style),
             Paragraph(r['equipment'] or '-', cell_style),
+            Paragraph(r.get('component') or '-', cell_style),
             Paragraph((r['description'] or '-')[:300], cell_style),
             Paragraph(r['type'] or '-', cell_style),
             f"{r['estimated_h']}h",
@@ -273,11 +285,13 @@ def generate_pdf(payload):
                 mat_lines.append(f"&bull; <b>{code}</b> · {name} <i>({qty} {unit})</i>")
             mat_html = "<b>Repuestos:</b> " + "<br/>".join(mat_lines)
             spare_rows_idx.append(len(ot_table_data))  # indice de la sub-fila
-            ot_table_data.append([Paragraph(mat_html, cell_mat)] + [''] * 8)
+            ot_table_data.append([Paragraph(mat_html, cell_mat)] + [''] * 9)
 
+    # 10 columnas en total. Ancho A4 landscape util ~277mm.
     ot_table = Table(
         ot_table_data,
-        colWidths=[18 * mm, 28 * mm, 30 * mm, 38 * mm, 78 * mm, 20 * mm, 14 * mm, 14 * mm, 22 * mm],
+        colWidths=[16 * mm, 24 * mm, 26 * mm, 35 * mm, 28 * mm,
+                   65 * mm, 18 * mm, 13 * mm, 13 * mm, 22 * mm],
         repeatRows=1,
     )
     table_style_cmds = [
