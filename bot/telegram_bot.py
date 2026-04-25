@@ -1222,6 +1222,11 @@ def _create_notice(app, data):
             if blockage:
                 desc_parts.append(f"[Objeto: {blockage}]")
 
+            # Fecha del evento: si el usuario indica "ayer", "el viernes pasado",
+            # etc. el extractor manda event_date en ISO. Si no, usa hoy.
+            req_date = (data.get('event_date') or '').strip() or date.today().isoformat()
+            data['_resolved_event_date'] = req_date
+
             _db.session.execute(text("""
                 INSERT INTO maintenance_notices (code, description, criticality, priority, request_date,
                     maintenance_type, status, reporter_name, reporter_type,
@@ -1232,7 +1237,7 @@ def _create_notice(app, data):
             """), {
                 "code": code, "desc": ' | '.join(desc_parts),
                 "crit": data.get('criticality', 'Media'), "prio": data.get('priority', 'Normal'),
-                "rdate": date.today().isoformat(), "mtype": data.get('maintenance_type', 'Correctivo'),
+                "rdate": req_date, "mtype": data.get('maintenance_type', 'Correctivo'),
                 "reporter": data.get('reporter_name', 'Bot Telegram'),
                 "ar": ar_id, "ln": ln_id, "eq": eq_id, "sys": sys_id, "comp": comp_id, "ra": ra_id,
                 "shift": data.get('shift'),
@@ -1343,17 +1348,28 @@ def _close_ot(app, data):
             if row[1] == 'Cerrada':
                 return None, f"OT {ot_code} ya esta cerrada"
 
-            now = datetime.utcnow().isoformat()[:19]
+            # Fecha del cierre: si el usuario regulariza "ayer cerre la OT-0034",
+            # el extractor manda event_date en ISO. Si no, usa la marca actual.
+            event_date = (data.get('event_date') or '').strip()
+            if event_date:
+                # real_end_date es timestamp - usamos 17:00 como hora cierre tipica
+                end_ts = f"{event_date}T17:00:00"
+                closed_date = event_date
+            else:
+                end_ts = datetime.utcnow().isoformat()[:19]
+                closed_date = date.today().isoformat()
+            data['_resolved_event_date'] = closed_date
+
             comments = data.get('comments', 'Cerrada desde Telegram')
             _db.session.execute(text("""
                 UPDATE work_orders SET status = 'Cerrada', real_end_date = :now, execution_comments = :c WHERE code = :code
-            """), {"now": now, "c": comments, "code": ot_code})
+            """), {"now": end_ts, "c": comments, "code": ot_code})
 
             # Close linked notice
             if row[2]:
                 _db.session.execute(text(
                     "UPDATE maintenance_notices SET status = 'Cerrado', closed_date = :d WHERE id = :id"
-                ), {"id": row[2], "d": date.today().isoformat()})
+                ), {"id": row[2], "d": closed_date})
 
             _db.session.commit()
             _db.session.remove()
@@ -1763,6 +1779,121 @@ def _delete_lubrication(app, data):
             _db.session.rollback()
             _db.session.remove()
             return None, None, str(e)
+
+
+def _register_inspection(app, data):
+    """Register an inspection execution (high-level: OK / CON_HALLAZGOS).
+    Mirror of _register_lubrication. Auto-creates a notice if findings>0."""
+    with app.app_context():
+        from database import db as _db
+        from sqlalchemy import text
+        from utils.schedule_helpers import _calculate_lubrication_schedule
+        try:
+            route_id = data.get('route_id')
+            route_code = (data.get('route_code') or '').strip()
+            route_query = (data.get('route_query') or '').strip()
+
+            row = None
+            if route_id:
+                row = _db.session.execute(text("""
+                    SELECT ir.id, ir.code, ir.name, ir.frequency_days, ir.warning_days,
+                           ir.area_id, ir.line_id, ir.equipment_id
+                    FROM inspection_routes ir
+                    WHERE ir.id = :id AND ir.is_active = true
+                """), {"id": route_id}).fetchone()
+            elif route_code:
+                row = _db.session.execute(text("""
+                    SELECT ir.id, ir.code, ir.name, ir.frequency_days, ir.warning_days,
+                           ir.area_id, ir.line_id, ir.equipment_id
+                    FROM inspection_routes ir
+                    WHERE ir.code = :c AND ir.is_active = true
+                """), {"c": route_code}).fetchone()
+            elif route_query:
+                q = f"%{route_query}%"
+                rows = _db.session.execute(text("""
+                    SELECT ir.id, ir.code, ir.name, ir.frequency_days, ir.warning_days,
+                           ir.area_id, ir.line_id, ir.equipment_id
+                    FROM inspection_routes ir
+                    LEFT JOIN equipments e ON ir.equipment_id = e.id
+                    WHERE ir.is_active = true AND (
+                        ir.name ILIKE :q OR ir.code ILIKE :q OR e.name ILIKE :q OR e.tag ILIKE :q
+                    )
+                    LIMIT 5
+                """), {"q": q}).fetchall()
+                if len(rows) == 1:
+                    row = rows[0]
+                elif len(rows) > 1:
+                    options = ', '.join(f"{r[1] or r[0]} ({r[2]})" for r in rows)
+                    return None, None, None, f"Varias rutas coinciden con '{route_query}': {options}. Especifica el codigo."
+
+            if not row:
+                return None, None, None, "Ruta de inspeccion no encontrada. Especifica route_id, route_code o route_query."
+
+            rid, rcode, rname, freq_days, warn_days, ar_id, ln_id, eq_id = row
+
+            execution_date = (data.get('execution_date') or '').strip() or date.today().isoformat()
+            executed_by = data.get('executed_by') or 'INSPECTOR'
+            comments = data.get('comments')
+            findings_count = int(data.get('findings_count') or 0)
+            overall_result = (data.get('overall_result') or '').upper()
+            if not overall_result:
+                overall_result = 'CON_HALLAZGOS' if findings_count > 0 else 'OK'
+
+            # Insert execution
+            res = _db.session.execute(text("""
+                INSERT INTO inspection_executions
+                (route_id, execution_date, executed_by, overall_result, findings_count, comments, created_at)
+                VALUES (:rid, :ed, :eb, :ores, :fc, :com, :now)
+                RETURNING id
+            """), {
+                "rid": rid, "ed": execution_date, "eb": executed_by,
+                "ores": overall_result, "fc": findings_count, "com": comments,
+                "now": datetime.utcnow()
+            })
+            exec_id = res.scalar()
+
+            # Auto-create notice if findings (mirror del POST /api/inspection/executions)
+            notice_code = None
+            if findings_count > 0 and data.get('create_notice', True):
+                max_id = _db.session.execute(text("SELECT COALESCE(MAX(id), 0) FROM maintenance_notices")).scalar()
+                notice_code = f"AV-{str(max_id + 1).zfill(4)}"
+                desc = f"[INSPECCION] {rname}: {findings_count} hallazgo(s)."
+                if comments:
+                    desc += f" {comments}"
+                _db.session.execute(text("""
+                    INSERT INTO maintenance_notices
+                    (code, description, criticality, priority, request_date,
+                     maintenance_type, status, reporter_name, reporter_type,
+                     area_id, line_id, equipment_id, scope)
+                    VALUES (:code, :desc, 'Media', 'Normal', :rd, 'Preventivo',
+                            'Pendiente', :rep, 'INSPECCION',
+                            :ar, :ln, :eq, 'PLAN')
+                """), {
+                    "code": notice_code, "desc": desc, "rd": execution_date,
+                    "rep": executed_by, "ar": ar_id, "ln": ln_id, "eq": eq_id,
+                })
+                nid = _db.session.execute(text(
+                    "SELECT id FROM maintenance_notices WHERE code = :c"
+                ), {"c": notice_code}).scalar()
+                _db.session.execute(text(
+                    "UPDATE inspection_executions SET created_notice_id = :nid WHERE id = :id"
+                ), {"nid": nid, "id": exec_id})
+
+            # Recalculate schedule and update route
+            next_due, semaphore = _calculate_lubrication_schedule(execution_date, freq_days, warn_days)
+            _db.session.execute(text("""
+                UPDATE inspection_routes
+                SET last_execution_date = :led, next_due_date = :nd, semaphore_status = :ss
+                WHERE id = :id
+            """), {"led": execution_date, "nd": next_due, "ss": semaphore, "id": rid})
+
+            _db.session.commit()
+            _db.session.remove()
+            return rcode or f"id:{rid}", rname, notice_code, None
+        except Exception as e:
+            _db.session.rollback()
+            _db.session.remove()
+            return None, None, None, str(e)
 
 
 def _edit_ot(app, data):
@@ -2367,7 +2498,19 @@ REGLA CRITICA #2: Si el usuario reporta una falla, pide crear/editar/cerrar algo
 ACCIONES DISPONIBLES:
 
 1. CREAR AVISO (reportar falla o registrar actividad):
-{"action": "create_notice", "data": {"description": "...", "scope": "PLAN|FUERA_PLAN|GENERAL", "failure_mode": "Rotura|Desgaste|Fuga|Desalineacion|Sobrecalentamiento|Ruido anormal|Vibracion excesiva|Aflojamiento|Corrosion|Atascamiento|Descarrilamiento|Cortocircuito|Sobrecarga|Fatiga", "failure_category": "Mecanica|Electrica|Hidraulica|Neumatica|Instrumentacion|Lubricacion|Estructural", "blockage_object": "Metal|Piedra|Cadena|Madera|Alambre|Perno|Acero Inoxidable|Bronce|Otro", "equipment_tag": "D8", "component_name": "motor electrico", "free_location": "texto libre si no hay equipo", "criticality": "Alta|Media|Baja", "priority": "Alta|Normal|Baja", "maintenance_type": "Correctivo|Preventivo|Mejora"}}
+{"action": "create_notice", "data": {"description": "...", "scope": "PLAN|FUERA_PLAN|GENERAL", "failure_mode": "Rotura|Desgaste|Fuga|Desalineacion|Sobrecalentamiento|Ruido anormal|Vibracion excesiva|Aflojamiento|Corrosion|Atascamiento|Descarrilamiento|Cortocircuito|Sobrecarga|Fatiga", "failure_category": "Mecanica|Electrica|Hidraulica|Neumatica|Instrumentacion|Lubricacion|Estructural", "blockage_object": "Metal|Piedra|Cadena|Madera|Alambre|Perno|Acero Inoxidable|Bronce|Otro", "equipment_tag": "D8", "component_name": "motor electrico", "free_location": "texto libre si no hay equipo", "criticality": "Alta|Media|Baja", "priority": "Alta|Normal|Baja", "maintenance_type": "Correctivo|Preventivo|Mejora", "event_date": "YYYY-MM-DD opcional"}}
+
+REGLA CRITICA #3 — FECHA DEL EVENTO (event_date):
+- Si el usuario menciona CUANDO ocurrio la falla (ej: "ayer", "anteayer", "hace 2 dias", "el lunes pasado", "el 23 de abril", "anoche", "en la madrugada del 22"), SIEMPRE incluye event_date con la fecha en formato ISO YYYY-MM-DD.
+- Si NO menciona fecha (reporta algo que esta ocurriendo ahora o no aclara), OMITE event_date — el sistema usara la fecha de hoy.
+- Calcula relativos respecto a HOY que es """ + date.today().isoformat() + """.
+- Ejemplos:
+  * "ayer se rompio la chumacera del D3" → event_date: """ + (date.today() - timedelta(days=1)).isoformat() + """
+  * "anoche el motor del D5 boto chispas" → event_date: """ + (date.today() - timedelta(days=1)).isoformat() + """
+  * "hace 3 dias se trabo el D9" → event_date: """ + (date.today() - timedelta(days=3)).isoformat() + """
+  * "el viernes pasado vibro mucho el TH2" → event_date: viernes anterior a hoy en ISO
+  * "el 22 de abril fallo la bomba" → event_date: 2026-04-22 (asume año actual si no especifica)
+  * "se sobrecaliento el motor del D8" (sin fecha) → OMITE event_date
 
 REGLAS PARA EL CAMPO scope (CRITICO):
 - "PLAN" = falla/trabajo sobre un equipo que SI esta en el arbol (lista EQUIPOS del contexto). REQUIERE equipment_tag valido. Es el caso por defecto y mas comun.
@@ -2413,7 +2556,8 @@ Ejemplos:
 REGLA PARA BLOQUEOS: Cuando el usuario reporta que un digestor se "bloqueo", "trabo", "atasco", "paro por objeto", SIEMPRE usa failure_mode:"Atascamiento" e incluye blockage_object con el tipo de objeto (Metal, Piedra, Cadena, Madera, Alambre, Perno, Acero Inoxidable, Bronce, Otro). Si no dice que objeto fue, pregunta.
 
 2. CERRAR OT:
-{"action": "close_ot", "data": {"ot_code": "OT-0034", "comments": "Trabajo completado - se reemplazo faja y se verifico alineacion"}}
+{"action": "close_ot", "data": {"ot_code": "OT-0034", "comments": "Trabajo completado - se reemplazo faja y se verifico alineacion", "event_date": "YYYY-MM-DD opcional"}}
+- event_date: si el usuario regulariza un cierre que ocurrio en el pasado ("ayer cerre la OT-0034", "el viernes terminamos el cambio de faja"), aplica la regla #3 y manda la fecha real en ISO. Si no menciona fecha, OMITE event_date.
 
 3. INICIAR OT:
 {"action": "start_ot", "data": {"ot_code": "OT-0034"}}
@@ -2463,6 +2607,19 @@ Ejemplos:
 {"action": "delete_lubrication", "data": {"exec_id": 123}}
 - Usalo cuando el usuario diga "elimina", "borra", "anula", "ese registro estaba mal", "fue duplicado".
 - Igual que edit, busca el exec_id en EJECUCIONES por contexto. Si hay ambiguedad, pregunta primero con action:none.
+
+7e. REGISTRAR INSPECCION (cuando el usuario reporta que ejecuto una ruta de inspeccion):
+{"action": "register_inspection", "data": {"route_id": 5, "execution_date": "2026-04-24", "executed_by": "INSPECTOR|nombre tecnico", "overall_result": "OK|CON_HALLAZGOS", "findings_count": 0, "comments": "opcional"}}
+- Busca la ruta en la lista RUTAS DE INSPECCION del contexto. Usa el `id` que aparece como `id:NN`. Tambien puedes usar `route_code`.
+- Si no encuentras id exacto, usa `route_query` con texto fuzzy: {"route_query": "inspeccion semanal D8"}
+- execution_date: aplica la REGLA #3 (event_date). Si dicen "ayer se hizo la inspeccion semanal del D8" → fecha de ayer en ISO. Si dicen "hoy" o no aclaran, omitelo (default hoy).
+- overall_result: "OK" si no hay hallazgos. "CON_HALLAZGOS" si el usuario reporta problemas. Si no aclara y findings_count>0, el sistema lo deduce.
+- findings_count: numero de hallazgos. Si dice "encontre 2 fugas y 1 perno suelto" → findings_count:3. Si dice "todo bien" → 0.
+- IMPORTANTE: si findings_count>0, el sistema crea automaticamente un aviso vinculado. Tu solo registras la inspeccion.
+- Ejemplos:
+  * "hoy hice la inspeccion semanal del D8, todo OK" → {"action":"register_inspection","data":{"route_query":"semanal D8","overall_result":"OK","findings_count":0}}
+  * "ayer revise la ruta INS-TH3 y encontre dos fugas" → {"action":"register_inspection","data":{"route_code":"INS-TH3","execution_date":"<ayer ISO>","overall_result":"CON_HALLAZGOS","findings_count":2,"comments":"dos fugas detectadas"}}
+  * "anteayer FAPMETAL hizo la inspeccion mensual del molino, sin hallazgos" → executed_by:"FAPMETAL", findings_count:0, execution_date:<anteayer ISO>
 
 8. PROMOVER / DEGRADAR AVISO (cambiar scope y vincular o desvincular equipo):
 {"action": "promote_notice", "data": {"notice_code": "AV-0010", "target_scope": "PLAN|FUERA_PLAN|GENERAL", "equipment_tag": "D8", "component_name": "motor electrico", "free_location": "opcional"}}
@@ -3217,13 +3374,23 @@ pasados automaticamente y los usa como referencia. Pregunta cosas como
             if scope == 'PLAN' or fm != '-' or fc != '-':
                 failure_block = f"\n⚠️ Modo de falla: {fm}\n🏷️ Tipo: {fc}"
 
+            # Fecha del evento: si el extractor envio event_date, mostrar
+            # transparentemente "(segun tu mensaje)" para que el usuario detecte
+            # cualquier interpretacion erronea.
+            resolved_date = data.get('_resolved_event_date') or date.today().isoformat()
+            today_str = date.today().isoformat()
+            if resolved_date != today_str:
+                date_line = f"📅 {resolved_date} _(segun tu mensaje)_"
+            else:
+                date_line = f"📅 {resolved_date}"
+
             _send(chat_id, f"""✅ *Aviso creado: {code}*
 {scope_emoji} _{scope_label}_
 
 📋 {data.get('description', '-')}
 {equip_line}{comp_line}{failure_block}
 🔴 Criticidad: {data.get('criticality', 'Media')}
-📅 {date.today().isoformat()}
+{date_line}
 
 📷 _Envia una foto para adjuntarla._""")
         else:
@@ -3233,7 +3400,12 @@ pasados automaticamente y los usa como referencia. Pregunta cosas como
     elif action == 'close_ot':
         code, err = _close_ot(app, data)
         if code:
-            _send(chat_id, f"✅ *{code} cerrada*\n📝 {data.get('comments', '-')}")
+            resolved_date = data.get('_resolved_event_date') or date.today().isoformat()
+            today_str = date.today().isoformat()
+            date_line = f"\n📅 Cerrada: {resolved_date}"
+            if resolved_date != today_str:
+                date_line += " _(segun tu mensaje)_"
+            _send(chat_id, f"✅ *{code} cerrada*{date_line}\n📝 {data.get('comments', '-')}")
             # Indexar la OT cerrada para busqueda semantica futura (RAG)
             try:
                 with app.app_context():
@@ -3342,6 +3514,28 @@ pasados automaticamente y los usa como referencia. Pregunta cosas como
         code, pname, err = _delete_lubrication(app, data)
         if code:
             _send(chat_id, f"🗑️ *Ejecucion eliminada*\n🔧 {code} — {pname}\n_(semaforo del punto recalculado)_")
+        else:
+            _send(chat_id, f"❌ {err}")
+        return
+
+    elif action == 'register_inspection':
+        rcode, rname, notice_code, err = _register_inspection(app, data)
+        if rcode:
+            ed = data.get('execution_date') or date.today().isoformat()
+            today_str = date.today().isoformat()
+            date_line = f"📅 Fecha: {ed}"
+            if ed != today_str:
+                date_line += " _(segun tu mensaje)_"
+            eb = data.get('executed_by') or 'INSPECTOR'
+            findings = int(data.get('findings_count') or 0)
+            ovr = (data.get('overall_result') or '').upper() or ('CON_HALLAZGOS' if findings > 0 else 'OK')
+            result_emoji = '✅' if ovr == 'OK' else '⚠️'
+            extra = ""
+            if findings > 0:
+                extra = f"\n🔎 Hallazgos: {findings}"
+                if notice_code:
+                    extra += f"\n🔔 Aviso vinculado: *{notice_code}*"
+            _send(chat_id, f"{result_emoji} *Inspeccion registrada*\n📋 Ruta: {rcode} — {rname}\n{date_line}\n👤 Por: {eb}\n📊 Resultado: {ovr}{extra}")
         else:
             _send(chat_id, f"❌ {err}")
         return
