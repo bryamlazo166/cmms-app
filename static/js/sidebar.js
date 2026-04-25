@@ -240,12 +240,15 @@
             // Load permissions to filter sidebar
             let hidden = [];
             let rolePerms = {};
-            if (user.role !== 'admin') {
+            const isAdmin = user.role === 'admin';
+            if (!isAdmin) {
                 let permsLoaded = false;
                 try {
                     const permRes = await fetch('/api/auth/permissions');
                     if (permRes.ok) {
                         const permData = await permRes.json();
+                        // Si es admin /api/auth/permissions devuelve {permissions:..., modules, roles}
+                        // Si es usuario normal devuelve {role: {modulo:{...}}}
                         rolePerms = permData[user.role] || {};
                         permsLoaded = Object.keys(rolePerms).length > 0;
                     }
@@ -260,6 +263,55 @@
                     }
                 }
             }
+
+            // Expone helper global de permisos para los templates.
+            // Admin obtiene bypass total: can(*, *) === true.
+            window.CMMS_PERMS = {
+                role: user.role,
+                isAdmin: isAdmin,
+                _perms: rolePerms,
+                can(module, action) {
+                    if (this.isAdmin) return true;
+                    const p = this._perms[module];
+                    if (!p) return false;
+                    return Boolean(p[action || 'view']);
+                },
+                applyToDom(root) {
+                    // Oculta o deshabilita elementos con data-perm="modulo.accion"
+                    // que el usuario no tiene permitidos. Admin siempre los muestra.
+                    if (this.isAdmin) return;
+                    const scope = root || document;
+                    scope.querySelectorAll('[data-perm]').forEach(el => {
+                        const spec = (el.getAttribute('data-perm') || '').trim();
+                        if (!spec) return;
+                        const [mod, act] = spec.split('.');
+                        if (!this.can(mod, act)) {
+                            // Por defecto ocultar; si el elemento tiene
+                            // data-perm-mode="disable" se deshabilita en lugar de ocultar.
+                            const mode = el.getAttribute('data-perm-mode') || 'hide';
+                            if (mode === 'disable') {
+                                el.disabled = true;
+                                el.classList.add('perm-disabled');
+                                el.title = 'No tienes permiso para esta accion';
+                            } else {
+                                el.style.display = 'none';
+                            }
+                        }
+                    });
+                }
+            };
+            // Aplicar al DOM actual y observar cambios para nodos inyectados luego
+            window.CMMS_PERMS.applyToDom();
+            try {
+                const obs = new MutationObserver(muts => {
+                    for (const m of muts) {
+                        m.addedNodes.forEach(n => {
+                            if (n.nodeType === 1) window.CMMS_PERMS.applyToDom(n);
+                        });
+                    }
+                });
+                obs.observe(document.body, { childList: true, subtree: true });
+            } catch (_) {}
 
             const hrefToModule = Object.fromEntries(
                 Object.entries(MODULE_TO_HREF).map(([m, h]) => [h, m])

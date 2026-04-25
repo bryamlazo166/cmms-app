@@ -156,7 +156,7 @@
     <div class="page-header" style="margin-bottom:14px">
         <div>
             <h1 style="font-size:1.2rem"><i class="fas fa-shield-alt" style="color:#FF9F0A;margin-right:8px"></i>Permisos por Rol</h1>
-            <p style="font-size:.83rem;color:rgba(255,255,255,0.45);margin-top:3px">Configura que puede ver y editar cada rol</p>
+            <p style="font-size:.83rem;color:rgba(255,255,255,0.45);margin-top:3px">8 acciones granulares por modulo: Ver, Crear, Editar, Eliminar, Exportar, Importar, Cerrar, Aprobar. El rol Admin tiene bypass total.</p>
         </div>
         <button class="btn btn-primary" onclick="withLoading(this, savePermissions)"><i class="fas fa-save"></i> Guardar Permisos</button>
     </div>
@@ -387,6 +387,18 @@ async function loadPermissions() {
     } catch (_) {}
 }
 
+const PERM_ACTIONS = ['view', 'create', 'edit', 'delete', 'export', 'import', 'close', 'approve'];
+const ACTION_LABELS = {
+    view: 'Ver', create: 'Crear', edit: 'Editar', delete: 'Eliminar',
+    export: 'Exportar', import: 'Importar', close: 'Cerrar', approve: 'Aprobar'
+};
+const ACTION_ICONS = {
+    view: 'fa-eye', create: 'fa-plus', edit: 'fa-pen', delete: 'fa-trash',
+    export: 'fa-file-export', import: 'fa-file-import', close: 'fa-flag-checkered',
+    approve: 'fa-check-double'
+};
+let _activeRole = null;
+
 function renderPermissions(data) {
     const thead = document.getElementById('permHead');
     const tbody = document.getElementById('permBody');
@@ -402,43 +414,87 @@ function renderPermissions(data) {
         tecnico: '#30D158', operador: '#FFD60A', almacenero: '#FF375F', gerencia: '#0A84FF'
     };
 
-    // Header row 1: role names
-    let h1 = '<th style="text-align:left;padding:8px;font-size:.82rem">Modulo</th>';
-    roles.forEach(r => {
+    if (!_activeRole || !roles.includes(_activeRole)) _activeRole = roles[0];
+
+    // Tabs por rol
+    const tabsHtml = roles.map(r => {
         const label = ROLE_LABELS[r] || r;
         const color = ROLE_COLORS[r] || '#888';
-        h1 += `<th colspan="2" style="text-align:center;color:${color};font-size:.78rem;padding:8px">${label}</th>`;
-    });
-    // Header row 2: ver/editar
-    let h2 = '<th></th>';
-    roles.forEach(() => {
-        h2 += '<th style="text-align:center;font-size:.65rem;color:rgba(255,255,255,.35);padding:4px">Ver</th>';
-        h2 += '<th style="text-align:center;font-size:.65rem;color:rgba(255,255,255,.35);padding:4px">Editar</th>';
-    });
-    thead.innerHTML = `<tr>${h1}</tr><tr>${h2}</tr>`;
+        const active = r === _activeRole;
+        return `<button onclick="switchRole('${r}')" style="background:${active ? color : 'rgba(255,255,255,.06)'};color:${active ? '#000' : '#ddd'};border:1px solid ${active ? color : 'rgba(255,255,255,.10)'};padding:6px 14px;border-radius:8px;font-size:.82rem;font-weight:600;cursor:pointer;margin-right:6px;margin-bottom:6px">${label}</button>`;
+    }).join('');
 
-    // Body
+    let panelTabs = document.getElementById('roleTabs');
+    if (!panelTabs) {
+        panelTabs = document.createElement('div');
+        panelTabs.id = 'roleTabs';
+        panelTabs.style.marginBottom = '14px';
+        panelTabs.style.display = 'flex';
+        panelTabs.style.flexWrap = 'wrap';
+        document.getElementById('permPanel').insertBefore(panelTabs, document.getElementById('permTable'));
+    }
+    panelTabs.innerHTML = tabsHtml;
+
+    // Header: Modulo + 8 acciones
+    let header = '<th style="text-align:left;padding:10px;font-size:.84rem;background:rgba(255,255,255,.04)">Modulo</th>';
+    PERM_ACTIONS.forEach(act => {
+        header += `<th style="text-align:center;padding:10px 4px;font-size:.72rem;color:rgba(255,255,255,.55);background:rgba(255,255,255,.04)" title="${ACTION_LABELS[act]}"><i class="fas ${ACTION_ICONS[act]}" style="margin-right:4px"></i>${ACTION_LABELS[act]}</th>`;
+    });
+    // Columna "Todo" para marcar/desmarcar todos
+    header += '<th style="text-align:center;padding:10px 4px;font-size:.72rem;color:rgba(255,255,255,.55);background:rgba(255,255,255,.04)">Todo</th>';
+    thead.innerHTML = `<tr>${header}</tr>`;
+
+    // Body: una fila por modulo, columnas por accion
+    const rolePerms = perms[_activeRole] || {};
     tbody.innerHTML = data.modules.map(mod => {
-        let row = `<td style="padding:8px 10px;font-size:.82rem;color:rgba(255,255,255,.82)">${mod.label}</td>`;
-        roles.forEach(role => {
-            const p = (perms[role] || {})[mod.key] || { view: false, edit: false };
-            row += `<td style="text-align:center;padding:6px"><input type="checkbox" data-role="${role}" data-mod="${mod.key}" data-perm="view" ${p.view ? 'checked' : ''}></td>`;
-            row += `<td style="text-align:center;padding:6px"><input type="checkbox" data-role="${role}" data-mod="${mod.key}" data-perm="edit" ${p.edit ? 'checked' : ''}></td>`;
+        const p = rolePerms[mod.key] || {};
+        let cells = `<td style="padding:9px 10px;font-size:.85rem;color:rgba(255,255,255,.85);font-weight:500">${mod.label}</td>`;
+        PERM_ACTIONS.forEach(act => {
+            const checked = !!p[act];
+            cells += `<td style="text-align:center;padding:6px"><input type="checkbox" data-role="${_activeRole}" data-mod="${mod.key}" data-perm="${act}" ${checked ? 'checked' : ''} style="cursor:pointer;width:16px;height:16px"></td>`;
         });
-        return `<tr style="border-bottom:1px solid rgba(255,255,255,.05)">${row}</tr>`;
+        // Boton "todo"
+        cells += `<td style="text-align:center;padding:6px"><button onclick="toggleAllInRow(this)" style="background:rgba(10,132,255,.15);color:#5AC8FA;border:1px solid rgba(10,132,255,.30);border-radius:5px;padding:2px 8px;font-size:.7rem;cursor:pointer" title="Marcar/desmarcar todos">Todo</button></td>`;
+        return `<tr style="border-bottom:1px solid rgba(255,255,255,.05)">${cells}</tr>`;
     }).join('');
 }
 
+window.switchRole = function(role) {
+    _activeRole = role;
+    renderPermissions(permData);
+};
+
+window.toggleAllInRow = function(btn) {
+    const row = btn.closest('tr');
+    const checkboxes = row.querySelectorAll('input[type=checkbox]');
+    const allChecked = Array.from(checkboxes).every(cb => cb.checked);
+    checkboxes.forEach(cb => { cb.checked = !allChecked; });
+};
+
 async function savePermissions() {
+    // Tomar los checkboxes visibles del rol activo y mergear con los
+    // permisos de los demas roles (que estan en permData.permissions)
+    // para no sobrescribirlos al guardar.
     const checkboxes = document.querySelectorAll('#permBody input[type=checkbox]');
-    const result = {};
+    const updatedRolePerms = {};
     checkboxes.forEach(cb => {
-        const role = cb.dataset.role;
         const mod = cb.dataset.mod;
         const perm = cb.dataset.perm;
-        if (!result[role]) result[role] = {};
-        if (!result[role][mod]) result[role][mod] = {};
-        result[role][mod][perm] = cb.checked;
+        if (!updatedRolePerms[mod]) updatedRolePerms[mod] = {};
+        updatedRolePerms[mod][perm] = cb.checked;
+    });
+
+    // Estructura completa: para cada rol enviamos sus permisos.
+    // Para el rol activo usamos el estado del DOM; para los demas
+    // reusamos permData.permissions.
+    const result = {};
+    const allPerms = (permData.permissions) || {};
+    (permData.roles || []).forEach(r => {
+        if (r === _activeRole) {
+            result[r] = updatedRolePerms;
+        } else if (allPerms[r]) {
+            result[r] = allPerms[r];
+        }
     });
 
     const res = await fetch('/api/auth/permissions', {
@@ -448,6 +504,9 @@ async function savePermissions() {
     });
     const data = await res.json();
     if (data.ok) {
+        // Refrescar permData con lo guardado
+        if (!permData.permissions) permData.permissions = {};
+        permData.permissions[_activeRole] = updatedRolePerms;
         alert('Permisos guardados correctamente.');
     } else {
         alert('Error: ' + (data.error || 'Desconocido'));

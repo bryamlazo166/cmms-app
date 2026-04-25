@@ -79,19 +79,27 @@ class Notification(db.Model):
 
 
 class RolePermission(db.Model):
-    """Configurable permissions per role per module."""
+    """Configurable permissions per role per module — 8 flags granulares."""
     __tablename__ = 'role_permissions'
     id: Mapped[int] = mapped_column(primary_key=True)
     role: Mapped[str] = mapped_column(String(20), nullable=False)
     module: Mapped[str] = mapped_column(String(50), nullable=False)
     can_view: Mapped[bool] = mapped_column(Boolean, default=True)
+    can_create: Mapped[bool] = mapped_column(Boolean, default=False)
     can_edit: Mapped[bool] = mapped_column(Boolean, default=False)
+    can_delete: Mapped[bool] = mapped_column(Boolean, default=False)
     can_export: Mapped[bool] = mapped_column(Boolean, default=False)
+    can_import: Mapped[bool] = mapped_column(Boolean, default=False)
+    can_close: Mapped[bool] = mapped_column(Boolean, default=False)
+    can_approve: Mapped[bool] = mapped_column(Boolean, default=False)
 
     def to_dict(self):
         return {
             "id": self.id, "role": self.role, "module": self.module,
-            "can_view": self.can_view, "can_edit": self.can_edit, "can_export": self.can_export,
+            "can_view": self.can_view, "can_create": self.can_create,
+            "can_edit": self.can_edit, "can_delete": self.can_delete,
+            "can_export": self.can_export, "can_import": self.can_import,
+            "can_close": self.can_close, "can_approve": self.can_approve,
         }
 
 

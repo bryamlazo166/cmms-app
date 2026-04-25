@@ -235,13 +235,13 @@
 
                 <div class="container" style="max-width: 100%;">
                     <div class="toolbar" style="justify-content: center; margin-bottom: 20px;">
-                        <button id="importBtn" class="btn-primary" style="background:#0A84FF; color:black;">📥 Importar
+                        <button id="importBtn" class="btn-primary" data-perm="activos_config.import" style="background:#0A84FF; color:black;">📥 Importar
                             / Carga
                             Masiva</button>
-                        <a href="/api/export-hierarchy-complete" target="_blank" style="text-decoration:none;">
+                        <a href="/api/export-hierarchy-complete" target="_blank" style="text-decoration:none;" data-perm="activos_config.export">
                             <button class="btn-secondary" style="background:#BF5AF2; color:black;">📤 Descargar Arbol Completo</button>
                         </a>
-                        <button id="resetDbBtn" class="btn-danger" style="background:#FF453A;">Reiniciar DB</button>
+                        <button id="resetDbBtn" class="btn-danger" data-perm="activos_config.delete" style="background:#FF453A;">Reiniciar DB</button>
                     </div>
 
                     <!-- EDIT MODAL -->
@@ -355,7 +355,7 @@
                             <form id="areaForm">
                                 <label>Nombre del Área</label>
                                 <input type="text" id="areaName" placeholder="Ej. Planta Procesos" required>
-                                <button type="submit">Crear</button>
+                                <button type="submit" data-perm="activos_config.create">Crear</button>
                             </form>
                             <div id="areaList" class="item-list"></div>
                         </div>
@@ -367,7 +367,7 @@
                             <form id="lineForm">
                                 <label>Nombre de la Línea</label>
                                 <input type="text" id="lineName" placeholder="Ej. Línea Envasado 1" required>
-                                <button type="submit">Crear</button>
+                                <button type="submit" data-perm="activos_config.create">Crear</button>
                             </form>
                             <div id="lineList" class="item-list"></div>
                         </div>
@@ -381,7 +381,7 @@
                                 <input type="text" id="equipName" placeholder="Ej. Llenadora Rotativa" required>
                                 <label>TAG (Código)</label>
                                 <input type="text" id="equipTag" placeholder="Ej. LLEN-01" required>
-                                <button type="submit">Crear</button>
+                                <button type="submit" data-perm="activos_config.create">Crear</button>
                             </form>
                             <div id="equipList" class="item-list"></div>
                         </div>
@@ -393,7 +393,7 @@
                             <form id="sysForm">
                                 <label>Nombre del Sistema</label>
                                 <input type="text" id="sysName" placeholder="Ej. Sistema Hidráulico" required>
-                                <button type="submit">Crear</button>
+                                <button type="submit" data-perm="activos_config.create">Crear</button>
                             </form>
                             <div id="sysList" class="item-list"></div>
                         </div>
@@ -405,7 +405,7 @@
                             <form id="compForm">
                                 <label>Nombre del Componente</label>
                                 <input type="text" id="compName" placeholder="Ej. Bomba Principal" required>
-                                <button type="submit">Crear</button>
+                                <button type="submit" data-perm="activos_config.create">Crear</button>
                             </form>
                             <div id="compList" class="item-list"></div>
                         </div>

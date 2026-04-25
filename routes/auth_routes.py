@@ -266,21 +266,51 @@ def register_auth_routes(app, db, logger, User, RolePermission=None):
         },
     }
 
+    PERM_ACTIONS = ('view', 'create', 'edit', 'delete', 'export', 'import', 'close', 'approve')
+
+    def _expand_default(p):
+        """Convierte el formato legado {view,edit} al de 8 flags."""
+        if not isinstance(p, dict):
+            return {a: False for a in PERM_ACTIONS}
+        edit = bool(p.get('edit', False))
+        return {
+            'view':    bool(p.get('view', True)),
+            'create':  bool(p.get('create', edit)),
+            'edit':    edit,
+            'delete':  bool(p.get('delete', edit)),
+            'export':  bool(p.get('export', edit)),
+            'import':  bool(p.get('import', False)),
+            'close':   bool(p.get('close', edit)),
+            'approve': bool(p.get('approve', False)),
+        }
+
     def _get_permissions():
-        """Load permissions from DB, fill with defaults if missing."""
+        """Load permissions from DB, fill with defaults if missing.
+        Devuelve {role: {modulo: {view,create,edit,delete,export,
+        import,close,approve}}}"""
         if not RolePermission:
-            return DEFAULTS
+            return {r: {m['key']: _expand_default(DEFAULTS.get(r, {}).get(m['key'], {}))
+                        for m in MODULES} for r in ROLES}
         result = {}
         for role in ROLES:
             result[role] = {}
             for mod in MODULES:
                 key = mod['key']
                 perm = RolePermission.query.filter_by(role=role, module=key).first()
+                default_perm = _expand_default(DEFAULTS.get(role, {}).get(key, {}))
                 if perm:
-                    result[role][key] = {'view': perm.can_view, 'edit': perm.can_edit}
+                    result[role][key] = {
+                        'view':    perm.can_view,
+                        'create':  perm.can_create,
+                        'edit':    perm.can_edit,
+                        'delete':  perm.can_delete,
+                        'export':  perm.can_export,
+                        'import':  perm.can_import,
+                        'close':   perm.can_close,
+                        'approve': perm.can_approve,
+                    }
                 else:
-                    defaults = DEFAULTS.get(role, {}).get(key, {'view': True, 'edit': False})
-                    result[role][key] = defaults
+                    result[role][key] = default_perm
         return result
 
     @app.route('/api/auth/permissions', methods=['GET'])
@@ -305,20 +335,34 @@ def register_auth_routes(app, db, logger, User, RolePermission=None):
             return jsonify({"error": "Modelo de permisos no disponible."}), 500
 
         data = request.get_json() or {}
-        # data = { role: { module: { view: bool, edit: bool } } }
+        # data = { role: { module: { view, create, edit, delete,
+        #                            export, import, close, approve } } }
         for role, modules in data.items():
             if role not in ROLES:
                 continue
             for module, perms in modules.items():
+                fields = {
+                    'can_view':    bool(perms.get('view', True)),
+                    'can_create':  bool(perms.get('create', False)),
+                    'can_edit':    bool(perms.get('edit', False)),
+                    'can_delete':  bool(perms.get('delete', False)),
+                    'can_export':  bool(perms.get('export', False)),
+                    'can_import':  bool(perms.get('import', False)),
+                    'can_close':   bool(perms.get('close', False)),
+                    'can_approve': bool(perms.get('approve', False)),
+                }
                 existing = RolePermission.query.filter_by(role=role, module=module).first()
                 if existing:
-                    existing.can_view = bool(perms.get('view', True))
-                    existing.can_edit = bool(perms.get('edit', False))
+                    for k, v in fields.items():
+                        setattr(existing, k, v)
                 else:
-                    db.session.add(RolePermission(
-                        role=role, module=module,
-                        can_view=bool(perms.get('view', True)),
-                        can_edit=bool(perms.get('edit', False)),
-                    ))
+                    db.session.add(RolePermission(role=role, module=module, **fields))
         db.session.commit()
+        # Invalidar el cache del middleware en app.py
+        try:
+            import app as _app_mod
+            _app_mod._perms_cache.clear()
+            _app_mod._perms_cache_ts = 0
+        except Exception:
+            pass
         return jsonify({"ok": True})

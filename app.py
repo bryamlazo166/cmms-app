@@ -323,8 +323,30 @@ _DEFAULT_PERMS = {
 _perms_cache = {}
 _perms_cache_ts = 0
 
+_PERM_ACTIONS = ('view', 'create', 'edit', 'delete', 'export', 'import', 'close', 'approve')
+
+
+def _expand_legacy_perm(p):
+    """Convierte el formato legado {view,edit} al de 8 flags. Sirve
+    como fallback cuando _DEFAULT_PERMS aun usa el formato corto."""
+    if not isinstance(p, dict):
+        return {a: False for a in _PERM_ACTIONS}
+    edit = bool(p.get('edit', False))
+    return {
+        'view':    bool(p.get('view', True)),
+        'create':  bool(p.get('create', edit)),
+        'edit':    edit,
+        'delete':  bool(p.get('delete', edit)),
+        'export':  bool(p.get('export', edit)),
+        'import':  bool(p.get('import', False)),
+        'close':   bool(p.get('close', edit)),
+        'approve': bool(p.get('approve', False)),
+    }
+
+
 def _load_role_perms(role):
-    """Load permissions for a role from DB, fallback to defaults."""
+    """Load permissions for a role from DB, fallback to defaults.
+    Devuelve {modulo: {accion: bool, ...}} con las 8 acciones."""
     import time
     global _perms_cache, _perms_cache_ts
     now = time.time()
@@ -338,16 +360,61 @@ def _load_role_perms(role):
         from models import RolePermission
         for mod_key in _MODULE_ROUTES:
             perm = RolePermission.query.filter_by(role=role, module=mod_key).first()
+            default_perm = _expand_legacy_perm(defaults.get(mod_key, {}))
             if perm:
-                result[mod_key] = {'view': perm.can_view, 'edit': perm.can_edit}
+                result[mod_key] = {
+                    'view':    perm.can_view,
+                    'create':  perm.can_create,
+                    'edit':    perm.can_edit,
+                    'delete':  perm.can_delete,
+                    'export':  perm.can_export,
+                    'import':  perm.can_import,
+                    'close':   perm.can_close,
+                    'approve': perm.can_approve,
+                }
             else:
-                result[mod_key] = defaults.get(mod_key, {'view': True, 'edit': False})
+                result[mod_key] = default_perm
     except Exception:
-        result = defaults
+        # Si la BD no esta disponible o aun no migrada, usar defaults legados
+        for mod_key in _MODULE_ROUTES:
+            result[mod_key] = _expand_legacy_perm(defaults.get(mod_key, {}))
 
     _perms_cache[role] = result
     _perms_cache_ts = now
     return result
+
+
+def _action_for_request(method, path):
+    """Mapea metodo HTTP + path a la accion granular requerida.
+    Ej: GET /api/avisos -> 'view'
+        POST /api/avisos -> 'create'
+        PUT /api/avisos/3 -> 'edit'
+        DELETE /api/avisos/3 -> 'delete'
+        GET /api/warehouse/export -> 'export'
+        POST /api/upload-excel -> 'import'
+        POST /api/work-orders/3/close -> 'close'
+    """
+    p = path.lower()
+    # Excepciones por path antes que por metodo
+    if any(seg in p for seg in ('/export', '/excel', '/pdf', '/powerbi', '/kardex')):
+        return 'export'
+    if any(seg in p for seg in ('/import', '/upload-excel', '/bulk-paste', '/bulk-import')):
+        return 'import'
+    if '/close' in p or '/cerrar' in p or '/finish' in p:
+        return 'close'
+    if '/approve' in p or '/aprobar' in p:
+        return 'approve'
+
+    # Por metodo HTTP
+    if method == 'GET':
+        return 'view'
+    if method == 'POST':
+        return 'create'
+    if method in ('PUT', 'PATCH'):
+        return 'edit'
+    if method == 'DELETE':
+        return 'delete'
+    return 'view'
 
 
 def _find_module_for_path(path):
@@ -384,20 +451,29 @@ def require_login():
 
         if module and module in perms:
             p = perms[module]
-            is_write = request.method in ('POST', 'PUT', 'DELETE')
 
-            # Check view permission
+            # Toda solicitud requiere view del modulo
             if not p.get('view', True):
                 if route_type == 'page':
                     return redirect(url_for('index'))
                 elif route_type == 'api':
                     return jsonify({"error": "No tienes permiso para ver este modulo."}), 403
 
-            # Check edit permission (write operations)
-            if is_write and not p.get('edit', False):
-                if route_type == 'api':
-                    # Allow GET-like reads for dropdowns (taxonomy needs GET for selectors)
-                    return jsonify({"error": "No tienes permiso para modificar en este modulo."}), 403
+            # Si es API mutante / export / import / close / approve,
+            # validar la accion granular
+            if route_type == 'api':
+                action = _action_for_request(request.method, request.path)
+                if action != 'view' and not p.get(action, False):
+                    msgs = {
+                        'create':  "No tienes permiso para crear en este modulo.",
+                        'edit':    "No tienes permiso para modificar en este modulo.",
+                        'delete':  "No tienes permiso para eliminar en este modulo.",
+                        'export':  "No tienes permiso para exportar en este modulo.",
+                        'import':  "No tienes permiso para importar en este modulo.",
+                        'close':   "No tienes permiso para cerrar/finalizar en este modulo.",
+                        'approve': "No tienes permiso para aprobar en este modulo.",
+                    }
+                    return jsonify({"error": msgs.get(action, "Accion no autorizada.")}), 403
 
         return
     if request.endpoint in _AUTH_EXEMPT:
@@ -779,6 +855,15 @@ _ENSURE_COLUMNS = [
     ("thickness_inspections", "pdf_url", "VARCHAR(500)"),
     ("work_orders", "shutdown_id", "INTEGER"),
     ("shutdowns", "code", "VARCHAR(30)"),
+    # Permisos granulares por accion (ver, crear, editar, eliminar,
+    # exportar, importar, cerrar, aprobar). can_view/can_edit/can_export
+    # ya existian; las 5 nuevas se inicializan derivando de can_edit
+    # mediante el bloque post-create-all (ver _backfill_perm_actions).
+    ("role_permissions", "can_create",  "BOOLEAN DEFAULT false"),
+    ("role_permissions", "can_delete",  "BOOLEAN DEFAULT false"),
+    ("role_permissions", "can_import",  "BOOLEAN DEFAULT false"),
+    ("role_permissions", "can_close",   "BOOLEAN DEFAULT false"),
+    ("role_permissions", "can_approve", "BOOLEAN DEFAULT false"),
 ]
 
 
@@ -813,6 +898,39 @@ def _init_schema_on_startup():
             # Make warehouse_item_id nullable in BOM
             try:
                 db.session.execute(text("ALTER TABLE rotative_asset_bom ALTER COLUMN warehouse_item_id DROP NOT NULL"))
+                db.session.commit()
+            except Exception:
+                db.session.rollback()
+
+            # Backfill: derivar can_create/can_delete/can_close/can_approve
+            # de can_edit en filas existentes que aun los tengan en NULL/false
+            # tras la primera migracion. Solo se ejecuta una vez por instalacion;
+            # si todos ya estan inicializados queda como no-op.
+            try:
+                db.session.execute(text("""
+                    UPDATE role_permissions
+                    SET can_create  = COALESCE(can_create, false),
+                        can_delete  = COALESCE(can_delete, false),
+                        can_import  = COALESCE(can_import, false),
+                        can_close   = COALESCE(can_close, false),
+                        can_approve = COALESCE(can_approve, false)
+                    WHERE can_create IS NULL OR can_delete IS NULL OR can_import IS NULL
+                       OR can_close IS NULL OR can_approve IS NULL
+                """))
+                # Solo derivar de can_edit cuando los flags estan en false
+                # y can_edit es true, evitando pisar configuraciones manuales.
+                db.session.execute(text("""
+                    UPDATE role_permissions
+                    SET can_create  = true,
+                        can_delete  = true,
+                        can_close   = true,
+                        can_approve = true
+                    WHERE can_edit = true
+                      AND can_create = false
+                      AND can_delete = false
+                      AND can_close  = false
+                      AND can_approve = false
+                """))
                 db.session.commit()
             except Exception:
                 db.session.rollback()
