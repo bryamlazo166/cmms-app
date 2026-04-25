@@ -1263,6 +1263,161 @@
     color: inherit;
 }
 
+/* ════════════════════════════════════════════════════════════════
+   MANAGEMENT MODE — Hot-fix patches reportados por usuario
+   1. Avisos: badges "Por Área" inyectados por JS (#3d3d3d / #ccc)
+   2. Work Orders: paneles "Ejecucion y Cierre" con bg:#1e1e1e (con
+      espacio) y labels color:#aaa
+   3. Compras OT detail modal: fondos #222, #1a1a1a, #1c2330 y labels
+      #888 / #aaa
+   4. Activos rotativos: .tl-comment / .tl-location con rgba blancas
+      en <style> block (no captado por attribute-selectors)
+════════════════════════════════════════════════════════════════ */
+
+/* Variantes con espacio post-colon (catch-all original solo cubria
+   sin espacio) */
+:root[data-theme="management"] [style*="background: #1e1e1e"],
+:root[data-theme="management"] [style*="background: #1c1c1e"],
+:root[data-theme="management"] [style*="background: #1C1C1E"],
+:root[data-theme="management"] [style*="background: #252526"],
+:root[data-theme="management"] [style*="background: #1a1a1a"],
+:root[data-theme="management"] [style*="background:#1a1a1a"],
+:root[data-theme="management"] [style*="background: #222"],
+:root[data-theme="management"] [style*="background:#222;"],
+:root[data-theme="management"] [style*="background: #1c2330"],
+:root[data-theme="management"] [style*="background:#1c2330"],
+:root[data-theme="management"] [style*="background: #3d3d3d"],
+:root[data-theme="management"] [style*="background:#3d3d3d"],
+:root[data-theme="management"] [style*="background: #163b23"],
+:root[data-theme="management"] [style*="background:#163b23"] {
+    background: var(--bg-primary) !important;
+    border-color: var(--sep) !important;
+    color: var(--label-primary) !important;
+}
+
+/* Borders #333 / #444 / #555 con y sin espacio */
+:root[data-theme="management"] [style*="border:1px solid #333"],
+:root[data-theme="management"] [style*="border: 1px solid #333"],
+:root[data-theme="management"] [style*="border-bottom:1px solid #333"],
+:root[data-theme="management"] [style*="border-top:1px solid #333"],
+:root[data-theme="management"] [style*="border-bottom: 1px solid #333"],
+:root[data-theme="management"] [style*="border-top: 1px solid #333"],
+:root[data-theme="management"] [style*="border:1px solid #555"],
+:root[data-theme="management"] [style*="border: 1px solid #555"] {
+    border-color: var(--sep) !important;
+}
+
+/* Light grays usados como text labels (#aaa / #bbb / #888 / #666 /
+   #ccc / #ddd) — convertir a label-secondary para que sea legible */
+:root[data-theme="management"] [style*="color:#aaa"],
+:root[data-theme="management"] [style*="color: #aaa"],
+:root[data-theme="management"] [style*="color:#AAA"],
+:root[data-theme="management"] [style*="color: #AAA"],
+:root[data-theme="management"] [style*="color:#bbb"],
+:root[data-theme="management"] [style*="color: #bbb"],
+:root[data-theme="management"] [style*="color:#888"],
+:root[data-theme="management"] [style*="color: #888"],
+:root[data-theme="management"] [style*="color:#666"],
+:root[data-theme="management"] [style*="color: #666"],
+:root[data-theme="management"] [style*="color:#999"],
+:root[data-theme="management"] [style*="color: #999"] {
+    color: var(--label-secondary) !important;
+}
+
+/* Si #ddd se usa como TEXT principal, mejor que sea primary */
+:root[data-theme="management"] [style*="color:#ddd"],
+:root[data-theme="management"] [style*="color: #ddd"],
+:root[data-theme="management"] [style*="color:#DDD"],
+:root[data-theme="management"] [style*="color: #DDD"] {
+    color: var(--label-primary) !important;
+}
+
+/* ── Activos rotativos: timeline view (.tl-* classes en <style> block) ── */
+:root[data-theme="management"] .tl-item    { border-bottom-color: var(--sep) !important; }
+:root[data-theme="management"] .tl-comment { color: var(--label-primary)   !important; }
+:root[data-theme="management"] .tl-location{ color: var(--label-secondary) !important; }
+:root[data-theme="management"] .tl-date    { color: var(--label-tertiary)  !important; }
+
+/* Mantener tl-type-* y tl-dot-* con sus accents (saturados → legibles
+   sobre blanco). Solo remap los que son de Apple Dark a corporativos. */
+:root[data-theme="management"] .tl-type-CREACION,
+:root[data-theme="management"] .tl-dot-CREACION,
+:root[data-theme="management"] .tl-dot-LUBRICACION { color: var(--sys-green); }
+:root[data-theme="management"] .tl-dot-CREACION,
+:root[data-theme="management"] .tl-dot-LUBRICACION { background: var(--sys-green) !important; }
+:root[data-theme="management"] .tl-type-INSTALACION { color: var(--sys-blue) !important; }
+:root[data-theme="management"] .tl-dot-INSTALACION  { background: var(--sys-blue) !important; }
+:root[data-theme="management"] .tl-type-RETIRO      { color: var(--sys-orange) !important; }
+:root[data-theme="management"] .tl-dot-RETIRO       { background: var(--sys-orange) !important; }
+:root[data-theme="management"] .tl-type-ACTUALIZACION { color: var(--sys-teal) !important; }
+:root[data-theme="management"] .tl-dot-ACTUALIZACION,
+:root[data-theme="management"] .tl-dot-MOVIMIENTO   { background: var(--sys-teal) !important; }
+:root[data-theme="management"] .tl-type-CAMBIO_ESTADO { color: var(--sys-purple) !important; }
+:root[data-theme="management"] .tl-dot-CAMBIO_ESTADO,
+:root[data-theme="management"] .tl-dot-OT           { background: var(--sys-purple) !important; }
+:root[data-theme="management"] .tl-type-FICHA_AGREGADA { color: var(--sys-yellow) !important; }
+:root[data-theme="management"] .tl-dot-FICHA_AGREGADA  { background: var(--sys-yellow) !important; }
+
+/* Equipment history timeline (.dot-* y .tl-line) */
+:root[data-theme="management"] .dot-OT          { background: var(--sys-blue)   !important; }
+:root[data-theme="management"] .dot-AVISO       { background: var(--sys-orange) !important; }
+:root[data-theme="management"] .dot-LUBRICACION { background: var(--sys-green)  !important; }
+:root[data-theme="management"] .dot-INSPECCION  { background: var(--sys-purple) !important; }
+:root[data-theme="management"] .dot-MONITOREO   { background: var(--sys-teal)   !important; }
+
+/* Notice block en compras (border-left orange) — preservar tinte */
+:root[data-theme="management"] [style*="border-left:3px solid #FF9F0A"],
+:root[data-theme="management"] [style*="border-left: 3px solid #FF9F0A"] {
+    background: rgba(230, 81, 0, 0.06) !important;
+    border-left-color: var(--sys-orange) !important;
+}
+
+/* "Aviso vinculado: AV-XXXX" titulo dentro de ese bloque */
+:root[data-theme="management"] [style*="color:#FF9F0A;font-weight:600"],
+:root[data-theme="management"] [style*="color: #FF9F0A;font-weight:600"] {
+    color: var(--sys-orange) !important;
+}
+
+/* Por Area badges (notices.js inline style="background: #3d3d3d") */
+:root[data-theme="management"] #kpiAreaBreakdown > div {
+    background: var(--bg-tertiary) !important;
+    border: 1px solid var(--sep) !important;
+    color: var(--label-primary) !important;
+}
+
+:root[data-theme="management"] #kpiAreaBreakdown > div span {
+    color: var(--label-primary) !important;
+}
+
+:root[data-theme="management"] #kpiAreaBreakdown > div span[style*="color: #BF5AF2"],
+:root[data-theme="management"] #kpiAreaBreakdown > div span[style*="color:#BF5AF2"] {
+    color: var(--sys-purple) !important;
+}
+
+/* Por Estado badges (status pills inyectados por JS con bg colored) */
+:root[data-theme="management"] #kpiStatusBreakdown > div {
+    color: var(--label-primary) !important;
+}
+
+/* Scope badges (#kpiScopeBreakdown) - keep color tints but text dark */
+:root[data-theme="management"] #kpiScopeBreakdown > div {
+    color: var(--label-primary) !important;
+}
+
+/* Work Orders execution checkboxes (Seguridad y Permisos) - labels dark */
+:root[data-theme="management"] #execution-details label,
+:root[data-theme="management"] [id^="exec-"] + span,
+:root[data-theme="management"] [id^="exec-"] {
+    color: var(--label-primary) !important;
+}
+
+/* Recursos y Logistica alert verde */
+:root[data-theme="management"] #exec-logistics-alert {
+    background: rgba(46, 125, 50, 0.10) !important;
+    color: #1B5E20 !important;
+    border: 1px solid var(--sys-green) !important;
+}
+
 /* ────────────────────────────────────────────────────────────────
    THEME TOGGLE BUTTON (injected by sidebar.js)
 ──────────────────────────────────────────────────────────────── */
