@@ -685,10 +685,108 @@
 }
 
 :root[data-theme="management"] .fc .fc-button-primary:not(:disabled).fc-button-active,
-:root[data-theme="management"] .fc .fc-button-primary:not(:disabled):active {
+:root[data-theme="management"] .fc .fc-button-primary:not(:disabled):active,
+:root[data-theme="management"] .fc .fc-button-active {
     background: var(--sys-blue) !important;
     color: #FFFFFF !important;
     border-color: var(--sys-blue) !important;
+}
+
+/* FullCalendar internal CSS variables — re-map for white surface */
+:root[data-theme="management"] .fc {
+    --fc-border-color: var(--sep) !important;
+    --fc-page-bg-color: transparent !important;
+    --fc-neutral-bg-color: var(--bg-tertiary) !important;
+    --fc-today-bg-color: rgba(0, 64, 133, 0.06) !important;
+    --fc-event-text-color: #FFFFFF !important;
+}
+
+/* Day headers + day numbers readable on white */
+:root[data-theme="management"] .fc .fc-col-header-cell {
+    background: #EEF2F7 !important;
+    color: var(--label-secondary) !important;
+}
+
+:root[data-theme="management"] .fc .fc-col-header-cell-cushion,
+:root[data-theme="management"] .fc .fc-daygrid-day-number {
+    color: var(--label-primary) !important;
+}
+
+:root[data-theme="management"] .fc .fc-day-today .fc-daygrid-day-number {
+    color: var(--sys-blue) !important;
+    font-weight: 700;
+}
+
+/* Events — original dark-mode colors are 25% rgba tints with light text
+   that vanish on white. Switch to saturated solid backgrounds with white
+   text for legibility, preserving category color encoding. */
+:root[data-theme="management"] .fc-event {
+    border: none !important;
+    color: #FFFFFF !important;
+}
+
+:root[data-theme="management"] .fc-event.cat-lubricacion,
+:root[data-theme="management"] .fc-event[class*="cat-lubric"] {
+    background: var(--sys-green) !important;
+    color: #FFFFFF !important;
+}
+
+:root[data-theme="management"] .fc-event.cat-inspeccion,
+:root[data-theme="management"] .fc-event[class*="cat-inspec"] {
+    background: var(--sys-purple) !important;
+    color: #FFFFFF !important;
+}
+
+:root[data-theme="management"] .fc-event.cat-monitoreo,
+:root[data-theme="management"] .fc-event[class*="cat-monitor"] {
+    background: var(--sys-teal) !important;
+    color: #FFFFFF !important;
+}
+
+:root[data-theme="management"] .fc-event.cat-ot,
+:root[data-theme="management"] .fc-event[class*="cat-ot"] {
+    background: var(--sys-blue) !important;
+    color: #FFFFFF !important;
+}
+
+/* Semaphore borders kept */
+:root[data-theme="management"] .fc-event.sem-ROJO     { border-left: 3px solid var(--sys-red)    !important; }
+:root[data-theme="management"] .fc-event.sem-AMARILLO { border-left: 3px solid var(--sys-yellow) !important; }
+:root[data-theme="management"] .fc-event.sem-VERDE    { border-left: 3px solid var(--sys-green)  !important; }
+
+/* Force inner spans/divs of events to inherit white text */
+:root[data-theme="management"] .fc-event .fc-event-title,
+:root[data-theme="management"] .fc-event .fc-event-time,
+:root[data-theme="management"] .fc-event .fc-event-main,
+:root[data-theme="management"] .fc-event .fc-event-main-frame {
+    color: #FFFFFF !important;
+}
+
+/* Calendar tooltip (.cal-tooltip in calendar.html) */
+:root[data-theme="management"] .cal-tooltip {
+    background: var(--bg-primary) !important;
+    border: 1px solid var(--sep) !important;
+    color: var(--label-primary) !important;
+    box-shadow: var(--shadow-lg) !important;
+}
+
+:root[data-theme="management"] .cal-tooltip .tt-title { color: var(--label-primary)  !important; }
+:root[data-theme="management"] .cal-tooltip .tt-meta  { color: var(--label-secondary) !important; }
+
+/* Calendar legend dots — they have inline style="background:#hex" with
+   accent colors; remap to corporate equivalents */
+:root[data-theme="management"] .legend-item {
+    color: var(--label-secondary) !important;
+}
+:root[data-theme="management"] .legend-dot[style*="#30D158"] { background: var(--sys-green)  !important; }
+:root[data-theme="management"] .legend-dot[style*="#BF5AF2"] { background: var(--sys-purple) !important; }
+:root[data-theme="management"] .legend-dot[style*="#5AC8FA"] { background: var(--sys-teal)   !important; }
+:root[data-theme="management"] .legend-dot[style*="#0A84FF"] { background: var(--sys-blue)   !important; }
+
+/* Page subtitle (calendar, others) using rgba(255,255,255,.45) — already
+   handled by the catch-all, but explicit for completeness */
+:root[data-theme="management"] .subtitle {
+    color: var(--label-secondary) !important;
 }
 
 /* Generic panel / wrap / kpi / kpis containers used across templates */
