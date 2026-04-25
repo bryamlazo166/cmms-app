@@ -988,453 +988,146 @@ def register_reports_routes(
 
     @app.route('/api/reports/powerbi-export', methods=['GET'])
     def export_powerbi_excel():
+        """Excel master multi-hoja con todos los datos del CMMS para Power BI.
+        La logica vive en utils/powerbi_export.build_workbook() — esta ruta
+        solo orquesta la respuesta HTTP."""
         try:
-            # ── Lookup caches ──────────────────────────────────────────────
-            areas_map = {a.id: a.name for a in Area.query.all()}
-            lines_map = {l.id: l.name for l in Line.query.all()}
-            equips_map = {e.id: e.name for e in Equipment.query.all()}
-            equip_tags = {e.id: e.tag for e in Equipment.query.all()}
-            systems_map = {s.id: s.name for s in System.query.all()}
-            comps_map = {c.id: c.name for c in Component.query.all()}
-            techs_map = {t.id: t.name for t in Technician.query.all()}
-            provs_map = {p.id: p.name for p in Provider.query.all()}
-
-            def area(i): return areas_map.get(i)
-            def line(i): return lines_map.get(i)
-            def equip(i): return equips_map.get(i)
-            def tag(i): return equip_tags.get(i)
-            def syst(i): return systems_map.get(i)
-            def comp(i): return comps_map.get(i)
-            def tech(i): return techs_map.get(i)
-            def prov(i): return provs_map.get(i)
-
-            # ── 1. ORDENES DE TRABAJO ──────────────────────────────────────
-            ots = WorkOrder.query.order_by(WorkOrder.id).all()
-            ot_rows = []
-            for o in ots:
-                real_start = _parse_date_flexible(o.real_start_date)
-                real_end = _parse_date_flexible(o.real_end_date)
-                sched = _parse_date_flexible(o.scheduled_date)
-                duration_h = _safe_duration_hours(o.real_duration)
-
-                # Calculate actual hours from personnel if no duration
-                if not duration_h and real_start and real_end:
-                    delta = real_end - real_start
-                    duration_h = round(delta.total_seconds() / 3600, 2)
-
-                # On-time flag
-                on_time = None
-                if sched and real_end:
-                    on_time = 'Si' if real_end <= sched else 'No'
-                elif sched and o.status == 'Cerrada' and not real_end:
-                    on_time = 'Sin fecha cierre'
-
-                ot_rows.append({
-                    'Codigo_OT': o.code,
-                    'Aviso': o.notice_id,
-                    'Estado': o.status,
-                    'Tipo_Mantenimiento': o.maintenance_type,
-                    'Modo_Falla': o.failure_mode,
-                    'Descripcion': o.description,
-                    'Prioridad': getattr(o, 'priority', None),
-                    'Area': area(o.area_id),
-                    'Linea': line(o.line_id),
-                    'Equipo': equip(o.equipment_id),
-                    'TAG': tag(o.equipment_id),
-                    'Sistema': syst(o.system_id),
-                    'Componente': comp(o.component_id),
-                    'Tecnico': tech(o.technician_id),
-                    'Proveedor': prov(o.provider_id),
-                    'Fecha_Programada': o.scheduled_date,
-                    'Fecha_Inicio_Real': o.real_start_date,
-                    'Fecha_Fin_Real': o.real_end_date,
-                    'Duracion_Horas': duration_h,
-                    'Duracion_Estimada': o.estimated_duration,
-                    'Cant_Tecnicos': o.tech_count,
-                    'A_Tiempo': on_time,
-                    'Comentarios_Ejecucion': o.execution_comments,
-                    'Causo_Parada': 'Si' if getattr(o, 'caused_downtime', False) else 'No',
-                    'Horas_Parada': getattr(o, 'downtime_hours', None),
-                    'Origen_Tipo': getattr(o, 'source_type', None),
-                    'Origen_ID': getattr(o, 'source_id', None),
-                })
-            df_ots = pd.DataFrame(ot_rows)
-
-            # ── 2. AVISOS ──────────────────────────────────────────────────
-            notices = MaintenanceNotice.query.order_by(MaintenanceNotice.id).all()
-            notice_rows = []
-            for n in notices:
-                req = _parse_date_flexible(n.request_date)
-                treat = _parse_date_flexible(n.treatment_date)
-                response_days = None
-                if req and treat:
-                    response_days = (treat - req).days
-
-                notice_rows.append({
-                    'Codigo_Aviso': n.code,
-                    'Estado': n.status,
-                    'Tipo_Mantenimiento': n.maintenance_type,
-                    'Descripcion': n.description,
-                    'Prioridad': n.priority,
-                    'Criticidad': n.criticality,
-                    'Especialidad': n.specialty,
-                    'Turno': n.shift,
-                    'Reportado_Por': n.reporter_name,
-                    'Tipo_Reportante': n.reporter_type,
-                    'Area': area(n.area_id),
-                    'Linea': line(n.line_id),
-                    'Equipo': equip(n.equipment_id),
-                    'TAG': tag(n.equipment_id),
-                    'Sistema': syst(n.system_id),
-                    'Componente': comp(n.component_id),
-                    'Fecha_Solicitud': n.request_date,
-                    'Fecha_Tratamiento': n.treatment_date,
-                    'Fecha_Planificacion': n.planning_date,
-                    'Dias_Respuesta': response_days,
-                    'OT_Asociada': n.ot_number,
-                    'Motivo_Cancelacion': n.cancellation_reason,
-                    'Origen_Tipo': getattr(n, 'source_type', None),
-                    'Origen_ID': getattr(n, 'source_id', None),
-                })
-            df_notices = pd.DataFrame(notice_rows)
-
-            # ── 3. PERSONAL EN OTs ─────────────────────────────────────────
-            personnel = OTPersonnel.query.order_by(OTPersonnel.id).all()
-            pers_rows = []
-            # Build OT code lookup
-            ot_code_map = {o.id: o.code for o in ots}
-            for p in personnel:
-                pers_rows.append({
-                    'Codigo_OT': ot_code_map.get(p.work_order_id),
-                    'Tecnico': tech(p.technician_id),
-                    'Especialidad': p.specialty,
-                    'Horas_Asignadas': p.hours_assigned,
-                    'Horas_Trabajadas': p.hours_worked,
-                })
-            df_personnel = pd.DataFrame(pers_rows)
-
-            # ── 4. MATERIALES EN OTs ───────────────────────────────────────
-            materials = OTMaterial.query.order_by(OTMaterial.id).all()
-            mat_rows = []
-            for m in materials:
-                item_name = None
-                item_code = None
-                unit_cost = 0
-                if m.item_type == 'warehouse':
-                    wi = WarehouseItem.query.get(m.item_id)
-                    if wi:
-                        item_name = wi.name
-                        item_code = wi.code
-                        unit_cost = wi.unit_cost or 0
-
-                mat_rows.append({
-                    'Codigo_OT': ot_code_map.get(m.work_order_id),
-                    'Tipo_Item': m.item_type,
-                    'Codigo_Item': item_code,
-                    'Nombre_Item': item_name,
-                    'Cantidad': m.quantity,
-                    'Costo_Unitario': unit_cost,
-                    'Costo_Total': round((m.quantity or 0) * unit_cost, 2),
-                })
-            df_materials = pd.DataFrame(mat_rows)
-
-            # ── 5. LUBRICACIÓN — Puntos ────────────────────────────────────
-            lub_points = LubricationPoint.query.order_by(LubricationPoint.id).all()
-            lub_rows = []
-            for p in lub_points:
-                lub_rows.append({
-                    'Codigo': p.code,
-                    'Nombre': p.name,
-                    'Activo': 'Si' if p.is_active else 'No',
-                    'Area': area(p.area_id),
-                    'Linea': line(p.line_id),
-                    'Equipo': equip(p.equipment_id),
-                    'TAG': tag(p.equipment_id),
-                    'Sistema': syst(p.system_id),
-                    'Componente': comp(p.component_id),
-                    'Lubricante': p.lubricant_name,
-                    'Cantidad_Nominal': p.quantity_nominal,
-                    'Unidad': p.quantity_unit,
-                    'Frecuencia_Dias': p.frequency_days,
-                    'Ultimo_Servicio': p.last_service_date,
-                    'Proximo_Vencimiento': p.next_due_date,
-                    'Semaforo': p.semaphore_status,
-                })
-            df_lub_points = pd.DataFrame(lub_rows)
-
-            # ── 6. LUBRICACIÓN — Ejecuciones ──────────────────────────────
-            lub_execs = LubricationExecution.query.order_by(LubricationExecution.id).all()
-            lub_exec_rows = []
-            lub_point_map = {p.id: (p.code, p.name) for p in lub_points}
-            for e in lub_execs:
-                pcode, pname = lub_point_map.get(e.point_id, (None, None))
-                lub_exec_rows.append({
-                    'Codigo_Punto': pcode,
-                    'Nombre_Punto': pname,
-                    'Fecha_Ejecucion': e.execution_date,
-                    'Accion': e.action_type,
-                    'Cantidad': e.quantity_used,
-                    'Unidad': e.quantity_unit,
-                    'Ejecutado_Por': e.executed_by,
-                    'Fuga_Detectada': 'Si' if e.leak_detected else 'No',
-                    'Anomalia': 'Si' if e.anomaly_detected else 'No',
-                    'Comentario': e.comments,
-                    'Aviso_Generado': e.created_notice_id,
-                })
-            df_lub_execs = pd.DataFrame(lub_exec_rows)
-
-            # ── 7. MONITOREO — Puntos ─────────────────────────────────────
-            mon_points = MonitoringPoint.query.order_by(MonitoringPoint.id).all()
-            mon_rows = []
-            for p in mon_points:
-                mon_rows.append({
-                    'Codigo': p.code,
-                    'Nombre': p.name,
-                    'Activo': 'Si' if p.is_active else 'No',
-                    'Tipo_Medicion': p.measurement_type,
-                    'Eje': p.axis,
-                    'Unidad': p.unit,
-                    'Area': area(p.area_id),
-                    'Linea': line(p.line_id),
-                    'Equipo': equip(p.equipment_id),
-                    'TAG': tag(p.equipment_id),
-                    'Sistema': syst(p.system_id),
-                    'Componente': comp(p.component_id),
-                    'Normal_Min': p.normal_min,
-                    'Normal_Max': p.normal_max,
-                    'Alarma_Min': p.alarm_min,
-                    'Alarma_Max': p.alarm_max,
-                    'Frecuencia_Dias': p.frequency_days,
-                    'Ultima_Medicion': p.last_measurement_date,
-                    'Proximo_Vencimiento': p.next_due_date,
-                    'Semaforo': p.semaphore_status,
-                })
-            df_mon_points = pd.DataFrame(mon_rows)
-
-            # ── 8. MONITOREO — Lecturas ───────────────────────────────────
-            mon_readings = MonitoringReading.query.order_by(MonitoringReading.id).all()
-            mon_read_rows = []
-            mon_point_map = {p.id: (p.code, p.name, p.unit) for p in mon_points}
-            for r in mon_readings:
-                pcode, pname, punit = mon_point_map.get(r.point_id, (None, None, None))
-                mon_read_rows.append({
-                    'Codigo_Punto': pcode,
-                    'Nombre_Punto': pname,
-                    'Fecha_Lectura': r.reading_date,
-                    'Valor': r.value,
-                    'Unidad': punit,
-                    'Ejecutado_Por': r.executed_by,
-                    'Regularizacion': 'Si' if r.is_regularization else 'No',
-                    'Notas': r.notes,
-                    'Aviso_Generado': r.created_notice_id,
-                })
-            df_mon_readings = pd.DataFrame(mon_read_rows)
-
-            # ── 9. EQUIPOS (Jerarquía) ────────────────────────────────────
-            equip_rows = []
-            for e in Equipment.query.order_by(Equipment.id).all():
-                l = Line.query.get(e.line_id) if e.line_id else None
-                a = Area.query.get(l.area_id) if l and l.area_id else None
-                equip_rows.append({
-                    'ID': e.id,
-                    'TAG': e.tag,
-                    'Nombre': e.name,
-                    'Criticidad': e.criticality,
-                    'Linea': l.name if l else None,
-                    'Area': a.name if a else None,
-                })
-            df_equipos = pd.DataFrame(equip_rows)
-
-            # ── Build Excel workbook ──────────────────────────────────────
-            output = BytesIO()
-            with pd.ExcelWriter(output, engine='openpyxl') as writer:
-                df_ots.to_excel(writer, index=False, sheet_name='OTs')
-                df_notices.to_excel(writer, index=False, sheet_name='Avisos')
-                df_personnel.to_excel(writer, index=False, sheet_name='Personal_OT')
-                df_materials.to_excel(writer, index=False, sheet_name='Materiales_OT')
-                df_lub_points.to_excel(writer, index=False, sheet_name='Lub_Puntos')
-                df_lub_execs.to_excel(writer, index=False, sheet_name='Lub_Ejecuciones')
-                df_mon_points.to_excel(writer, index=False, sheet_name='Mon_Puntos')
-                df_mon_readings.to_excel(writer, index=False, sheet_name='Mon_Lecturas')
-                df_equipos.to_excel(writer, index=False, sheet_name='Equipos')
-
-                # ── 10. INSPECCIÓN — Rutas ─────────────────────────────────
-                insp_routes = InspectionRoute.query.order_by(InspectionRoute.id).all()
-                insp_route_rows = []
-                for r in insp_routes:
-                    insp_route_rows.append({
-                        'Codigo': r.code,
-                        'Nombre': r.name,
-                        'Activo': 'Si' if r.is_active else 'No',
-                        'Area': area(r.area_id),
-                        'Linea': line(r.line_id),
-                        'Equipo': equip(r.equipment_id),
-                        'TAG': tag(r.equipment_id),
-                        'Frecuencia_Dias': r.frequency_days,
-                        'Ultima_Ejecucion': r.last_execution_date,
-                        'Proximo_Vencimiento': r.next_due_date,
-                        'Semaforo': r.semaphore_status,
-                    })
-                pd.DataFrame(insp_route_rows).to_excel(writer, index=False, sheet_name='Insp_Rutas')
-
-                # ── 11. INSPECCIÓN — Ejecuciones + Resultados ──────────────
-                insp_execs = InspectionExecution.query.order_by(InspectionExecution.id).all()
-                insp_route_map = {r.id: (r.code, r.name) for r in insp_routes}
-                insp_exec_rows = []
-                for e in insp_execs:
-                    rcode, rname = insp_route_map.get(e.route_id, (None, None))
-                    # Get results for this execution
-                    results = InspectionResult.query.filter_by(execution_id=e.id).all()
-                    if results:
-                        for res in results:
-                            insp_exec_rows.append({
-                                'Codigo_Ruta': rcode,
-                                'Nombre_Ruta': rname,
-                                'Fecha_Ejecucion': e.execution_date,
-                                'Inspector': e.executed_by,
-                                'Resultado_General': e.overall_result,
-                                'Hallazgos': e.findings_count,
-                                'Item': res.item.description if res.item else None,
-                                'Tipo_Item': res.item.item_type if res.item else None,
-                                'Resultado_Item': res.result,
-                                'Valor': res.value,
-                                'Texto': res.text_value,
-                                'Observacion': res.observation,
-                                'Aviso_Generado': e.created_notice_id,
-                                'Comentario': e.comments,
-                            })
-                    else:
-                        insp_exec_rows.append({
-                            'Codigo_Ruta': rcode,
-                            'Nombre_Ruta': rname,
-                            'Fecha_Ejecucion': e.execution_date,
-                            'Inspector': e.executed_by,
-                            'Resultado_General': e.overall_result,
-                            'Hallazgos': e.findings_count,
-                            'Item': None,
-                            'Tipo_Item': None,
-                            'Resultado_Item': None,
-                            'Valor': None,
-                            'Texto': None,
-                            'Observacion': None,
-                            'Aviso_Generado': e.created_notice_id,
-                            'Comentario': e.comments,
-                        })
-                pd.DataFrame(insp_exec_rows).to_excel(writer, index=False, sheet_name='Insp_Ejecuciones')
-
-                # ── 12. ACTIVIDADES + HITOS ────────────────────────────────
-                acts = Activity.query.order_by(Activity.id.desc()).all()
-                act_rows = []
-                for a in acts:
-                    ms_list = [m for m in (a.milestones or []) if m.is_active]
-                    done = sum(1 for m in ms_list if m.status == 'COMPLETADO')
-                    total = len(ms_list)
-                    if ms_list:
-                        for m in ms_list:
-                            act_rows.append({
-                                'ID_Actividad': a.id,
-                                'Titulo': a.title,
-                                'Tipo': a.activity_type,
-                                'Responsable': a.responsible,
-                                'Prioridad': a.priority,
-                                'Estado_Actividad': a.status,
-                                'Fecha_Inicio': a.start_date,
-                                'Fecha_Objetivo': a.target_date,
-                                'Fecha_Completado': a.completion_date,
-                                'Progreso_%': round((done / total) * 100) if total > 0 else 0,
-                                'Hito': m.description,
-                                'Hito_Objetivo': m.target_date,
-                                'Hito_Completado': m.completion_date,
-                                'Hito_Estado': m.status,
-                                'Hito_Comentario': m.comment,
-                            })
-                    else:
-                        act_rows.append({
-                            'ID_Actividad': a.id,
-                            'Titulo': a.title,
-                            'Tipo': a.activity_type,
-                            'Responsable': a.responsible,
-                            'Prioridad': a.priority,
-                            'Estado_Actividad': a.status,
-                            'Fecha_Inicio': a.start_date,
-                            'Fecha_Objetivo': a.target_date,
-                            'Fecha_Completado': a.completion_date,
-                            'Progreso_%': 0,
-                            'Hito': None, 'Hito_Objetivo': None,
-                            'Hito_Completado': None, 'Hito_Estado': None,
-                            'Hito_Comentario': None,
-                        })
-                pd.DataFrame(act_rows).to_excel(writer, index=False, sheet_name='Actividades')
-
-                # ── 13. ACTIVOS ROTATIVOS + BOM ────────────────────────────
-                try:
-                    from models import RotativeAsset as RA, RotativeAssetBOM as RABOM
-                    ra_rows = []
-                    for a in RA.query.order_by(RA.id).all():
-                        bom_items = RABOM.query.filter_by(asset_id=a.id).all() if RABOM else []
-                        if bom_items:
-                            for b in bom_items:
-                                ra_rows.append({
-                                    'Codigo_Activo': a.code, 'Nombre_Activo': a.name,
-                                    'Categoria': a.category, 'Marca': a.brand, 'Modelo': a.model,
-                                    'Serie': a.serial_number, 'Estado': a.status,
-                                    'Ubicacion': ' / '.join(filter(None, [
-                                        a.area.name if a.area else None,
-                                        a.line.name if a.line else None,
-                                        a.equipment.name if a.equipment else None,
-                                    ])),
-                                    'Repuesto_Codigo': b.warehouse_item.code if b.warehouse_item else None,
-                                    'Repuesto_Nombre': b.warehouse_item.name if b.warehouse_item else None,
-                                    'Repuesto_Cat': b.category, 'Repuesto_Cant': b.quantity,
-                                    'Repuesto_Nota': b.notes,
-                                })
-                        else:
-                            ra_rows.append({
-                                'Codigo_Activo': a.code, 'Nombre_Activo': a.name,
-                                'Categoria': a.category, 'Marca': a.brand, 'Modelo': a.model,
-                                'Serie': a.serial_number, 'Estado': a.status,
-                                'Ubicacion': ' / '.join(filter(None, [
-                                    a.area.name if a.area else None,
-                                    a.line.name if a.line else None,
-                                    a.equipment.name if a.equipment else None,
-                                ])),
-                                'Repuesto_Codigo': None, 'Repuesto_Nombre': None,
-                                'Repuesto_Cat': None, 'Repuesto_Cant': None, 'Repuesto_Nota': None,
-                            })
-                    pd.DataFrame(ra_rows).to_excel(writer, index=False, sheet_name='Activos_BOM')
-                except Exception:
-                    pass
-
-                # ── 14. OT BITACORA (Log Entries) ──────────────────────────
-                try:
-                    from models import OTLogEntry
-                    log_entries = OTLogEntry.query.order_by(OTLogEntry.id.desc()).all()
-                    log_rows = []
-                    for e in log_entries:
-                        wo = WorkOrder.query.get(e.work_order_id)
-                        log_rows.append({
-                            'Codigo_OT': wo.code if wo else f'OT-{e.work_order_id}',
-                            'Fecha': e.log_date,
-                            'Tipo': e.log_type,
-                            'Autor': e.author,
-                            'Comentario': e.comment,
-                            'Creado': e.created_at.isoformat() if e.created_at else None,
-                        })
-                    pd.DataFrame(log_rows).to_excel(writer, index=False, sheet_name='OT_Bitacora')
-                except Exception:
-                    pass
-
-            output.seek(0)
+            from utils.powerbi_export import build_workbook
+            output = build_workbook()
             today = dt.date.today().isoformat()
             return send_file(
                 output,
                 as_attachment=True,
                 download_name=f"CMMS_PowerBI_{today}.xlsx",
-                mimetype='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
+                mimetype='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
             )
         except Exception as e:
             logger.exception("Power BI export error")
             return jsonify({"error": str(e)}), 500
+
+    # ── Power BI JSON Endpoints (real-time direct query) ─────────────────
+    # Cada endpoint delega a utils.powerbi_export. Power BI consume esto
+    # con el conector "Web" o "OData" para refrescar dashboards en vivo.
+
+    @app.route('/api/powerbi/index', methods=['GET'])
+    def powerbi_index():
+        """Directorio de endpoints disponibles para Power BI."""
+        from utils.powerbi_export import list_endpoints
+        return jsonify(list_endpoints())
+
+    def _pb_response(builder_fn):
+        """Helper: ejecuta un builder con lookups precargados y devuelve JSON."""
+        from utils.powerbi_export import _build_lookups
+        try:
+            data = builder_fn(_build_lookups())
+            db.session.remove()
+            return jsonify(data)
+        except Exception as e:
+            db.session.remove()
+            logger.exception("Power BI endpoint error")
+            return jsonify({"error": str(e)}), 500
+
+    @app.route('/api/powerbi/work-orders-v2', methods=['GET'])
+    def powerbi_work_orders_v2():
+        """OTs enriquecidas con scope/aviso/parada. Reemplaza work-orders."""
+        from utils.powerbi_export import query_work_orders
+        return _pb_response(query_work_orders)
+
+    @app.route('/api/powerbi/notices-v2', methods=['GET'])
+    def powerbi_notices_v2():
+        """Avisos enriquecidos con scope, modo falla, fechas. Reemplaza notices."""
+        from utils.powerbi_export import query_notices
+        return _pb_response(query_notices)
+
+    @app.route('/api/powerbi/personnel', methods=['GET'])
+    def powerbi_personnel():
+        from utils.powerbi_export import query_ot_personnel
+        return _pb_response(query_ot_personnel)
+
+    @app.route('/api/powerbi/materials', methods=['GET'])
+    def powerbi_materials():
+        from utils.powerbi_export import query_ot_materials
+        return _pb_response(query_ot_materials)
+
+    @app.route('/api/powerbi/ot-log', methods=['GET'])
+    def powerbi_ot_log():
+        from utils.powerbi_export import query_ot_log_entries
+        return _pb_response(query_ot_log_entries)
+
+    @app.route('/api/powerbi/lubrication-points', methods=['GET'])
+    def powerbi_lub_points():
+        from utils.powerbi_export import query_lubrication_points
+        return _pb_response(query_lubrication_points)
+
+    @app.route('/api/powerbi/lubrication-executions', methods=['GET'])
+    def powerbi_lub_execs():
+        from utils.powerbi_export import query_lubrication_executions
+        return _pb_response(query_lubrication_executions)
+
+    @app.route('/api/powerbi/inspection-routes', methods=['GET'])
+    def powerbi_insp_routes():
+        from utils.powerbi_export import query_inspection_routes
+        return _pb_response(query_inspection_routes)
+
+    @app.route('/api/powerbi/inspection-executions', methods=['GET'])
+    def powerbi_insp_execs():
+        from utils.powerbi_export import query_inspection_executions
+        return _pb_response(query_inspection_executions)
+
+    @app.route('/api/powerbi/monitoring-points', methods=['GET'])
+    def powerbi_mon_points():
+        from utils.powerbi_export import query_monitoring_points
+        return _pb_response(query_monitoring_points)
+
+    @app.route('/api/powerbi/monitoring-readings', methods=['GET'])
+    def powerbi_mon_readings():
+        from utils.powerbi_export import query_monitoring_readings
+        return _pb_response(query_monitoring_readings)
+
+    @app.route('/api/powerbi/thickness', methods=['GET'])
+    def powerbi_thickness():
+        from utils.powerbi_export import query_thickness
+        return _pb_response(query_thickness)
+
+    @app.route('/api/powerbi/shutdowns', methods=['GET'])
+    def powerbi_shutdowns():
+        from utils.powerbi_export import query_shutdowns
+        return _pb_response(query_shutdowns)
+
+    @app.route('/api/powerbi/shutdown-ots', methods=['GET'])
+    def powerbi_shutdown_ots():
+        from utils.powerbi_export import query_shutdown_ots
+        return _pb_response(query_shutdown_ots)
+
+    @app.route('/api/powerbi/purchases', methods=['GET'])
+    def powerbi_purchases():
+        from utils.powerbi_export import query_purchases
+        return _pb_response(query_purchases)
+
+    @app.route('/api/powerbi/warehouse', methods=['GET'])
+    def powerbi_warehouse():
+        from utils.powerbi_export import query_warehouse
+        return _pb_response(query_warehouse)
+
+    @app.route('/api/powerbi/warehouse-movements', methods=['GET'])
+    def powerbi_warehouse_movements():
+        from utils.powerbi_export import query_warehouse_movements
+        return _pb_response(query_warehouse_movements)
+
+    @app.route('/api/powerbi/activities', methods=['GET'])
+    def powerbi_activities():
+        from utils.powerbi_export import query_activities
+        return _pb_response(query_activities)
+
+    @app.route('/api/powerbi/rotative-assets', methods=['GET'])
+    def powerbi_rotative_assets():
+        from utils.powerbi_export import query_rotative_assets
+        return _pb_response(query_rotative_assets)
+
+    @app.route('/api/powerbi/equipments', methods=['GET'])
+    def powerbi_equipments():
+        from utils.powerbi_export import query_equipos_flat
+        return _pb_response(query_equipos_flat)
 
     # ── Power BI JSON Endpoints (real-time) ───────────────────────────────
 
@@ -1513,41 +1206,15 @@ def register_reports_routes(
 
     @app.route('/api/powerbi/kpis', methods=['GET'])
     def powerbi_kpis():
-        """Summary KPIs for Power BI dashboard."""
-        from sqlalchemy import text
+        """Summary KPIs for Power BI dashboard. Logica en utils/powerbi_export."""
         try:
-            total_ot = db.session.execute(text("SELECT count(*) FROM work_orders")).scalar()
-            open_ot = db.session.execute(text("SELECT count(*) FROM work_orders WHERE status != 'Cerrada'")).scalar()
-            closed_ot = db.session.execute(text("SELECT count(*) FROM work_orders WHERE status = 'Cerrada'")).scalar()
-            corrective = db.session.execute(text("SELECT count(*) FROM work_orders WHERE maintenance_type = 'Correctivo'")).scalar()
-            preventive = db.session.execute(text("SELECT count(*) FROM work_orders WHERE maintenance_type = 'Preventivo'")).scalar()
-            notices_pending = db.session.execute(text("SELECT count(*) FROM maintenance_notices WHERE status = 'Pendiente'")).scalar()
-
-            lub_red = insp_red = mon_red = 0
-            try:
-                lub_red = db.session.execute(text("SELECT count(*) FROM lubrication_points WHERE is_active = true AND semaphore_status = 'ROJO'")).scalar() or 0
-                insp_red = db.session.execute(text("SELECT count(*) FROM inspection_routes WHERE is_active = true AND semaphore_status = 'ROJO'")).scalar() or 0
-                mon_red = db.session.execute(text("SELECT count(*) FROM monitoring_points WHERE is_active = true AND semaphore_status = 'ROJO'")).scalar() or 0
-            except Exception:
-                pass
-
-            total_mt = corrective + preventive
+            from utils.powerbi_export import get_kpis
+            data = get_kpis()
             db.session.remove()
-            return jsonify({
-                "total_ot": total_ot,
-                "open_ot": open_ot,
-                "closed_ot": closed_ot,
-                "corrective": corrective,
-                "preventive": preventive,
-                "corrective_pct": round(corrective / total_mt * 100, 1) if total_mt > 0 else 0,
-                "preventive_pct": round(preventive / total_mt * 100, 1) if total_mt > 0 else 0,
-                "notices_pending": notices_pending,
-                "lub_overdue": lub_red,
-                "insp_overdue": insp_red,
-                "mon_overdue": mon_red,
-            })
+            return jsonify(data)
         except Exception as e:
             db.session.remove()
+            logger.exception("powerbi_kpis error")
             return jsonify({"error": str(e)}), 500
 
     @app.route('/api/powerbi/failure-analysis', methods=['GET'])
