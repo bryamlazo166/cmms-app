@@ -1418,6 +1418,109 @@
     border: 1px solid var(--sys-green) !important;
 }
 
+/* ════════════════════════════════════════════════════════════════
+   MANAGEMENT MODE — Seguimiento (activities) & Mantenimiento BD
+   Estos templates definen color:rgba(255,255,255,.X) en <style>
+   blocks (no captados por attribute selectors).
+════════════════════════════════════════════════════════════════ */
+
+/* ── Seguimiento de Actividades (activities.html) ── */
+:root[data-theme="management"] .act-card {
+    background: var(--bg-primary) !important;
+    border: 1px solid var(--sep) !important;
+}
+
+:root[data-theme="management"] .act-card:hover {
+    border-color: var(--sep-strong) !important;
+}
+
+:root[data-theme="management"] .act-card.expanded {
+    border-color: var(--sys-blue) !important;
+}
+
+:root[data-theme="management"] .act-title    { color: var(--label-primary)   !important; }
+:root[data-theme="management"] .act-meta     { color: var(--label-secondary) !important; }
+:root[data-theme="management"] .next-ms      { color: var(--label-secondary) !important; }
+:root[data-theme="management"] .progress-text{ color: var(--label-secondary) !important; }
+:root[data-theme="management"] .act-header .chevron { color: var(--label-tertiary) !important; }
+:root[data-theme="management"] .act-card.expanded .chevron { color: var(--sys-blue) !important; }
+:root[data-theme="management"] .progress-bar { background: var(--bg-tertiary) !important; }
+:root[data-theme="management"] .next-ms i    { color: var(--sys-orange) !important; }
+
+/* Activity badges - keep colored tints with corporate accents */
+:root[data-theme="management"] .badge-alta   { background: rgba(198, 40, 40, 0.10)  !important; color: var(--sys-red)    !important; }
+:root[data-theme="management"] .badge-media  { background: rgba(230, 81, 0, 0.10)   !important; color: var(--sys-orange) !important; }
+:root[data-theme="management"] .badge-baja   { background: rgba(46, 125, 50, 0.10)  !important; color: var(--sys-green)  !important; }
+:root[data-theme="management"] .badge-type   { background: rgba(40, 53, 147, 0.10)  !important; color: var(--sys-indigo) !important; }
+
+/* Activity status pills */
+:root[data-theme="management"] .st-ABIERTA      { background: rgba(0, 64, 133, 0.10)  !important; color: var(--sys-blue)   !important; }
+:root[data-theme="management"] .st-EN_PROGRESO  { background: rgba(230, 81, 0, 0.10)  !important; color: var(--sys-orange) !important; }
+:root[data-theme="management"] .st-COMPLETADA   { background: rgba(46, 125, 50, 0.10) !important; color: var(--sys-green)  !important; }
+:root[data-theme="management"] .st-CANCELADA    { background: var(--bg-tertiary)      !important; color: var(--label-tertiary) !important; }
+
+/* Milestones */
+:root[data-theme="management"] .ms-done     { background: rgba(46, 125, 50, 0.12) !important; color: var(--sys-green)  !important; }
+:root[data-theme="management"] .ms-pending  { background: var(--bg-tertiary)      !important; color: var(--label-tertiary) !important; }
+:root[data-theme="management"] .ms-progress { background: rgba(230, 81, 0, 0.12)  !important; color: var(--sys-orange) !important; }
+
+/* Activity btn variants in <style> block of activities.html */
+:root[data-theme="management"] .btn-success {
+    background: rgba(46, 125, 50, 0.10) !important;
+    color: var(--sys-green) !important;
+    border: 1px solid var(--sys-green) !important;
+}
+:root[data-theme="management"] .btn-danger {
+    background: rgba(198, 40, 40, 0.10) !important;
+    color: var(--sys-red) !important;
+    border: 1px solid var(--sys-red) !important;
+}
+
+/* ── Mantenimiento de Base de Datos (db_maintenance.html) ── */
+:root[data-theme="management"] .panel h3 {
+    color: var(--label-primary) !important;
+}
+
+:root[data-theme="management"] .table-label {
+    color: var(--label-primary) !important;
+}
+
+:root[data-theme="management"] .table-count {
+    color: var(--label-secondary) !important;
+}
+
+:root[data-theme="management"] .protected {
+    color: var(--label-secondary) !important;
+}
+
+:root[data-theme="management"] .protected i {
+    color: var(--sys-green) !important;
+}
+
+:root[data-theme="management"] .warning {
+    background: rgba(198, 40, 40, 0.06) !important;
+    border: 1px solid var(--sys-red) !important;
+    color: #8B1313 !important;
+}
+
+/* "Seleccionar todo" inline span color override */
+:root[data-theme="management"] .table-label[style*="color:rgba(255,255,255,.60)"],
+:root[data-theme="management"] .table-label[style*="color: rgba(255,255,255,.60)"] {
+    color: var(--label-primary) !important;
+}
+
+/* Table count dynamic color (#FF9F0A when count>0) preservada */
+:root[data-theme="management"] .table-count[style*="#FF9F0A"] {
+    color: var(--sys-orange) !important;
+}
+
+/* Btn danger solid in db_maintenance */
+:root[data-theme="management"] .btn-danger-solid {
+    background: var(--sys-red) !important;
+    color: #FFFFFF !important;
+    border-color: var(--sys-red) !important;
+}
+
 /* ────────────────────────────────────────────────────────────────
    THEME TOGGLE BUTTON (injected by sidebar.js)
 ──────────────────────────────────────────────────────────────── */
