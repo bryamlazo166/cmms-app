@@ -162,6 +162,11 @@ def register_shutdown_routes(
             if sp_item_ids:
                 sp_map = {s.id: s for s in SparePart.query.filter(SparePart.id.in_(sp_item_ids)).all()}
             for m in all_materials:
+                # Excluir herramientas de la lista de repuestos. Las
+                # herramientas se asignan a la OT pero no son repuestos
+                # consumibles para la parada.
+                if m.item_type == 'tool' or (m.subtype or '').lower() == 'herramienta':
+                    continue
                 name = m.item_name_free or ''
                 code = '-'
                 stock = None

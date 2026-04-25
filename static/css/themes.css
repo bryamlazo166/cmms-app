@@ -1521,6 +1521,71 @@
     border-color: var(--sys-red) !important;
 }
 
+/* ════════════════════════════════════════════════════════════════
+   MANAGEMENT MODE — Contraste de letras en historial cronologico +
+   titulo de tarjetas de paradas
+════════════════════════════════════════════════════════════════ */
+
+/* Equipment history - vista CRONOLOGICO (.tl-* en <style> block) */
+:root[data-theme="management"] .tl-event {
+    border-bottom-color: var(--sep) !important;
+}
+:root[data-theme="management"] .tl-code {
+    color: var(--label-primary) !important;
+    font-weight: 700;
+}
+:root[data-theme="management"] .tl-date {
+    color: var(--label-secondary) !important;
+}
+:root[data-theme="management"] .tl-type {
+    color: var(--label-secondary) !important;
+}
+:root[data-theme="management"] .tl-desc {
+    color: var(--label-primary) !important;
+}
+:root[data-theme="management"] .tl-line {
+    background: var(--sep) !important;
+}
+:root[data-theme="management"] .tl-badge-status {
+    background: var(--bg-tertiary) !important;
+    color: var(--label-secondary) !important;
+}
+:root[data-theme="management"] .tl-badge-pm {
+    background: rgba(46, 125, 50, 0.12) !important;
+    color: var(--sys-green) !important;
+}
+:root[data-theme="management"] .tl-badge-dur {
+    background: rgba(230, 81, 0, 0.10) !important;
+    color: var(--sys-orange) !important;
+}
+:root[data-theme="management"] .tl-cat-OT          { background: rgba(0, 64, 133, 0.12)  !important; color: var(--sys-blue)   !important; }
+:root[data-theme="management"] .tl-cat-AVISO       { background: rgba(230, 81, 0, 0.12)  !important; color: var(--sys-orange) !important; }
+:root[data-theme="management"] .tl-cat-LUBRICACION { background: rgba(46, 125, 50, 0.12) !important; color: var(--sys-green)  !important; }
+:root[data-theme="management"] .tl-cat-INSPECCION  { background: rgba(94, 53, 177, 0.12) !important; color: var(--sys-purple) !important; }
+:root[data-theme="management"] .tl-cat-MONITOREO   { background: rgba(0, 105, 92, 0.12)  !important; color: var(--sys-teal)   !important; }
+:root[data-theme="management"] .group-table th    { color: var(--label-secondary) !important; border-bottom-color: var(--sep) !important; }
+:root[data-theme="management"] .group-table td    { color: var(--label-primary)   !important; border-bottom-color: var(--sep) !important; }
+
+/* Shutdown card titulo y meta (.shutdown-card .title estaba en
+   #eff6ff = blanco-azulado invisible sobre blanco) */
+:root[data-theme="management"] .shutdown-card {
+    background: var(--bg-primary) !important;
+    border: 1px solid var(--sep) !important;
+}
+:root[data-theme="management"] .shutdown-card .title {
+    color: var(--label-primary) !important;
+    font-weight: 700;
+}
+:root[data-theme="management"] .shutdown-card .meta {
+    color: var(--label-secondary) !important;
+}
+:root[data-theme="management"] .shutdown-card .stats .item strong {
+    color: var(--label-primary) !important;
+}
+:root[data-theme="management"] .shutdown-card:hover {
+    border-color: var(--sys-orange) !important;
+}
+
 /* ────────────────────────────────────────────────────────────────
    THEME TOGGLE BUTTON (injected by sidebar.js)
 ──────────────────────────────────────────────────────────────── */

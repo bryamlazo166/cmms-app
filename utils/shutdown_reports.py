@@ -31,6 +31,10 @@ def build_payload(
         wh_map = {w.id: w for w in WarehouseItem.query.filter(WarehouseItem.id.in_(wh_ids)).all()} if wh_ids else {}
         sp_map = {s.id: s for s in SparePart.query.filter(SparePart.id.in_(sp_ids)).all()} if sp_ids else {}
         for m in all_mats:
+            # Las herramientas se asignan a OTs pero no son repuestos
+            # consumibles - excluir de los reportes de repuestos.
+            if m.item_type == 'tool' or (m.subtype or '').lower() == 'herramienta':
+                continue
             name = m.item_name_free or ''
             code = '-'
             if m.item_type == 'warehouse' and m.item_id in wh_map:
@@ -234,10 +238,19 @@ def generate_pdf(payload):
         story.append(Paragraph(sh.production_requirements.replace('\n', '<br/>'), body_style))
         story.append(Spacer(1, 4 * mm))
 
-    # Detalle OTs (celdas con Paragraph → auto-wrap)
+    # Detalle OTs (celdas con Paragraph → auto-wrap). Despues de cada
+    # OT con repuestos se inserta una sub-fila que abarca todas las
+    # columnas mostrando la lista de repuestos de esa OT.
     story.append(Paragraph("DETALLE DE ÓRDENES DE TRABAJO", section_style))
+    cell_mat = ParagraphStyle(
+        'cellmat', parent=cell_style, fontSize=7, leading=9,
+        textColor=colors.HexColor('#2c5282'),
+    )
     ot_header = ['OT', 'Área', 'Línea', 'Equipo', 'Descripción', 'Tipo', 'Hrs Est.', 'Hrs Real', 'Estado']
     ot_table_data = [ot_header]
+    # Indices de filas que son sub-filas de repuestos (para aplicar SPAN
+    # y un fondo distinto)
+    spare_rows_idx = []
     for r in payload['ot_rows']:
         ot_table_data.append([
             Paragraph(r['code'], cell_bold),
@@ -250,12 +263,24 @@ def generate_pdf(payload):
             f"{r['real_h']}h",
             Paragraph(r['status'] or '-', cell_style),
         ])
+        if r.get('materials'):
+            mat_lines = []
+            for m in r['materials']:
+                code = m.get('code') or '-'
+                name = m.get('name') or '-'
+                qty = m.get('quantity') or '-'
+                unit = m.get('unit') or ''
+                mat_lines.append(f"&bull; <b>{code}</b> · {name} <i>({qty} {unit})</i>")
+            mat_html = "<b>Repuestos:</b> " + "<br/>".join(mat_lines)
+            spare_rows_idx.append(len(ot_table_data))  # indice de la sub-fila
+            ot_table_data.append([Paragraph(mat_html, cell_mat)] + [''] * 8)
+
     ot_table = Table(
         ot_table_data,
         colWidths=[18 * mm, 28 * mm, 30 * mm, 38 * mm, 78 * mm, 20 * mm, 14 * mm, 14 * mm, 22 * mm],
         repeatRows=1,
     )
-    ot_table.setStyle(TableStyle([
+    table_style_cmds = [
         ('BACKGROUND', (0, 0), (-1, 0), colors.HexColor('#0a84ff')),
         ('TEXTCOLOR', (0, 0), (-1, 0), colors.white),
         ('FONT', (0, 0), (-1, 0), 'Helvetica-Bold', 8),
@@ -263,8 +288,13 @@ def generate_pdf(payload):
         ('GRID', (0, 0), (-1, -1), 0.3, colors.HexColor('#cccccc')),
         ('VALIGN', (0, 0), (-1, -1), 'TOP'),
         ('PADDING', (0, 0), (-1, -1), 4),
-        ('ROWBACKGROUNDS', (0, 1), (-1, -1), [colors.white, colors.HexColor('#f5f7fa')]),
-    ]))
+    ]
+    # Aplicar SPAN y fondo claro azulado a las sub-filas de repuestos
+    for ridx in spare_rows_idx:
+        table_style_cmds.append(('SPAN', (0, ridx), (-1, ridx)))
+        table_style_cmds.append(('BACKGROUND', (0, ridx), (-1, ridx), colors.HexColor('#eef5fc')))
+        table_style_cmds.append(('LEFTPADDING', (0, ridx), (-1, ridx), 14))
+    ot_table.setStyle(TableStyle(table_style_cmds))
     story.append(ot_table)
     story.append(Spacer(1, 5 * mm))
 

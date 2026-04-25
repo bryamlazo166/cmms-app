@@ -46,6 +46,39 @@ def _p(txt, style=None):
     return Paragraph(s, style or _cell_style)
 
 
+def _short_date(value):
+    """Convierte una fecha (str ISO YYYY-MM-DD o datetime/date) a 'DD-mmm'
+    en español. Ej: 2026-04-15 -> '15-abr'. Si no se puede parsear,
+    devuelve el valor original o '-'."""
+    if not value:
+        return '-'
+    months_es = ['ene', 'feb', 'mar', 'abr', 'may', 'jun',
+                 'jul', 'ago', 'sep', 'oct', 'nov', 'dic']
+    try:
+        if hasattr(value, 'month') and hasattr(value, 'day'):
+            d = value
+        else:
+            s = str(value)[:10]  # YYYY-MM-DD
+            from datetime import date as _date
+            parts = s.split('-')
+            d = _date(int(parts[0]), int(parts[1]), int(parts[2]))
+        return f"{d.day:02d}-{months_es[d.month - 1]}"
+    except Exception:
+        return str(value)
+
+
+def _short_tech_name(name):
+    """Devuelve 'Primer-nombre Primer-apellido' a partir de un nombre
+    completo. Si recibe None o '-', devuelve '-'."""
+    if not name or name == '-':
+        return '-'
+    parts = str(name).strip().split()
+    if len(parts) <= 2:
+        return ' '.join(parts)
+    # 'Carlos Andres Luque Ccolque' -> 'Carlos Luque'
+    return f"{parts[0]} {parts[2] if len(parts) >= 3 else parts[1]}"
+
+
 def _criticality_color(crit):
     c = (crit or '').lower()
     if c in ('alta', 'emergencia', 'critica'):
@@ -75,25 +108,30 @@ def build_ots_table(ots):
     data = [[_p(h, _cell_bold) for h in headers]]
 
     for i, ot in enumerate(ots, 1):
-        equip = f"[{ot.get('equipment_tag') or '-'}] {ot.get('equipment_name') or '-'}"
+        # Equipo en 2 lineas: [TAG] arriba, nombre del equipo abajo.
+        # Permite reducir el ancho de la columna sin truncar.
+        tag = ot.get('equipment_tag') or '-'
+        eqname = ot.get('equipment_name') or '-'
+        equip_html = f"<b>[{tag}]</b><br/>{eqname}"
         row = [
             _p(str(i)),
             _p(ot.get('code') or '-', _cell_bold),
-            _p(equip),
+            _p(equip_html),
             _p(ot.get('component_name') or '-'),
             _p(ot.get('area_name') or '-'),
             _p(ot.get('maintenance_type') or '-'),
             _p(ot.get('status') or '-'),
             _p(ot.get('priority') or '-'),
-            _p(ot.get('scheduled_date') or '-'),
-            _p(ot.get('technician_name') or ot.get('provider_name') or '-'),
+            _p(_short_date(ot.get('scheduled_date'))),
+            _p(_short_tech_name(ot.get('technician_name') or ot.get('provider_name'))),
             _p(ot.get('description') or '-'),
         ]
         data.append(row)
 
     # Anchos en mm: total ~277 (A4 landscape sin margenes ~277mm)
-    col_widths = [8*mm, 18*mm, 35*mm, 25*mm, 20*mm, 16*mm, 16*mm,
-                  10*mm, 16*mm, 25*mm, 88*mm]
+    # Equipo se reduce gracias al wrap de 2 lineas; descripcion gana espacio.
+    col_widths = [8*mm, 18*mm, 28*mm, 26*mm, 20*mm, 16*mm, 16*mm,
+                  10*mm, 14*mm, 26*mm, 95*mm]
 
     table = Table(data, colWidths=col_widths, repeatRows=1)
     style = TableStyle([
@@ -125,25 +163,27 @@ def build_notices_table(notices):
     data = [[_p(h, _cell_bold) for h in headers]]
 
     for i, n in enumerate(notices, 1):
-        equip = f"[{n.get('equipment_tag') or '-'}] {n.get('equipment_name') or '-'}"
+        tag = n.get('equipment_tag') or '-'
+        eqname = n.get('equipment_name') or '-'
+        equip_html = f"<b>[{tag}]</b><br/>{eqname}"
         row = [
             _p(str(i)),
             _p(n.get('code') or n.get('id_str') or '-', _cell_bold),
-            _p(equip),
+            _p(equip_html),
             _p(n.get('component_name') or '-'),
             _p(n.get('area_name') or '-'),
             _p(n.get('failure_mode') or '-'),
             _p(n.get('blockage_object') or '-'),
             _p(n.get('criticality') or '-'),
             _p(n.get('status') or '-'),
-            _p(n.get('created_date') or '-'),
-            _p(n.get('reporter') or '-'),
+            _p(_short_date(n.get('created_date'))),
+            _p(_short_tech_name(n.get('reporter'))),
             _p(n.get('description') or '-'),
         ]
         data.append(row)
 
-    col_widths = [8*mm, 18*mm, 35*mm, 22*mm, 20*mm, 22*mm, 16*mm,
-                  12*mm, 16*mm, 16*mm, 22*mm, 70*mm]
+    col_widths = [8*mm, 18*mm, 28*mm, 22*mm, 20*mm, 22*mm, 16*mm,
+                  12*mm, 16*mm, 14*mm, 24*mm, 77*mm]
 
     table = Table(data, colWidths=col_widths, repeatRows=1)
     style = TableStyle([
