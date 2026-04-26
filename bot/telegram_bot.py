@@ -1862,6 +1862,40 @@ def _register_lubrication(app, data):
             return None, None, str(e)
 
 
+def _register_lubrication_batch(app, data):
+    """Registra lubricaciones para varios puntos del mismo equipo en un mensaje.
+    data['points']: lista. Cada item puede ser:
+      - string: tratado como point_query (ej: "chumacera motriz THAL-SECA")
+      - dict: campos individuales del punto (point_query|point_code|point_id +
+        quantity_used, comments, etc. que sobreescriben los comunes)
+    Resto de campos en `data` (execution_date, executed_by, ...) son comunes.
+    Retorna (results_dict, err) donde results_dict tiene {'ok': [(code,name)],
+    'fail': [(query, err)]}.
+    """
+    points = data.get('points')
+    if not isinstance(points, list) or not points:
+        return None, "Falta lista 'points' con al menos un elemento."
+    common = {k: v for k, v in data.items() if k != 'points'}
+    ok_list = []
+    fail_list = []
+    for pt in points:
+        if isinstance(pt, str):
+            single = {**common, 'point_query': pt}
+            label = pt
+        elif isinstance(pt, dict):
+            single = {**common, **pt}
+            label = pt.get('point_query') or pt.get('point_code') or str(pt.get('point_id') or pt)
+        else:
+            fail_list.append((str(pt), "tipo invalido"))
+            continue
+        code, pname, err = _register_lubrication(app, single)
+        if code:
+            ok_list.append((code, pname))
+        else:
+            fail_list.append((label, err or "error desconocido"))
+    return {'ok': ok_list, 'fail': fail_list}, None
+
+
 _LUB_EXEC_EDITABLE = {'execution_date', 'executed_by', 'quantity_used', 'quantity_unit',
                       'comments', 'leak_detected', 'anomaly_detected', 'action_type'}
 
@@ -2947,6 +2981,17 @@ Ejemplos:
   * "el viernes lubrico la cadena del percolador #2, Marcos Campos" → {"action":"register_lubrication","data":{"point_query":"cadena percolador 2","execution_date":"<viernes pasado en ISO>","executed_by":"Marcos Campos"}}
   * "ayer FAPMETAL engraso el reductor del D8" → {"action":"register_lubrication","data":{"point_query":"reductor digestor 8","execution_date":"<ayer ISO>","executed_by":"FAPMETAL"}}
 
+7b-bis. REGISTRAR LUBRICACIONES MULTIPLES (LOTE) — cuando el usuario enumera VARIOS componentes lubricados en un solo mensaje, con la misma fecha y ejecutor:
+{"action": "register_lubrication_batch", "data": {"points": ["chumacera conducida THAL-SECA", "chumacera motriz THAL-SECA", "cadena THAL-SECA"], "execution_date": "2026-04-15", "executed_by": "FAPMETAL"}}
+- DETECTOR: frases con LISTAS de componentes separados por coma o "y", todos del MISMO equipo, con UNA SOLA fecha y un solo ejecutor. Ej: "se lubrico la chumacera conducida, chumacera motriz y cadena del TH alimentador al secador 1", "ayer engrasamos cadena y dos chumaceras del molino 1", "FAPMETAL hizo lubricacion de chumacera motriz, conducida y cadena del D8".
+- CADA item de `points` es un point_query INDEPENDIENTE: incluye el componente + el equipo (mismo equipo en todos). Aplica TODAS las reglas de point_query de la seccion 7b (vocabulario CHUMACERA, sinonimos, tag textual del equipo).
+- Campos comunes (execution_date, executed_by, action_type) van fuera de `points` y se aplican a todos. Si un componente tiene una particularidad (ej: cantidad distinta), usa item dict: {"point_query":"cadena TH...", "quantity_used":0.2}.
+- USA esta accion en LUGAR de register_lubrication cuando hay 2+ componentes. NO emitas multiples actions sueltas.
+- Ejemplos:
+  * "el 15-abril se lubrico la chumacera conducida, chumacera motriz y cadena del TH alimentador al secador 1" → {"action":"register_lubrication_batch","data":{"points":["chumacera conducida thal seca","chumacera motriz thal seca","cadena thal seca"],"execution_date":"2026-04-15","executed_by":"MANTENIMIENTO"}}
+  * "ayer FAPMETAL engraso chumacera motriz, conducida y cadena del D8" → {"action":"register_lubrication_batch","data":{"points":["chumacera motriz d8","chumacera conducida d8","cadena d8"],"execution_date":"<ayer ISO>","executed_by":"FAPMETAL"}}
+  * "Marcos Campos lubrico hoy las dos chumaceras del percolador 2" → {"action":"register_lubrication_batch","data":{"points":["chumacera motriz percolador 2","chumacera conducida percolador 2"],"executed_by":"Marcos Campos"}}
+
 7c. EDITAR LUBRICACION (corregir una ejecucion ya registrada):
 {"action": "edit_lubrication", "data": {"exec_id": 123, "fields": {"execution_date": "2026-04-06", "executed_by": "FAPMETAL", "quantity_used": 0.3, "comments": "...", "leak_detected": true}}}
 - Busca el exec_id en ULTIMAS EJECUCIONES DE LUBRICACION del contexto. Identifica cual ejecucion es por el punto + fecha + ejecutor que mencione el usuario.
@@ -3907,6 +3952,29 @@ pasados automaticamente y los usa como referencia. Pregunta cosas como
             _send(chat_id, f"✏️ *OT {code} actualizada*\n{lines}")
         else:
             _send(chat_id, f"❌ {err}")
+        return
+
+    elif action == 'register_lubrication_batch':
+        result, err = _register_lubrication_batch(app, data)
+        if err:
+            _send(chat_id, f"❌ {err}")
+            return
+        ok = result.get('ok', [])
+        fail = result.get('fail', [])
+        ed = data.get('execution_date') or date.today().isoformat()
+        eb = data.get('executed_by') or 'MANTENIMIENTO'
+        lines = [f"📦 *Lubricaciones registradas — lote*",
+                 f"📅 Fecha: {ed}", f"👤 Por: {eb}", ""]
+        if ok:
+            lines.append(f"✅ *Exitosas ({len(ok)}):*")
+            for code, pname in ok:
+                lines.append(f"  • {code} — {pname}")
+        if fail:
+            lines.append("")
+            lines.append(f"❌ *Fallidas ({len(fail)}):*")
+            for label, ferr in fail:
+                lines.append(f"  • {label}: _{(ferr or '')[:120]}_")
+        _send(chat_id, '\n'.join(lines))
         return
 
     elif action == 'register_lubrication':
