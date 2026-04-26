@@ -83,6 +83,35 @@ function getFilteredPoints() {
     }
     return pts;
 }
+const _SEMA_ICON = { VERDE: '🟢', AMARILLO: '🟡', ROJO: '🔴', PENDIENTE: '⚪' };
+function _esc(s) {
+    return String(s == null ? '' : s).replace(/[&<>"']/g, c => (
+        { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]
+    ));
+}
+function _shortName(name, max = 38) {
+    if (!name) return '';
+    const s = String(name).replace(/\s+/g, ' ').trim();
+    return s.length > max ? s.slice(0, max - 1) + '…' : s;
+}
+function _groupKey(p) {
+    const area = p.area_name || 'Sin area';
+    const tag = p.equipment_tag || '';
+    const eqName = p.equipment_name || '';
+    return `[${area}] ${tag}${tag && eqName ? ' — ' : ''}${eqName}`;
+}
+function _optionText(p) {
+    const ico = _SEMA_ICON[p.semaphore_status] || '⚪';
+    // Preferimos componente · sistema; si faltan, caemos al nombre del punto.
+    const comp = p.component_name ? _shortName(p.component_name, 32) : '';
+    const sys = p.system_name ? _shortName(p.system_name, 28) : '';
+    let body;
+    if (comp && sys) body = `${comp} · ${sys}`;
+    else if (comp) body = comp;
+    else body = _shortName(p.name || p.code || '(sin nombre)', 60);
+    const freq = p.frequency_days ? ` (${p.frequency_days}d)` : '';
+    return `${ico} ${body}${freq}`;
+}
 function renderPointSelect() {
     const sel = q('fPoint');
     if (!sel) return;
@@ -96,10 +125,38 @@ function renderPointSelect() {
         sel.innerHTML = '<option value="">Sin coincidencias — ajusta el filtro</option>';
         return;
     }
-    sel.innerHTML = '<option value="">Seleccione punto</option>' + filtered.map(p => {
-        const eq = p.equipment_tag || p.equipment_name || '';
-        return `<option value="${p.id}">${p.code || ''} — ${p.name}${eq ? ' [' + eq + ']' : ''}</option>`;
-    }).join('');
+
+    // Agrupa por equipo (orden: area → tag → equipo)
+    const groups = new Map();
+    filtered.forEach(p => {
+        const k = _groupKey(p);
+        if (!groups.has(k)) groups.set(k, []);
+        groups.get(k).push(p);
+    });
+    const sortedGroups = [...groups.entries()].sort((a, b) =>
+        a[0].localeCompare(b[0], 'es', { sensitivity: 'base' })
+    );
+    const renderOpt = p => {
+        const tip = [p.code, p.lubricant_name, p.last_service_date ? `Ult: ${p.last_service_date}` : null,
+                     p.next_due_date ? `Prox: ${p.next_due_date}` : null]
+                    .filter(Boolean).join(' · ');
+        return `<option value="${p.id}" title="${_esc(tip)}">${_esc(_optionText(p))}</option>`;
+    };
+    let html = '<option value="">Seleccione punto</option>';
+    if (sortedGroups.length === 1) {
+        // Si todo el filtro cae en un solo equipo, omitimos el header (ruido)
+        const [, points] = sortedGroups[0];
+        points.sort((a, b) => (a.component_name || a.name || '').localeCompare(
+            b.component_name || b.name || '', 'es', { sensitivity: 'base' }));
+        html += points.map(renderOpt).join('');
+    } else {
+        for (const [label, points] of sortedGroups) {
+            points.sort((a, b) => (a.component_name || a.name || '').localeCompare(
+                b.component_name || b.name || '', 'es', { sensitivity: 'base' }));
+            html += `<optgroup label="${_esc(label)}">${points.map(renderOpt).join('')}</optgroup>`;
+        }
+    }
+    sel.innerHTML = html;
     if (filtered.length === 1) sel.value = String(filtered[0].id);
 }
 function refreshPointSelect() { renderPointSelect(); }

@@ -1021,9 +1021,11 @@ _COMPONENT_SYNONYMS = {
     'motorreductor': ['motorreductor', 'motor reductor', 'mtr-red', 'mtrred'],
     'reductor': ['reductor', 'caja reductora', 'red', 'gearbox'],
     'caja reductora': ['caja reductora', 'reductor', 'red'],
-    'chumacera motriz': ['chumacera motriz', 'chumacera lado motriz', 'chum motriz', 'chumacera mot'],
-    'chumacera conducida': ['chumacera conducida', 'chumacera lado conducido', 'chum conducida', 'chumacera con'],
-    'chumacera': ['chumacera', 'chum'],
+    'chumacera motriz': ['chumacera motriz', 'chumacera lado motriz', 'chum motriz', 'chumacera mot',
+                         'rodamiento motriz', 'cojinete motriz', 'soporte motriz'],
+    'chumacera conducida': ['chumacera conducida', 'chumacera lado conducido', 'chum conducida', 'chumacera con',
+                            'rodamiento conducido', 'cojinete conducido', 'soporte conducido'],
+    'chumacera': ['chumacera', 'chum', 'rodamiento', 'cojinete', 'soporte de rodamiento'],
     'faja': ['faja', 'banda', 'correa'],
     'cadena': ['cadena'],
     'rodamiento': ['rodamiento', 'cojinete', 'balinera', 'bearing'],
@@ -1681,6 +1683,114 @@ def _edit_notice(app, data):
             return None, None, str(e)
 
 
+def _resolve_lub_point_fuzzy(_db, text, point_query):
+    """Encuentra el mejor punto de lubricacion para un query libre.
+    Estrategia en cascada:
+      1) AND-strict con tokens + sinonimos.
+      2) Si nada o ambiguo, OR-scoring: trae todos los puntos donde matchee
+         al menos un token; rankea por cuantos matchearon; gana si margen >= 1.
+      3) Si aun ambiguo, devuelve mensaje listando top 3 sugerencias.
+    Retorna (row6tuple|None, err_msg|None).
+    """
+    tokens = _fuzzy_tokens(point_query)
+    if not tokens:
+        return None, None
+
+    cols = ['lp.name', 'lp.code', 'e.name', 'e.tag']
+    select_cols = ("lp.id, lp.code, lp.name, lp.frequency_days, lp.warning_days, "
+                   "lp.quantity_unit, e.tag, e.name")
+    base = (f"SELECT {select_cols} FROM lubrication_points lp "
+            "LEFT JOIN equipments e ON lp.equipment_id = e.id WHERE lp.is_active = true")
+
+    # ── Paso 1: AND-strict ──────────────────────────────────────────────
+    params = {}
+    where_extra = _build_fuzzy_where(tokens, cols, params)
+    sql = base + (" AND " + where_extra if where_extra else "") + " ORDER BY lp.code LIMIT 50"
+    rows = _db.session.execute(text(sql), params).fetchall()
+
+    def blob_fn(r):
+        return f"{r[1] or ''} {r[2] or ''} {r[6] or ''} {r[7] or ''}"
+
+    def pick_best(rows):
+        if not rows:
+            return None, None
+        if len(rows) == 1:
+            return rows[0][:6], None
+
+        def alts_for(t):
+            alts = {t}
+            for key, syns in _COMPONENT_SYNONYMS.items():
+                if t in key or any(t in y for y in syns):
+                    alts.update(syns); alts.add(key)
+            return alts
+
+        # Score ponderado: tag exacto > tag substring > code > name. Asi un query
+        # "chumacera motriz th2" prefiere LUB-TH2-CHM-MOT (tag exacto "TH2") sobre
+        # LUB-TH2A-SECA-CHM-MOT (tag contiene "TH2" pero no es exacto).
+        def score_row(r):
+            code = (r[1] or '').lower()
+            name = (r[2] or '').lower()
+            tag = (r[6] or '').lower()
+            eq_name = (r[7] or '').lower()
+            s = 0
+            for t in tokens:
+                t_alts = alts_for(t)
+                w = 0
+                if any(a == tag for a in t_alts): w = max(w, 4)
+                elif any(a in tag for a in t_alts): w = max(w, 3)
+                if any(a in code for a in t_alts): w = max(w, 2)
+                if any(a in name or a in eq_name for a in t_alts): w = max(w, 1)
+                s += w
+            return s
+
+        # Desempate: a igual score, el codigo mas corto (mas especifico) gana
+        scored = sorted(
+            [(score_row(r), -len(r[1] or ''), r) for r in rows],
+            key=lambda x: (x[0], x[1]), reverse=True
+        )
+        scored = [(s, r) for s, _ln, r in scored]
+        if scored[0][0] == 0:
+            return None, None
+        if len(scored) == 1 or scored[0][0] > scored[1][0]:
+            return scored[0][1][:6], None
+        return None, scored
+
+    best, _scored = pick_best(rows)
+    if best is not None:
+        return best, None
+
+    # ── Paso 2: OR-scoring sobre candidatos amplios ─────────────────────
+    or_params = {}
+    or_subs = []
+    for i, t in enumerate(tokens):
+        alts = {t}
+        for key, syns in _COMPONENT_SYNONYMS.items():
+            if t in key or any(t in y for y in syns):
+                alts.update(syns); alts.add(key)
+        for j, a in enumerate(alts):
+            k = f"or{i}_{j}"
+            or_params[k] = f"%{a}%"
+            or_subs.append(f"(lp.name ILIKE :{k} OR lp.code ILIKE :{k} "
+                           f"OR e.name ILIKE :{k} OR e.tag ILIKE :{k})")
+    if or_subs:
+        sql = base + " AND (" + " OR ".join(or_subs) + ") ORDER BY lp.code LIMIT 200"
+        or_rows = _db.session.execute(text(sql), or_params).fetchall()
+        best, scored = pick_best(or_rows)
+        if best is not None:
+            return best, None
+        # Construye mensaje con sugerencias top 3
+        if scored:
+            top = [r for s, r in scored if s > 0][:3]
+            if top:
+                opts = '; '.join(
+                    f"{r[1] or r[0]}: {r[2]} [{r[6] or '-'}]" for r in top
+                )
+                return None, (f"No identifico univocamente '{point_query}'. "
+                              f"¿Cual de estos es?: {opts}")
+
+    return None, None
+
+
 def _register_lubrication(app, data):
     """Register a lubrication execution for a point. Replicates POST /api/lubrication/executions."""
     with app.app_context():
@@ -1705,86 +1815,9 @@ def _register_lubrication(app, data):
                     FROM lubrication_points WHERE code = :c AND is_active = true
                 """), {"c": point_code}).fetchone()
             elif point_query:
-                # Token-based matcher: split query in tokens y exige que TODOS aparezcan
-                # en la concatenacion code+name+equipo (ILIKE AND). Tolera orden libre y
-                # nombres tipo "chumacera motriz percolador 2".
-                import re as _re
-                # Mantiene tokens de >=2 chars + cualquier digito suelto (para "PER2" vs "PER1")
-                _stop = {'el', 'la', 'los', 'las', 'del', 'de', 'al', 'un', 'una', 'lo', 'que'}
-                tokens = []
-                for t in _re.split(r"[\s,;/#-]+", point_query.lower()):
-                    if not t or t in _stop:
-                        continue
-                    if len(t) >= 2 or t.isdigit():
-                        tokens.append(t)
-                # Expande sinonimos comunes para componentes
-                expanded_alts = []
-                for t in tokens:
-                    alts = {t}
-                    for key, syns in _COMPONENT_SYNONYMS.items():
-                        if t in key or any(t in s for s in syns):
-                            alts.update(syns)
-                            alts.add(key)
-                    expanded_alts.append(alts)
-
-                base_sql = """
-                    SELECT lp.id, lp.code, lp.name, lp.frequency_days, lp.warning_days, lp.quantity_unit,
-                           e.tag, e.name
-                    FROM lubrication_points lp
-                    LEFT JOIN equipments e ON lp.equipment_id = e.id
-                    WHERE lp.is_active = true
-                """
-                where_parts, params = [], {}
-                for i, alts in enumerate(expanded_alts):
-                    sub_or = []
-                    for j, a in enumerate(alts):
-                        k = f"t{i}_{j}"
-                        params[k] = f"%{a}%"
-                        sub_or.append(
-                            f"(lp.name ILIKE :{k} OR lp.code ILIKE :{k} "
-                            f"OR e.name ILIKE :{k} OR e.tag ILIKE :{k})"
-                        )
-                    if sub_or:
-                        where_parts.append("(" + " OR ".join(sub_or) + ")")
-                if where_parts:
-                    base_sql += " AND " + " AND ".join(where_parts)
-                base_sql += " ORDER BY lp.code LIMIT 8"
-                rows = _db.session.execute(text(base_sql), params).fetchall()
-
-                # Fallback: si no encontro nada, intenta el ILIKE tradicional
-                if not rows:
-                    q = f"%{point_query}%"
-                    rows = _db.session.execute(text("""
-                        SELECT lp.id, lp.code, lp.name, lp.frequency_days, lp.warning_days, lp.quantity_unit,
-                               e.tag, e.name
-                        FROM lubrication_points lp
-                        LEFT JOIN equipments e ON lp.equipment_id = e.id
-                        WHERE lp.is_active = true AND (
-                            lp.name ILIKE :q OR lp.code ILIKE :q OR e.name ILIKE :q OR e.tag ILIKE :q
-                        )
-                        LIMIT 8
-                    """), {"q": q}).fetchall()
-
-                if len(rows) == 1:
-                    row = rows[0][:6]
-                elif len(rows) > 1:
-                    # Intenta desambiguar por mejor solapamiento de tokens normalizados
-                    user_norm = {_normalize_token(t) for t in tokens}
-                    scored = []
-                    for r in rows:
-                        text_blob = f"{r[1] or ''} {r[2] or ''} {r[6] or ''} {r[7] or ''}".lower()
-                        cand_norm = {
-                            _normalize_token(t)
-                            for t in _re.split(r"[\s,;/#-]+", text_blob)
-                            if t and (len(t) >= 2 or t.isdigit())
-                        }
-                        scored.append((len(user_norm & cand_norm), r))
-                    scored.sort(key=lambda x: x[0], reverse=True)
-                    if scored[0][0] > 0 and (len(scored) == 1 or scored[0][0] > scored[1][0]):
-                        row = scored[0][1][:6]
-                    else:
-                        options = '; '.join(f"{r[1] or r[0]}: {r[2]} [{r[6] or '-'}]" for r in rows[:5])
-                        return None, None, f"Varios puntos coinciden con '{point_query}'. Aclara cual: {options}"
+                row, err_msg = _resolve_lub_point_fuzzy(_db, text, point_query)
+                if not row and err_msg:
+                    return None, None, err_msg
 
             if not row:
                 return None, None, f"Punto de lubricacion no encontrado para '{point_query or point_code or point_id}'. Verifica nombre/equipo o pasa el codigo (ej: LUB-D8-CHM-MOT)."
@@ -2898,7 +2931,10 @@ Ejemplos:
 7b. REGISTRAR LUBRICACION (cuando el usuario reporta que se lubrico un punto POR PRIMERA VEZ):
 {"action": "register_lubrication", "data": {"point_query": "chumacera motriz percolador 2", "execution_date": "2026-03-30", "executed_by": "Marcos Campos", "quantity_used": 0.5, "comments": "opcional", "leak_detected": false, "anomaly_detected": false}}
 - DETECTOR: frases tipo "se lubrico X", "lubrico X", "engrasamos X", "le pusimos grasa al X", "se le hizo lubricacion al X" SIEMPRE son register_lubrication. NO son create_notice ni consulta.
-- Para identificar el punto usa SIEMPRE `point_query` con texto descriptivo libre que incluya el componente y el equipo (ej: "chumacera motriz percolador 2", "cadena percolador 2", "reductor digestor 8"). El sistema parte el texto en tokens, aplica sinonimos (chumacera motriz/conducida, cadena/banda, reductor/caja reductora, etc) y exige que TODOS aparezcan — asi tolera orden y palabras intermedias.
+- Para identificar el punto usa SIEMPRE `point_query` con texto descriptivo libre que incluya el componente y el equipo. El sistema parte el texto en tokens, aplica sinonimos y rankea por mejor coincidencia — asi tolera orden libre, palabras intermedias y tokens extras.
+- IMPORTANTE — VOCABULARIO de los puntos de lubricacion: en este CMMS los puntos se llaman SIEMPRE "CHUMACERA" (no "rodamiento" ni "cojinete"). Cuando el usuario diga "rodamiento motriz X" → emite point_query "chumacera motriz X". Cuando diga "cojinete X" → "chumacera X". El rodamiento vive DENTRO de la chumacera; el punto de lubricacion se nombra por la chumacera.
+- IMPORTANTE — NOMBRES DE EQUIPOS: revisa la seccion PUNTOS DE LUBRICACION del contexto antes de armar point_query. Los equipos a veces tienen nombres especiales (ej: "TH2 ALIMENTADOR ENFRIADOR" se llama TH2A-SECA en tag, NO "secador 2"). Si el usuario dice "th2 alimentador secador 2" o "alimentador al secador 2", busca en la lista cual equipo encaja realmente y usa esos terminos en point_query (ej: "chumacera motriz th2a seca" o solo "chumacera motriz th2a"). Si no encuentras un equipo claro, usa el codigo TAG textualmente.
+- Mantra: NO inventes palabras que no esten en la lista de puntos. Si dudas entre dos formas, elige la mas corta y especifica (codigo o tag del equipo).
 - Solo usa `point_id` si en el contexto ves explicitamente el punto correcto con `id:NN` y estas 100% seguro. Si dudas, usa point_query — es mas robusto.
 - Solo usa `point_code` si el usuario menciona un codigo exacto tipo "LUB-D8-CHM-MOT".
 - execution_date: convierte fechas relativas ("ayer", "hoy", "el viernes pasado") o textuales ("24-abril", "30 de marzo") a formato ISO YYYY-MM-DD. Si dicen hora, ignorala. Hoy es """ + date.today().isoformat() + """. "24-abril" → 2026-04-24. "el viernes" → viernes pasado en ISO.
