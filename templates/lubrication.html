@@ -91,9 +91,15 @@
                 <div><label>Fecha ejecucion</label><input id="fExecDate" type="date"></div>
                 <div><label>Ejecutado por</label><input id="fBy" type="text" placeholder="Tecnico"></div>
                 <div><label>Cantidad</label><input id="fQty" type="number" step="0.1" min="0"></div>
-                <div><label>Selecciona punto</label><select id="fPoint"></select></div>
+                <div>
+                    <label>Buscar punto <span id="fPointCount" style="color:#666;font-weight:normal;font-size:11px;"></span></label>
+                    <input id="fPointSearch" type="search" placeholder="Ej: chum motriz per 2" autocomplete="off">
+                </div>
                 <div><label>Anomalia</label><select id="fAnom"><option value="0">No</option><option value="1">Si</option></select></div>
                 <div><label>&nbsp;</label><button class="btn secondary" id="btnExec" data-perm="lubricacion.create">Registrar Ejecucion</button></div>
+            </div>
+            <div class="toolbar" style="grid-template-columns:1fr;margin-top:4px;">
+                <div><select id="fPoint" size="1"></select></div>
             </div>
         </div>
 

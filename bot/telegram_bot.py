@@ -1018,23 +1018,106 @@ def _build_cmms_context_real(app):
 _COMPONENT_SYNONYMS = {
     'motor': ['motor electrico', 'motor', 'mtr'],
     'motor electrico': ['motor electrico', 'motor', 'mtr'],
-    'motorreductor': ['motorreductor', 'motor reductor', 'mtr-red'],
-    'reductor': ['reductor', 'caja reductora', 'red'],
+    'motorreductor': ['motorreductor', 'motor reductor', 'mtr-red', 'mtrred'],
+    'reductor': ['reductor', 'caja reductora', 'red', 'gearbox'],
     'caja reductora': ['caja reductora', 'reductor', 'red'],
-    'chumacera motriz': ['chumacera motriz', 'chumacera lado motriz', 'chum motriz'],
-    'chumacera conducida': ['chumacera conducida', 'chumacera lado conducido', 'chum conducida'],
-    'chumacera': ['chumacera'],
+    'chumacera motriz': ['chumacera motriz', 'chumacera lado motriz', 'chum motriz', 'chumacera mot'],
+    'chumacera conducida': ['chumacera conducida', 'chumacera lado conducido', 'chum conducida', 'chumacera con'],
+    'chumacera': ['chumacera', 'chum'],
     'faja': ['faja', 'banda', 'correa'],
     'cadena': ['cadena'],
-    'rodamiento': ['rodamiento', 'cojinete', 'balinera'],
-    'valvula': ['valvula', 'vavula'],
-    'sello': ['sello', 'reten', 'oring'],
-    'acople': ['acople', 'acoplamiento', 'copla'],
-    'pinon': ['pinon', 'piñon', 'engranaje'],
-    'eje': ['eje', 'flecha'],
-    'rodillo': ['rodillo', 'polin'],
-    'transportador': ['transportador', 'faja transportadora'],
+    'rodamiento': ['rodamiento', 'cojinete', 'balinera', 'bearing'],
+    'valvula': ['valvula', 'vavula', 'valve'],
+    'sello': ['sello', 'reten', 'oring', 'o-ring', 'retentor'],
+    'acople': ['acople', 'acoplamiento', 'copla', 'coupling'],
+    'pinon': ['pinon', 'piñon', 'engranaje', 'gear'],
+    'eje': ['eje', 'flecha', 'shaft'],
+    'rodillo': ['rodillo', 'polin', 'roller'],
+    'transportador': ['transportador', 'faja transportadora', 'banda transportadora', 'conveyor'],
+    'bomba': ['bomba', 'pump', 'bba'],
+    'compresor': ['compresor', 'compressor'],
+    'ventilador': ['ventilador', 'fan', 'soplador', 'extractor', 'blower'],
+    'tablero': ['tablero', 'tablero electrico', 'panel electrico', 'gabinete'],
+    'variador': ['variador', 'variador de frecuencia', 'vfd', 'inverter', 'drive'],
+    'sensor': ['sensor', 'transductor', 'detector'],
+    'manguera': ['manguera', 'manguera hidraulica', 'flexible'],
+    'tuberia': ['tuberia', 'pipe', 'cañeria', 'caneria'],
+    'filtro': ['filtro', 'filter'],
+    'piston': ['piston', 'cilindro'],
+    'tornillo': ['tornillo', 'perno', 'bolt'],
+    'tolva': ['tolva', 'hopper'],
+    'tripode': ['tripode', 'trípode'],
+    'molino': ['molino', 'mill'],
+    'percolador': ['percolador'],
+    'digestor': ['digestor', 'digester'],
+    'hidrolavadora': ['hidrolavadora', 'hidro lavadora'],
 }
+
+
+_FUZZY_STOPWORDS = {
+    'el', 'la', 'los', 'las', 'del', 'de', 'al', 'un', 'una', 'lo', 'que',
+    'y', 'o', 'en', 'con', 'sin', 'por', 'para', 'su', 'se', 'es',
+}
+
+
+def _fuzzy_tokens(query):
+    """Tokeniza una consulta libre: descarta stopwords y tokens cortos no numericos."""
+    import re as _re
+    if not query:
+        return []
+    out = []
+    for t in _re.split(r"[\s,;/#-]+", str(query).lower()):
+        if not t or t in _FUZZY_STOPWORDS:
+            continue
+        if len(t) >= 2 or t.isdigit():
+            out.append(t)
+    return out
+
+
+def _build_fuzzy_where(tokens, columns, params, prefix='ft'):
+    """Construye una clausula WHERE que exige que TODOS los tokens aparezcan
+    (con sinonimos expandidos) en al menos una de las columnas dadas. Muta `params`.
+    Retorna el SQL del AND-clause (vacio si no hay tokens).
+    """
+    if not tokens:
+        return ''
+    where_parts = []
+    for i, t in enumerate(tokens):
+        alts = {t}
+        for key, syns in _COMPONENT_SYNONYMS.items():
+            if t in key or any(t in s for s in syns):
+                alts.update(syns)
+                alts.add(key)
+        sub_or = []
+        for j, a in enumerate(alts):
+            k = f"{prefix}{i}_{j}"
+            params[k] = f"%{a}%"
+            cols = ' OR '.join(f"{c} ILIKE :{k}" for c in columns)
+            sub_or.append(f"({cols})")
+        if sub_or:
+            where_parts.append("(" + " OR ".join(sub_or) + ")")
+    return ' AND '.join(where_parts)
+
+
+def _score_fuzzy_candidates(tokens, candidates, blob_fn):
+    """Puntua candidatos por solapamiento de tokens normalizados. Retorna (best, second_score)."""
+    import re as _re
+    user_norm = {_normalize_token(t) for t in tokens}
+    scored = []
+    for cand in candidates:
+        text_blob = (blob_fn(cand) or '').lower()
+        cand_norm = {
+            _normalize_token(t)
+            for t in _re.split(r"[\s,;/#-]+", text_blob)
+            if t and (len(t) >= 2 or t.isdigit())
+        }
+        scored.append((len(user_norm & cand_norm), cand))
+    scored.sort(key=lambda x: x[0], reverse=True)
+    if not scored:
+        return None, 0
+    best = scored[0]
+    second = scored[1][0] if len(scored) > 1 else 0
+    return best[1] if best[0] > 0 else None, second
 
 
 def _normalize_token(t):
@@ -1622,25 +1705,89 @@ def _register_lubrication(app, data):
                     FROM lubrication_points WHERE code = :c AND is_active = true
                 """), {"c": point_code}).fetchone()
             elif point_query:
-                # Loose ILIKE match across name + code
-                q = f"%{point_query}%"
-                rows = _db.session.execute(text("""
-                    SELECT lp.id, lp.code, lp.name, lp.frequency_days, lp.warning_days, lp.quantity_unit
+                # Token-based matcher: split query in tokens y exige que TODOS aparezcan
+                # en la concatenacion code+name+equipo (ILIKE AND). Tolera orden libre y
+                # nombres tipo "chumacera motriz percolador 2".
+                import re as _re
+                # Mantiene tokens de >=2 chars + cualquier digito suelto (para "PER2" vs "PER1")
+                _stop = {'el', 'la', 'los', 'las', 'del', 'de', 'al', 'un', 'una', 'lo', 'que'}
+                tokens = []
+                for t in _re.split(r"[\s,;/#-]+", point_query.lower()):
+                    if not t or t in _stop:
+                        continue
+                    if len(t) >= 2 or t.isdigit():
+                        tokens.append(t)
+                # Expande sinonimos comunes para componentes
+                expanded_alts = []
+                for t in tokens:
+                    alts = {t}
+                    for key, syns in _COMPONENT_SYNONYMS.items():
+                        if t in key or any(t in s for s in syns):
+                            alts.update(syns)
+                            alts.add(key)
+                    expanded_alts.append(alts)
+
+                base_sql = """
+                    SELECT lp.id, lp.code, lp.name, lp.frequency_days, lp.warning_days, lp.quantity_unit,
+                           e.tag, e.name
                     FROM lubrication_points lp
                     LEFT JOIN equipments e ON lp.equipment_id = e.id
-                    WHERE lp.is_active = true AND (
-                        lp.name ILIKE :q OR lp.code ILIKE :q OR e.name ILIKE :q OR e.tag ILIKE :q
-                    )
-                    LIMIT 5
-                """), {"q": q}).fetchall()
+                    WHERE lp.is_active = true
+                """
+                where_parts, params = [], {}
+                for i, alts in enumerate(expanded_alts):
+                    sub_or = []
+                    for j, a in enumerate(alts):
+                        k = f"t{i}_{j}"
+                        params[k] = f"%{a}%"
+                        sub_or.append(
+                            f"(lp.name ILIKE :{k} OR lp.code ILIKE :{k} "
+                            f"OR e.name ILIKE :{k} OR e.tag ILIKE :{k})"
+                        )
+                    if sub_or:
+                        where_parts.append("(" + " OR ".join(sub_or) + ")")
+                if where_parts:
+                    base_sql += " AND " + " AND ".join(where_parts)
+                base_sql += " ORDER BY lp.code LIMIT 8"
+                rows = _db.session.execute(text(base_sql), params).fetchall()
+
+                # Fallback: si no encontro nada, intenta el ILIKE tradicional
+                if not rows:
+                    q = f"%{point_query}%"
+                    rows = _db.session.execute(text("""
+                        SELECT lp.id, lp.code, lp.name, lp.frequency_days, lp.warning_days, lp.quantity_unit,
+                               e.tag, e.name
+                        FROM lubrication_points lp
+                        LEFT JOIN equipments e ON lp.equipment_id = e.id
+                        WHERE lp.is_active = true AND (
+                            lp.name ILIKE :q OR lp.code ILIKE :q OR e.name ILIKE :q OR e.tag ILIKE :q
+                        )
+                        LIMIT 8
+                    """), {"q": q}).fetchall()
+
                 if len(rows) == 1:
-                    row = rows[0]
+                    row = rows[0][:6]
                 elif len(rows) > 1:
-                    options = ', '.join(f"{r[1] or r[0]} ({r[2]})" for r in rows)
-                    return None, None, f"Varios puntos coinciden con '{point_query}': {options}. Especifica el codigo."
+                    # Intenta desambiguar por mejor solapamiento de tokens normalizados
+                    user_norm = {_normalize_token(t) for t in tokens}
+                    scored = []
+                    for r in rows:
+                        text_blob = f"{r[1] or ''} {r[2] or ''} {r[6] or ''} {r[7] or ''}".lower()
+                        cand_norm = {
+                            _normalize_token(t)
+                            for t in _re.split(r"[\s,;/#-]+", text_blob)
+                            if t and (len(t) >= 2 or t.isdigit())
+                        }
+                        scored.append((len(user_norm & cand_norm), r))
+                    scored.sort(key=lambda x: x[0], reverse=True)
+                    if scored[0][0] > 0 and (len(scored) == 1 or scored[0][0] > scored[1][0]):
+                        row = scored[0][1][:6]
+                    else:
+                        options = '; '.join(f"{r[1] or r[0]}: {r[2]} [{r[6] or '-'}]" for r in rows[:5])
+                        return None, None, f"Varios puntos coinciden con '{point_query}'. Aclara cual: {options}"
 
             if not row:
-                return None, None, "Punto de lubricacion no encontrado. Especifica point_id, point_code o point_query mas claro."
+                return None, None, f"Punto de lubricacion no encontrado para '{point_query or point_code or point_id}'. Verifica nombre/equipo o pasa el codigo (ej: LUB-D8-CHM-MOT)."
 
             pid, pcode, pname, freq_days, warn_days, qty_unit = row
 
@@ -1781,6 +1928,139 @@ def _delete_lubrication(app, data):
             return None, None, str(e)
 
 
+def _replicate_specs(app, data):
+    """Replica las specs (tecnicas) de un componente o equipo a otro.
+    data esperado:
+      - source_equipment_tag, source_component_name (para entity_type='component')
+        o solo source_equipment_tag (para entity_type='equipment')
+      - target_equipment_tag, target_component_name (idem destino)
+      - mode: 'merge' (default) | 'replace'
+      - overwrite: bool (solo aplica con merge)
+      - entity_type: 'component' (default) | 'equipment'
+    Devuelve (resumen_str, error_str|None).
+    """
+    with app.app_context():
+        from database import db as _db
+        from sqlalchemy import text
+        try:
+            entity_type = (data.get('entity_type') or 'component').lower()
+            if entity_type not in ('component', 'equipment'):
+                return None, "entity_type debe ser 'component' o 'equipment'"
+            mode = (data.get('mode') or 'merge').lower()
+            if mode not in ('merge', 'replace'):
+                return None, "mode debe ser 'merge' o 'replace'"
+            overwrite = bool(data.get('overwrite', False))
+
+            def resolve(prefix):
+                tag = (data.get(f'{prefix}_equipment_tag') or '').strip()
+                comp_name = (data.get(f'{prefix}_component_name') or '').strip()
+                eq_id = comp_id = None
+                if tag:
+                    r = _db.session.execute(
+                        text("SELECT id FROM equipments WHERE tag = :t"), {"t": tag}
+                    ).fetchone()
+                    if r:
+                        eq_id = r[0]
+                if not eq_id and data.get(f'{prefix}_equipment_name'):
+                    r = _db.session.execute(
+                        text("SELECT id FROM equipments WHERE LOWER(name) LIKE :n LIMIT 1"),
+                        {"n": f"%{data[f'{prefix}_equipment_name'].lower()}%"}
+                    ).fetchone()
+                    if r:
+                        eq_id = r[0]
+                if eq_id and comp_name and entity_type == 'component':
+                    res = _smart_component_match(_db, text, eq_id, comp_name)
+                    if res:
+                        comp_id = res[0]
+                return eq_id, comp_id
+
+            src_eq, src_comp = resolve('source')
+            tgt_eq, tgt_comp = resolve('target')
+
+            if entity_type == 'component':
+                if not src_comp:
+                    return None, f"No encontre el componente origen ({data.get('source_component_name')} en {data.get('source_equipment_tag')})"
+                if not tgt_comp:
+                    return None, f"No encontre el componente destino ({data.get('target_component_name')} en {data.get('target_equipment_tag')})"
+                if src_comp == tgt_comp:
+                    return None, "Origen y destino son el mismo componente"
+                source_id, target_id = src_comp, tgt_comp
+                table = 'component_specs'
+                fk = 'component_id'
+                # Nombres legibles para el resumen
+                names = _db.session.execute(text("""
+                    SELECT c.id, e.tag, c.name FROM components c
+                    JOIN systems s ON c.system_id = s.id
+                    JOIN equipments e ON s.equipment_id = e.id
+                    WHERE c.id IN (:s, :t)
+                """), {"s": source_id, "t": target_id}).fetchall()
+                name_map = {r[0]: f"{r[1]}/{r[2]}" for r in names}
+                src_label = name_map.get(source_id, str(source_id))
+                tgt_label = name_map.get(target_id, str(target_id))
+            else:
+                if not src_eq or not tgt_eq:
+                    return None, "Faltan source_equipment_tag y/o target_equipment_tag"
+                if src_eq == tgt_eq:
+                    return None, "Origen y destino son el mismo equipo"
+                source_id, target_id = src_eq, tgt_eq
+                table = 'equipment_specs'
+                fk = 'equipment_id'
+                tags = _db.session.execute(
+                    text("SELECT id, tag FROM equipments WHERE id IN (:s, :t)"),
+                    {"s": source_id, "t": target_id}
+                ).fetchall()
+                tmap = {r[0]: r[1] for r in tags}
+                src_label = tmap.get(source_id, str(source_id))
+                tgt_label = tmap.get(target_id, str(target_id))
+
+            src_specs = _db.session.execute(text(f"""
+                SELECT id, key_name, value_text, unit, order_index
+                FROM {table} WHERE {fk} = :id ORDER BY order_index
+            """), {"id": source_id}).fetchall()
+            if not src_specs:
+                return None, f"El origen {src_label} no tiene specs cargadas"
+
+            if mode == 'replace':
+                _db.session.execute(text(f"DELETE FROM {table} WHERE {fk} = :id"), {"id": target_id})
+
+            existing_rows = _db.session.execute(text(f"""
+                SELECT id, key_name, order_index FROM {table} WHERE {fk} = :id
+            """), {"id": target_id}).fetchall()
+            existing = {r[1].strip().lower(): r[0] for r in existing_rows}
+            max_order = max((r[2] for r in existing_rows), default=0)
+
+            copied = overwritten = skipped = 0
+            for s in src_specs:
+                key_norm = s[1].strip().lower()
+                if key_norm in existing:
+                    if mode == 'merge' and overwrite:
+                        _db.session.execute(text(f"""
+                            UPDATE {table} SET value_text = :v, unit = :u WHERE id = :id
+                        """), {"v": s[2], "u": s[3], "id": existing[key_norm]})
+                        overwritten += 1
+                    else:
+                        skipped += 1
+                    continue
+                max_order += 1
+                _db.session.execute(text(f"""
+                    INSERT INTO {table} ({fk}, key_name, value_text, unit, order_index)
+                    VALUES (:id, :k, :v, :u, :o)
+                """), {"id": target_id, "k": s[1], "v": s[2], "u": s[3], "o": max_order})
+                copied += 1
+
+            _db.session.commit()
+            _db.session.remove()
+            summary = (f"{src_label} → {tgt_label}\n"
+                       f"📋 Copiadas: {copied} | "
+                       f"✏️ Sobreescritas: {overwritten} | "
+                       f"⏭️ Omitidas: {skipped} (de {len(src_specs)} en origen)")
+            return summary, None
+        except Exception as e:
+            _db.session.rollback()
+            _db.session.remove()
+            return None, str(e)
+
+
 def _register_inspection(app, data):
     """Register an inspection execution (high-level: OK / CON_HALLAZGOS).
     Mirror of _register_lubrication. Auto-creates a notice if findings>0."""
@@ -1809,25 +2089,55 @@ def _register_inspection(app, data):
                     WHERE ir.code = :c AND ir.is_active = true
                 """), {"c": route_code}).fetchone()
             elif route_query:
-                q = f"%{route_query}%"
-                rows = _db.session.execute(text("""
+                tokens = _fuzzy_tokens(route_query)
+                cols = ['ir.name', 'ir.code', 'e.name', 'e.tag']
+                params = {}
+                where_extra = _build_fuzzy_where(tokens, cols, params)
+                base_sql = """
                     SELECT ir.id, ir.code, ir.name, ir.frequency_days, ir.warning_days,
-                           ir.area_id, ir.line_id, ir.equipment_id
+                           ir.area_id, ir.line_id, ir.equipment_id, e.tag, e.name
                     FROM inspection_routes ir
                     LEFT JOIN equipments e ON ir.equipment_id = e.id
-                    WHERE ir.is_active = true AND (
-                        ir.name ILIKE :q OR ir.code ILIKE :q OR e.name ILIKE :q OR e.tag ILIKE :q
-                    )
-                    LIMIT 5
-                """), {"q": q}).fetchall()
+                    WHERE ir.is_active = true
+                """
+                if where_extra:
+                    base_sql += " AND " + where_extra
+                base_sql += " ORDER BY ir.code LIMIT 8"
+                rows = _db.session.execute(text(base_sql), params).fetchall()
+
+                # Fallback ILIKE tradicional
+                if not rows:
+                    q_like = f"%{route_query}%"
+                    rows = _db.session.execute(text("""
+                        SELECT ir.id, ir.code, ir.name, ir.frequency_days, ir.warning_days,
+                               ir.area_id, ir.line_id, ir.equipment_id, e.tag, e.name
+                        FROM inspection_routes ir
+                        LEFT JOIN equipments e ON ir.equipment_id = e.id
+                        WHERE ir.is_active = true AND (
+                            ir.name ILIKE :q OR ir.code ILIKE :q OR e.name ILIKE :q OR e.tag ILIKE :q
+                        )
+                        LIMIT 8
+                    """), {"q": q_like}).fetchall()
+
                 if len(rows) == 1:
-                    row = rows[0]
+                    row = rows[0][:8]
                 elif len(rows) > 1:
-                    options = ', '.join(f"{r[1] or r[0]} ({r[2]})" for r in rows)
-                    return None, None, None, f"Varias rutas coinciden con '{route_query}': {options}. Especifica el codigo."
+                    best, second = _score_fuzzy_candidates(
+                        tokens, rows,
+                        lambda r: f"{r[1] or ''} {r[2] or ''} {r[8] or ''} {r[9] or ''}"
+                    )
+                    if best is not None:
+                        best_blob = f"{best[1] or ''} {best[2] or ''} {best[8] or ''} {best[9] or ''}".lower()
+                        best_score = sum(1 for t in tokens if _normalize_token(t) in
+                                         {_normalize_token(x) for x in best_blob.split()})
+                        if best_score > second:
+                            row = best[:8]
+                    if not row:
+                        options = '; '.join(f"{r[1] or r[0]}: {r[2]} [{r[8] or '-'}]" for r in rows[:5])
+                        return None, None, None, f"Varias rutas coinciden con '{route_query}'. Aclara cual: {options}"
 
             if not row:
-                return None, None, None, "Ruta de inspeccion no encontrada. Especifica route_id, route_code o route_query."
+                return None, None, None, f"Ruta de inspeccion no encontrada para '{route_query or route_code or route_id}'. Verifica nombre/equipo o pasa el codigo (ej: INS-D8-SEM)."
 
             rid, rcode, rname, freq_days, warn_days, ar_id, ln_id, eq_id = row
 
@@ -2586,14 +2896,20 @@ Ejemplos:
 - "cambia el AV-0010 al motor del digestor 8" → {"action":"edit_notice","data":{"notice_code":"AV-0010","fields":{"equipment_tag":"D8","system_name":"SISTEMA DE ACCIONAMIENTO","component_name":"MOTOR ELECTRICO"}}}
 
 7b. REGISTRAR LUBRICACION (cuando el usuario reporta que se lubrico un punto POR PRIMERA VEZ):
-{"action": "register_lubrication", "data": {"point_id": 12, "execution_date": "2026-03-30", "executed_by": "MANTENIMIENTO|FAPMETAL|nombre tecnico", "quantity_used": 0.5, "comments": "opcional", "leak_detected": false, "anomaly_detected": false}}
-- Busca el punto en la lista PUNTOS DE LUBRICACION del contexto. Usa el `id` que aparece como `id:NN`. Tambien puedes usar `point_code` si lo conoces.
-- Si no encuentras un id exacto, usa `point_query` con texto fuzzy: {"point_query": "chumacera motriz digestor 8"}
-- execution_date: convierte fechas relativas o textos como "30-marzo", "ayer", "hoy" a formato ISO YYYY-MM-DD. Si dicen una hora, ignorala (solo fecha). Hoy es """ + date.today().isoformat() + """.
-- executed_by: por defecto "MANTENIMIENTO". Si el usuario menciona "FAPMETAL" o "fap metal" usa "FAPMETAL". Si menciona un nombre, usalo.
+{"action": "register_lubrication", "data": {"point_query": "chumacera motriz percolador 2", "execution_date": "2026-03-30", "executed_by": "Marcos Campos", "quantity_used": 0.5, "comments": "opcional", "leak_detected": false, "anomaly_detected": false}}
+- DETECTOR: frases tipo "se lubrico X", "lubrico X", "engrasamos X", "le pusimos grasa al X", "se le hizo lubricacion al X" SIEMPRE son register_lubrication. NO son create_notice ni consulta.
+- Para identificar el punto usa SIEMPRE `point_query` con texto descriptivo libre que incluya el componente y el equipo (ej: "chumacera motriz percolador 2", "cadena percolador 2", "reductor digestor 8"). El sistema parte el texto en tokens, aplica sinonimos (chumacera motriz/conducida, cadena/banda, reductor/caja reductora, etc) y exige que TODOS aparezcan — asi tolera orden y palabras intermedias.
+- Solo usa `point_id` si en el contexto ves explicitamente el punto correcto con `id:NN` y estas 100% seguro. Si dudas, usa point_query — es mas robusto.
+- Solo usa `point_code` si el usuario menciona un codigo exacto tipo "LUB-D8-CHM-MOT".
+- execution_date: convierte fechas relativas ("ayer", "hoy", "el viernes pasado") o textuales ("24-abril", "30 de marzo") a formato ISO YYYY-MM-DD. Si dicen hora, ignorala. Hoy es """ + date.today().isoformat() + """. "24-abril" → 2026-04-24. "el viernes" → viernes pasado en ISO.
+- executed_by: por defecto "MANTENIMIENTO". Si el usuario menciona "FAPMETAL" o "fap metal" usa "FAPMETAL". Si menciona un nombre y apellido, usalo TAL CUAL (ej: "Marcos Campos").
 - leak_detected/anomaly_detected: solo true si el usuario lo menciona explicitamente. Si los marca true, se creara automaticamente un aviso de mantenimiento.
 - IMPORTANTE: NO uses esta accion si el usuario dice "corrige", "cambia", "actualiza", "estaba mal", "era ayer", "era el ...", "no era ese tecnico" sobre una ejecucion ya registrada. En esos casos usa edit_lubrication.
 - IMPORTANTE: NO uses esta accion si el usuario dice "elimina", "borra", "anula" una ejecucion. Usa delete_lubrication.
+- Ejemplos COMPLETOS:
+  * "Se lubrico chumacera motriz del percolador #2 el 24-abril, Marcos Campos" → {"action":"register_lubrication","data":{"point_query":"chumacera motriz percolador 2","execution_date":"2026-04-24","executed_by":"Marcos Campos"}}
+  * "el viernes lubrico la cadena del percolador #2, Marcos Campos" → {"action":"register_lubrication","data":{"point_query":"cadena percolador 2","execution_date":"<viernes pasado en ISO>","executed_by":"Marcos Campos"}}
+  * "ayer FAPMETAL engraso el reductor del D8" → {"action":"register_lubrication","data":{"point_query":"reductor digestor 8","execution_date":"<ayer ISO>","executed_by":"FAPMETAL"}}
 
 7c. EDITAR LUBRICACION (corregir una ejecucion ya registrada):
 {"action": "edit_lubrication", "data": {"exec_id": 123, "fields": {"execution_date": "2026-04-06", "executed_by": "FAPMETAL", "quantity_used": 0.3, "comments": "...", "leak_detected": true}}}
@@ -2607,6 +2923,20 @@ Ejemplos:
 {"action": "delete_lubrication", "data": {"exec_id": 123}}
 - Usalo cuando el usuario diga "elimina", "borra", "anula", "ese registro estaba mal", "fue duplicado".
 - Igual que edit, busca el exec_id en EJECUCIONES por contexto. Si hay ambiguedad, pregunta primero con action:none.
+
+7d-bis. REPLICAR ESPECIFICACIONES (cuando el usuario quiere copiar las specs tecnicas de un componente o equipo a otro):
+{"action": "replicate_specs", "data": {"entity_type": "component|equipment", "source_equipment_tag": "MOLI1-LINE", "source_component_name": "chumacera conducida", "target_equipment_tag": "MOLI1-LINE", "target_component_name": "chumacera motriz", "mode": "merge|replace", "overwrite": false}}
+- Usalo cuando el usuario diga frases como "replica las specs de X a Y", "copia las especificaciones de la chumacera conducida del molino 1 a la chumacera motriz del mismo molino", "los datos tecnicos del motor del D8 son los mismos que los del D9, copialos", "duplica las specs de A en B".
+- entity_type: 'component' (default, mas comun) si copia entre componentes; 'equipment' si copia entre equipos completos.
+- mode: 'merge' (default) NO toca las keys que el destino ya tiene. 'replace' borra TODAS las specs del destino antes de copiar — solo usalo si el usuario lo pide explicitamente con palabras como "reemplaza todas", "borra y copia", "sobreescribe completamente".
+- overwrite: solo aplica con merge. true si el usuario dice "actualiza los valores aunque ya existan", "sobreescribe los valores que coincidan".
+- Para componentes incluye SIEMPRE source_equipment_tag y source_component_name (ambos), y lo mismo para target_*. El sistema usa el matcher inteligente con sinonimos (chumacera motriz/conducida, motor electrico/mtr, etc).
+- Si el origen y destino son del mismo equipo, repite el mismo equipment_tag en source_* y target_*.
+- Ejemplos:
+  * "replica las specs de la chumacera conducida del molino 1 a la chumacera motriz del molino 1" → {"action":"replicate_specs","data":{"entity_type":"component","source_equipment_tag":"MOLI1-LINE","source_component_name":"chumacera conducida","target_equipment_tag":"MOLI1-LINE","target_component_name":"chumacera motriz"}}
+  * "copia las especificaciones del motor del D8 al motor del D9" → {"action":"replicate_specs","data":{"entity_type":"component","source_equipment_tag":"D8","source_component_name":"motor electrico","target_equipment_tag":"D9","target_component_name":"motor electrico"}}
+  * "duplica las specs del reductor del TH2 al reductor del TH3, y sobreescribe lo que ya tenga" → mode:"merge", overwrite:true.
+  * "borra las specs del motor del D5 y copia las del D8" → mode:"replace".
 
 7e. REGISTRAR INSPECCION (cuando el usuario reporta que ejecuto una ruta de inspeccion):
 {"action": "register_inspection", "data": {"route_id": 5, "execution_date": "2026-04-24", "executed_by": "INSPECTOR|nombre tecnico", "overall_result": "OK|CON_HALLAZGOS", "findings_count": 0, "comments": "opcional"}}
@@ -2955,24 +3285,53 @@ ACTION_KEYWORDS = ['reportar', 'crear aviso', 'falla', 'fallo', 'se rompio', 'ro
 
 
 def _extract_json(text):
-    """Extract JSON from AI response (handles markdown code blocks)."""
+    """Extract JSON from AI response. Robusto: tolera markdown, prosa antes/despues
+    del JSON, y JSON con llaves desbalanceadas (intenta extraer el primer objeto valido)."""
+    if not text:
+        return None
     s = text.strip()
+    # 1) Bloques markdown ```json ... ```
     if '```' in s:
-        parts = s.split('```')
-        for p in parts:
-            p = p.strip()
-            if p.startswith('json'):
-                p = p[4:].strip()
-            if p.startswith('{'):
-                try:
-                    return json.loads(p)
-                except Exception:
-                    pass
+        import re as _re
+        for m in _re.finditer(r"```(?:json)?\s*(\{.*?\})\s*```", s, _re.DOTALL):
+            try:
+                return json.loads(m.group(1))
+            except Exception:
+                pass
+    # 2) Si el texto entero es JSON
     if s.startswith('{'):
         try:
             return json.loads(s)
         except Exception:
             pass
+    # 3) Buscar el primer objeto JSON balanceado (greedy desde primera '{')
+    start = s.find('{')
+    while start != -1:
+        depth = 0
+        in_str = False
+        esc = False
+        for i in range(start, len(s)):
+            ch = s[i]
+            if in_str:
+                if esc:
+                    esc = False
+                elif ch == '\\':
+                    esc = True
+                elif ch == '"':
+                    in_str = False
+            else:
+                if ch == '"':
+                    in_str = True
+                elif ch == '{':
+                    depth += 1
+                elif ch == '}':
+                    depth -= 1
+                    if depth == 0:
+                        try:
+                            return json.loads(s[start:i + 1])
+                        except Exception:
+                            break
+        start = s.find('{', start + 1)
     return None
 
 
@@ -3333,10 +3692,39 @@ pasados automaticamente y los usa como referencia. Pregunta cosas como
     # DeepSeek is forced to return JSON via response_format. Parse it.
     action_data = _extract_json(answer)
     if not (action_data and isinstance(action_data, dict)):
-        # Safety net: if parsing failed, don't dump raw JSON/garbage to user
-        logger.warning(f"Bot: failed to parse JSON from DeepSeek. Raw: {answer[:200]}")
-        _send(chat_id, "⚠️ No pude procesar la respuesta. Intenta reformular tu mensaje.")
-        return
+        logger.warning(f"Bot: failed to parse JSON from DeepSeek. Raw: {answer[:300]}")
+        # Reintento: pide al modelo SOLO un JSON con reply en texto plano
+        try:
+            retry_prompt = (
+                "Tu respuesta anterior no fue JSON valido. Devuelve SOLO un objeto JSON "
+                "con la forma {\"action\":\"none\",\"reply\":\"<respuesta natural breve "
+                "al mensaje del usuario>\"}. Sin markdown, sin texto adicional."
+            )
+            retry_history = (history or []) + [
+                {"role": "user", "content": text},
+                {"role": "assistant", "content": answer[:1000]},
+                {"role": "user", "content": retry_prompt},
+            ]
+            retry_answer = _ask_deepseek(retry_prompt, context, is_action=True, history=retry_history)
+            action_data = _extract_json(retry_answer)
+        except Exception as _re_err:
+            logger.warning(f"Bot retry failed: {_re_err}")
+            action_data = None
+
+        if not (action_data and isinstance(action_data, dict)):
+            # Ultimo recurso: si el texto crudo parece prosa coherente, mostrarlo.
+            raw = (answer or '').strip()
+            # Quita backticks/markdown
+            for token in ('```json', '```'):
+                raw = raw.replace(token, '')
+            raw = raw.strip()
+            if raw and not raw.startswith('{') and len(raw) <= 1500:
+                _send(chat_id, raw)
+            else:
+                _send(chat_id,
+                      "⚠️ No logre interpretar tu mensaje. Intenta reformularlo o se mas especifico "
+                      "(ej: 'lubricacion de la chumacera motriz del percolador 2 hoy, Marcos Campos').")
+            return
 
     action = action_data.get('action')
     data = action_data.get('data', {})
@@ -3514,6 +3902,16 @@ pasados automaticamente y los usa como referencia. Pregunta cosas como
         code, pname, err = _delete_lubrication(app, data)
         if code:
             _send(chat_id, f"🗑️ *Ejecucion eliminada*\n🔧 {code} — {pname}\n_(semaforo del punto recalculado)_")
+        else:
+            _send(chat_id, f"❌ {err}")
+        return
+
+    elif action == 'replicate_specs':
+        summary, err = _replicate_specs(app, data)
+        if summary:
+            mode = (data.get('mode') or 'merge').lower()
+            mode_label = '🔄 Reemplazo' if mode == 'replace' else '➕ Merge'
+            _send(chat_id, f"✅ *Specs replicadas* ({mode_label})\n{summary}")
         else:
             _send(chat_id, f"❌ {err}")
         return

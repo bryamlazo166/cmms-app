@@ -57,7 +57,52 @@ function onEquipmentChange() {
     const systems = lubState.systems.filter(s => Number(s.equipment_id) === eqId);
     fillSelect(q('fSystem'), systems, 'id', s => s.name);
     fillSelect(q('fComponent'), [], 'id', c => c.name);
+    refreshPointSelect();
 }
+
+const _STOP_TOK = new Set(['el','la','los','las','del','de','al','un','una','lo','que']);
+function _tokenize(s) {
+    if (!s) return [];
+    return String(s).toLowerCase().split(/[\s,;/#-]+/)
+        .filter(t => t && !_STOP_TOK.has(t) && (t.length >= 2 || /^\d+$/.test(t)));
+}
+function _pointBlob(p) {
+    return [p.code, p.name, p.equipment_name, p.equipment_tag, p.system_name, p.component_name]
+        .filter(Boolean).join(' ').toLowerCase();
+}
+function getFilteredPoints() {
+    let pts = lubState.points || [];
+    const eqId = Number(q('fEquipment').value || 0);
+    if (eqId) pts = pts.filter(p => Number(p.equipment_id) === eqId);
+    const tokens = _tokenize(q('fPointSearch') ? q('fPointSearch').value : '');
+    if (tokens.length) {
+        pts = pts.filter(p => {
+            const blob = _pointBlob(p);
+            return tokens.every(t => blob.includes(t));
+        });
+    }
+    return pts;
+}
+function renderPointSelect() {
+    const sel = q('fPoint');
+    if (!sel) return;
+    const filtered = getFilteredPoints();
+    const total = (lubState.points || []).length;
+    const countEl = q('fPointCount');
+    if (countEl) countEl.textContent = filtered.length === total
+        ? `(${total})`
+        : `(${filtered.length}/${total})`;
+    if (!filtered.length) {
+        sel.innerHTML = '<option value="">Sin coincidencias — ajusta el filtro</option>';
+        return;
+    }
+    sel.innerHTML = '<option value="">Seleccione punto</option>' + filtered.map(p => {
+        const eq = p.equipment_tag || p.equipment_name || '';
+        return `<option value="${p.id}">${p.code || ''} — ${p.name}${eq ? ' [' + eq + ']' : ''}</option>`;
+    }).join('');
+    if (filtered.length === 1) sel.value = String(filtered[0].id);
+}
+function refreshPointSelect() { renderPointSelect(); }
 
 function onSystemChange() {
     const sysId = Number(q('fSystem').value || 0);
@@ -76,13 +121,12 @@ function updateKPIs(d) {
 
 function renderPoints(points) {
     const tbody = q('tbodyPoints');
+    lubState.points = points || [];
     if (!points || !points.length) {
         tbody.innerHTML = '<tr><td colspan="11">Sin puntos registrados.</td></tr>';
-        q('fPoint').innerHTML = '<option value="">Sin puntos</option>';
+        renderPointSelect();
         return;
     }
-
-    lubState.points = points;
     tbody.innerHTML = points.map(p => {
         const inactive = p.is_active === false;
         const rowStyle = inactive ? 'opacity:0.45;' : '';
@@ -109,7 +153,7 @@ function renderPoints(points) {
         </tr>`;
     }).join('');
 
-    q('fPoint').innerHTML = '<option value="">Seleccione punto</option>' + points.map(p => `<option value="${p.id}">${p.code || ''} ${p.name}</option>`).join('');
+    renderPointSelect();
 }
 
 function renderExecutions(rows) {
@@ -302,6 +346,7 @@ async function boot() {
         q('fSystem').addEventListener('change', onSystemChange);
         q('btnCreate').addEventListener('click', createPoint);
         q('btnExec').addEventListener('click', registerExecution);
+        if (q('fPointSearch')) q('fPointSearch').addEventListener('input', renderPointSelect);
     } catch (e) {
         alert(`Error inicializando lubricacion: ${e.message}`);
     }

@@ -427,6 +427,7 @@ def register_lubrication_routes(
                     'is_active': p.is_active,
                     'equipment_id': p.equipment_id,
                     'equipment_name': p.equipment.name if p.equipment else None,
+                    'equipment_tag': p.equipment.tag if p.equipment else None,
                     'system_name': p.system.name if p.system else None,
                     'component_name': p.component.name if p.component else None,
                     'line_name': p.line.name if p.line else None,

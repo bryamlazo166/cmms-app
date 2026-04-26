@@ -681,6 +681,71 @@ def register_core_routes(app, db, logger, app_build_tag,
         db.session.commit()
         return jsonify({"ok": True})
 
+    @app.route('/api/specs/<entity_type>/<int:source_id>/replicate-to/<int:target_id>', methods=['POST'])
+    def replicate_specs(entity_type, source_id, target_id):
+        """Replica las specs de un componente/equipo origen a otro destino.
+        Body JSON opcional:
+          {"mode": "merge"|"replace", "overwrite": false}
+        - merge (default): copia solo las key_name que el destino no tiene.
+        - replace: borra todas las specs del destino y copia las del origen.
+        - overwrite (solo aplica con merge): si true, sobreescribe value_text/unit
+          cuando la key ya existe en destino.
+        """
+        from models import EquipmentSpec, ComponentSpec
+        MODEL_MAP = {'equipment': EquipmentSpec, 'component': ComponentSpec}
+        FK_MAP = {'equipment': 'equipment_id', 'component': 'component_id'}
+
+        if entity_type not in MODEL_MAP:
+            return jsonify({"error": "entity_type debe ser equipment o component"}), 400
+        if source_id == target_id:
+            return jsonify({"error": "source_id y target_id no pueden ser iguales"}), 400
+
+        Model = MODEL_MAP[entity_type]
+        fk = FK_MAP[entity_type]
+        data = request.get_json(silent=True) or {}
+        mode = (data.get('mode') or 'merge').lower()
+        overwrite = bool(data.get('overwrite', False))
+        if mode not in ('merge', 'replace'):
+            return jsonify({"error": "mode debe ser merge o replace"}), 400
+
+        src_specs = Model.query.filter(getattr(Model, fk) == source_id).order_by(Model.order_index).all()
+        if not src_specs:
+            return jsonify({"error": f"El {entity_type} origen no tiene specs", "copied": 0}), 404
+
+        if mode == 'replace':
+            Model.query.filter(getattr(Model, fk) == target_id).delete(synchronize_session=False)
+            db.session.flush()
+
+        existing = {s.key_name.strip().lower(): s for s in
+                    Model.query.filter(getattr(Model, fk) == target_id).all()}
+        max_order = db.session.query(db.func.max(Model.order_index)).filter(
+            getattr(Model, fk) == target_id).scalar() or 0
+
+        copied = overwritten = skipped = 0
+        for s in src_specs:
+            key_norm = s.key_name.strip().lower()
+            if key_norm in existing:
+                if mode == 'merge' and overwrite:
+                    tgt = existing[key_norm]
+                    tgt.value_text = s.value_text
+                    tgt.unit = s.unit
+                    overwritten += 1
+                else:
+                    skipped += 1
+                continue
+            max_order += 1
+            new_spec = Model(**{fk: target_id, 'key_name': s.key_name,
+                               'value_text': s.value_text, 'unit': s.unit,
+                               'order_index': max_order})
+            db.session.add(new_spec)
+            copied += 1
+
+        db.session.commit()
+        return jsonify({"ok": True, "mode": mode, "overwrite": overwrite,
+                        "source_id": source_id, "target_id": target_id,
+                        "total_source": len(src_specs),
+                        "copied": copied, "overwritten": overwritten, "skipped": skipped})
+
     # ── Document Links ──────────────────────────────────────────────────
 
     @app.route('/api/doc-links/<entity_type>/<int:entity_id>', methods=['GET', 'POST'])
