@@ -216,7 +216,7 @@ function renderPoints(points) {
 function renderExecutions(rows) {
     const tbody = q('tbodyExec');
     if (!rows || !rows.length) {
-        tbody.innerHTML = '<tr><td colspan="8">Sin historial.</td></tr>';
+        tbody.innerHTML = '<tr><td colspan="9">Sin historial.</td></tr>';
         return;
     }
     tbody.innerHTML = rows.map(r => `
@@ -229,9 +229,21 @@ function renderExecutions(rows) {
             <td>${r.anomaly_detected || r.leak_detected ? 'Si' : 'No'}</td>
             <td>${r.created_notice_code || '-'}</td>
             <td>${r.comments || '-'}</td>
+            <td><button class="btn-icon btn-del" title="Eliminar ejecucion" onclick="deleteExecution(${r.id})"><i class="fas fa-trash"></i></button></td>
         </tr>
     `).join('');
 }
+
+async function deleteExecution(execId) {
+    if (!confirm('¿Eliminar esta ejecucion? El semaforo del punto se recalculara con la ultima ejecucion restante.')) return;
+    try {
+        await jget(`/api/lubrication/executions/${execId}`, { method: 'DELETE' });
+        await refreshAll();
+    } catch (e) {
+        alert(`Error al eliminar: ${e.message}`);
+    }
+}
+window.deleteExecution = deleteExecution;
 
 async function loadDashboard() {
     const url = lubState.showInactive

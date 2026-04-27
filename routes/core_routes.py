@@ -1349,8 +1349,10 @@ def register_core_routes(app, db, logger, app_build_tag,
         """Genera un PDF con OTs activas y Avisos pendientes para coordinacion diaria.
 
         Query params opcionales:
-          ?area_id=X       filtrar por area
-          ?include_closed=1 incluir OTs cerradas (por defecto solo activas)
+          ?area_id=X            filtrar por area
+          ?include_closed=1     incluir OTs cerradas/anuladas/canceladas (default off)
+          ?include_with_ot=1    incluir tambien avisos que YA tienen OT (default off:
+                                solo trabajos pendientes de planificar)
         """
         try:
             from flask import send_file
@@ -1358,6 +1360,7 @@ def register_core_routes(app, db, logger, app_build_tag,
 
             area_id = request.args.get('area_id', type=int)
             include_closed = request.args.get('include_closed', '0') == '1'
+            include_with_ot = request.args.get('include_with_ot', '0') == '1'
 
             # Pre-cargar taxonomia para enriquecer
             from models import Component
@@ -1367,10 +1370,10 @@ def register_core_routes(app, db, logger, app_build_tag,
             comps = {c.id: c for c in Component.query.all()}
             techs = {t.id: t for t in Technician.query.all()}
 
-            # OTs activas
+            # OTs activas (excluye cerradas/anuladas/canceladas)
             ot_q = WorkOrder.query
             if not include_closed:
-                ot_q = ot_q.filter(WorkOrder.status != 'Cerrada')
+                ot_q = ot_q.filter(WorkOrder.status.notin_(['Cerrada', 'Anulada', 'Cancelada']))
             if area_id:
                 ot_q = ot_q.filter(WorkOrder.area_id == area_id)
             # Orden: estado activo primero, luego fecha programada, luego id
@@ -1415,10 +1418,17 @@ def register_core_routes(app, db, logger, app_build_tag,
                     'description': wo.description,
                 })
 
-            # Avisos pendientes (no cerrados)
+            # Avisos pendientes (no cerrados). Por defecto solo los que aun no
+            # tienen ninguna OT asignada (trabajo pendiente de planificar).
             n_q = MaintenanceNotice.query.filter(
                 MaintenanceNotice.status.notin_(['Cerrado', 'Cancelado', 'Anulado'])
             )
+            if not include_with_ot:
+                # Excluye avisos cuyo id ya esta vinculado a alguna OT
+                notices_with_ot_subq = db.session.query(WorkOrder.notice_id).filter(
+                    WorkOrder.notice_id.isnot(None)
+                ).subquery()
+                n_q = n_q.filter(MaintenanceNotice.id.notin_(notices_with_ot_subq))
             if area_id:
                 n_q = n_q.filter(MaintenanceNotice.area_id == area_id)
             notices_db = n_q.order_by(

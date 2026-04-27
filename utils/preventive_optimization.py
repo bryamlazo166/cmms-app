@@ -70,16 +70,22 @@ def analyze_preventive_plan(
             corr_by_comp[ot.component_id].append(ot)
 
     def _related_failures(point):
-        """Cuenta OTs correctivas del mismo componente/sistema/equipo."""
+        """Cuenta OTs correctivas del mismo componente/sistema/equipo.
+        Algunos tipos de punto (InspectionRoute) solo tienen equipment_id, asi
+        que usamos getattr para tolerar atributos ausentes.
+        """
         seen = set()
-        if point.component_id:
-            for ot in corr_by_comp.get(point.component_id, []):
+        comp_id = getattr(point, 'component_id', None)
+        sys_id = getattr(point, 'system_id', None)
+        eq_id = getattr(point, 'equipment_id', None)
+        if comp_id:
+            for ot in corr_by_comp.get(comp_id, []):
                 seen.add(ot.id)
-        if point.system_id:
-            for ot in corr_by_sys.get(point.system_id, []):
+        if sys_id:
+            for ot in corr_by_sys.get(sys_id, []):
                 seen.add(ot.id)
-        if point.equipment_id:
-            for ot in corr_by_equip.get(point.equipment_id, []):
+        if eq_id:
+            for ot in corr_by_equip.get(eq_id, []):
                 seen.add(ot.id)
         return len(seen)
 

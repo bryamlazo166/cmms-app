@@ -376,6 +376,45 @@ def register_lubrication_routes(
         rows = query.order_by(LubricationExecution.id.desc()).limit(300).all()
         return jsonify([r.to_dict() for r in rows])
 
+    @app.route('/api/lubrication/executions/<int:exec_id>', methods=['DELETE'])
+    def delete_lubrication_execution(exec_id):
+        """Elimina una ejecucion y recalcula el semaforo del punto en base a las
+        ejecuciones restantes (igual que el handler del bot)."""
+        try:
+            _ensure_lubrication_schema_compat()
+            ex = LubricationExecution.query.get(exec_id)
+            if not ex:
+                return jsonify({"error": f"Ejecucion {exec_id} no existe"}), 404
+            point_id = ex.point_id
+            db.session.delete(ex)
+            db.session.flush()
+
+            # Recalcular last/next/semaforo del punto desde la ejecucion mas
+            # reciente que queda. Si no quedan, dejar PENDIENTE.
+            point = LubricationPoint.query.get(point_id)
+            if point:
+                latest = (LubricationExecution.query
+                          .filter_by(point_id=point_id)
+                          .order_by(LubricationExecution.execution_date.desc(),
+                                    LubricationExecution.id.desc())
+                          .first())
+                if latest:
+                    point.last_service_date = latest.execution_date
+                    nd, sema = _calculate_lubrication_schedule(
+                        latest.execution_date, point.frequency_days, point.warning_days)
+                    point.next_due_date = nd
+                    point.semaphore_status = sema
+                else:
+                    point.last_service_date = None
+                    point.next_due_date = None
+                    point.semaphore_status = 'PENDIENTE'
+            db.session.commit()
+            return jsonify({"ok": True, "deleted_id": exec_id})
+        except Exception as e:
+            db.session.rollback()
+            logger.exception('Lubrication execution DELETE error')
+            return jsonify({"error": _friendly_error_message(e, 'eliminacion de ejecucion')}), 500
+
     @app.route('/api/lubrication/dashboard', methods=['GET'])
     def get_lubrication_dashboard():
         try:
