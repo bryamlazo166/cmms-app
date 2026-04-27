@@ -1,0 +1,445 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <link rel="icon" type="image/svg+xml" href="/static/favicon.svg">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Plantillas de Parada - CMMS</title>
+    <!-- CMMS_THEME_INIT -->
+    <script>(function(){try{var t=localStorage.getItem('cmms.theme');if(t=='management'||t=='developer'){document.documentElement.setAttribute('data-theme',t);}}catch(e){}})();</script>
+    <link rel="stylesheet" href="/static/css/style.css?v={{ v }}">
+    <link rel="stylesheet" href="/static/css/sidebar.css?v={{ v }}">
+    <link href="https://fonts.googleapis.com/css2?family=Roboto:wght@300;400;500;700&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css">
+    <style>
+        .wrap{max-width:1500px;margin:0 auto;padding:16px;}
+        .header{background:linear-gradient(120deg,#1e2430,#151b24);border:1px solid #2d3f56;border-radius:12px;padding:16px;margin-bottom:14px;}
+        .header h1{margin:0;color:#FF9F0A;font-size:1.4rem;}
+        .header p{margin:4px 0 0;color:#9ab0cb;font-size:.85rem;}
+        .toolbar{display:flex;gap:10px;align-items:center;margin-bottom:14px;flex-wrap:wrap;}
+        .panel{background:#181d24;border:1px solid #2f4257;border-radius:12px;padding:14px;margin-bottom:14px;}
+        .panel h3{margin:0 0 12px;color:#FF9F0A;font-size:1rem;border-bottom:1px solid #2f4257;padding-bottom:8px;}
+        .btn{height:36px;border-radius:8px;padding:0 14px;font-weight:600;cursor:pointer;font-size:.86rem;border:none;display:inline-flex;align-items:center;gap:6px;}
+        .btn.primary{background:#0a84ff;color:#fff;}
+        .btn.success{background:#30D158;color:#fff;}
+        .btn.danger{background:#FF453A;color:#fff;}
+        .btn.secondary{background:#2a2d35;color:#d6d8de;border:1px solid #4a5361;}
+        .btn-icon{background:transparent;border:0;color:#9ab0cb;cursor:pointer;padding:4px 8px;border-radius:6px;}
+        .btn-icon:hover{background:rgba(255,255,255,.06);color:#fff;}
+        .tpl-grid{display:grid;grid-template-columns:1fr 2fr;gap:14px;}
+        @media (max-width:1100px){.tpl-grid{grid-template-columns:1fr;}}
+        .tpl-card{background:#1b212b;border:1px solid #344964;border-radius:10px;padding:12px;margin-bottom:8px;cursor:pointer;}
+        .tpl-card:hover{border-color:#FF9F0A;}
+        .tpl-card.active{border-color:#FF9F0A;background:#222a36;}
+        .tpl-card .name{font-weight:700;color:#eff6ff;font-size:1rem;}
+        .tpl-card .meta{font-size:.78rem;color:#9ab0cb;margin-top:4px;}
+        .item-row{background:#1b212b;border:1px solid #344964;border-radius:8px;padding:10px;margin-bottom:8px;}
+        .item-row .desc{font-weight:600;color:#eff6ff;}
+        .item-row .meta{font-size:.78rem;color:#9ab0cb;margin-top:4px;}
+        .badge{display:inline-block;padding:2px 8px;border-radius:6px;font-size:.72rem;background:rgba(255,255,255,.06);color:#bfd2ec;margin-right:4px;}
+        .badge.mode{background:rgba(255,159,10,.18);color:#FF9F0A;}
+        .badge.spec{background:rgba(90,200,250,.18);color:#5ac8fa;}
+        dialog{background:#1c1c1e;color:#eff6ff;border:1px solid rgba(255,255,255,.12);border-radius:14px;padding:22px;max-width:680px;width:95%;}
+        dialog::backdrop{background:rgba(0,0,0,.7);}
+        dialog h2{margin:0 0 14px;color:#FF9F0A;font-size:1.1rem;}
+        .form-row{display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:10px;}
+        .form-group{margin-bottom:10px;}
+        .form-group label{display:block;font-size:.74rem;color:#9ab0cb;margin-bottom:4px;text-transform:uppercase;}
+        .form-group input,.form-group select,.form-group textarea{width:100%;padding:8px 10px;border-radius:8px;background:rgba(255,255,255,.06);border:1px solid rgba(255,255,255,.12);color:rgba(255,255,255,.9);font-family:inherit;font-size:.88rem;}
+        .form-group small{color:#9ab0cb;font-size:.72rem;display:block;margin-top:3px;}
+        .empty{text-align:center;color:#666;padding:24px;font-size:.88rem;}
+    </style>
+</head>
+<body>
+    {% include 'sidebar_unified.html' %}
+    <section class="home-section">
+        <div class="wrap">
+            <div class="header">
+                <h1><i class="fas fa-clipboard-list"></i> Plantillas de Parada</h1>
+                <p>Reutiliza paquetes de tareas frecuentes (revision empaquetaduras, lubricacion cadenas TH, etc.) y aplicalos a una parada en bloque.</p>
+            </div>
+
+            <div class="toolbar">
+                <button class="btn primary" onclick="openCreateTemplate()"><i class="fas fa-plus"></i> Nueva plantilla</button>
+                <button class="btn secondary" onclick="loadTemplates()"><i class="fas fa-sync"></i> Refrescar</button>
+                <span style="color:#9ab0cb;font-size:.82rem;margin-left:auto;">
+                    Tip: usa <code>{tag}</code> o <code>{name}</code> en la descripcion para que se reemplace por el equipo objetivo.
+                </span>
+            </div>
+
+            <div class="tpl-grid">
+                <div class="panel">
+                    <h3><i class="fas fa-list"></i> Plantillas</h3>
+                    <div id="tplList"><div class="empty">Cargando...</div></div>
+                </div>
+                <div class="panel">
+                    <h3 id="itemsTitle"><i class="fas fa-tasks"></i> Tareas (selecciona una plantilla)</h3>
+                    <div id="itemsArea">
+                        <div class="empty">Elige una plantilla a la izquierda para ver y editar sus tareas.</div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </section>
+
+    <!-- Modal Nueva/Editar Plantilla -->
+    <dialog id="tplModal">
+        <h2 id="tplModalTitle">Nueva plantilla</h2>
+        <input type="hidden" id="tplId">
+        <div class="form-group">
+            <label>Nombre *</label>
+            <input id="tplName" type="text" placeholder="Ej: Mant. Digestores TOTAL">
+        </div>
+        <div class="form-group">
+            <label>Descripcion</label>
+            <textarea id="tplDesc" rows="2" placeholder="Para que sirve esta plantilla, cuando se usa..."></textarea>
+        </div>
+        <div style="display:flex;justify-content:flex-end;gap:8px;margin-top:14px;">
+            <button class="btn secondary" onclick="document.getElementById('tplModal').close()">Cancelar</button>
+            <button class="btn primary" onclick="saveTemplate()"><i class="fas fa-save"></i> Guardar</button>
+        </div>
+    </dialog>
+
+    <!-- Modal Nuevo/Editar Item -->
+    <dialog id="itemModal">
+        <h2 id="itemModalTitle">Nueva tarea</h2>
+        <input type="hidden" id="itemId">
+        <input type="hidden" id="itemTplId">
+        <div class="form-group">
+            <label>Descripcion *</label>
+            <input id="itemDesc" type="text" placeholder="Empaquetadura prensa estopa motriz {tag}">
+            <small>Usa <code>{tag}</code> o <code>{name}</code> y se reemplaza por el equipo al generar la OT.</small>
+        </div>
+        <div class="form-row">
+            <div class="form-group">
+                <label>Tipo</label>
+                <select id="itemMtype">
+                    <option>Preventivo</option><option>Correctivo</option><option>Mejora</option>
+                </select>
+            </div>
+            <div class="form-group">
+                <label>Especialidad</label>
+                <select id="itemSpec">
+                    <option value="">-</option>
+                    <option>MECANICO</option><option>ELECTRICO</option>
+                    <option>INSTRUMENTACION</option><option>LUBRICACION</option>
+                </select>
+            </div>
+        </div>
+        <div class="form-row">
+            <div class="form-group">
+                <label>Duracion estimada (h)</label>
+                <input id="itemDur" type="number" step="0.5" min="0" placeholder="2">
+            </div>
+            <div class="form-group">
+                <label>Tecnicos</label>
+                <input id="itemTechs" type="number" min="1" value="1">
+            </div>
+        </div>
+        <div class="form-group">
+            <label>Componente (opcional, fuzzy)</label>
+            <input id="itemComp" type="text" placeholder="chumacera motriz, cadena, motor...">
+            <small>Se resuelve via matcher con sinonimos al generar cada OT.</small>
+        </div>
+
+        <div class="form-group">
+            <label>Modo de aplicacion *</label>
+            <select id="itemMode" onchange="updateModeFields()">
+                <option value="specific_equipment">Equipo especifico (1 OT)</option>
+                <option value="tag_pattern">Patron por tag (regex, ej: ^D[1-9]$)</option>
+                <option value="area">Toda un area</option>
+                <option value="line">Toda una linea</option>
+            </select>
+        </div>
+
+        <div id="modeSpecific" class="form-group">
+            <label>Equipo</label>
+            <select id="itemEquip"></select>
+        </div>
+        <div id="modePattern" class="form-group" style="display:none;">
+            <label>Patron regex sobre tag</label>
+            <input id="itemPattern" type="text" placeholder="^D[1-9]$">
+            <small>Ejemplos: <code>^D[1-9]$</code> = D1..D9 | <code>^TH\d+$</code> = todos los TH | <code>^PER[1-9]$</code> = todos los PER.</small>
+        </div>
+        <div id="modeArea" class="form-group" style="display:none;">
+            <label>Area</label>
+            <select id="itemArea"></select>
+        </div>
+        <div id="modeLine" class="form-group" style="display:none;">
+            <label>Linea</label>
+            <select id="itemLine"></select>
+        </div>
+
+        <div style="display:flex;justify-content:flex-end;gap:8px;margin-top:14px;">
+            <button class="btn secondary" onclick="document.getElementById('itemModal').close()">Cancelar</button>
+            <button class="btn primary" onclick="saveItem()"><i class="fas fa-save"></i> Guardar</button>
+        </div>
+    </dialog>
+
+    <script>
+        let _tpls = [], _activeTpl = null, _equips = [], _areas = [], _lines = [];
+
+        async function jget(url, opts) {
+            const r = await fetch(url, opts);
+            const d = await r.json();
+            if (!r.ok || d.error) throw new Error(d.error || `HTTP ${r.status}`);
+            return d;
+        }
+
+        async function loadCatalogs() {
+            const [eq, ar, ln] = await Promise.all([
+                jget('/api/equipments'), jget('/api/areas'), jget('/api/lines')
+            ]);
+            const nat = { numeric: true, sensitivity: 'base' };
+            _equips = eq.sort((a, b) => (a.tag || a.name || '').localeCompare(b.tag || b.name || '', 'es', nat));
+            _areas = ar.sort((a, b) => (a.name || '').localeCompare(b.name || '', 'es', nat));
+            _lines = ln.sort((a, b) => (a.name || '').localeCompare(b.name || '', 'es', nat));
+        }
+
+        async function loadTemplates() {
+            try {
+                _tpls = await jget('/api/shutdown-templates');
+                renderTpls();
+            } catch (e) { alert('Error: ' + e.message); }
+        }
+
+        function renderTpls() {
+            const div = document.getElementById('tplList');
+            if (!_tpls.length) { div.innerHTML = '<div class="empty">Sin plantillas. Crea la primera con el boton de arriba.</div>'; return; }
+            div.innerHTML = _tpls.map(t => `
+                <div class="tpl-card ${_activeTpl && _activeTpl.id === t.id ? 'active' : ''}" onclick="selectTpl(${t.id})">
+                    <div style="display:flex;justify-content:space-between;align-items:start;gap:8px;">
+                        <div>
+                            <div class="name">${escapeHtml(t.name)}</div>
+                            <div class="meta">${t.item_count} tarea${t.item_count !== 1 ? 's' : ''} ${t.is_active ? '' : '· INACTIVA'}</div>
+                            ${t.description ? `<div class="meta" style="margin-top:6px;">${escapeHtml(t.description)}</div>` : ''}
+                        </div>
+                        <div style="display:flex;flex-direction:column;gap:2px;">
+                            <button class="btn-icon" title="Editar" onclick="event.stopPropagation();openEditTemplate(${t.id})"><i class="fas fa-pen"></i></button>
+                            <button class="btn-icon" title="Eliminar" onclick="event.stopPropagation();delTemplate(${t.id})"><i class="fas fa-trash"></i></button>
+                        </div>
+                    </div>
+                </div>`).join('');
+        }
+
+        async function selectTpl(id) {
+            try {
+                _activeTpl = await jget(`/api/shutdown-templates/${id}`);
+                renderTpls();
+                renderItems();
+            } catch (e) { alert('Error: ' + e.message); }
+        }
+
+        function renderItems() {
+            const div = document.getElementById('itemsArea');
+            const title = document.getElementById('itemsTitle');
+            if (!_activeTpl) { title.innerHTML = '<i class="fas fa-tasks"></i> Tareas (selecciona una plantilla)'; div.innerHTML = '<div class="empty">Elige una plantilla.</div>'; return; }
+            title.innerHTML = `<i class="fas fa-tasks"></i> Tareas de "${escapeHtml(_activeTpl.name)}"`;
+            const items = _activeTpl.items || [];
+            const list = items.length ? items.map(it => {
+                const modeLabel = {
+                    'specific_equipment': `Equipo: ${it.target_equipment_tag || '?'}`,
+                    'tag_pattern': `Patron: ${it.target_tag_pattern}`,
+                    'area': `Area: ${it.target_area_name || '?'}`,
+                    'line': `Linea: ${it.target_line_name || '?'}`,
+                }[it.application_mode] || it.application_mode;
+                return `
+                <div class="item-row">
+                    <div style="display:flex;justify-content:space-between;align-items:start;gap:8px;">
+                        <div style="flex:1;">
+                            <div class="desc">${escapeHtml(it.description)}</div>
+                            <div class="meta">
+                                <span class="badge mode">${modeLabel}</span>
+                                <span class="badge">${it.maintenance_type}</span>
+                                ${it.specialty ? `<span class="badge spec">${it.specialty}</span>` : ''}
+                                ${it.estimated_duration ? `<span class="badge">${it.estimated_duration}h</span>` : ''}
+                                ${it.tech_count > 1 ? `<span class="badge">${it.tech_count} tec</span>` : ''}
+                                ${it.component_name ? `<span class="badge">comp: ${escapeHtml(it.component_name)}</span>` : ''}
+                            </div>
+                        </div>
+                        <div>
+                            <button class="btn-icon" title="Editar" onclick="openEditItem(${it.id})"><i class="fas fa-pen"></i></button>
+                            <button class="btn-icon" title="Eliminar" onclick="delItem(${it.id})"><i class="fas fa-trash"></i></button>
+                        </div>
+                    </div>
+                </div>`;
+            }).join('') : '<div class="empty">Esta plantilla aun no tiene tareas.</div>';
+            div.innerHTML = `
+                <div style="margin-bottom:10px;">
+                    <button class="btn success" onclick="openCreateItem()"><i class="fas fa-plus"></i> Agregar tarea</button>
+                </div>
+                ${list}
+            `;
+        }
+
+        function openCreateTemplate() {
+            document.getElementById('tplModalTitle').textContent = 'Nueva plantilla';
+            document.getElementById('tplId').value = '';
+            document.getElementById('tplName').value = '';
+            document.getElementById('tplDesc').value = '';
+            document.getElementById('tplModal').showModal();
+        }
+
+        function openEditTemplate(id) {
+            const t = _tpls.find(x => x.id === id);
+            if (!t) return;
+            document.getElementById('tplModalTitle').textContent = 'Editar plantilla';
+            document.getElementById('tplId').value = t.id;
+            document.getElementById('tplName').value = t.name;
+            document.getElementById('tplDesc').value = t.description || '';
+            document.getElementById('tplModal').showModal();
+        }
+
+        async function saveTemplate() {
+            const id = document.getElementById('tplId').value;
+            const payload = {
+                name: document.getElementById('tplName').value.trim(),
+                description: document.getElementById('tplDesc').value.trim(),
+            };
+            if (!payload.name) { alert('Nombre requerido'); return; }
+            try {
+                if (id) {
+                    await jget(`/api/shutdown-templates/${id}`, {
+                        method: 'PUT', headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify(payload)
+                    });
+                } else {
+                    await jget('/api/shutdown-templates', {
+                        method: 'POST', headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify(payload)
+                    });
+                }
+                document.getElementById('tplModal').close();
+                await loadTemplates();
+                if (id) await selectTpl(parseInt(id));
+            } catch (e) { alert('Error: ' + e.message); }
+        }
+
+        async function delTemplate(id) {
+            if (!confirm('¿Eliminar esta plantilla y todas sus tareas?')) return;
+            try {
+                await jget(`/api/shutdown-templates/${id}`, { method: 'DELETE' });
+                if (_activeTpl && _activeTpl.id === id) _activeTpl = null;
+                await loadTemplates();
+                renderItems();
+            } catch (e) { alert('Error: ' + e.message); }
+        }
+
+        function fillItemSelectors() {
+            document.getElementById('itemEquip').innerHTML = '<option value="">- Seleccione -</option>' +
+                _equips.map(e => `<option value="${e.id}">${e.tag || ''} - ${e.name}</option>`).join('');
+            document.getElementById('itemArea').innerHTML = '<option value="">- Seleccione -</option>' +
+                _areas.map(a => `<option value="${a.id}">${a.name}</option>`).join('');
+            document.getElementById('itemLine').innerHTML = '<option value="">- Seleccione -</option>' +
+                _lines.map(l => `<option value="${l.id}">${l.name}</option>`).join('');
+        }
+
+        function updateModeFields() {
+            const mode = document.getElementById('itemMode').value;
+            ['Specific', 'Pattern', 'Area', 'Line'].forEach(suf => {
+                document.getElementById('mode' + suf).style.display = 'none';
+            });
+            document.getElementById('mode' + ({
+                'specific_equipment': 'Specific', 'tag_pattern': 'Pattern',
+                'area': 'Area', 'line': 'Line'
+            })[mode]).style.display = 'block';
+        }
+
+        function openCreateItem() {
+            if (!_activeTpl) return;
+            document.getElementById('itemModalTitle').textContent = 'Nueva tarea';
+            document.getElementById('itemId').value = '';
+            document.getElementById('itemTplId').value = _activeTpl.id;
+            document.getElementById('itemDesc').value = '';
+            document.getElementById('itemMtype').value = 'Preventivo';
+            document.getElementById('itemSpec').value = '';
+            document.getElementById('itemDur').value = '';
+            document.getElementById('itemTechs').value = 1;
+            document.getElementById('itemComp').value = '';
+            document.getElementById('itemMode').value = 'specific_equipment';
+            document.getElementById('itemPattern').value = '';
+            document.getElementById('itemEquip').value = '';
+            document.getElementById('itemArea').value = '';
+            document.getElementById('itemLine').value = '';
+            updateModeFields();
+            document.getElementById('itemModal').showModal();
+        }
+
+        function openEditItem(id) {
+            const it = (_activeTpl.items || []).find(x => x.id === id);
+            if (!it) return;
+            document.getElementById('itemModalTitle').textContent = 'Editar tarea';
+            document.getElementById('itemId').value = it.id;
+            document.getElementById('itemTplId').value = _activeTpl.id;
+            document.getElementById('itemDesc').value = it.description;
+            document.getElementById('itemMtype').value = it.maintenance_type || 'Preventivo';
+            document.getElementById('itemSpec').value = it.specialty || '';
+            document.getElementById('itemDur').value = it.estimated_duration || '';
+            document.getElementById('itemTechs').value = it.tech_count || 1;
+            document.getElementById('itemComp').value = it.component_name || '';
+            document.getElementById('itemMode').value = it.application_mode || 'specific_equipment';
+            document.getElementById('itemPattern').value = it.target_tag_pattern || '';
+            document.getElementById('itemEquip').value = it.target_equipment_id || '';
+            document.getElementById('itemArea').value = it.target_area_id || '';
+            document.getElementById('itemLine').value = it.target_line_id || '';
+            updateModeFields();
+            document.getElementById('itemModal').showModal();
+        }
+
+        async function saveItem() {
+            const id = document.getElementById('itemId').value;
+            const tid = document.getElementById('itemTplId').value;
+            const mode = document.getElementById('itemMode').value;
+            const payload = {
+                description: document.getElementById('itemDesc').value.trim(),
+                maintenance_type: document.getElementById('itemMtype').value,
+                specialty: document.getElementById('itemSpec').value || null,
+                estimated_duration: document.getElementById('itemDur').value ? Number(document.getElementById('itemDur').value) : null,
+                tech_count: Number(document.getElementById('itemTechs').value || 1),
+                component_name: document.getElementById('itemComp').value.trim() || null,
+                application_mode: mode,
+                target_equipment_id: mode === 'specific_equipment' ? Number(document.getElementById('itemEquip').value) || null : null,
+                target_tag_pattern: mode === 'tag_pattern' ? document.getElementById('itemPattern').value.trim() || null : null,
+                target_area_id: mode === 'area' ? Number(document.getElementById('itemArea').value) || null : null,
+                target_line_id: mode === 'line' ? Number(document.getElementById('itemLine').value) || null : null,
+            };
+            if (!payload.description) { alert('Descripcion requerida'); return; }
+            try {
+                if (id) {
+                    await jget(`/api/shutdown-template-items/${id}`, {
+                        method: 'PUT', headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify(payload)
+                    });
+                } else {
+                    await jget(`/api/shutdown-templates/${tid}/items`, {
+                        method: 'POST', headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify(payload)
+                    });
+                }
+                document.getElementById('itemModal').close();
+                await selectTpl(parseInt(tid));
+            } catch (e) { alert('Error: ' + e.message); }
+        }
+
+        async function delItem(id) {
+            if (!confirm('¿Eliminar esta tarea de la plantilla?')) return;
+            try {
+                await jget(`/api/shutdown-template-items/${id}`, { method: 'DELETE' });
+                await selectTpl(_activeTpl.id);
+            } catch (e) { alert('Error: ' + e.message); }
+        }
+
+        function escapeHtml(s) {
+            return String(s == null ? '' : s).replace(/[&<>"']/g,
+                c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+        }
+
+        document.addEventListener('DOMContentLoaded', async () => {
+            await loadCatalogs();
+            fillItemSelectors();
+            await loadTemplates();
+        });
+    </script>
+    <script src="/static/js/sidebar.js?v={{ v }}"></script>
+</body>
+</html>

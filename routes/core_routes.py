@@ -144,6 +144,10 @@ def register_core_routes(app, db, logger, app_build_tag,
     def shutdowns_page():
         return render_template('shutdowns.html')
 
+    @app.route('/plantillas-paradas')
+    def shutdown_templates_page():
+        return render_template('shutdown_templates.html')
+
     @app.route('/indicadores')
     def indicators_page():
         return render_template('indicators.html')

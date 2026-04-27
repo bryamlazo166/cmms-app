@@ -716,3 +716,152 @@ async function deleteCurrentShutdown() {
 
 window.removeOtFromShutdown = removeOtFromShutdown;
 window.deleteCurrentShutdown = deleteCurrentShutdown;
+
+// ════════════════════════════════════════════════════════════════════════
+// APLICAR PLANTILLA A LA PARADA (Opcion D — preview con cruce)
+// ════════════════════════════════════════════════════════════════════════
+
+let _applyTplData = null;  // {candidates, summary, ...} del preview actual
+
+async function openApplyTemplateModal() {
+    const shId = (typeof _activeShutdown !== 'undefined' && _activeShutdown) ? _activeShutdown.id : null;
+    if (!shId) { alert('Abre una parada primero'); return; }
+    try {
+        const tpls = await (await fetch('/api/shutdown-templates?only_active=1')).json();
+        const sel = document.getElementById('applyTplSelect');
+        if (!tpls.length) {
+            sel.innerHTML = '<option value="">(no hay plantillas — crea una primero)</option>';
+        } else {
+            sel.innerHTML = '<option value="">- Seleccione plantilla -</option>' +
+                tpls.map(t => `<option value="${t.id}">${escapeHtmlT(t.name)} — ${t.item_count} tareas</option>`).join('');
+        }
+        document.getElementById('applyTplPreview').innerHTML = '<div class="empty">Selecciona una plantilla y presiona Previsualizar.</div>';
+        document.getElementById('applyTplSummary').innerHTML = '';
+        document.getElementById('btnCommitTpl').disabled = true;
+        _applyTplData = null;
+        document.getElementById('applyTplModal').showModal();
+    } catch (e) { alert('Error: ' + e.message); }
+}
+window.openApplyTemplateModal = openApplyTemplateModal;
+
+async function loadTemplatePreview() {
+    const shId = (typeof _activeShutdown !== 'undefined' && _activeShutdown) ? _activeShutdown.id : null;
+    const tplId = document.getElementById('applyTplSelect').value;
+    if (!shId) { alert('Abre una parada primero'); return; }
+    if (!tplId) { alert('Selecciona una plantilla'); return; }
+    try {
+        const r = await fetch(`/api/shutdowns/${shId}/apply-template/${tplId}`, {
+            method: 'POST', headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ commit: false })
+        });
+        const data = await r.json();
+        if (!r.ok || data.error) { alert('Error: ' + (data.error || r.statusText)); return; }
+        _applyTplData = data;
+        renderTplPreview();
+    } catch (e) { alert('Error: ' + e.message); }
+}
+window.loadTemplatePreview = loadTemplatePreview;
+
+function renderTplPreview() {
+    if (!_applyTplData) return;
+    const { candidates, summary } = _applyTplData;
+    const onlyOk = document.getElementById('applyTplOnlyOk').checked;
+    const visible = onlyOk ? candidates.filter(c => c.status !== 'duplicate') : candidates;
+
+    document.getElementById('applyTplSummary').innerHTML =
+        `<strong>${summary.total}</strong> candidatas — ` +
+        `<span style="color:#30D158;">${summary.ok} ok</span> · ` +
+        `<span style="color:#FF9F0A;">${summary.preventive_near} con preventivo cercano</span> · ` +
+        `<span style="color:#9ab0cb;">${summary.duplicate} ya existen</span>`;
+
+    if (!visible.length) {
+        document.getElementById('applyTplPreview').innerHTML = '<div class="empty">Sin candidatas visibles.</div>';
+        document.getElementById('btnCommitTpl').disabled = true;
+        return;
+    }
+
+    // Agrupar por description del item (cabecera)
+    const byItem = new Map();
+    visible.forEach(c => {
+        const k = c.item_description_template || c.description;
+        if (!byItem.has(k)) byItem.set(k, []);
+        byItem.get(k).push(c);
+    });
+
+    const html = ['<div style="font-size:.85rem;">'];
+    html.push(`<div style="margin-bottom:8px;">
+        <button class="btn-icon" onclick="toggleAllTpl(true)" style="background:rgba(48,209,88,.15);color:#30D158;border:1px solid rgba(48,209,88,.3);padding:4px 10px;border-radius:6px;">Marcar todas (ok)</button>
+        <button class="btn-icon" onclick="toggleAllTpl(false)" style="background:rgba(255,255,255,.06);color:#9ab0cb;padding:4px 10px;border-radius:6px;">Desmarcar todas</button>
+    </div>`);
+
+    for (const [tplDesc, group] of byItem) {
+        html.push(`<div style="margin-bottom:14px;">
+            <div style="font-weight:700;color:#FF9F0A;padding:6px 0;border-bottom:1px solid #344964;">
+                ${escapeHtmlT(tplDesc)} <span style="color:#9ab0cb;font-weight:400;font-size:.78rem;">(${group.length})</span>
+            </div>`);
+        for (const c of group) {
+            const dup = c.status === 'duplicate';
+            const warn = c.status === 'preventive_near';
+            const bg = dup ? 'rgba(255,255,255,.03)' : warn ? 'rgba(255,159,10,.07)' : 'transparent';
+            const checkColor = dup ? '#666' : warn ? '#FF9F0A' : '#30D158';
+            html.push(`<div style="display:grid;grid-template-columns:30px 110px 1fr 220px;gap:8px;padding:6px 8px;align-items:center;background:${bg};border-radius:4px;margin-top:2px;">
+                <input type="checkbox" class="tpl-cand-cb" data-key="${c.key}" data-status="${c.status}" ${dup ? 'disabled' : 'checked'} style="accent-color:${checkColor};transform:scale(1.2);">
+                <span style="color:#5ac8fa;font-weight:700;">${escapeHtmlT(c.equipment_tag || '?')}</span>
+                <span style="color:${dup ? '#666' : '#eff6ff'};">${escapeHtmlT(c.description)}</span>
+                <span style="font-size:.75rem;color:${dup ? '#666' : warn ? '#FF9F0A' : '#9ab0cb'};">${dup ? '🚫 ' : warn ? '⚠️ ' : '✅ '}${escapeHtmlT(c.hint || c.equipment_name || '')}</span>
+            </div>`);
+        }
+        html.push('</div>');
+    }
+    html.push('</div>');
+    document.getElementById('applyTplPreview').innerHTML = html.join('');
+    updateCommitButtonState();
+    document.querySelectorAll('.tpl-cand-cb').forEach(cb => cb.addEventListener('change', updateCommitButtonState));
+}
+
+function toggleOnlyOk() { renderTplPreview(); }
+window.toggleOnlyOk = toggleOnlyOk;
+
+function toggleAllTpl(on) {
+    document.querySelectorAll('.tpl-cand-cb').forEach(cb => {
+        if (cb.disabled) return;
+        cb.checked = !!on;
+    });
+    updateCommitButtonState();
+}
+window.toggleAllTpl = toggleAllTpl;
+
+function updateCommitButtonState() {
+    const btn = document.getElementById('btnCommitTpl');
+    const checked = document.querySelectorAll('.tpl-cand-cb:checked').length;
+    btn.disabled = checked === 0;
+    btn.innerHTML = checked === 0
+        ? '<i class="fas fa-check-double"></i> Generar OTs'
+        : `<i class="fas fa-check-double"></i> Generar ${checked} OT${checked > 1 ? 's' : ''}`;
+}
+
+async function commitTemplate() {
+    const shId = (typeof _activeShutdown !== 'undefined' && _activeShutdown) ? _activeShutdown.id : null;
+    const tplId = document.getElementById('applyTplSelect').value;
+    if (!shId || !tplId || !_applyTplData) return;
+    const keys = Array.from(document.querySelectorAll('.tpl-cand-cb:checked')).map(cb => cb.dataset.key);
+    if (!keys.length) { alert('No hay tareas seleccionadas'); return; }
+    if (!confirm(`Se generaran ${keys.length} OTs en esta parada. ¿Continuar?`)) return;
+    try {
+        const r = await fetch(`/api/shutdowns/${shId}/apply-template/${tplId}`, {
+            method: 'POST', headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ commit: true, selected_keys: keys })
+        });
+        const data = await r.json();
+        if (!r.ok || data.error) { alert('Error: ' + (data.error || r.statusText)); return; }
+        alert(`OTs generadas: ${data.created_count}\nOmitidas: ${data.skipped_count}`);
+        document.getElementById('applyTplModal').close();
+        if (typeof openDetail === 'function') openDetail(shId);
+    } catch (e) { alert('Error: ' + e.message); }
+}
+window.commitTemplate = commitTemplate;
+
+function escapeHtmlT(s) {
+    return String(s == null ? '' : s).replace(/[&<>"']/g,
+        c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+}

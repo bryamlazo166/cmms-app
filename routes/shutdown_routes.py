@@ -496,3 +496,400 @@ def register_shutdown_routes(
             return jsonify(result)
         except Exception as e:
             return jsonify([])
+
+    # ════════════════════════════════════════════════════════════════════════
+    # PLANTILLAS DE PARADA (ShutdownTemplate)
+    # ════════════════════════════════════════════════════════════════════════
+
+    @app.route('/api/shutdown-templates', methods=['GET', 'POST'])
+    def handle_shutdown_templates():
+        from models import ShutdownTemplate, ShutdownTemplateItem
+        if request.method == 'POST':
+            try:
+                from flask_login import current_user
+                data = request.json or {}
+                name = (data.get('name') or '').strip()
+                if not name:
+                    return jsonify({"error": "Falta name"}), 400
+                t = ShutdownTemplate(
+                    name=name,
+                    description=(data.get('description') or '').strip() or None,
+                    is_active=bool(data.get('is_active', True)),
+                    created_by=getattr(current_user, 'full_name', None),
+                )
+                db.session.add(t)
+                db.session.commit()
+                return jsonify(t.to_dict()), 201
+            except Exception as e:
+                db.session.rollback()
+                logger.exception('shutdown template POST error')
+                return jsonify({"error": str(e)}), 500
+
+        # GET — listar
+        only_active = request.args.get('only_active', '0') == '1'
+        q = ShutdownTemplate.query
+        if only_active:
+            q = q.filter_by(is_active=True)
+        rows = q.order_by(ShutdownTemplate.name).all()
+        return jsonify([t.to_dict() for t in rows])
+
+    @app.route('/api/shutdown-templates/<int:template_id>', methods=['GET', 'PUT', 'DELETE'])
+    def handle_shutdown_template_detail(template_id):
+        from models import ShutdownTemplate
+        t = ShutdownTemplate.query.get_or_404(template_id)
+        if request.method == 'GET':
+            return jsonify(t.to_dict(with_items=True))
+        if request.method == 'PUT':
+            try:
+                data = request.json or {}
+                if 'name' in data:
+                    t.name = (data['name'] or '').strip() or t.name
+                if 'description' in data:
+                    t.description = (data.get('description') or '').strip() or None
+                if 'is_active' in data:
+                    t.is_active = bool(data['is_active'])
+                db.session.commit()
+                return jsonify(t.to_dict(with_items=True))
+            except Exception as e:
+                db.session.rollback()
+                return jsonify({"error": str(e)}), 500
+        # DELETE
+        try:
+            db.session.delete(t)
+            db.session.commit()
+            return jsonify({"ok": True})
+        except Exception as e:
+            db.session.rollback()
+            return jsonify({"error": str(e)}), 500
+
+    @app.route('/api/shutdown-templates/<int:template_id>/items', methods=['POST'])
+    def add_template_item(template_id):
+        from models import ShutdownTemplate, ShutdownTemplateItem
+        t = ShutdownTemplate.query.get_or_404(template_id)
+        try:
+            data = request.json or {}
+            description = (data.get('description') or '').strip()
+            if not description:
+                return jsonify({"error": "Falta description"}), 400
+            mode = (data.get('application_mode') or 'specific_equipment').strip()
+            if mode not in ('specific_equipment', 'tag_pattern', 'area', 'line'):
+                return jsonify({"error": "application_mode invalido"}), 400
+            # Validar que tenga el target acorde
+            tgt = {
+                'target_equipment_id': data.get('target_equipment_id'),
+                'target_area_id': data.get('target_area_id'),
+                'target_line_id': data.get('target_line_id'),
+                'target_tag_pattern': (data.get('target_tag_pattern') or '').strip() or None,
+            }
+            if mode == 'specific_equipment' and not tgt['target_equipment_id']:
+                return jsonify({"error": "Falta target_equipment_id"}), 400
+            if mode == 'tag_pattern' and not tgt['target_tag_pattern']:
+                return jsonify({"error": "Falta target_tag_pattern (ej: '^D[1-9]$')"}), 400
+            if mode == 'area' and not tgt['target_area_id']:
+                return jsonify({"error": "Falta target_area_id"}), 400
+            if mode == 'line' and not tgt['target_line_id']:
+                return jsonify({"error": "Falta target_line_id"}), 400
+
+            # order_index siguiente
+            max_idx = db.session.query(db.func.max(ShutdownTemplateItem.order_index)) \
+                .filter_by(template_id=template_id).scalar() or 0
+            it = ShutdownTemplateItem(
+                template_id=template_id,
+                order_index=max_idx + 1,
+                description=description,
+                maintenance_type=data.get('maintenance_type') or 'Preventivo',
+                estimated_duration=data.get('estimated_duration'),
+                tech_count=int(data.get('tech_count') or 1),
+                specialty=(data.get('specialty') or '').strip() or None,
+                component_name=(data.get('component_name') or '').strip() or None,
+                application_mode=mode,
+                target_equipment_id=tgt['target_equipment_id'] if mode == 'specific_equipment' else None,
+                target_area_id=tgt['target_area_id'] if mode == 'area' else None,
+                target_line_id=tgt['target_line_id'] if mode == 'line' else None,
+                target_tag_pattern=tgt['target_tag_pattern'] if mode == 'tag_pattern' else None,
+            )
+            db.session.add(it)
+            db.session.commit()
+            return jsonify(it.to_dict()), 201
+        except Exception as e:
+            db.session.rollback()
+            logger.exception('add_template_item error')
+            return jsonify({"error": str(e)}), 500
+
+    @app.route('/api/shutdown-template-items/<int:item_id>', methods=['PUT', 'DELETE'])
+    def handle_template_item(item_id):
+        from models import ShutdownTemplateItem
+        it = ShutdownTemplateItem.query.get_or_404(item_id)
+        if request.method == 'DELETE':
+            try:
+                db.session.delete(it)
+                db.session.commit()
+                return jsonify({"ok": True})
+            except Exception as e:
+                db.session.rollback()
+                return jsonify({"error": str(e)}), 500
+        try:
+            data = request.json or {}
+            for fld in ('description', 'maintenance_type', 'specialty', 'component_name',
+                        'target_tag_pattern'):
+                if fld in data:
+                    val = (data.get(fld) or '').strip() or None if isinstance(data.get(fld), str) else data.get(fld)
+                    setattr(it, fld, val)
+            for fld in ('estimated_duration', 'tech_count', 'order_index',
+                        'target_equipment_id', 'target_area_id', 'target_line_id'):
+                if fld in data:
+                    setattr(it, fld, data.get(fld))
+            if 'application_mode' in data:
+                it.application_mode = data['application_mode']
+            db.session.commit()
+            return jsonify(it.to_dict())
+        except Exception as e:
+            db.session.rollback()
+            return jsonify({"error": str(e)}), 500
+
+    # ── Aplicar plantilla a una parada (preview + commit) ──────────────────
+    def _resolve_template_targets(item, area_ids_filter=None):
+        """Resuelve la lista de equipos objetivo de un item segun su patron.
+        area_ids_filter: si se pasa (lista de area_ids), filtra los equipos
+        cuya area no este incluida (util para paradas PARCIAL).
+        Retorna lista de Equipment.
+        """
+        import re as _re
+        targets = []
+        mode = item.application_mode
+        if mode == 'specific_equipment' and item.target_equipment_id:
+            eq = Equipment.query.get(item.target_equipment_id)
+            if eq:
+                targets = [eq]
+        elif mode == 'area' and item.target_area_id:
+            targets = (
+                Equipment.query.join(Line, Equipment.line_id == Line.id)
+                .filter(Line.area_id == item.target_area_id)
+                .all()
+            )
+        elif mode == 'line' and item.target_line_id:
+            targets = Equipment.query.filter_by(line_id=item.target_line_id).all()
+        elif mode == 'tag_pattern' and item.target_tag_pattern:
+            try:
+                pat = _re.compile(item.target_tag_pattern)
+            except Exception:
+                pat = None
+            if pat:
+                all_eq = Equipment.query.all()
+                targets = [e for e in all_eq if e.tag and pat.match(e.tag)]
+        if area_ids_filter:
+            allowed = set(int(x) for x in area_ids_filter)
+            line_to_area = {l.id: l.area_id for l in Line.query.all()}
+            targets = [
+                e for e in targets
+                if e.line_id and line_to_area.get(e.line_id) in allowed
+            ]
+        return targets
+
+    @app.route('/api/shutdowns/<int:shutdown_id>/apply-template/<int:template_id>',
+               methods=['POST'])
+    def apply_template_to_shutdown(shutdown_id, template_id):
+        """Aplica una plantilla a la parada. Comportamiento:
+          - Si body tiene 'preview': true (default) → devuelve la lista de OTs
+            candidatas con cruce (existing_in_shutdown / preventive_due / ok),
+            sin crear nada.
+          - Si body tiene 'commit': true → genera las OTs marcadas como
+            selected (lista de keys 'item_id:equipment_id') y devuelve el
+            resumen.
+        """
+        from models import (
+            Shutdown, ShutdownTemplate, ShutdownTemplateItem,
+            LubricationPoint, InspectionRoute, MonitoringPoint,
+        )
+        sh = Shutdown.query.get_or_404(shutdown_id)
+        tpl = ShutdownTemplate.query.get_or_404(template_id)
+        data = request.json or {}
+        do_commit = bool(data.get('commit', False))
+
+        # Areas de la parada (si es PARCIAL, filtramos equipos a esas areas)
+        sh_area_ids = [sa.area_id for sa in sh.areas]
+        area_filter = sh_area_ids if (sh.shutdown_type or '').upper() == 'PARCIAL' and sh_area_ids else None
+
+        # OTs ya en la parada (para detectar duplicado)
+        ots_in_shutdown = WorkOrder.query.filter_by(shutdown_id=shutdown_id).all()
+
+        def matches_existing(desc, equipment_id):
+            d_low = (desc or '').lower().strip()
+            for ot in ots_in_shutdown:
+                if ot.equipment_id != equipment_id:
+                    continue
+                ot_desc = (ot.description or '').lower().strip()
+                # Coincidencia por substring fuerte (los primeros 30 chars suelen
+                # ser distintivos)
+                if not d_low or not ot_desc:
+                    continue
+                if d_low[:40] in ot_desc or ot_desc[:40] in d_low:
+                    return ot
+            return None
+
+        # Preventivos proximos (ventana ±15d alrededor de la parada)
+        try:
+            shut_dt = datetime.strptime(sh.shutdown_date[:10], '%Y-%m-%d').date()
+        except Exception:
+            shut_dt = datetime.utcnow().date()
+        from datetime import timedelta as _td
+        win_start = (shut_dt - _td(days=15)).isoformat()
+        win_end = (shut_dt + _td(days=30)).isoformat()
+
+        prev_due_by_eq = {}  # equipment_id -> list of (kind, code, due_date)
+        for cls, kind in ((LubricationPoint, 'lubrication'),
+                          (InspectionRoute, 'inspection'),
+                          (MonitoringPoint, 'monitoring')):
+            try:
+                rows = cls.query.filter(
+                    cls.is_active == True,  # noqa: E712
+                    cls.next_due_date.isnot(None),
+                    cls.next_due_date >= win_start,
+                    cls.next_due_date <= win_end,
+                ).all()
+            except Exception:
+                rows = []
+            for r in rows:
+                eqid = getattr(r, 'equipment_id', None)
+                if not eqid:
+                    continue
+                prev_due_by_eq.setdefault(eqid, []).append({
+                    'kind': kind, 'code': getattr(r, 'code', None) or getattr(r, 'name', '?'),
+                    'due_date': r.next_due_date,
+                })
+
+        # Construir candidatos
+        equipments_cache = {e.id: e for e in Equipment.query.all()}
+        lines_cache = {l.id: l for l in Line.query.all()}
+
+        candidates = []  # [{key, item_id, equipment_id, equipment_tag, equipment_name, description, status, ...}]
+        for it in tpl.items:
+            targets = _resolve_template_targets(it, area_filter)
+            for eq in targets:
+                desc_resolved = (it.description or '')
+                desc_resolved = desc_resolved.replace('{tag}', eq.tag or '')
+                desc_resolved = desc_resolved.replace('{name}', eq.name or '')
+                desc_resolved = desc_resolved.strip()
+
+                ln = lines_cache.get(eq.line_id) if eq.line_id else None
+                area_id = ln.area_id if ln else None
+
+                existing = matches_existing(desc_resolved, eq.id)
+                prev_warns = prev_due_by_eq.get(eq.id, [])
+
+                status = 'ok'
+                hint = None
+                if existing:
+                    status = 'duplicate'
+                    hint = f"Ya existe OT {existing.code} en esta parada"
+                elif prev_warns:
+                    # Solo marcamos warning si el preventivo es del mismo tipo
+                    # de mantenimiento del item (ej: lubrication+lubrication)
+                    same_kind = any(
+                        (it.maintenance_type or '').lower().startswith('prev')
+                        for _ in [1]
+                    )
+                    if same_kind and prev_warns:
+                        status = 'preventive_near'
+                        codes = ', '.join(p['code'] for p in prev_warns[:3])
+                        hint = f"Preventivo proximo en este equipo: {codes}"
+
+                candidates.append({
+                    'key': f"{it.id}:{eq.id}",
+                    'item_id': it.id,
+                    'description': desc_resolved,
+                    'maintenance_type': it.maintenance_type,
+                    'estimated_duration': it.estimated_duration,
+                    'tech_count': it.tech_count,
+                    'specialty': it.specialty,
+                    'component_name': it.component_name,
+                    'equipment_id': eq.id,
+                    'equipment_tag': eq.tag,
+                    'equipment_name': eq.name,
+                    'line_id': eq.line_id,
+                    'line_name': ln.name if ln else None,
+                    'area_id': area_id,
+                    'status': status,  # ok | duplicate | preventive_near
+                    'hint': hint,
+                    'item_description_template': it.description,
+                })
+
+        # ── Modo PREVIEW ────────────────────────────────────────────────
+        if not do_commit:
+            return jsonify({
+                'shutdown': {
+                    'id': sh.id, 'code': sh.code, 'name': sh.name,
+                    'shutdown_date': sh.shutdown_date,
+                    'shutdown_type': sh.shutdown_type,
+                    'area_ids': sh_area_ids,
+                },
+                'template': {'id': tpl.id, 'name': tpl.name, 'item_count': len(tpl.items)},
+                'candidates': candidates,
+                'summary': {
+                    'total': len(candidates),
+                    'ok': sum(1 for c in candidates if c['status'] == 'ok'),
+                    'duplicate': sum(1 for c in candidates if c['status'] == 'duplicate'),
+                    'preventive_near': sum(1 for c in candidates if c['status'] == 'preventive_near'),
+                },
+            })
+
+        # ── Modo COMMIT ─────────────────────────────────────────────────
+        # selected_keys es lista de "item_id:equipment_id"
+        selected_keys = set(data.get('selected_keys') or [])
+        if not selected_keys:
+            return jsonify({"error": "selected_keys requerido para commit"}), 400
+
+        # Fuzzy-match componente si se especifico component_name (igual que el bot)
+        try:
+            from bot.telegram_bot import _smart_component_match
+        except Exception:
+            _smart_component_match = None
+        from sqlalchemy import text as _sqltext
+
+        created = []
+        skipped = []
+        for c in candidates:
+            if c['key'] not in selected_keys:
+                continue
+            if c['status'] == 'duplicate':
+                skipped.append({'key': c['key'], 'reason': c['hint']})
+                continue
+
+            comp_id = sys_id = None
+            it = next((i for i in tpl.items if i.id == c['item_id']), None)
+            if it and it.component_name and _smart_component_match:
+                try:
+                    res = _smart_component_match(db, _sqltext, c['equipment_id'], it.component_name)
+                    if res:
+                        comp_id, sys_id = res
+                except Exception:
+                    pass
+
+            wo = WorkOrder(
+                description=c['description'],
+                maintenance_type=c['maintenance_type'] or 'Preventivo',
+                status='Programada',
+                scheduled_date=sh.shutdown_date,
+                estimated_duration=c['estimated_duration'],
+                tech_count=c['tech_count'] or 1,
+                area_id=c['area_id'],
+                line_id=c['line_id'],
+                equipment_id=c['equipment_id'],
+                system_id=sys_id,
+                component_id=comp_id,
+                shutdown_id=shutdown_id,
+            )
+            db.session.add(wo)
+            db.session.flush()
+            wo.code = f"OT-{wo.id:04d}"
+            created.append({'code': wo.code, 'description': wo.description,
+                            'equipment_tag': c['equipment_tag']})
+
+        db.session.commit()
+        return jsonify({
+            'ok': True,
+            'created': created,
+            'skipped': skipped,
+            'created_count': len(created),
+            'skipped_count': len(skipped),
+        }), 201

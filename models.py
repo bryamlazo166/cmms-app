@@ -1504,6 +1504,104 @@ class ShutdownArea(db.Model):
         }
 
 
+class ShutdownTemplate(db.Model):
+    """Plantilla reutilizable de tareas para parada de planta.
+    Agrupa N items, cada uno con un patron de aplicacion a equipos. Al
+    aplicarla a una parada se generan N OTs (una por cada equipo objetivo).
+    """
+    __tablename__ = 'shutdown_templates'
+    id: Mapped[int] = mapped_column(primary_key=True)
+    name: Mapped[str] = mapped_column(String(150), nullable=False)
+    description: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    is_active: Mapped[bool] = mapped_column(Boolean, default=True)
+    created_by: Mapped[Optional[str]] = mapped_column(String(120), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+
+    items = relationship(
+        "ShutdownTemplateItem", back_populates="template",
+        cascade="all, delete-orphan",
+        order_by="ShutdownTemplateItem.order_index, ShutdownTemplateItem.id",
+    )
+
+    def to_dict(self, with_items=False):
+        d = {
+            "id": self.id,
+            "name": self.name,
+            "description": self.description,
+            "is_active": self.is_active,
+            "created_by": self.created_by,
+            "created_at": self.created_at.isoformat() if self.created_at else None,
+            "item_count": len(self.items) if self.items else 0,
+        }
+        if with_items:
+            d["items"] = [it.to_dict() for it in (self.items or [])]
+        return d
+
+
+class ShutdownTemplateItem(db.Model):
+    """Tarea individual dentro de una plantilla. Define el patron de aplicacion
+    para expandirse a multiples OTs cuando se aplica a una parada.
+
+    application_mode controla como se resuelven los equipos objetivo:
+      - 'specific_equipment' → un solo equipo (target_equipment_id)
+      - 'tag_pattern'        → equipos cuyo tag matchea regex (target_tag_pattern)
+      - 'area'               → todos los equipos del area_id
+      - 'line'               → todos los equipos del line_id
+    """
+    __tablename__ = 'shutdown_template_items'
+    __table_args__ = (
+        Index('ix_shutdown_tpl_item_tpl', 'template_id'),
+    )
+    id: Mapped[int] = mapped_column(primary_key=True)
+    template_id: Mapped[int] = mapped_column(ForeignKey('shutdown_templates.id'), nullable=False)
+    order_index: Mapped[int] = mapped_column(Integer, default=0)
+
+    description: Mapped[str] = mapped_column(String(300), nullable=False)
+    # Puede contener placeholders {tag} o {name} que se reemplazan por el equipo
+    # objetivo al generar la OT. Ej: "Empaquetadura prensa estopa motriz {tag}"
+
+    maintenance_type: Mapped[str] = mapped_column(String(30), default='Preventivo')
+    estimated_duration: Mapped[Optional[float]] = mapped_column(Float, nullable=True)
+    tech_count: Mapped[int] = mapped_column(Integer, default=1)
+    specialty: Mapped[Optional[str]] = mapped_column(String(50), nullable=True)
+    component_name: Mapped[Optional[str]] = mapped_column(String(120), nullable=True)
+    # Nombre fuzzy del componente (resuelto via _smart_component_match al aplicar)
+
+    application_mode: Mapped[str] = mapped_column(String(30), default='specific_equipment')
+    target_equipment_id: Mapped[Optional[int]] = mapped_column(ForeignKey('equipments.id'), nullable=True)
+    target_area_id: Mapped[Optional[int]] = mapped_column(ForeignKey('areas.id'), nullable=True)
+    target_line_id: Mapped[Optional[int]] = mapped_column(ForeignKey('lines.id'), nullable=True)
+    target_tag_pattern: Mapped[Optional[str]] = mapped_column(String(120), nullable=True)
+    # Regex (Python re): '^D[1-9]$' para D1..D9, '^TH\\d+$' para todos los TH
+
+    template = relationship("ShutdownTemplate", back_populates="items")
+    target_equipment = relationship("Equipment")
+    target_area = relationship("Area")
+    target_line = relationship("Line")
+
+    def to_dict(self):
+        return {
+            "id": self.id,
+            "template_id": self.template_id,
+            "order_index": self.order_index,
+            "description": self.description,
+            "maintenance_type": self.maintenance_type,
+            "estimated_duration": self.estimated_duration,
+            "tech_count": self.tech_count,
+            "specialty": self.specialty,
+            "component_name": self.component_name,
+            "application_mode": self.application_mode,
+            "target_equipment_id": self.target_equipment_id,
+            "target_equipment_tag": self.target_equipment.tag if self.target_equipment else None,
+            "target_equipment_name": self.target_equipment.name if self.target_equipment else None,
+            "target_area_id": self.target_area_id,
+            "target_area_name": self.target_area.name if self.target_area else None,
+            "target_line_id": self.target_line_id,
+            "target_line_name": self.target_line.name if self.target_line else None,
+            "target_tag_pattern": self.target_tag_pattern,
+        }
+
+
 # ============= PROGRAMA NOCTURNO SEMANAL =============
 
 class WeeklyPlan(db.Model):

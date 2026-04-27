@@ -97,6 +97,7 @@
                     <button class="btn success" data-perm="paradas.export" onclick="exportShutdownPdf()" style="background:#FF453A;border-color:#FF453A;"><i class="fas fa-file-pdf"></i> Reporte PDF</button>
                     <button class="btn success" data-perm="paradas.export" onclick="exportShutdownExcel()" style="background:#1d8a4a;"><i class="fas fa-file-excel"></i> Reporte Excel</button>
                     <button class="btn success" data-perm="paradas.create" onclick="openCreateOTInShutdownModal()" style="background:#0A84FF;"><i class="fas fa-plus-circle"></i> Crear OT Nueva</button>
+                    <button class="btn success" data-perm="paradas.create" onclick="openApplyTemplateModal()" style="background:#FF9F0A;"><i class="fas fa-clipboard-list"></i> Aplicar Plantilla</button>
                     <button class="btn warning" data-perm="paradas.edit" onclick="openAddOTModal()"><i class="fas fa-link"></i> Vincular OTs</button>
                     <button class="btn primary" data-perm="paradas.edit" onclick="editCurrentShutdown()"><i class="fas fa-edit"></i> Editar</button>
                     <button onclick="deleteCurrentShutdown()" data-perm="paradas.delete"
@@ -281,6 +282,32 @@
         <div style="display:flex;gap:10px;justify-content:flex-end;margin-top:16px;">
             <button class="btn secondary" onclick="document.getElementById('createOTModal').close()">Cancelar</button>
             <button class="btn primary" onclick="confirmCreateOTInShutdown()"><i class="fas fa-save"></i> Crear OT</button>
+        </div>
+    </dialog>
+
+    <!-- Modal Aplicar Plantilla -->
+    <dialog id="applyTplModal" style="max-width:1100px;">
+        <h2><i class="fas fa-clipboard-list"></i> Aplicar plantilla a la parada</h2>
+        <div style="display:flex;gap:10px;align-items:center;margin-bottom:12px;flex-wrap:wrap;">
+            <label style="font-size:.85rem;color:#9ab0cb;">Plantilla:</label>
+            <select id="applyTplSelect" style="flex:1;min-width:280px;padding:8px;border-radius:8px;background:rgba(255,255,255,.06);border:1px solid rgba(255,255,255,.12);color:#eff6ff;"></select>
+            <button class="btn primary" onclick="loadTemplatePreview()"><i class="fas fa-eye"></i> Previsualizar</button>
+            <a href="/plantillas-paradas" target="_blank" class="btn secondary" style="text-decoration:none;display:inline-flex;align-items:center;"><i class="fas fa-cog"></i> Gestionar plantillas</a>
+        </div>
+        <div id="applyTplSummary" style="margin-bottom:8px;color:#9ab0cb;font-size:.85rem;"></div>
+        <div id="applyTplPreview" style="max-height:50vh;overflow-y:auto;background:#11161e;border-radius:8px;padding:8px;">
+            <div class="empty">Selecciona una plantilla y presiona Previsualizar.</div>
+        </div>
+        <div style="display:flex;gap:10px;justify-content:space-between;align-items:center;margin-top:14px;">
+            <div>
+                <label style="font-size:.85rem;color:#9ab0cb;cursor:pointer;">
+                    <input type="checkbox" id="applyTplOnlyOk" checked onchange="toggleOnlyOk()"> Mostrar solo "ok" (ocultar duplicados)
+                </label>
+            </div>
+            <div style="display:flex;gap:8px;">
+                <button class="btn secondary" onclick="document.getElementById('applyTplModal').close()">Cerrar</button>
+                <button class="btn success" id="btnCommitTpl" onclick="commitTemplate()" disabled><i class="fas fa-check-double"></i> Generar OTs seleccionadas</button>
+            </div>
         </div>
     </dialog>
 </section>
