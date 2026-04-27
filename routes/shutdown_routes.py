@@ -736,7 +736,9 @@ def register_shutdown_routes(
         win_start = (shut_dt - _td(days=15)).isoformat()
         win_end = (shut_dt + _td(days=30)).isoformat()
 
-        prev_due_by_eq = {}  # equipment_id -> list of (kind, code, due_date)
+        # Indexar puntos preventivos por (equipment_id, component_id|None)
+        # para poder cruzar al nivel de componente cuando esta disponible.
+        prev_due_index = {}
         for cls, kind in ((LubricationPoint, 'lubrication'),
                           (InspectionRoute, 'inspection'),
                           (MonitoringPoint, 'monitoring')):
@@ -753,16 +755,57 @@ def register_shutdown_routes(
                 eqid = getattr(r, 'equipment_id', None)
                 if not eqid:
                     continue
-                prev_due_by_eq.setdefault(eqid, []).append({
-                    'kind': kind, 'code': getattr(r, 'code', None) or getattr(r, 'name', '?'),
+                comp_id = getattr(r, 'component_id', None)
+                comp_obj = getattr(r, 'component', None)
+                prev_due_index.setdefault((eqid, comp_id), []).append({
+                    'kind': kind,
+                    'code': getattr(r, 'code', None) or getattr(r, 'name', '?'),
+                    'name': getattr(r, 'name', None),
                     'due_date': r.next_due_date,
+                    'component_name': comp_obj.name if comp_obj else None,
                 })
+
+        # Resolver componente fuzzy para cada (item, equipo). Cacheado para
+        # evitar llamar al matcher dos veces (preview + posterior commit).
+        try:
+            from bot.telegram_bot import _smart_component_match
+        except Exception:
+            _smart_component_match = None
+        from sqlalchemy import text as _sqltext
+        comp_resolved = {}  # (item_id, eq_id) -> (comp_id, sys_id) o None
+
+        def _resolve_comp(item, eq_id):
+            key = (item.id, eq_id)
+            if key in comp_resolved:
+                return comp_resolved[key]
+            res = None
+            if item.component_name and _smart_component_match:
+                try:
+                    res = _smart_component_match(db, _sqltext, eq_id, item.component_name)
+                except Exception:
+                    res = None
+            comp_resolved[key] = res
+            return res
+
+        # Heuristica: detectar si la descripcion del item habla de
+        # lubricacion / inspeccion / monitoreo para no marcar warnings
+        # ruidosos cuando no aplica.
+        def _kinds_in_desc(desc):
+            d = (desc or '').lower()
+            kinds = set()
+            if any(w in d for w in ('lubric', 'engras', 'engrasar', 'aceite', 'grasa', 'graseado')):
+                kinds.add('lubrication')
+            if any(w in d for w in ('inspec', 'revis', 'medic', 'verific', 'observ')):
+                kinds.add('inspection')
+            if any(w in d for w in ('monitore', 'tendenc', 'vibrac', 'temperatur', 'amperaj')):
+                kinds.add('monitoring')
+            return kinds
 
         # Construir candidatos
         equipments_cache = {e.id: e for e in Equipment.query.all()}
         lines_cache = {l.id: l for l in Line.query.all()}
 
-        candidates = []  # [{key, item_id, equipment_id, equipment_tag, equipment_name, description, status, ...}]
+        candidates = []
         for it in tpl.items:
             targets = _resolve_template_targets(it, area_filter)
             for eq in targets:
@@ -775,7 +818,23 @@ def register_shutdown_routes(
                 area_id = ln.area_id if ln else None
 
                 existing = matches_existing(desc_resolved, eq.id)
-                prev_warns = prev_due_by_eq.get(eq.id, [])
+
+                # Cruce de preventivos REFINADO:
+                # - Si el item tiene component_name resoluble → solo
+                #   preventivos del MISMO componente cuentan.
+                # - Sino, miramos preventivos del equipo cuya 'kind' matchee
+                #   palabras clave en la descripcion (lubric/inspec/monitor).
+                prev_warns = []
+                comp_pair = _resolve_comp(it, eq.id)
+                if comp_pair:
+                    cid = comp_pair[0]
+                    prev_warns = list(prev_due_index.get((eq.id, cid), []))
+                else:
+                    desc_kinds = _kinds_in_desc(it.description or desc_resolved)
+                    if desc_kinds:
+                        for (e_id, _c_id), lst in prev_due_index.items():
+                            if e_id == eq.id:
+                                prev_warns.extend(p for p in lst if p['kind'] in desc_kinds)
 
                 status = 'ok'
                 hint = None
@@ -783,16 +842,12 @@ def register_shutdown_routes(
                     status = 'duplicate'
                     hint = f"Ya existe OT {existing.code} en esta parada"
                 elif prev_warns:
-                    # Solo marcamos warning si el preventivo es del mismo tipo
-                    # de mantenimiento del item (ej: lubrication+lubrication)
-                    same_kind = any(
-                        (it.maintenance_type or '').lower().startswith('prev')
-                        for _ in [1]
-                    )
-                    if same_kind and prev_warns:
-                        status = 'preventive_near'
-                        codes = ', '.join(p['code'] for p in prev_warns[:3])
-                        hint = f"Preventivo proximo en este equipo: {codes}"
+                    status = 'preventive_near'
+                    parts = []
+                    for p in prev_warns[:3]:
+                        comp_part = f" [{p['component_name']}]" if p.get('component_name') else ''
+                        parts.append(f"{p['code']}{comp_part} (vence {p['due_date']})")
+                    hint = "Preventivo proximo: " + ' · '.join(parts)
 
                 candidates.append({
                     'key': f"{it.id}:{eq.id}",
@@ -839,13 +894,6 @@ def register_shutdown_routes(
         if not selected_keys:
             return jsonify({"error": "selected_keys requerido para commit"}), 400
 
-        # Fuzzy-match componente si se especifico component_name (igual que el bot)
-        try:
-            from bot.telegram_bot import _smart_component_match
-        except Exception:
-            _smart_component_match = None
-        from sqlalchemy import text as _sqltext
-
         created = []
         skipped = []
         for c in candidates:
@@ -857,13 +905,10 @@ def register_shutdown_routes(
 
             comp_id = sys_id = None
             it = next((i for i in tpl.items if i.id == c['item_id']), None)
-            if it and it.component_name and _smart_component_match:
-                try:
-                    res = _smart_component_match(db, _sqltext, c['equipment_id'], it.component_name)
-                    if res:
-                        comp_id, sys_id = res
-                except Exception:
-                    pass
+            if it:
+                pair = comp_resolved.get((it.id, c['equipment_id']))
+                if pair:
+                    comp_id, sys_id = pair
 
             wo = WorkOrder(
                 description=c['description'],
