@@ -105,9 +105,13 @@ async function loadHierarchyData() {
             fetch('/api/equipments').then(r => r.json())
         ]);
 
-        allAreas = areas.sort((a, b) => a.name.localeCompare(b.name));
-        allLines = lines.sort((a, b) => a.name.localeCompare(b.name));
-        allEquips = equips.sort((a, b) => a.name.localeCompare(b.name));
+        // Sort alfanumerico natural (TH1, TH2, ..., TH10 — no TH1, TH10, TH2)
+        const natOpts = { numeric: true, sensitivity: 'base' };
+        const sortFn = (a, b) => (a.name || '').localeCompare(b.name || '', 'es', natOpts);
+        const sortEqFn = (a, b) => ((a.tag || a.name || '')).localeCompare((b.tag || b.name || ''), 'es', natOpts);
+        allAreas = areas.sort(sortFn);
+        allLines = lines.sort(sortFn);
+        allEquips = equips.sort(sortEqFn);
 
         // Populate modal dropdowns if needed (not filters)
     } catch (e) { console.error("Error loading hierarchy:", e); }

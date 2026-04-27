@@ -134,7 +134,7 @@ function renderPointSelect() {
         groups.get(k).push(p);
     });
     const sortedGroups = [...groups.entries()].sort((a, b) =>
-        a[0].localeCompare(b[0], 'es', { sensitivity: 'base' })
+        a[0].localeCompare(b[0], 'es', { numeric: true, sensitivity: 'base' })
     );
     const renderOpt = p => {
         const tip = [p.code, p.lubricant_name, p.last_service_date ? `Ult: ${p.last_service_date}` : null,
@@ -152,7 +152,7 @@ function renderPointSelect() {
     } else {
         for (const [label, points] of sortedGroups) {
             points.sort((a, b) => (a.component_name || a.name || '').localeCompare(
-                b.component_name || b.name || '', 'es', { sensitivity: 'base' }));
+                b.component_name || b.name || '', 'es', { numeric: true, sensitivity: 'base' }));
             html += `<optgroup label="${_esc(label)}">${points.map(renderOpt).join('')}</optgroup>`;
         }
     }

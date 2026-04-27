@@ -41,11 +41,18 @@ async function loadDropdowns() {
             fetch('/api/providers').then(r => r.json())
         ]);
 
-        // Sort alphabetically
-        const sortFn = (a, b) => a.name.localeCompare(b.name);
+        // Sort alfanumerico natural (TH1, TH2, ..., TH10 — no TH1, TH10, TH2)
+        const natOpts = { numeric: true, sensitivity: 'base' };
+        const sortFn = (a, b) => (a.name || '').localeCompare(b.name || '', 'es', natOpts);
+        // Para equipos, ordena primero por tag (TH1, TH2... mas natural) y si no hay, por name
+        const sortEqFn = (a, b) => {
+            const ka = (a.tag || a.name || '');
+            const kb = (b.tag || b.name || '');
+            return ka.localeCompare(kb, 'es', natOpts);
+        };
         allAreas = areas.sort(sortFn);
         allLines = lines.sort(sortFn);
-        allEquips = equips.sort(sortFn);
+        allEquips = equips.sort(sortEqFn);
         allSys = systems.sort(sortFn);
         allComps = comps.sort(sortFn);
         allProviders = providers.sort(sortFn);

@@ -551,3 +551,291 @@ def register_thickness_routes(
             import traceback
             traceback.print_exc()
             return jsonify({"error": str(e)}), 500
+
+    # ── PLANTILLA EXCEL (descarga + carga) ─────────────────────────────────
+    @app.route('/api/thickness/template/<int:equipment_id>', methods=['GET'])
+    def download_thickness_template(equipment_id):
+        """Descarga una plantilla .xlsx pre-rellenada con los puntos catalogados
+        del equipo. El supervisor solo escribe Fecha + Inspector + el valor
+        medido (mm) por punto y vuelve a cargar."""
+        try:
+            from io import BytesIO
+            from flask import send_file
+            from openpyxl import Workbook
+            from openpyxl.styles import Font, Alignment, PatternFill, Protection
+            from openpyxl.utils import get_column_letter
+
+            eq = Equipment.query.get(equipment_id)
+            if not eq:
+                return jsonify({"error": f"Equipo {equipment_id} no existe"}), 404
+
+            points = ThicknessPoint.query.filter_by(
+                equipment_id=equipment_id, is_active=True
+            ).order_by(
+                ThicknessPoint.group_name, ThicknessPoint.section,
+                ThicknessPoint.order_index, ThicknessPoint.position
+            ).all()
+            if not points:
+                return jsonify({"error": f"El equipo {eq.tag or eq.name} no tiene puntos UT catalogados"}), 400
+
+            wb = Workbook()
+
+            # ── Hoja 1: Datos generales ─────────────────────────────────
+            ws1 = wb.active
+            ws1.title = "Datos"
+            bold = Font(bold=True)
+            yellow = PatternFill('solid', fgColor='FFF2CC')  # celdas a llenar
+            grey = PatternFill('solid', fgColor='D9D9D9')   # celdas bloqueadas
+            ws1['A1'] = 'INSPECCION DE ESPESORES POR ULTRASONIDO'
+            ws1['A1'].font = Font(bold=True, size=14)
+            ws1.merge_cells('A1:B1')
+
+            ws1['A3'] = 'Equipo:'; ws1['A3'].font = bold
+            ws1['B3'] = f"{eq.tag or '-'} — {eq.name}"
+            ws1['B3'].fill = grey
+            ws1['A4'] = 'equipment_id:'; ws1['A4'].font = bold
+            ws1['B4'] = equipment_id
+            ws1['B4'].fill = grey
+            ws1['A5'] = 'Fecha medicion (YYYY-MM-DD):'; ws1['A5'].font = bold
+            ws1['B5'] = dt.date.today().isoformat()
+            ws1['B5'].fill = yellow
+            ws1['A6'] = 'Inspector:'; ws1['A6'].font = bold
+            ws1['B6'] = ''
+            ws1['B6'].fill = yellow
+            ws1['A7'] = 'Frecuencia (dias):'; ws1['A7'].font = bold
+            ws1['B7'] = 60
+            ws1['B7'].fill = yellow
+            ws1['A8'] = 'Observaciones:'; ws1['A8'].font = bold
+            ws1['B8'] = ''
+            ws1['B8'].fill = yellow
+
+            ws1['A10'] = 'Instrucciones:'; ws1['A10'].font = bold
+            inst = [
+                '1. NO modifiques las celdas grises (Equipo, equipment_id, point_id).',
+                '2. En las celdas amarillas escribe Fecha, Inspector, Frec. y Obs. (opcional).',
+                '3. Ve a la hoja "Mediciones" y escribe el valor medido en mm en la columna G.',
+                '4. Si un punto no se midio, deja el valor vacio (se omite, no afecta).',
+                '5. Guarda el archivo y subelo desde el modulo de Espesores.',
+            ]
+            for i, t in enumerate(inst, start=11):
+                ws1[f'A{i}'] = t
+            ws1.column_dimensions['A'].width = 32
+            ws1.column_dimensions['B'].width = 60
+
+            # ── Hoja 2: Mediciones ──────────────────────────────────────
+            ws2 = wb.create_sheet('Mediciones')
+            headers = ['Grupo', 'Seccion', 'Posicion', 'Nominal (mm)',
+                       'Alarma (mm)', 'Scrap (mm)', 'Valor medido (mm)', 'point_id']
+            for col, h in enumerate(headers, start=1):
+                c = ws2.cell(row=1, column=col, value=h)
+                c.font = bold
+                c.fill = PatternFill('solid', fgColor='305496')
+                c.font = Font(bold=True, color='FFFFFF')
+                c.alignment = Alignment(horizontal='center')
+            for i, p in enumerate(points, start=2):
+                ws2.cell(row=i, column=1, value=p.group_name).fill = grey
+                ws2.cell(row=i, column=2, value=p.section).fill = grey
+                ws2.cell(row=i, column=3, value=p.position).fill = grey
+                ws2.cell(row=i, column=4, value=p.nominal_thickness).fill = grey
+                ws2.cell(row=i, column=5, value=p.alarm_thickness).fill = grey
+                ws2.cell(row=i, column=6, value=p.scrap_thickness).fill = grey
+                # Columna G: valor medido (amarilla, editable)
+                cv = ws2.cell(row=i, column=7, value=None)
+                cv.fill = yellow
+                cv.alignment = Alignment(horizontal='center')
+                # Columna H: point_id (gris, NO tocar)
+                ws2.cell(row=i, column=8, value=p.id).fill = grey
+
+            for col_idx, w in enumerate([18, 10, 14, 14, 14, 14, 18, 12], start=1):
+                ws2.column_dimensions[get_column_letter(col_idx)].width = w
+            ws2.freeze_panes = 'A2'
+
+            buf = BytesIO()
+            wb.save(buf)
+            buf.seek(0)
+
+            fname = f"plantilla_UT_{eq.tag or equipment_id}_{dt.date.today().isoformat()}.xlsx"
+            return send_file(
+                buf,
+                mimetype='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+                as_attachment=True,
+                download_name=fname,
+            )
+        except Exception as e:
+            logger.exception('thickness template download error')
+            return jsonify({"error": str(e)}), 500
+
+    @app.route('/api/thickness/upload-template', methods=['POST'])
+    def upload_thickness_template():
+        """Recibe la plantilla .xlsx rellenada y crea ThicknessInspection +
+        ThicknessReadings. Reusa la logica de POST /api/thickness/inspections."""
+        try:
+            from openpyxl import load_workbook
+            if 'file' not in request.files:
+                return jsonify({"error": "Falta el archivo (campo 'file')"}), 400
+            f = request.files['file']
+            if not f.filename.lower().endswith('.xlsx'):
+                return jsonify({"error": "El archivo debe ser .xlsx"}), 400
+
+            wb = load_workbook(f, data_only=True)
+            if 'Datos' not in wb.sheetnames or 'Mediciones' not in wb.sheetnames:
+                return jsonify({"error": "Plantilla invalida: faltan hojas 'Datos' o 'Mediciones'"}), 400
+
+            ws1 = wb['Datos']
+            try:
+                equipment_id = int(ws1['B4'].value)
+            except Exception:
+                return jsonify({"error": "Celda B4 (equipment_id) invalida en hoja Datos"}), 400
+            eq = Equipment.query.get(equipment_id)
+            if not eq:
+                return jsonify({"error": f"Equipo {equipment_id} no existe"}), 404
+            inspection_date = str(ws1['B5'].value or '').strip()
+            if not inspection_date:
+                return jsonify({"error": "Falta Fecha medicion (celda B5)"}), 400
+            # Excel devuelve datetime si se escribio como fecha
+            if hasattr(ws1['B5'].value, 'isoformat'):
+                inspection_date = ws1['B5'].value.date().isoformat() if hasattr(ws1['B5'].value, 'date') else ws1['B5'].value.isoformat()
+            else:
+                # Validar formato YYYY-MM-DD
+                try:
+                    dt.date.fromisoformat(inspection_date[:10])
+                    inspection_date = inspection_date[:10]
+                except Exception:
+                    return jsonify({"error": f"Fecha invalida '{inspection_date}'. Usa YYYY-MM-DD"}), 400
+            inspector = str(ws1['B6'].value or '').strip() or None
+            try:
+                frequency_days = int(ws1['B7'].value or 60)
+            except Exception:
+                frequency_days = 60
+            observations = str(ws1['B8'].value or '').strip() or None
+
+            # Leer mediciones (saltar fila 1 = headers)
+            ws2 = wb['Mediciones']
+            readings = []
+            row = 2
+            while True:
+                point_id_cell = ws2.cell(row=row, column=8).value
+                value_cell = ws2.cell(row=row, column=7).value
+                if point_id_cell is None and value_cell is None:
+                    # fila vacia → fin
+                    if row > 2 and ws2.cell(row=row + 1, column=8).value is None:
+                        break
+                    row += 1
+                    if row > 5000:
+                        break
+                    continue
+                try:
+                    pid = int(point_id_cell)
+                except Exception:
+                    row += 1
+                    continue
+                if value_cell is None or str(value_cell).strip() == '':
+                    row += 1
+                    continue
+                try:
+                    val = float(value_cell)
+                except Exception:
+                    row += 1
+                    continue
+                readings.append({"point_id": pid, "value_mm": val})
+                row += 1
+
+            if not readings:
+                return jsonify({"error": "No se detecto ninguna medicion en la columna G"}), 400
+
+            # Reusar la logica del POST inspections via llamada interna a la BD
+            try:
+                insp_dt = dt.date.fromisoformat(inspection_date)
+            except Exception:
+                insp_dt = dt.date.today()
+            next_due = (insp_dt + dt.timedelta(days=frequency_days)).isoformat()
+
+            inspection = ThicknessInspection(
+                equipment_id=equipment_id,
+                inspection_date=inspection_date,
+                next_due_date=next_due,
+                frequency_days=frequency_days,
+                inspector_name=inspector,
+                status='COMPLETA',
+                observations=observations,
+            )
+            db.session.add(inspection)
+            db.session.flush()
+
+            total = criticals = alerts = 0
+            critical_details = []
+            for r in readings:
+                pt = ThicknessPoint.query.get(r['point_id'])
+                if not pt or pt.equipment_id != equipment_id:
+                    continue
+                status, is_alert, is_critical = _calc_status(r['value_mm'], pt)
+                rd = ThicknessReading(
+                    inspection_id=inspection.id,
+                    point_id=pt.id,
+                    value_mm=r['value_mm'],
+                    is_alert=is_alert,
+                    is_critical=is_critical,
+                )
+                db.session.add(rd)
+                pt.last_value = r['value_mm']
+                pt.last_date = inspection_date
+                pt.status = status
+                total += 1
+                if is_critical:
+                    criticals += 1
+                    critical_details.append(
+                        f"{pt.group_name} S{pt.section or ''}-{pt.position}: "
+                        f"{r['value_mm']}mm (limite {pt.scrap_thickness}mm)"
+                    )
+                elif is_alert:
+                    alerts += 1
+
+            inspection.total_points = total
+            inspection.critical_points = criticals
+            inspection.alert_points = alerts
+            if criticals > 0:
+                inspection.semaphore_status = 'ROJO'
+            elif alerts > 0:
+                inspection.semaphore_status = 'AMARILLO'
+            else:
+                inspection.semaphore_status = 'VERDE'
+            db.session.commit()
+
+            # Aviso automatico si hay criticos (mismo patron que el POST inspections)
+            notice_code = None
+            if criticals > 0 and MaintenanceNotice:
+                try:
+                    desc = (f"Inspeccion UT detecto {criticals} punto(s) critico(s) en "
+                            f"{eq.name}.\nDetalles:\n- " + "\n- ".join(critical_details[:10]))
+                    notice = MaintenanceNotice(
+                        description=desc, equipment_id=equipment_id,
+                        criticality='Alta', priority='Alta',
+                        maintenance_type='Correctivo', failure_category='Estructural',
+                        failure_mode='Desgaste', status='Pendiente', scope='PLAN',
+                        reporter_name=inspector or 'Plantilla UT',
+                    )
+                    db.session.add(notice)
+                    db.session.flush()
+                    notice.code = f"AV-{notice.id:04d}"
+                    notice_code = notice.code
+                    db.session.commit()
+                except Exception as ne:
+                    logger.warning(f"thickness upload: aviso auto fallo: {ne}")
+                    db.session.rollback()
+
+            return jsonify({
+                "ok": True,
+                "inspection_id": inspection.id,
+                "equipment_tag": eq.tag,
+                "equipment_name": eq.name,
+                "inspection_date": inspection_date,
+                "total_readings": total,
+                "criticals": criticals,
+                "alerts": alerts,
+                "semaphore_status": inspection.semaphore_status,
+                "notice_code": notice_code,
+            }), 201
+        except Exception as e:
+            db.session.rollback()
+            logger.exception('thickness upload template error')
+            return jsonify({"error": str(e)}), 500

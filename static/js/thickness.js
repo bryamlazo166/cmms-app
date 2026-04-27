@@ -9,6 +9,45 @@ document.addEventListener('DOMContentLoaded', () => {
     reloadDashboard();
 });
 
+function downloadUTTemplate(equipmentId, tag) {
+    const a = document.createElement('a');
+    a.href = `/api/thickness/template/${equipmentId}`;
+    a.download = `plantilla_UT_${tag || equipmentId}.xlsx`;
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+}
+window.downloadUTTemplate = downloadUTTemplate;
+
+function uploadUTTemplate(equipmentId) {
+    const input = document.createElement('input');
+    input.type = 'file';
+    input.accept = '.xlsx';
+    input.onchange = async () => {
+        const f = input.files && input.files[0];
+        if (!f) return;
+        const fd = new FormData();
+        fd.append('file', f);
+        try {
+            const res = await fetch('/api/thickness/upload-template', { method: 'POST', body: fd });
+            const data = await res.json();
+            if (!res.ok) {
+                alert('Error: ' + (data.error || res.statusText));
+                return;
+            }
+            const noticeMsg = data.notice_code ? `\nAviso creado: ${data.notice_code}` : '';
+            alert(`Plantilla cargada\n${data.equipment_tag} (${data.equipment_date || data.inspection_date})\n` +
+                  `Mediciones: ${data.total_readings} | Criticos: ${data.criticals} | Alertas: ${data.alerts}\n` +
+                  `Semaforo: ${data.semaphore_status}${noticeMsg}`);
+            reloadDashboard();
+        } catch (e) {
+            alert('Error de carga: ' + e.message);
+        }
+    };
+    input.click();
+}
+window.uploadUTTemplate = uploadUTTemplate;
+
 async function reloadDashboard() {
     try {
         const res = await fetch('/api/thickness/dashboard');
@@ -62,6 +101,14 @@ function renderDashboard() {
                 </button>
                 <button class="btn" style="flex:1;font-size:.78rem;height:30px;padding:0;background:rgba(255,159,10,.15);color:#FF9F0A;border:1px solid rgba(255,159,10,.3);" onclick="event.stopPropagation();openAnalysisFor(${eq.equipment_id})">
                     <i class="fas fa-chart-line"></i> Análisis
+                </button>
+            </div>
+            <div style="margin-top:6px;display:flex;gap:6px;">
+                <button class="btn" style="flex:1;font-size:.75rem;height:28px;padding:0;background:rgba(48,209,88,.12);color:#30D158;border:1px solid rgba(48,209,88,.3);" onclick="event.stopPropagation();downloadUTTemplate(${eq.equipment_id}, '${(eq.equipment_tag || '').replace(/'/g, "\\'")}')">
+                    <i class="fas fa-download"></i> Plantilla
+                </button>
+                <button class="btn" style="flex:1;font-size:.75rem;height:28px;padding:0;background:rgba(90,200,250,.12);color:#5ac8fa;border:1px solid rgba(90,200,250,.3);" onclick="event.stopPropagation();uploadUTTemplate(${eq.equipment_id})">
+                    <i class="fas fa-upload"></i> Cargar
                 </button>
             </div>
         </div>`;

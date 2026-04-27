@@ -36,7 +36,7 @@ function setText(id, value) {
 function fillAreas() {
     const sel = document.getElementById("filterArea");
     sel.innerHTML = '<option value="">Todas las areas</option>' + state.areas
-        .sort((a, b) => (a.name || "").localeCompare(b.name || ""))
+        .sort((a, b) => (a.name || "").localeCompare(b.name || "", 'es', { numeric: true, sensitivity: 'base' }))
         .map(a => `<option value="${a.id}">${a.name}</option>`).join("");
 }
 
@@ -45,7 +45,7 @@ function fillLines() {
     const sel = document.getElementById("filterLine");
     sel.innerHTML = '<option value="">Todas las lineas</option>' + state.lines
         .filter(l => !areaId || Number(l.area_id) === areaId)
-        .sort((a, b) => (a.name || "").localeCompare(b.name || ""))
+        .sort((a, b) => (a.name || "").localeCompare(b.name || "", 'es', { numeric: true, sensitivity: 'base' }))
         .map(l => `<option value="${l.id}">${l.name}</option>`).join("");
 }
 
@@ -61,7 +61,7 @@ function fillEquipments() {
             if (areaId) return areaLineSet.has(lid);
             return true;
         })
-        .sort((a, b) => (a.name || "").localeCompare(b.name || ""))
+        .sort((a, b) => (a.name || "").localeCompare(b.name || "", 'es', { numeric: true, sensitivity: 'base' }))
         .map(e => `<option value="${e.id}">${e.tag ? `${e.tag} - ` : ""}${e.name}</option>`).join("");
 }
 
