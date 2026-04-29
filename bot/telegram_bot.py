@@ -859,6 +859,61 @@ def _build_cmms_context_real(app):
                 for t in techs:
                     ctx.append(f"  {t[1]} | {t[2] or '-'} | id:{t[0]}")
 
+            # Modulo de SEGUIMIENTO (Activities + Milestones) — actividades
+            # globales de fabricacion/compra/proyecto/parada/reunion con sus
+            # hitos. Solo activas + ultimas N completadas para no saturar.
+            try:
+                acts = _db.session.execute(text("""
+                    SELECT a.id, a.title, a.activity_type, a.priority, a.status,
+                           a.responsible, a.start_date, a.target_date, a.completion_date,
+                           e.tag, e.name, a.description
+                    FROM activities a
+                    LEFT JOIN equipments e ON a.equipment_id = e.id
+                    WHERE a.status IN ('ABIERTA', 'EN_PROGRESO')
+                    ORDER BY
+                        CASE a.priority WHEN 'ALTA' THEN 0 WHEN 'MEDIA' THEN 1 ELSE 2 END,
+                        a.target_date NULLS LAST
+                """)).fetchall()
+                if acts:
+                    ctx.append(f"\n=== SEGUIMIENTO — ACTIVIDADES ACTIVAS ({len(acts)}) ===")
+                    ctx.append("(Modulo /seguimiento: actividades globales tipo fabricacion, compra, proyecto, parada, reunion. NO confundir con OTs ni avisos)")
+                    act_ids = []
+                    for a in acts:
+                        act_ids.append(a[0])
+                        eq_part = f" | equipo: {a[9] or '-'} ({a[10] or '-'})" if a[9] or a[10] else ''
+                        dates = []
+                        if a[6]: dates.append(f"inicio:{a[6]}")
+                        if a[7]: dates.append(f"meta:{a[7]}")
+                        date_part = (" | " + ", ".join(dates)) if dates else ''
+                        desc_part = f"\n    desc: {a[11][:200]}" if a[11] else ''
+                        ctx.append(f"  id:{a[0]} | [{a[2]}] {a[1]} | {a[4]} | prio:{a[3]} | resp:{a[5] or '-'}{date_part}{eq_part}{desc_part}")
+
+                    # Milestones de esas actividades (limitar a ~50 mas relevantes)
+                    if act_ids:
+                        ms_rows = _db.session.execute(text(f"""
+                            SELECT activity_id, description, status, target_date, completion_date, comment
+                            FROM milestones
+                            WHERE activity_id IN ({','.join(str(x) for x in act_ids)})
+                              AND is_active = true
+                            ORDER BY activity_id, order_index, id
+                            LIMIT 80
+                        """)).fetchall()
+                        ms_by_act = {}
+                        for m in ms_rows:
+                            ms_by_act.setdefault(m[0], []).append(m)
+                        if ms_by_act:
+                            ctx.append("\n=== SEGUIMIENTO — HITOS DE LAS ACTIVIDADES ===")
+                            for aid, mlist in ms_by_act.items():
+                                ctx.append(f"  Actividad id:{aid}:")
+                                for m in mlist:
+                                    icon = '✓' if m[2] == 'COMPLETADO' else ('▶' if m[2] == 'EN_PROGRESO' else '○')
+                                    target = f" (meta:{m[3]})" if m[3] else ''
+                                    done = f" [hecho:{m[4]}]" if m[4] else ''
+                                    com = f" — {m[5][:120]}" if m[5] else ''
+                                    ctx.append(f"    {icon} {m[1]}{target}{done}{com}")
+            except Exception as _e:
+                ctx.append(f"(error seguimiento: {_e})")
+
             # Warehouse low stock
             try:
                 low = _db.session.execute(text("""
@@ -2923,6 +2978,16 @@ REGLA CRITICA #1 — DISTINGUIR CONSULTA DE REPORTE DE FALLA:
 - Si el usuario REPORTA una falla activa (palabras como "esta fallando", "se rompio", "no arranca", "vibra", "hace ruido", "gotea", "se sobrecaliento", "se trabo", "salta el termico", "boto aceite"), entonces crea action:"create_notice".
 - Si el usuario solo describe el equipo o pide datos tecnicos (marca, codigo, modelo, especificaciones, ubicacion, ficha tecnica), es CONSULTA → action:"none".
 - Ante la duda, prefiere action:"none" con reply explicando lo que entendiste. NUNCA generes un aviso "por si acaso".
+
+REGLA — MODULO DE SEGUIMIENTO (Activities + Milestones):
+- Cuando el usuario pregunte por "seguimiento", "actividad", "actividades", "mis seguimientos", "compras", "fabricaciones", "fabricacion", "proyecto", "reunion", "limpieza programada", "trabajo programado", "que se va a hacer", "cuando se hara X", "estado de X" donde X NO es una OT/aviso (es algo mas amplio), SIEMPRE revisa la seccion === SEGUIMIENTO — ACTIVIDADES ACTIVAS === y === SEGUIMIENTO — HITOS === del contexto.
+- Las actividades del modulo seguimiento son distintas a las OTs y avisos: son fabricaciones, compras, proyectos, paradas, reuniones u otros trabajos de gestion mas amplios. Tienen tipo (FABRICACION/COMPRA/REUNION/PROYECTO/PARADA/OTRO), prioridad (ALTA/MEDIA/BAJA), responsable, fechas (inicio, meta, completion) y una lista de hitos (milestones).
+- Cuando respondas sobre una actividad, MENCIONA: titulo, tipo, responsable, fecha meta y proximo hito pendiente (si existe). Si la actividad esta vinculada a un equipo, indica el tag.
+- Si el usuario pregunta "cuando se va a hacer X" / "cuando esta programado Y" — primero busca en SEGUIMIENTO, luego en avisos/OTs/preventivos.
+- Ejemplos:
+  * "Cuando se va a hacer la limpieza del lavador de vahos?" → busca actividades cuyo titulo o descripcion contenga "lavador" o "vahos" en SEGUIMIENTO. Si existe, responde con titulo, fecha meta y proximo hito.
+  * "Que actividades de compra tengo abiertas?" → filtra activity_type=COMPRA con status ABIERTA o EN_PROGRESO.
+  * "Que tiene asignado Marcos esta semana en seguimiento?" → filtra responsible=Marcos.
 
 REGLA CRITICA #2: Si el usuario reporta una falla, pide crear/editar/cerrar algo, NO uses action:"none" con reply describiendo la accion. Devuelve la accion real. El campo "reply" NUNCA debe contener frases como "aviso creado", "AV-XXXX generado", "OT cerrada", "accion registrada" — eso solo lo hace el sistema despues de ejecutar la accion real.
 
