@@ -805,6 +805,9 @@ _ENSURE_INDEXES_SQL = [
     "CREATE INDEX IF NOT EXISTS ix_lp_is_active          ON lubrication_points(is_active)",
     "CREATE INDEX IF NOT EXISTS ix_mp_equipment_id       ON monitoring_points(equipment_id)",
     "CREATE INDEX IF NOT EXISTS ix_mp_is_active          ON monitoring_points(is_active)",
+    # Plantillas de parada — columnas opcionales agregadas despues del create_all inicial
+    "ALTER TABLE shutdown_template_items ADD COLUMN IF NOT EXISTS target_system_id INTEGER REFERENCES systems(id)",
+    "ALTER TABLE shutdown_template_items ADD COLUMN IF NOT EXISTS target_component_id INTEGER REFERENCES components(id)",
 ]
 
 

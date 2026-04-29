@@ -580,6 +580,8 @@ def register_shutdown_routes(
                 'target_area_id': data.get('target_area_id'),
                 'target_line_id': data.get('target_line_id'),
                 'target_tag_pattern': (data.get('target_tag_pattern') or '').strip() or None,
+                'target_system_id': data.get('target_system_id'),
+                'target_component_id': data.get('target_component_id'),
             }
             if mode == 'specific_equipment' and not tgt['target_equipment_id']:
                 return jsonify({"error": "Falta target_equipment_id"}), 400
@@ -607,6 +609,9 @@ def register_shutdown_routes(
                 target_area_id=tgt['target_area_id'] if mode == 'area' else None,
                 target_line_id=tgt['target_line_id'] if mode == 'line' else None,
                 target_tag_pattern=tgt['target_tag_pattern'] if mode == 'tag_pattern' else None,
+                # System/Component solo aplican con specific_equipment
+                target_system_id=tgt['target_system_id'] if mode == 'specific_equipment' else None,
+                target_component_id=tgt['target_component_id'] if mode == 'specific_equipment' else None,
             )
             db.session.add(it)
             db.session.commit()
@@ -636,11 +641,16 @@ def register_shutdown_routes(
                     val = (data.get(fld) or '').strip() or None if isinstance(data.get(fld), str) else data.get(fld)
                     setattr(it, fld, val)
             for fld in ('estimated_duration', 'tech_count', 'order_index',
-                        'target_equipment_id', 'target_area_id', 'target_line_id'):
+                        'target_equipment_id', 'target_area_id', 'target_line_id',
+                        'target_system_id', 'target_component_id'):
                 if fld in data:
                     setattr(it, fld, data.get(fld))
             if 'application_mode' in data:
                 it.application_mode = data['application_mode']
+                # Si cambio a un modo no-specific, limpiar system/component
+                if data['application_mode'] != 'specific_equipment':
+                    it.target_system_id = None
+                    it.target_component_id = None
             db.session.commit()
             return jsonify(it.to_dict())
         except Exception as e:
@@ -779,7 +789,11 @@ def register_shutdown_routes(
             if key in comp_resolved:
                 return comp_resolved[key]
             res = None
-            if item.component_name and _smart_component_match:
+            # Prioridad 1: componente directo definido en el item (cascada)
+            if getattr(item, 'target_component_id', None):
+                res = (item.target_component_id, item.target_system_id)
+            # Prioridad 2: fuzzy via component_name
+            elif item.component_name and _smart_component_match:
                 try:
                     res = _smart_component_match(db, _sqltext, eq_id, item.component_name)
                 except Exception:

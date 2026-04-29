@@ -152,9 +152,34 @@
             </select>
         </div>
 
-        <div id="modeSpecific" class="form-group">
-            <label>Equipo</label>
-            <select id="itemEquip"></select>
+        <div id="modeSpecific">
+            <div class="form-row">
+                <div class="form-group">
+                    <label>Area</label>
+                    <select id="itemAreaCasc" onchange="onItemAreaChange()"></select>
+                </div>
+                <div class="form-group">
+                    <label>Linea</label>
+                    <select id="itemLineCasc" onchange="onItemLineChange()"></select>
+                </div>
+            </div>
+            <div class="form-group">
+                <label>Equipo *</label>
+                <select id="itemEquip" onchange="onItemEquipChange()"></select>
+            </div>
+            <div class="form-row">
+                <div class="form-group">
+                    <label>Sistema (opcional)</label>
+                    <select id="itemSysCasc" onchange="onItemSysChange()"></select>
+                </div>
+                <div class="form-group">
+                    <label>Componente (opcional)</label>
+                    <select id="itemCompCasc"></select>
+                </div>
+            </div>
+            <small style="color:#9ab0cb;display:block;margin-top:-4px;margin-bottom:8px;">
+                Si eliges componente exacto aqui, la OT se genera con esa precision (sin pasar por el matcher fuzzy del campo "Componente" de arriba).
+            </small>
         </div>
         <div id="modePattern" class="form-group" style="display:none;">
             <label>Patron regex sobre tag</label>
@@ -177,7 +202,7 @@
     </dialog>
 
     <script>
-        let _tpls = [], _activeTpl = null, _equips = [], _areas = [], _lines = [];
+        let _tpls = [], _activeTpl = null, _equips = [], _areas = [], _lines = [], _systems = [], _components = [];
 
         async function jget(url, opts) {
             const r = await fetch(url, opts);
@@ -187,14 +212,54 @@
         }
 
         async function loadCatalogs() {
-            const [eq, ar, ln] = await Promise.all([
-                jget('/api/equipments'), jget('/api/areas'), jget('/api/lines')
+            const [eq, ar, ln, sy, co] = await Promise.all([
+                jget('/api/equipments'), jget('/api/areas'), jget('/api/lines'),
+                jget('/api/systems'), jget('/api/components')
             ]);
             const nat = { numeric: true, sensitivity: 'base' };
             _equips = eq.sort((a, b) => (a.tag || a.name || '').localeCompare(b.tag || b.name || '', 'es', nat));
             _areas = ar.sort((a, b) => (a.name || '').localeCompare(b.name || '', 'es', nat));
             _lines = ln.sort((a, b) => (a.name || '').localeCompare(b.name || '', 'es', nat));
+            _systems = sy.sort((a, b) => (a.name || '').localeCompare(b.name || '', 'es', nat));
+            _components = co.sort((a, b) => (a.name || '').localeCompare(b.name || '', 'es', nat));
         }
+
+        // Cascada Area -> Linea -> Equipo -> Sistema -> Componente (modo specific_equipment)
+        function _fillSel(id, rows, label, valKey, textFn) {
+            const sel = document.getElementById(id);
+            sel.innerHTML = `<option value="">- ${label} -</option>` +
+                rows.map(r => `<option value="${r[valKey]}">${textFn(r)}</option>`).join('');
+        }
+        function onItemAreaChange() {
+            const aid = Number(document.getElementById('itemAreaCasc').value || 0);
+            const lines = aid ? _lines.filter(l => Number(l.area_id) === aid) : _lines;
+            _fillSel('itemLineCasc', lines, 'Linea', 'id', l => l.name);
+            _fillSel('itemEquip', [], 'Equipo', 'id', e => e.name);
+            _fillSel('itemSysCasc', [], 'Sistema', 'id', s => s.name);
+            _fillSel('itemCompCasc', [], 'Componente', 'id', c => c.name);
+        }
+        function onItemLineChange() {
+            const lid = Number(document.getElementById('itemLineCasc').value || 0);
+            const equips = lid ? _equips.filter(e => Number(e.line_id) === lid) : _equips;
+            _fillSel('itemEquip', equips, 'Equipo', 'id', e => `${e.tag || ''} - ${e.name}`);
+            _fillSel('itemSysCasc', [], 'Sistema', 'id', s => s.name);
+            _fillSel('itemCompCasc', [], 'Componente', 'id', c => c.name);
+        }
+        function onItemEquipChange() {
+            const eid = Number(document.getElementById('itemEquip').value || 0);
+            const systems = eid ? _systems.filter(s => Number(s.equipment_id) === eid) : [];
+            _fillSel('itemSysCasc', systems, 'Sistema', 'id', s => s.name);
+            _fillSel('itemCompCasc', [], 'Componente', 'id', c => c.name);
+        }
+        function onItemSysChange() {
+            const sid = Number(document.getElementById('itemSysCasc').value || 0);
+            const comps = sid ? _components.filter(c => Number(c.system_id) === sid) : [];
+            _fillSel('itemCompCasc', comps, 'Componente', 'id', c => c.name);
+        }
+        window.onItemAreaChange = onItemAreaChange;
+        window.onItemLineChange = onItemLineChange;
+        window.onItemEquipChange = onItemEquipChange;
+        window.onItemSysChange = onItemSysChange;
 
         async function loadTemplates() {
             try {
@@ -237,12 +302,15 @@
             title.innerHTML = `<i class="fas fa-tasks"></i> Tareas de "${escapeHtml(_activeTpl.name)}"`;
             const items = _activeTpl.items || [];
             const list = items.length ? items.map(it => {
-                const modeLabel = {
+                let modeLabel = {
                     'specific_equipment': `Equipo: ${it.target_equipment_tag || '?'}`,
                     'tag_pattern': `Patron: ${it.target_tag_pattern}`,
                     'area': `Area: ${it.target_area_name || '?'}`,
                     'line': `Linea: ${it.target_line_name || '?'}`,
                 }[it.application_mode] || it.application_mode;
+                if (it.application_mode === 'specific_equipment' && it.target_component_name_resolved) {
+                    modeLabel += ` / ${it.target_component_name_resolved}`;
+                }
                 return `
                 <div class="item-row">
                     <div style="display:flex;justify-content:space-between;align-items:start;gap:8px;">
@@ -326,8 +394,13 @@
         }
 
         function fillItemSelectors() {
-            document.getElementById('itemEquip').innerHTML = '<option value="">- Seleccione -</option>' +
-                _equips.map(e => `<option value="${e.id}">${e.tag || ''} - ${e.name}</option>`).join('');
+            // Selectores cascada (modo specific_equipment)
+            _fillSel('itemAreaCasc', _areas, 'Area', 'id', a => a.name);
+            _fillSel('itemLineCasc', _lines, 'Linea', 'id', l => l.name);
+            _fillSel('itemEquip', _equips, 'Equipo', 'id', e => `${e.tag || ''} - ${e.name}`);
+            _fillSel('itemSysCasc', [], 'Sistema', 'id', s => s.name);
+            _fillSel('itemCompCasc', [], 'Componente', 'id', c => c.name);
+            // Selectores de los otros modos
             document.getElementById('itemArea').innerHTML = '<option value="">- Seleccione -</option>' +
                 _areas.map(a => `<option value="${a.id}">${a.name}</option>`).join('');
             document.getElementById('itemLine').innerHTML = '<option value="">- Seleccione -</option>' +
@@ -358,7 +431,9 @@
             document.getElementById('itemComp').value = '';
             document.getElementById('itemMode').value = 'specific_equipment';
             document.getElementById('itemPattern').value = '';
-            document.getElementById('itemEquip').value = '';
+            // Reset cascada
+            document.getElementById('itemAreaCasc').value = '';
+            onItemAreaChange();
             document.getElementById('itemArea').value = '';
             document.getElementById('itemLine').value = '';
             updateModeFields();
@@ -379,9 +454,30 @@
             document.getElementById('itemComp').value = it.component_name || '';
             document.getElementById('itemMode').value = it.application_mode || 'specific_equipment';
             document.getElementById('itemPattern').value = it.target_tag_pattern || '';
-            document.getElementById('itemEquip').value = it.target_equipment_id || '';
             document.getElementById('itemArea').value = it.target_area_id || '';
             document.getElementById('itemLine').value = it.target_line_id || '';
+
+            // Reconstruir cascada para modo specific_equipment
+            const eq = _equips.find(e => e.id === it.target_equipment_id);
+            if (eq) {
+                const ln = _lines.find(l => l.id === eq.line_id);
+                document.getElementById('itemAreaCasc').value = ln ? (ln.area_id || '') : '';
+                onItemAreaChange();
+                document.getElementById('itemLineCasc').value = ln ? ln.id : '';
+                onItemLineChange();
+                document.getElementById('itemEquip').value = eq.id;
+                onItemEquipChange();
+                if (it.target_system_id) {
+                    document.getElementById('itemSysCasc').value = it.target_system_id;
+                    onItemSysChange();
+                    if (it.target_component_id) {
+                        document.getElementById('itemCompCasc').value = it.target_component_id;
+                    }
+                }
+            } else {
+                document.getElementById('itemAreaCasc').value = '';
+                onItemAreaChange();
+            }
             updateModeFields();
             document.getElementById('itemModal').showModal();
         }
@@ -402,6 +498,8 @@
                 target_tag_pattern: mode === 'tag_pattern' ? document.getElementById('itemPattern').value.trim() || null : null,
                 target_area_id: mode === 'area' ? Number(document.getElementById('itemArea').value) || null : null,
                 target_line_id: mode === 'line' ? Number(document.getElementById('itemLine').value) || null : null,
+                target_system_id: mode === 'specific_equipment' ? Number(document.getElementById('itemSysCasc').value) || null : null,
+                target_component_id: mode === 'specific_equipment' ? Number(document.getElementById('itemCompCasc').value) || null : null,
             };
             if (!payload.description) { alert('Descripcion requerida'); return; }
             try {

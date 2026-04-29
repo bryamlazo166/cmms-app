@@ -1574,10 +1574,18 @@ class ShutdownTemplateItem(db.Model):
     target_tag_pattern: Mapped[Optional[str]] = mapped_column(String(120), nullable=True)
     # Regex (Python re): '^D[1-9]$' para D1..D9, '^TH\\d+$' para todos los TH
 
+    # Solo aplica con application_mode='specific_equipment' — al elegir
+    # cascada Area->Linea->Equipo->Sistema->Componente directamente, se
+    # generan OTs precisas sin necesitar el matcher fuzzy.
+    target_system_id: Mapped[Optional[int]] = mapped_column(ForeignKey('systems.id'), nullable=True)
+    target_component_id: Mapped[Optional[int]] = mapped_column(ForeignKey('components.id'), nullable=True)
+
     template = relationship("ShutdownTemplate", back_populates="items")
     target_equipment = relationship("Equipment")
     target_area = relationship("Area")
     target_line = relationship("Line")
+    target_system = relationship("System")
+    target_component = relationship("Component")
 
     def to_dict(self):
         return {
@@ -1599,6 +1607,10 @@ class ShutdownTemplateItem(db.Model):
             "target_line_id": self.target_line_id,
             "target_line_name": self.target_line.name if self.target_line else None,
             "target_tag_pattern": self.target_tag_pattern,
+            "target_system_id": self.target_system_id,
+            "target_system_name": self.target_system.name if self.target_system else None,
+            "target_component_id": self.target_component_id,
+            "target_component_name_resolved": self.target_component.name if self.target_component else None,
         }
 
 
