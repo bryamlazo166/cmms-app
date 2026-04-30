@@ -156,13 +156,27 @@ function renderOrders(list) {
             </button>`;
         }).join('') || '<span style="color:rgba(255,255,255,.25);font-size:.8em;">-</span>';
 
+        // Si la OC viene de busqueda con matched_items, los resaltamos
+        let matchedHtml = '';
+        if (po.matched_items && po.matched_items.length) {
+            matchedHtml = '<div style="margin-top:6px;padding:6px;background:rgba(255,159,10,.1);border-left:3px solid #FF9F0A;font-size:.78rem;border-radius:4px;">' +
+                '<strong style="color:#FF9F0A;"><i class="fas fa-bullseye"></i> Coincidencias (' + po.matched_items.length + '):</strong>' +
+                po.matched_items.map(m => `<div>• ${m.req_code || ''} ${m.item_label} (x${m.quantity})${m.ot_code ? ' [OT: ' + m.ot_code + ']' : ''}</div>`).join('') +
+                '</div>';
+        }
+
+        const rqDisplay = po.external_rq_code
+            ? `<span style="background:rgba(48,209,88,.15);color:#30D158;padding:3px 8px;border-radius:6px;font-weight:600;cursor:pointer;" onclick="editExternalRQ(${po.id}, '${(po.external_rq_code || '').replace(/'/g, "\\'")}')"><i class="fas fa-tag"></i> ${po.external_rq_code}</span>`
+            : `<button onclick="editExternalRQ(${po.id}, '')" style="background:rgba(255,255,255,.06);border:1px dashed rgba(255,255,255,.2);color:#9ab0cb;padding:4px 8px;border-radius:6px;font-size:.78rem;cursor:pointer;"><i class="fas fa-plus"></i> Asignar RQ</button>`;
+
         tr.innerHTML = `
             <td><b style="color:#0A84FF;">${po.po_code}</b></td>
+            <td>${rqDisplay}</td>
             <td>${po.provider_name}</td>
             <td>${po.issue_date || '-'}</td>
             <td><span class="status-pill status-${(po.status || '').toLowerCase()}">${po.status}</span></td>
             <td>${otChips}</td>
-            <td>${itemsHtml || '-'}</td>
+            <td>${itemsHtml || '-'}${matchedHtml}</td>
             <td>
                 ${po.status !== 'CERRADA'
                     ? `<button class="btn-primary" style="font-size:0.8em; padding: 4px 8px;" onclick="openReceiveModal(${po.id})"><i class="fas fa-box-open"></i> Recibir</button>`
@@ -172,6 +186,49 @@ function renderOrders(list) {
         tbody.appendChild(tr);
     });
 }
+
+// ── Codigo RQ interno empresa ───────────────────────────────────────────
+window.editExternalRQ = async function(poId, currentCode) {
+    const code = prompt(
+        'Codigo RQ interno de la empresa (SAP/ERP).\nDejar vacio para quitar.',
+        currentCode || ''
+    );
+    if (code === null) return; // cancel
+    try {
+        const r = await fetch(`/api/purchase-orders/${poId}/external-code`, {
+            method: 'PUT', headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ external_rq_code: code.trim() })
+        });
+        const d = await r.json();
+        if (!r.ok) { alert('Error: ' + (d.error || r.statusText)); return; }
+        await loadOrders();
+    } catch (e) { alert('Error: ' + e.message); }
+};
+
+// ── Busqueda global de OCs ──────────────────────────────────────────────
+window.searchPurchases = async function() {
+    const q = (document.getElementById('poSearchBox').value || '').trim();
+    const info = document.getElementById('poSearchInfo');
+    if (q.length < 2) { alert('Ingresa al menos 2 caracteres.'); return; }
+    info.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Buscando...';
+    try {
+        const r = await fetch(`/api/purchase-orders/search?q=${encodeURIComponent(q)}`);
+        const d = await r.json();
+        if (!r.ok) { info.textContent = 'Error: ' + (d.error || r.statusText); return; }
+        info.innerHTML = `<strong>${d.count}</strong> OC${d.count !== 1 ? 's' : ''} con coincidencias para "${q}"`;
+        renderOrders(d.results || []);
+    } catch (e) { info.textContent = 'Error: ' + e.message; }
+};
+window.clearSearch = function() {
+    document.getElementById('poSearchBox').value = '';
+    document.getElementById('poSearchInfo').textContent = '';
+    loadOrders();
+};
+// Buscar tambien al presionar Enter
+document.addEventListener('DOMContentLoaded', () => {
+    const sb = document.getElementById('poSearchBox');
+    if (sb) sb.addEventListener('keypress', e => { if (e.key === 'Enter') window.searchPurchases(); });
+});
 
 window.openReceiveModal = function (poId) {
     activeReceivePO = allPurchaseOrders.find(x => x.id === poId);

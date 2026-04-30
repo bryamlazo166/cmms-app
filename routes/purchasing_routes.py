@@ -182,6 +182,109 @@ def register_purchasing_routes(
             db.session.rollback()
             return jsonify({"error": str(e)}), 500
 
+    @app.route('/api/purchase-orders/<int:id>/external-code', methods=['PUT'])
+    def update_po_external_code(id):
+        """Actualiza el codigo RQ interno de la empresa (ERP/SAP) y notas
+        para una OC ya emitida. Permite dar seguimiento cruzado."""
+        try:
+            po = PurchaseOrder.query.get(id)
+            if not po:
+                return jsonify({'error': 'Orden de compra no encontrada'}), 404
+            data = request.json or {}
+            if 'external_rq_code' in data:
+                code = (data.get('external_rq_code') or '').strip()
+                po.external_rq_code = code or None
+            if 'external_notes' in data:
+                notes = (data.get('external_notes') or '').strip()
+                po.external_notes = notes or None
+            db.session.commit()
+            return jsonify(po.to_dict())
+        except Exception as e:
+            db.session.rollback()
+            return jsonify({"error": str(e)}), 500
+
+    @app.route('/api/purchase-orders/search', methods=['GET'])
+    def search_purchase_orders():
+        """Busqueda global en OCs por:
+          - po_code, external_rq_code, provider_name (campos de la OC)
+          - req_code, descripcion del item, nombre de spare_part o
+            warehouse_item, codigo de OT relacionada (campos de los items
+            asociados a la OC)
+        Devuelve OCs con sus items que matchean para que el usuario pueda
+        ubicar rapidamente que RQ contiene determinado item.
+        """
+        try:
+            from sqlalchemy import or_
+            q = (request.args.get('q') or '').strip()
+            if not q or len(q) < 2:
+                return jsonify({"error": "Pasa ?q= con al menos 2 caracteres"}), 400
+            like = f"%{q}%"
+
+            # Subquery: ids de PO cuyos items matchean
+            from models import SparePart, WarehouseItem
+            req_q = db.session.query(PurchaseRequest).outerjoin(
+                SparePart, PurchaseRequest.spare_part_id == SparePart.id
+            ).outerjoin(
+                WarehouseItem, PurchaseRequest.warehouse_item_id == WarehouseItem.id
+            ).outerjoin(
+                WorkOrder, PurchaseRequest.work_order_id == WorkOrder.id
+            ).filter(
+                PurchaseRequest.purchase_order_id.isnot(None),
+                or_(
+                    PurchaseRequest.req_code.ilike(like),
+                    PurchaseRequest.description.ilike(like),
+                    SparePart.name.ilike(like),
+                    WarehouseItem.name.ilike(like),
+                    WarehouseItem.code.ilike(like),
+                    WorkOrder.code.ilike(like),
+                )
+            )
+            matched_po_ids = set(r.purchase_order_id for r in req_q.all())
+
+            # OCs cuyos campos directos matchean
+            direct_q = PurchaseOrder.query.filter(or_(
+                PurchaseOrder.po_code.ilike(like),
+                PurchaseOrder.external_rq_code.ilike(like),
+                PurchaseOrder.provider_name.ilike(like),
+            )).all()
+            for po in direct_q:
+                matched_po_ids.add(po.id)
+
+            if not matched_po_ids:
+                return jsonify({"query": q, "results": []})
+
+            pos = PurchaseOrder.query.filter(
+                PurchaseOrder.id.in_(matched_po_ids)
+            ).order_by(PurchaseOrder.id.desc()).all()
+
+            # Para cada PO, marcar que items concretamente coinciden con la query
+            results = []
+            for po in pos:
+                d = po.to_dict()
+                matched_items = []
+                for r in (po.requests or []):
+                    sp_name = r.spare_part.name if r.spare_part else ''
+                    wh_name = r.warehouse_item.name if r.warehouse_item else ''
+                    wh_code = r.warehouse_item.code if r.warehouse_item else ''
+                    blob = ' '.join([
+                        r.req_code or '', r.description or '',
+                        sp_name, wh_name, wh_code,
+                    ]).lower()
+                    if q.lower() in blob:
+                        matched_items.append({
+                            'id': r.id, 'req_code': r.req_code,
+                            'item_label': sp_name or wh_name or r.description or '?',
+                            'quantity': r.quantity, 'status': r.status,
+                            'ot_code': r.work_order.code if r.work_order else None,
+                        })
+                d['matched_items'] = matched_items
+                d['match_count'] = len(matched_items)
+                results.append(d)
+            return jsonify({"query": q, "results": results, "count": len(results)})
+        except Exception as e:
+            import traceback; traceback.print_exc()
+            return jsonify({"error": str(e)}), 500
+
     @app.route('/api/list-spare-parts', methods=['GET'])
     def list_warehouse_items_for_purchasing():
         try:

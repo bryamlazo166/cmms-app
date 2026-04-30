@@ -150,6 +150,16 @@ class Equipment(db.Model):
     # Si esta NULL, el calculo cae al diccionario hardcoded EQUIPMENT_CAPACITY
     # (legacy). Llenar este campo permite quitar la dependencia del codigo.
     capacity_tm: Mapped[float | None] = mapped_column(Float, nullable=True)
+    # Jornada operativa: horas por dia y dias por semana en que el equipo
+    # esta DISPONIBLE para operar. Default 24/7. Algunos equipos auxiliares
+    # solo operan 16h/dia o 6 dias/semana.
+    shift_hours_per_day: Mapped[float] = mapped_column(Float, nullable=False, default=24.0)
+    work_days_per_week: Mapped[int] = mapped_column(Integer, nullable=False, default=7)
+    # Rendimiento: % de materia prima ingresada que se convierte en producto
+    # final. Ej: digestor 12000 TM/mes de capacidad de procesamiento, pero
+    # rendimiento real ~30% → produce ~3600 TM/mes de harina.
+    # Default 1.0 (sin perdida de proceso) para no afectar calculos legacy.
+    yield_factor: Mapped[float] = mapped_column(Float, nullable=False, default=1.0)
 
     line = relationship("Line", back_populates="equipments")
     systems = relationship("System", back_populates="equipment", cascade="all, delete-orphan")
@@ -157,7 +167,10 @@ class Equipment(db.Model):
     def to_dict(self):
         return {"id": self.id, "name": self.name, "tag": self.tag, "description": self.description,
                 "criticality": self.criticality, "line_id": self.line_id,
-                "include_in_kpi": self.include_in_kpi, "capacity_tm": self.capacity_tm}
+                "include_in_kpi": self.include_in_kpi, "capacity_tm": self.capacity_tm,
+                "shift_hours_per_day": self.shift_hours_per_day,
+                "work_days_per_week": self.work_days_per_week,
+                "yield_factor": self.yield_factor}
 
 class System(db.Model):
     __tablename__ = 'systems'
@@ -649,7 +662,13 @@ class PurchaseOrder(db.Model):
     status: Mapped[str] = mapped_column(String(20), default='EMITIDA')
     issue_date: Mapped[date | None] = mapped_column(Date, default=date.today)
     delivery_date: Mapped[date | None] = mapped_column(Date, nullable=True)
-    
+    # Codigo de Requisicion (RQ) interno de la empresa — el que asigna SAP /
+    # ERP / sistema interno cuando se crea la requisicion oficial. Permite dar
+    # seguimiento cruzado entre el codigo del CMMS (po_code = OC-XXX) y el RQ
+    # de la empresa.
+    external_rq_code: Mapped[str | None] = mapped_column(String(50), nullable=True)
+    external_notes: Mapped[str | None] = mapped_column(Text, nullable=True)
+
     requests = relationship("PurchaseRequest", back_populates="purchase_order")
 
     def to_dict(self):
@@ -674,6 +693,8 @@ class PurchaseOrder(db.Model):
             'status': self.status,
             'issue_date': self.issue_date.isoformat() if self.issue_date else None,
             'delivery_date': self.delivery_date.isoformat() if self.delivery_date else None,
+            'external_rq_code': self.external_rq_code,
+            'external_notes': self.external_notes,
             'requests': reqs
         }
 

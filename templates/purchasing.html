@@ -187,11 +187,22 @@
                             Refrescar</button>
                     </div>
 
+                    <!-- Busqueda global -->
+                    <div style="background:#181d24;border:1px solid #2f4257;border-radius:10px;padding:12px;margin-bottom:12px;display:flex;gap:10px;align-items:center;flex-wrap:wrap;">
+                        <i class="fas fa-search" style="color:#5ac8fa;"></i>
+                        <input id="poSearchBox" type="search" placeholder="Buscar en items, RQ empresa, código OC, proveedor, OT... (mín 2 caracteres)"
+                               style="flex:1;min-width:280px;padding:8px 12px;border-radius:8px;background:rgba(255,255,255,.06);border:1px solid rgba(255,255,255,.12);color:#eff6ff;font-size:.9rem;">
+                        <button class="btn-secondary" onclick="searchPurchases()"><i class="fas fa-search"></i> Buscar</button>
+                        <button class="btn-secondary" onclick="clearSearch()"><i class="fas fa-times"></i> Limpiar</button>
+                        <span id="poSearchInfo" style="margin-left:auto;color:#9ab0cb;font-size:.82rem;"></span>
+                    </div>
+
                     <div class="table-container">
                         <table class="data-table" id="ordersTable">
                             <thead>
                                 <tr>
                                     <th>Código OC</th>
+                                    <th>RQ Empresa</th>
                                     <th>Proveedor</th>
                                     <th>Fecha Emisión</th>
                                     <th>Estado</th>

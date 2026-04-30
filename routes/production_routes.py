@@ -623,3 +623,233 @@ def register_production_routes(app, db, logger, ProductionGoal, WorkOrder, Area,
         except Exception as e:
             logger.error(f"export_production_report error: {e}")
             return jsonify({"error": str(e)}), 500
+
+    # ════════════════════════════════════════════════════════════════════════
+    # PRODUCCION POR EQUIPO (vista detallada — Opcion C)
+    # ════════════════════════════════════════════════════════════════════════
+    # Calcula produccion teorica por equipo considerando jornada operativa
+    # (shift_hours_per_day, work_days_per_week) y paradas planificadas
+    # (Shutdowns con status COMPLETADA en el periodo).
+    # Comparado con el endpoint global /api/production/metrics, este desglosa
+    # cada equipo individualmente sin requerir una Goal por area.
+
+    def _calendar_hours_for_equipment(eq, start, end):
+        """Calcula horas operativas teoricas considerando jornada y dias laborables."""
+        shift_h = float(getattr(eq, 'shift_hours_per_day', None) or 24.0)
+        work_days = int(getattr(eq, 'work_days_per_week', None) or 7)
+        # Cuenta dias del periodo respetando dias laborables. Lunes=0..Domingo=6.
+        # Si work_days < 7, asumimos que descansa empezando por domingo (6) y
+        # va restando: 6 dias=quita domingo, 5 dias=quita sab+dom, etc.
+        rest_days = set()
+        if work_days < 7:
+            order = [6, 5, 0, 1, 2, 3, 4]  # dom, sab, lun, mar... (orden tipico de descanso)
+            for i in range(7 - work_days):
+                rest_days.add(order[i])
+        days_count = 0
+        d = start
+        while d <= end:
+            if d.weekday() not in rest_days:
+                days_count += 1
+            d += dt.timedelta(days=1)
+        return days_count * shift_h
+
+    def _planned_downtime_for_equipment(eq, start, end, area_id):
+        """Suma horas de paradas planificadas (Shutdowns COMPLETADAS en
+        rango y que afectan al area del equipo).
+        Para parada TOTAL: cuenta todas. Para PARCIAL: cuenta solo si el
+        area del equipo esta en ShutdownArea.
+        """
+        try:
+            from models import Shutdown, ShutdownArea
+            sh_q = Shutdown.query.filter(
+                Shutdown.shutdown_date >= start.isoformat(),
+                Shutdown.shutdown_date <= end.isoformat(),
+                Shutdown.status.in_(['COMPLETADA', 'EN_CURSO', 'PLANIFICADA']),
+            )
+            total_h = 0.0
+            for sh in sh_q.all():
+                # Validar area si es PARCIAL
+                if (sh.shutdown_type or '').upper() == 'PARCIAL':
+                    sh_areas = [sa.area_id for sa in (sh.areas or [])]
+                    if area_id not in sh_areas:
+                        continue
+                # Calcular horas de la parada
+                try:
+                    sh, eh = sh.start_time or '00:00', sh.end_time or '00:00'
+                    sh_h, sh_m = [int(x) for x in (sh or '00:00').split(':')]
+                    eh_h, eh_m = [int(x) for x in (eh or '00:00').split(':')]
+                    hours = max(0, (eh_h * 60 + eh_m - sh_h * 60 - sh_m) / 60.0)
+                    total_h += hours
+                except Exception:
+                    total_h += 12.0  # default si formato raro
+            return total_h
+        except Exception:
+            return 0.0
+
+    def _compute_eq_production(eq, start, end, area, all_ots, line_map):
+        """Devuelve dict con metricas de un equipo."""
+        cap_tm = float(getattr(eq, 'capacity_tm', None) or 0)
+        # Si no hay capacidad seteada en BD, fallback al dict legacy
+        if cap_tm == 0:
+            try:
+                from routes.indicators_routes import EQUIPMENT_CAPACITY
+                cap_tm = float(EQUIPMENT_CAPACITY.get(eq.tag or '', 0) or 0)
+            except Exception:
+                cap_tm = 0.0
+
+        cal_hours = _calendar_hours_for_equipment(eq, start, end)
+        planned_dt = _planned_downtime_for_equipment(eq, start, end, area.id if area else None)
+        usable_hours = max(0.0, cal_hours - planned_dt)
+
+        # Downtime real (OTs cerradas con caused_downtime en el periodo del equipo)
+        eq_dt = 0.0
+        eq_dt_events = 0
+        for ot in all_ots:
+            if ot.equipment_id != eq.id:
+                continue
+            if not _ot_in_window(ot, start, end):
+                continue
+            dh = _downtime_hours(ot)
+            if dh > 0:
+                eq_dt += dh
+                eq_dt_events += 1
+        eq_dt = min(eq_dt, usable_hours)
+        uptime_real = max(0.0, usable_hours - eq_dt)
+
+        # Disponibilidad respecto a las horas USABLES (calendario - planificadas)
+        availability = round((uptime_real / usable_hours) * 100, 2) if usable_hours > 0 else 100.0
+
+        # TM de materia prima procesada (input). cap_tm es capacidad de proceso a 24/7.
+        # Para producto final se aplica yield_factor (ej: digestor 12000 cap pero
+        # rendimiento 30% → 3600 TM/mes de harina). Asi tenemos 2 metricas:
+        #   - input_tons_*  : materia prima
+        #   - output_tons_* : producto final (lo que realmente sale)
+        yield_factor = float(getattr(eq, 'yield_factor', None) or 1.0)
+        input_tph = (cap_tm / 720.0) if cap_tm > 0 else 0.0
+        output_tph = input_tph * yield_factor
+
+        input_tons_theoretical = round(usable_hours * input_tph, 2)
+        input_tons_realized = round(uptime_real * input_tph, 2)
+        input_tons_lost = round(eq_dt * input_tph, 2)
+
+        output_tons_theoretical = round(usable_hours * output_tph, 2)
+        output_tons_realized = round(uptime_real * output_tph, 2)
+        output_tons_lost = round(eq_dt * output_tph, 2)
+
+        eff_pct = round((uptime_real / usable_hours) * 100, 2) if usable_hours > 0 else 0.0
+
+        ln = line_map.get(eq.line_id) if eq.line_id else None
+        return {
+            'equipment_id': eq.id,
+            'equipment_tag': eq.tag,
+            'equipment_name': eq.name,
+            'line_id': eq.line_id,
+            'line_name': ln.name if ln else None,
+            'area_id': area.id if area else None,
+            'area_name': area.name if area else None,
+            'capacity_tm': cap_tm,
+            'yield_factor': yield_factor,
+            'shift_hours_per_day': float(getattr(eq, 'shift_hours_per_day', None) or 24.0),
+            'work_days_per_week': int(getattr(eq, 'work_days_per_week', None) or 7),
+            'calendar_hours': round(cal_hours, 2),
+            'planned_downtime_hours': round(planned_dt, 2),
+            'usable_hours': round(usable_hours, 2),
+            'downtime_hours': round(eq_dt, 2),
+            'uptime_hours': round(uptime_real, 2),
+            'availability_pct': availability,
+            # Metricas de INPUT (materia prima)
+            'input_tons_per_hour': round(input_tph, 4),
+            'input_tons_theoretical': input_tons_theoretical,
+            'input_tons_realized': input_tons_realized,
+            'input_tons_lost': input_tons_lost,
+            # Metricas de OUTPUT (producto final)
+            'output_tons_per_hour': round(output_tph, 4),
+            'output_tons_theoretical': output_tons_theoretical,
+            'output_tons_realized': output_tons_realized,
+            'output_tons_lost': output_tons_lost,
+            # Backward-compat (TM = output, lo que sale a la venta)
+            'tons_per_hour': round(output_tph, 4),
+            'tons_theoretical': output_tons_theoretical,
+            'tons_realized_potential': output_tons_realized,
+            'tons_lost': output_tons_lost,
+            'efficiency_pct': eff_pct,
+            'failure_count': eq_dt_events,
+        }
+
+    @app.route('/api/production/by-equipment', methods=['GET'])
+    def production_by_equipment():
+        """Detalle por equipo: TM teoricas vs perdidas + roll-up por area."""
+        try:
+            period = request.args.get('period') or _current_period()
+            start, end, days_in_period = _period_to_dates(period)
+            today = dt.date.today()
+            effective_end = min(end, today)
+
+            # Solo equipos y areas in_kpi
+            areas = Area.query.filter_by(include_in_kpi=True).all()
+            area_map = {a.id: a for a in areas}
+            lines = Line.query.all()
+            line_map = {l.id: l for l in lines}
+            line_to_area = {l.id: l.area_id for l in lines}
+            equips = Equipment.query.filter_by(include_in_kpi=True).all()
+            equips = [e for e in equips if line_to_area.get(e.line_id) in area_map]
+
+            all_ots = WorkOrder.query.filter(WorkOrder.status == 'Cerrada').all()
+
+            equipos = []
+            for eq in equips:
+                area = area_map.get(line_to_area.get(eq.line_id))
+                metrics = _compute_eq_production(eq, start, effective_end, area, all_ots, line_map)
+                equipos.append(metrics)
+
+            # Roll-up por area (con input vs output)
+            by_area = {}
+            sum_keys = (
+                'capacity_tm', 'usable_hours', 'downtime_hours',
+                'input_tons_theoretical', 'input_tons_realized', 'input_tons_lost',
+                'output_tons_theoretical', 'output_tons_realized', 'output_tons_lost',
+                'tons_theoretical', 'tons_realized_potential', 'tons_lost',
+            )
+            for m in equipos:
+                aid = m['area_id']
+                if aid not in by_area:
+                    acc = {'area_id': aid, 'area_name': m['area_name'],
+                           'failure_count': 0, 'equipment_count': 0}
+                    for k in sum_keys: acc[k] = 0.0
+                    by_area[aid] = acc
+                acc = by_area[aid]
+                for k in sum_keys:
+                    acc[k] += m.get(k, 0) or 0
+                acc['failure_count'] += m['failure_count']
+                acc['equipment_count'] += 1
+            for acc in by_area.values():
+                acc['efficiency_pct'] = round(
+                    (acc['output_tons_realized'] / acc['output_tons_theoretical']) * 100, 2
+                ) if acc['output_tons_theoretical'] > 0 else 100.0
+                acc['availability_pct'] = round(
+                    ((acc['usable_hours'] - acc['downtime_hours']) / acc['usable_hours']) * 100, 2
+                ) if acc['usable_hours'] > 0 else 100.0
+                for k in sum_keys: acc[k] = round(acc[k], 2)
+
+            # Total general
+            total = {'failure_count': sum(a['failure_count'] for a in by_area.values())}
+            for k in sum_keys:
+                total[k] = round(sum(a[k] for a in by_area.values()), 2)
+            total['efficiency_pct'] = round(
+                (total['output_tons_realized'] / total['output_tons_theoretical']) * 100, 2
+            ) if total['output_tons_theoretical'] > 0 else 100.0
+
+            equipos.sort(key=lambda x: (x['area_name'] or '', -(x['tons_lost'] or 0)))
+            return jsonify({
+                'period': period,
+                'period_start': start.isoformat(),
+                'period_end': end.isoformat(),
+                'effective_end': effective_end.isoformat(),
+                'days_in_period': days_in_period,
+                'equipos': equipos,
+                'by_area': sorted(by_area.values(), key=lambda x: x['area_name'] or ''),
+                'total': total,
+            })
+        except Exception as e:
+            logger.exception('production_by_equipment error')
+            return jsonify({"error": str(e)}), 500

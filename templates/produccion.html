@@ -203,6 +203,40 @@
             </div>
         </div>
 
+        <!-- Detalle por equipo (Opcion C — produccion teorica con jornadas) -->
+        <div class="chart-card" style="margin-bottom:14px;">
+            <h3>
+                <i class="fas fa-microscope"></i> Detalle por Equipo (capacidad, jornada, paradas)
+                <span style="font-size:.75rem;color:#9ab0cb;font-weight:400;margin-left:10px;">
+                    Considera shift_hours, work_days y paradas planificadas — configurable en /configuracion-kpi
+                </span>
+            </h3>
+            <div class="subtitle">Roll-up por área y desglose individual del periodo seleccionado.</div>
+            <div id="byEqAreaSummary" style="margin-bottom:10px;font-size:.85rem;color:#bfd2ec;">Cargando…</div>
+            <div style="max-height:380px;overflow-y:auto;">
+                <table class="goals-list" id="byEqTable">
+                    <thead>
+                        <tr>
+                            <th rowspan="2">Área</th><th rowspan="2">Equipo</th>
+                            <th rowspan="2">Cap TM<br><span style="font-weight:400;font-size:.7rem;color:#9ab0cb;">(input)</span></th>
+                            <th rowspan="2">Yield</th><th rowspan="2">Jornada</th>
+                            <th rowspan="2">Hrs disp.</th><th rowspan="2">Paro</th>
+                            <th rowspan="2">Disp %</th>
+                            <th colspan="2" style="border-bottom:1px solid #2f4257;">Materia prima (input)</th>
+                            <th colspan="2" style="border-bottom:1px solid #2f4257;">Producto final (output)</th>
+                        </tr>
+                        <tr>
+                            <th style="font-weight:500;font-size:.74rem;">TM teóricas</th>
+                            <th style="font-weight:500;font-size:.74rem;color:#ff9690;">TM perdidas</th>
+                            <th style="font-weight:500;font-size:.74rem;">TM teóricas</th>
+                            <th style="font-weight:500;font-size:.74rem;color:#ff9690;">TM perdidas</th>
+                        </tr>
+                    </thead>
+                    <tbody><tr><td colspan="12" style="text-align:center;color:#666;">Cargando...</td></tr></tbody>
+                </table>
+            </div>
+        </div>
+
         <!-- Panel diagnóstico IA -->
         <div class="ai-panel">
             <h3>

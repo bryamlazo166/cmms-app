@@ -149,8 +149,19 @@ function renderAreasChart(data) {
         backgroundColor: 'transparent',
         tooltip: { trigger: 'axis', axisPointer: { type: 'shadow' } },
         legend: { data: metrics.map(m => m.name), textStyle: { color: '#bfd2ec' } },
-        grid: { top: 60, right: 20, bottom: 40, left: 60 },
-        xAxis: { type: 'category', data: names, axisLabel: { color: '#d5e2f5', fontSize: 12, fontWeight: 700 }, axisLine: { lineStyle: { color: '#344964' } } },
+        grid: { top: 60, right: 20, bottom: names.length > 5 ? 80 : 50, left: 60 },
+        xAxis: {
+            type: 'category', data: names,
+            axisLabel: {
+                color: '#d5e2f5', fontSize: 11, fontWeight: 700,
+                interval: 0,                       // mostrar TODOS los nombres (no salta)
+                rotate: names.length > 5 ? 25 : 0, // rotar si hay muchas areas
+                hideOverlap: false,
+                margin: 14,
+                formatter: v => v && v.length > 22 ? v.slice(0, 20) + '…' : v,
+            },
+            axisLine: { lineStyle: { color: '#344964' } },
+        },
         yAxis: [
             { type: 'value', name: '%', max: 100, position: 'left', axisLabel: { color: '#9ab0cb', formatter: '{value}%' }, splitLine: { lineStyle: { color: 'rgba(255,255,255,.06)' } } },
             { type: 'value', name: 'horas', position: 'right', axisLabel: { color: '#9ab0cb' }, splitLine: { show: false } },
@@ -215,8 +226,18 @@ function renderEquipmentsChart(data) {
             }
         },
         legend: { data: ['Disponibilidad %', 'MTBF (h)', 'MTTR (h)'], textStyle: { color: '#bfd2ec' } },
-        grid: { top: 60, right: 20, bottom: 50, left: 60 },
-        xAxis: { type: 'category', data: names, axisLabel: { color: '#d5e2f5', fontSize: 11, fontWeight: 700, rotate: names.length > 8 ? 30 : 0 } },
+        grid: { top: 60, right: 20, bottom: names.length > 8 ? 90 : 60, left: 60 },
+        xAxis: {
+            type: 'category', data: names,
+            axisLabel: {
+                color: '#d5e2f5', fontSize: 11, fontWeight: 700,
+                interval: 0,
+                rotate: names.length > 6 ? 30 : 0,
+                hideOverlap: false,
+                margin: 14,
+                formatter: v => v && v.length > 22 ? v.slice(0, 20) + '…' : v,
+            },
+        },
         yAxis: [
             { type: 'value', name: '%', max: 100, position: 'left', axisLabel: { color: '#9ab0cb', formatter: '{value}%' }, splitLine: { lineStyle: { color: 'rgba(255,255,255,.06)' } } },
             { type: 'value', name: 'horas', position: 'right', axisLabel: { color: '#9ab0cb' }, splitLine: { show: false } },

@@ -95,8 +95,13 @@
 
             let html = `<table>
                 <thead><tr>
-                    <th></th><th>Nombre</th><th>Tag</th><th class="center">Incluir en KPIs</th>
-                    <th class="num">Capacidad TM</th><th></th>
+                    <th></th><th>Nombre</th><th>Tag</th>
+                    <th class="center">Incluir en KPIs</th>
+                    <th class="num">Cap TM<br><span style="font-weight:400;font-size:.68rem;color:#9ab0cb;">(input)</span></th>
+                    <th class="num">Yield %<br><span style="font-weight:400;font-size:.68rem;color:#9ab0cb;">(out/in)</span></th>
+                    <th class="num">Hrs/día</th>
+                    <th class="num">Días/sem</th>
+                    <th></th>
                 </tr></thead><tbody>`;
             for (const a of _areas) {
                 const inK = a.include_in_kpi !== false;
@@ -108,11 +113,15 @@
                         <label><input type="checkbox" ${inK ? 'checked' : ''} onchange="toggleArea(${a.id}, this.checked)" style="transform:scale(1.4);accent-color:#30D158;"></label>
                     </td>
                     <td class="num">—</td>
+                    <td class="num">—</td>
+                    <td class="num">—</td>
+                    <td class="num">—</td>
                     <td><span class="pill ${inK ? 'in' : 'out'}">${inK ? 'EN' : 'EXCLUIDA'}</span></td>
                 </tr>`;
                 const eqs = equipsByArea[a.id] || [];
                 for (const e of eqs) {
                     const eIn = e.include_in_kpi !== false;
+                    const yieldPct = e.yield_factor == null ? '' : Math.round(e.yield_factor * 100);
                     html += `<tr class="${eIn && inK ? '' : 'excluded'}">
                         <td></td>
                         <td style="padding-left:30px;">${escapeHtml(e.name)}</td>
@@ -121,7 +130,16 @@
                             <label><input type="checkbox" ${eIn ? 'checked' : ''} onchange="toggleEquip(${e.id}, this.checked)" style="transform:scale(1.3);accent-color:#30D158;"></label>
                         </td>
                         <td class="num">
-                            <input type="number" min="0" step="100" value="${e.capacity_tm == null ? '' : e.capacity_tm}" placeholder="—" onchange="setCap(${e.id}, this.value)">
+                            <input type="number" min="0" step="100" value="${e.capacity_tm == null ? '' : e.capacity_tm}" placeholder="—" onchange="setField(${e.id}, 'capacity_tm', this.value, true)">
+                        </td>
+                        <td class="num">
+                            <input type="number" min="0" max="100" step="1" value="${yieldPct}" placeholder="100" onchange="setYield(${e.id}, this.value)" style="width:70px;">
+                        </td>
+                        <td class="num">
+                            <input type="number" min="1" max="24" step="0.5" value="${e.shift_hours_per_day == null ? 24 : e.shift_hours_per_day}" onchange="setField(${e.id}, 'shift_hours_per_day', this.value, true)" style="width:70px;">
+                        </td>
+                        <td class="num">
+                            <input type="number" min="1" max="7" step="1" value="${e.work_days_per_week == null ? 7 : e.work_days_per_week}" onchange="setField(${e.id}, 'work_days_per_week', this.value, true)" style="width:60px;">
                         </td>
                         <td><span class="pill ${eIn ? 'in' : 'out'}">${eIn ? 'EN' : 'EXCLUIDO'}</span></td>
                     </tr>`;
@@ -152,18 +170,33 @@
                 render();
             } catch (e) { alert('Error: ' + e.message); }
         }
-        async function setCap(id, val) {
-            const num = val === '' ? null : Number(val);
+        async function setField(id, field, val, isNumber) {
+            const value = val === '' ? null : (isNumber ? Number(val) : val);
+            try {
+                const body = {}; body[field] = value;
+                await jget(`/api/equipments/${id}`, {
+                    method: 'PUT', headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(body)
+                });
+                const e = _equips.find(x => x.id === id);
+                if (e) e[field] = value;
+            } catch (e) { alert('Error: ' + e.message); }
+        }
+        async function setYield(id, pctVal) {
+            // UI usa porcentaje (0-100), BD almacena fraccion (0-1)
+            const pct = pctVal === '' ? null : Number(pctVal);
+            const factor = pct == null ? null : Math.max(0, Math.min(1, pct / 100));
             try {
                 await jget(`/api/equipments/${id}`, {
                     method: 'PUT', headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ capacity_tm: num })
+                    body: JSON.stringify({ yield_factor: factor })
                 });
                 const e = _equips.find(x => x.id === id);
-                if (e) e.capacity_tm = num;
+                if (e) e.yield_factor = factor;
             } catch (e) { alert('Error: ' + e.message); }
         }
-        window.toggleArea = toggleArea; window.toggleEquip = toggleEquip; window.setCap = setCap;
+        window.toggleArea = toggleArea; window.toggleEquip = toggleEquip;
+        window.setField = setField; window.setYield = setYield;
         async function applyDefaults() {
             if (!confirm('Esto excluira BAJA/FUERA DE SERVICIO, UTILITIES, RMP y HIDROLAVADORA #4 (Coccion). Continuar?')) return;
             try {

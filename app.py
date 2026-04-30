@@ -812,6 +812,15 @@ _ENSURE_INDEXES_SQL = [
     "ALTER TABLE areas      ADD COLUMN IF NOT EXISTS include_in_kpi BOOLEAN NOT NULL DEFAULT TRUE",
     "ALTER TABLE equipments ADD COLUMN IF NOT EXISTS include_in_kpi BOOLEAN NOT NULL DEFAULT TRUE",
     "ALTER TABLE equipments ADD COLUMN IF NOT EXISTS capacity_tm    DOUBLE PRECISION",
+    # Jornada operativa por equipo (para calculo de produccion teorica)
+    "ALTER TABLE equipments ADD COLUMN IF NOT EXISTS shift_hours_per_day DOUBLE PRECISION NOT NULL DEFAULT 24.0",
+    "ALTER TABLE equipments ADD COLUMN IF NOT EXISTS work_days_per_week  INTEGER NOT NULL DEFAULT 7",
+    # Rendimiento materia prima → producto final (0..1, ej 0.30 para digestor)
+    "ALTER TABLE equipments ADD COLUMN IF NOT EXISTS yield_factor DOUBLE PRECISION NOT NULL DEFAULT 1.0",
+    # Compras: codigo RQ interno empresa + notas
+    "ALTER TABLE purchase_orders ADD COLUMN IF NOT EXISTS external_rq_code VARCHAR(50)",
+    "ALTER TABLE purchase_orders ADD COLUMN IF NOT EXISTS external_notes TEXT",
+    "CREATE INDEX IF NOT EXISTS ix_po_external_rq ON purchase_orders(external_rq_code)",
 ]
 
 

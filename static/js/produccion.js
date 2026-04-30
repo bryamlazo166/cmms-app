@@ -43,6 +43,8 @@ async function loadProduction() {
         renderTopEquips(metrics);
         renderProjection(metrics);
         renderAreaTable(metrics);
+        // Tab nuevo: detalle por equipo (Opcion C)
+        try { await loadByEquipment(); } catch (e) { console.error('byEq error', e); }
     } catch (e) {
         console.error('loadProduction error', e);
         alert('Error cargando métricas: ' + e.message);
@@ -482,3 +484,71 @@ async function deleteGoal(id) {
 window.addEventListener('resize', () => {
     Object.values(charts).forEach(c => c && c.resize());
 });
+
+// ── Detalle por Equipo (Opcion C) ────────────────────────────────────────
+async function loadByEquipment() {
+    const period = getSelectedPeriod();
+    try {
+        const r = await fetch(`/api/production/by-equipment?period=${period}`);
+        const d = await r.json();
+        if (!r.ok || d.error) {
+            document.getElementById('byEqAreaSummary').textContent = 'Error: ' + (d.error || r.statusText);
+            return;
+        }
+        renderByEquipment(d);
+    } catch (e) {
+        document.getElementById('byEqAreaSummary').textContent = 'Error: ' + e.message;
+    }
+}
+
+function renderByEquipment(data) {
+    const fmt = (n, d = 1) => Number(n || 0).toLocaleString('es-PE', { maximumFractionDigits: d });
+    const sum = data.total || {};
+    const summary = `<strong>${data.equipos.length}</strong> equipos · ` +
+        `Capacidad total (input): <strong>${fmt(sum.capacity_tm, 0)} TM</strong> · ` +
+        `Producto final teórico: <strong>${fmt(sum.output_tons_theoretical, 0)} TM</strong> · ` +
+        `<span style="color:#FF453A;">TM producto perdidas: ${fmt(sum.output_tons_lost, 1)}</span> · ` +
+        `Eficiencia global: <strong>${fmt(sum.efficiency_pct, 1)}%</strong>`;
+    document.getElementById('byEqAreaSummary').innerHTML = summary;
+
+    const rows = [];
+    // Por area: cabecera + sus equipos
+    for (const a of (data.by_area || [])) {
+        rows.push(`<tr style="background:rgba(90,200,250,.07);font-weight:700;color:#5ac8fa;">
+            <td colspan="2">${a.area_name}</td>
+            <td>${fmt(a.capacity_tm, 0)}</td>
+            <td>—</td>
+            <td>—</td>
+            <td>${fmt(a.usable_hours, 0)} h</td>
+            <td>${fmt(a.downtime_hours, 1)} h</td>
+            <td>${fmt(a.availability_pct, 1)}%</td>
+            <td>${fmt(a.input_tons_theoretical, 0)}</td>
+            <td style="color:#ff9690;">${fmt(a.input_tons_lost, 1)}</td>
+            <td>${fmt(a.output_tons_theoretical, 0)}</td>
+            <td style="color:#ff9690;">${fmt(a.output_tons_lost, 1)}</td>
+        </tr>`);
+        const eqs = (data.equipos || []).filter(e => e.area_id === a.area_id);
+        for (const e of eqs) {
+            const jornada = `${fmt(e.shift_hours_per_day, 0)}h × ${e.work_days_per_week}d`;
+            const yieldPct = fmt((e.yield_factor || 1) * 100, 0) + '%';
+            rows.push(`<tr>
+                <td></td>
+                <td style="padding-left:20px;">${e.equipment_tag} — ${e.equipment_name}</td>
+                <td>${fmt(e.capacity_tm, 0)}</td>
+                <td>${yieldPct}</td>
+                <td>${jornada}</td>
+                <td>${fmt(e.usable_hours, 0)} h</td>
+                <td>${fmt(e.downtime_hours, 1)} h</td>
+                <td style="color:${e.availability_pct < 95 ? '#ff9690' : '#bfd2ec'}">${fmt(e.availability_pct, 1)}%</td>
+                <td>${fmt(e.input_tons_theoretical, 1)}</td>
+                <td style="color:#ff9690;">${fmt(e.input_tons_lost, 2)}</td>
+                <td>${fmt(e.output_tons_theoretical, 1)}</td>
+                <td style="color:#ff9690;">${fmt(e.output_tons_lost, 2)}</td>
+            </tr>`);
+        }
+    }
+    document.querySelector('#byEqTable tbody').innerHTML = rows.join('') ||
+        '<tr><td colspan="12" style="text-align:center;color:#666;">Sin datos</td></tr>';
+}
+
+window.loadByEquipment = loadByEquipment;
