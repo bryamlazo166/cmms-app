@@ -633,72 +633,21 @@ def register_production_routes(app, db, logger, ProductionGoal, WorkOrder, Area,
     # Comparado con el endpoint global /api/production/metrics, este desglosa
     # cada equipo individualmente sin requerir una Goal por area.
 
-    def _calendar_hours_for_equipment(eq, start, end):
-        """Calcula horas operativas teoricas considerando jornada y dias laborables."""
-        shift_h = float(getattr(eq, 'shift_hours_per_day', None) or 24.0)
-        work_days = int(getattr(eq, 'work_days_per_week', None) or 7)
-        # Cuenta dias del periodo respetando dias laborables. Lunes=0..Domingo=6.
-        # Si work_days < 7, asumimos que descansa empezando por domingo (6) y
-        # va restando: 6 dias=quita domingo, 5 dias=quita sab+dom, etc.
-        rest_days = set()
-        if work_days < 7:
-            order = [6, 5, 0, 1, 2, 3, 4]  # dom, sab, lun, mar... (orden tipico de descanso)
-            for i in range(7 - work_days):
-                rest_days.add(order[i])
-        days_count = 0
-        d = start
-        while d <= end:
-            if d.weekday() not in rest_days:
-                days_count += 1
-            d += dt.timedelta(days=1)
-        return days_count * shift_h
-
-    def _planned_downtime_for_equipment(eq, start, end, area_id):
-        """Suma horas de paradas planificadas (Shutdowns COMPLETADAS en
-        rango y que afectan al area del equipo).
-        Para parada TOTAL: cuenta todas. Para PARCIAL: cuenta solo si el
-        area del equipo esta en ShutdownArea.
-        """
-        try:
-            from models import Shutdown, ShutdownArea
-            sh_q = Shutdown.query.filter(
-                Shutdown.shutdown_date >= start.isoformat(),
-                Shutdown.shutdown_date <= end.isoformat(),
-                Shutdown.status.in_(['COMPLETADA', 'EN_CURSO', 'PLANIFICADA']),
-            )
-            total_h = 0.0
-            for sh in sh_q.all():
-                # Validar area si es PARCIAL
-                if (sh.shutdown_type or '').upper() == 'PARCIAL':
-                    sh_areas = [sa.area_id for sa in (sh.areas or [])]
-                    if area_id not in sh_areas:
-                        continue
-                # Calcular horas de la parada
-                try:
-                    sh, eh = sh.start_time or '00:00', sh.end_time or '00:00'
-                    sh_h, sh_m = [int(x) for x in (sh or '00:00').split(':')]
-                    eh_h, eh_m = [int(x) for x in (eh or '00:00').split(':')]
-                    hours = max(0, (eh_h * 60 + eh_m - sh_h * 60 - sh_m) / 60.0)
-                    total_h += hours
-                except Exception:
-                    total_h += 12.0  # default si formato raro
-            return total_h
-        except Exception:
-            return 0.0
-
     def _compute_eq_production(eq, start, end, area, all_ots, line_map):
-        """Devuelve dict con metricas de un equipo."""
-        cap_tm = float(getattr(eq, 'capacity_tm', None) or 0)
-        # Si no hay capacidad seteada en BD, fallback al dict legacy
-        if cap_tm == 0:
-            try:
-                from routes.indicators_routes import EQUIPMENT_CAPACITY
-                cap_tm = float(EQUIPMENT_CAPACITY.get(eq.tag or '', 0) or 0)
-            except Exception:
-                cap_tm = 0.0
+        """Devuelve dict con metricas de un equipo (capacidad, jornada,
+        downtime, TM input/output). Usa helpers compartidos de utils.kpi_helpers.
+        """
+        from utils.kpi_helpers import (
+            calendar_hours_for_equipment, planned_downtime_for_equipment,
+            eq_capacity, eq_yield_factor, eq_jornada,
+        )
+        from models import Shutdown
+        cap_tm = eq_capacity(eq)
 
-        cal_hours = _calendar_hours_for_equipment(eq, start, end)
-        planned_dt = _planned_downtime_for_equipment(eq, start, end, area.id if area else None)
+        cal_hours = calendar_hours_for_equipment(eq, start, end)
+        planned_dt = planned_downtime_for_equipment(
+            Shutdown, eq, start, end, area.id if area else None
+        )
         usable_hours = max(0.0, cal_hours - planned_dt)
 
         # Downtime real (OTs cerradas con caused_downtime en el periodo del equipo)
@@ -719,12 +668,9 @@ def register_production_routes(app, db, logger, ProductionGoal, WorkOrder, Area,
         # Disponibilidad respecto a las horas USABLES (calendario - planificadas)
         availability = round((uptime_real / usable_hours) * 100, 2) if usable_hours > 0 else 100.0
 
-        # TM de materia prima procesada (input). cap_tm es capacidad de proceso a 24/7.
-        # Para producto final se aplica yield_factor (ej: digestor 12000 cap pero
-        # rendimiento 30% → 3600 TM/mes de harina). Asi tenemos 2 metricas:
-        #   - input_tons_*  : materia prima
-        #   - output_tons_* : producto final (lo que realmente sale)
-        yield_factor = float(getattr(eq, 'yield_factor', None) or 1.0)
+        # TM input (materia prima) vs output (producto final, aplicando yield).
+        yield_factor = eq_yield_factor(eq)
+        shift_h, work_days = eq_jornada(eq)
         input_tph = (cap_tm / 720.0) if cap_tm > 0 else 0.0
         output_tph = input_tph * yield_factor
 
@@ -749,8 +695,8 @@ def register_production_routes(app, db, logger, ProductionGoal, WorkOrder, Area,
             'area_name': area.name if area else None,
             'capacity_tm': cap_tm,
             'yield_factor': yield_factor,
-            'shift_hours_per_day': float(getattr(eq, 'shift_hours_per_day', None) or 24.0),
-            'work_days_per_week': int(getattr(eq, 'work_days_per_week', None) or 7),
+            'shift_hours_per_day': shift_h,
+            'work_days_per_week': work_days,
             'calendar_hours': round(cal_hours, 2),
             'planned_downtime_hours': round(planned_dt, 2),
             'usable_hours': round(usable_hours, 2),

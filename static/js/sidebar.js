@@ -1,3 +1,133 @@
+// ── BUSQUEDA GLOBAL (Cmd+K / Ctrl+K) ─────────────────────────────────────────
+(function initGlobalSearch() {
+    function ensureModal() {
+        if (document.getElementById('globalSearchOverlay')) return;
+        const css = document.createElement('style');
+        css.textContent = `
+            #globalSearchOverlay{position:fixed;inset:0;background:rgba(0,0,0,.65);
+                z-index:9999;display:none;align-items:flex-start;justify-content:center;padding-top:10vh;}
+            #globalSearchOverlay.show{display:flex;}
+            #globalSearchBox{width:min(720px,92vw);background:#1c1c1e;border:1px solid #344964;
+                border-radius:14px;box-shadow:0 12px 60px rgba(0,0,0,.7);overflow:hidden;}
+            #globalSearchBox header{display:flex;align-items:center;gap:10px;padding:12px 16px;border-bottom:1px solid #2f4257;}
+            #globalSearchBox header i{color:#5ac8fa;}
+            #globalSearchInput{flex:1;background:transparent;border:0;color:#eff6ff;font-size:1rem;outline:0;}
+            #globalSearchInput::placeholder{color:#6b7c95;}
+            #globalSearchHint{font-size:.7rem;color:#6b7c95;border:1px solid #344964;padding:1px 6px;border-radius:4px;}
+            #globalSearchBody{max-height:60vh;overflow-y:auto;}
+            .gs-section{padding:8px 14px;font-size:.7rem;color:#9ab0cb;text-transform:uppercase;
+                letter-spacing:.5px;border-top:1px solid rgba(255,255,255,.04);background:rgba(255,255,255,.02);}
+            .gs-item{padding:10px 16px;cursor:pointer;display:flex;align-items:center;gap:10px;
+                color:#eff6ff;border-bottom:1px solid rgba(255,255,255,.03);text-decoration:none;}
+            .gs-item:hover, .gs-item.active{background:rgba(10,132,255,.18);}
+            .gs-item .gs-label{flex:1;font-weight:600;font-size:.88rem;}
+            .gs-item .gs-sub{font-size:.78rem;color:#9ab0cb;display:block;margin-top:2px;font-weight:400;}
+            .gs-badge{font-size:.7rem;padding:2px 8px;border-radius:6px;background:rgba(255,255,255,.08);color:#bfd2ec;}
+            #globalSearchEmpty{padding:30px;text-align:center;color:#6b7c95;font-size:.88rem;}
+        `;
+        document.head.appendChild(css);
+        const overlay = document.createElement('div');
+        overlay.id = 'globalSearchOverlay';
+        overlay.innerHTML = `
+            <div id="globalSearchBox">
+                <header>
+                    <i class="fas fa-search"></i>
+                    <input id="globalSearchInput" type="search" placeholder="Buscar en todo el CMMS — avisos, OTs, equipos, actividades, compras..." autocomplete="off">
+                    <span id="globalSearchHint">ESC</span>
+                </header>
+                <div id="globalSearchBody">
+                    <div id="globalSearchEmpty">Escribe al menos 2 caracteres…</div>
+                </div>
+            </div>`;
+        document.body.appendChild(overlay);
+        overlay.addEventListener('click', e => { if (e.target === overlay) closeGS(); });
+    }
+    let _gsTimer = null, _gsActiveIdx = -1, _gsItems = [];
+    async function runSearch(q) {
+        const body = document.getElementById('globalSearchBody');
+        if (!q || q.length < 2) {
+            body.innerHTML = '<div id="globalSearchEmpty">Escribe al menos 2 caracteres…</div>';
+            _gsItems = []; return;
+        }
+        body.innerHTML = '<div id="globalSearchEmpty"><i class="fas fa-spinner fa-spin"></i> Buscando…</div>';
+        try {
+            const r = await fetch('/api/global-search?q=' + encodeURIComponent(q));
+            const d = await r.json();
+            if (!r.ok) { body.innerHTML = '<div id="globalSearchEmpty">Error: ' + (d.error || r.statusText) + '</div>'; return; }
+            renderResults(d.results || {}, d.total || 0);
+        } catch (e) {
+            body.innerHTML = '<div id="globalSearchEmpty">Error: ' + e.message + '</div>';
+        }
+    }
+    const SECTION_LABELS = {
+        avisos: '🔔 Avisos', ots: '🛠️ Órdenes de Trabajo', equipos: '⚙️ Equipos',
+        actividades: '📋 Seguimiento', compras: '🛒 Compras', lubricacion: '🛢️ Lubricación',
+    };
+    function renderResults(results, total) {
+        const body = document.getElementById('globalSearchBody');
+        if (total === 0) {
+            body.innerHTML = '<div id="globalSearchEmpty">Sin coincidencias. Prueba otra palabra.</div>';
+            _gsItems = []; return;
+        }
+        const parts = [];
+        _gsItems = [];
+        for (const [key, items] of Object.entries(results)) {
+            if (!items || !items.length) continue;
+            parts.push(`<div class="gs-section">${SECTION_LABELS[key] || key} <span style="opacity:.6;">(${items.length})</span></div>`);
+            for (const it of items) {
+                const idx = _gsItems.length;
+                _gsItems.push(it.href);
+                parts.push(`<a class="gs-item" data-idx="${idx}" href="${it.href}">
+                    <div class="gs-label">${escGS(it.label)}<span class="gs-sub">${escGS(it.subtitle || '')}</span></div>
+                    ${it.badge ? `<span class="gs-badge">${escGS(it.badge)}</span>` : ''}
+                </a>`);
+            }
+        }
+        body.innerHTML = parts.join('');
+        _gsActiveIdx = 0;
+        updateActive();
+    }
+    function escGS(s) {
+        return String(s == null ? '' : s).replace(/[&<>"']/g,
+            c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+    }
+    function updateActive() {
+        document.querySelectorAll('.gs-item').forEach((el, i) => {
+            el.classList.toggle('active', i === _gsActiveIdx);
+            if (i === _gsActiveIdx) el.scrollIntoView({ block: 'nearest' });
+        });
+    }
+    function openGS() {
+        ensureModal();
+        document.getElementById('globalSearchOverlay').classList.add('show');
+        const inp = document.getElementById('globalSearchInput');
+        inp.value = ''; inp.focus();
+        inp.oninput = e => {
+            clearTimeout(_gsTimer);
+            const q = e.target.value.trim();
+            _gsTimer = setTimeout(() => runSearch(q), 220);
+        };
+        inp.onkeydown = e => {
+            if (e.key === 'Escape') { closeGS(); return; }
+            if (e.key === 'ArrowDown') { e.preventDefault(); if (_gsItems.length) { _gsActiveIdx = (_gsActiveIdx + 1) % _gsItems.length; updateActive(); } }
+            if (e.key === 'ArrowUp')   { e.preventDefault(); if (_gsItems.length) { _gsActiveIdx = (_gsActiveIdx - 1 + _gsItems.length) % _gsItems.length; updateActive(); } }
+            if (e.key === 'Enter')     { e.preventDefault(); if (_gsItems[_gsActiveIdx]) location.href = _gsItems[_gsActiveIdx]; }
+        };
+    }
+    function closeGS() {
+        const o = document.getElementById('globalSearchOverlay');
+        if (o) o.classList.remove('show');
+    }
+    document.addEventListener('keydown', e => {
+        const isMac = navigator.platform.toUpperCase().includes('MAC');
+        const cmd = isMac ? e.metaKey : e.ctrlKey;
+        if (cmd && (e.key === 'k' || e.key === 'K')) {
+            e.preventDefault(); openGS();
+        }
+    });
+    window.openGlobalSearch = openGS;
+})();
+
 // ── PWA (Progressive Web App) ────────────────────────────────────────────────
 // Inyecta link rel=manifest, meta theme-color y registra el Service Worker.
 // Hacerlo desde sidebar.js evita modificar 30+ templates HTML.
@@ -164,6 +294,7 @@
 (function () {
     const MENU_ITEMS = [
         { href: '/', icon: 'fas fa-chart-line', label: 'Dashboard', tip: 'Dashboard' },
+        { onclick: 'openGlobalSearch()', icon: 'fas fa-search', label: 'Buscar (⌘K)', tip: 'Busqueda global Ctrl+K' },
         { href: '/avisos', icon: 'fas fa-bell', label: 'Avisos', tip: 'Avisos' },
         { href: '/ordenes', icon: 'fas fa-tools', label: 'Ordenes', tip: 'Ordenes' },
         { href: '/compras', icon: 'fas fa-shopping-cart', label: 'Compras', tip: 'Compras' },
@@ -228,9 +359,12 @@
         if (!navList) return;
         const items = [...(baseItems || MENU_ITEMS), ...(extraItems || [])];
         navList.innerHTML = items.map((item) => {
-            const active = isActive(item.href) ? 'active' : '';
+            const active = item.href && isActive(item.href) ? 'active' : '';
+            const handler = item.onclick
+                ? `href="javascript:void(0)" onclick="${item.onclick}"`
+                : `href="${item.href}"`;
             return `<li>
-                <a href="${item.href}" class="${active}">
+                <a ${handler} class="${active}">
                     <i class="${item.icon}"></i>
                     <span class="links_name">${item.label}</span>
                 </a>

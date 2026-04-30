@@ -3,25 +3,11 @@ import datetime as dt
 import math
 from flask import jsonify, request
 
-
-# Capacidades por equipo tag (TM) — fallback legacy.
-# Lo correcto es setear Equipment.capacity_tm en BD; si esta NULL usa este dict.
-EQUIPMENT_CAPACITY = {
-    'D1': 8000, 'D2': 8000, 'D3': 8000, 'D4': 6000, 'D5': 7000,
-    'D6': 12000, 'D7': 12000, 'D8': 12000, 'D9': 12000,
-}
-
-
-def _eq_capacity(eq):
-    """Devuelve capacidad en TM del equipo (priorizando BD)."""
-    cap_db = getattr(eq, 'capacity_tm', None)
-    if cap_db is not None and cap_db > 0:
-        return float(cap_db)
-    return float(EQUIPMENT_CAPACITY.get(getattr(eq, 'tag', ''), 0) or 0)
-
-
-# Áreas con cálculo en serie (no ponderado)
-SERIES_AREAS = {'MOLINO'}
+from utils.kpi_helpers import (
+    EQUIPMENT_CAPACITY,
+    SERIES_AREAS,
+    eq_capacity as _eq_capacity,
+)
 
 
 def register_indicators_routes(app, db, logger, WorkOrder, Area, Line, Equipment):

@@ -562,6 +562,68 @@ def register_shutdown_routes(
             db.session.rollback()
             return jsonify({"error": str(e)}), 500
 
+    @app.route('/api/shutdown-templates/<int:template_id>/duplicate', methods=['POST'])
+    def duplicate_shutdown_template(template_id):
+        """Duplica una plantilla con todos sus items (con un nombre sufijado)."""
+        from models import ShutdownTemplate, ShutdownTemplateItem
+        src = ShutdownTemplate.query.get_or_404(template_id)
+        try:
+            data = request.json or {}
+            new_name = (data.get('name') or '').strip() or f"{src.name} (copia)"
+            from flask_login import current_user
+            new_tpl = ShutdownTemplate(
+                name=new_name,
+                description=src.description,
+                is_active=True,
+                created_by=getattr(current_user, 'full_name', None),
+            )
+            db.session.add(new_tpl)
+            db.session.flush()
+            for it in (src.items or []):
+                clone = ShutdownTemplateItem(
+                    template_id=new_tpl.id,
+                    order_index=it.order_index,
+                    description=it.description,
+                    maintenance_type=it.maintenance_type,
+                    estimated_duration=it.estimated_duration,
+                    tech_count=it.tech_count,
+                    specialty=it.specialty,
+                    component_name=it.component_name,
+                    application_mode=it.application_mode,
+                    target_equipment_id=it.target_equipment_id,
+                    target_area_id=it.target_area_id,
+                    target_line_id=it.target_line_id,
+                    target_tag_pattern=it.target_tag_pattern,
+                    target_system_id=it.target_system_id,
+                    target_component_id=it.target_component_id,
+                )
+                db.session.add(clone)
+            db.session.commit()
+            return jsonify(new_tpl.to_dict(with_items=True)), 201
+        except Exception as e:
+            db.session.rollback()
+            logger.exception('duplicate_shutdown_template error')
+            return jsonify({"error": str(e)}), 500
+
+    @app.route('/api/shutdown-templates/<int:template_id>/reorder', methods=['POST'])
+    def reorder_template_items(template_id):
+        """Recibe lista de IDs en el nuevo orden y actualiza order_index."""
+        from models import ShutdownTemplateItem
+        try:
+            data = request.json or {}
+            ids = data.get('ids') or []
+            if not isinstance(ids, list):
+                return jsonify({"error": "ids debe ser lista"}), 400
+            for idx, it_id in enumerate(ids, start=1):
+                ShutdownTemplateItem.query.filter_by(
+                    id=int(it_id), template_id=template_id
+                ).update({'order_index': idx})
+            db.session.commit()
+            return jsonify({"ok": True, "reordered": len(ids)})
+        except Exception as e:
+            db.session.rollback()
+            return jsonify({"error": str(e)}), 500
+
     @app.route('/api/shutdown-templates/<int:template_id>/items', methods=['POST'])
     def add_template_item(template_id):
         from models import ShutdownTemplate, ShutdownTemplateItem

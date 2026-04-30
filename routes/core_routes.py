@@ -44,6 +44,134 @@ def register_core_routes(app, db, logger, app_build_tag,
         return send_from_directory('static', 'manifest.webmanifest',
                                    mimetype='application/manifest+json')
 
+    @app.route('/api/global-search', methods=['GET'])
+    def global_search():
+        """Busqueda global cross-modulo: avisos, OTs, equipos, componentes,
+        actividades, OCs, puntos de lubricacion, rutas de inspeccion. Devuelve
+        resultados agrupados por tipo con un enlace para navegar."""
+        from sqlalchemy import or_, text as _t
+        try:
+            q = (request.args.get('q') or '').strip()
+            if len(q) < 2:
+                return jsonify({"error": "min 2 caracteres", "results": {}}), 400
+            like = f"%{q}%"
+            limit_per_section = 8
+            results = {}
+
+            # Avisos
+            try:
+                from models import MaintenanceNotice
+                rows = MaintenanceNotice.query.filter(or_(
+                    MaintenanceNotice.code.ilike(like),
+                    MaintenanceNotice.description.ilike(like),
+                )).order_by(MaintenanceNotice.id.desc()).limit(limit_per_section).all()
+                results['avisos'] = [{
+                    'label': r.code or f"AV-{r.id}",
+                    'subtitle': (r.description or '')[:80],
+                    'badge': r.status,
+                    'href': f'/avisos#{r.id}',
+                } for r in rows]
+            except Exception:
+                results['avisos'] = []
+
+            # OTs
+            try:
+                rows = WorkOrder.query.filter(or_(
+                    WorkOrder.code.ilike(like),
+                    WorkOrder.description.ilike(like),
+                )).order_by(WorkOrder.id.desc()).limit(limit_per_section).all()
+                results['ots'] = [{
+                    'label': r.code or f"OT-{r.id}",
+                    'subtitle': (r.description or '')[:80],
+                    'badge': r.status,
+                    'href': f'/ordenes#{r.id}',
+                } for r in rows]
+            except Exception:
+                results['ots'] = []
+
+            # Equipos
+            try:
+                rows = Equipment.query.filter(or_(
+                    Equipment.tag.ilike(like),
+                    Equipment.name.ilike(like),
+                )).order_by(Equipment.tag).limit(limit_per_section).all()
+                results['equipos'] = [{
+                    'label': f"{r.tag or ''} — {r.name}",
+                    'subtitle': r.description or '',
+                    'badge': r.criticality or '',
+                    'href': f'/equipo-historial?id={r.id}',
+                } for r in rows]
+            except Exception:
+                results['equipos'] = []
+
+            # Actividades (Seguimiento)
+            try:
+                from models import Activity
+                rows = Activity.query.filter(or_(
+                    Activity.title.ilike(like),
+                    Activity.description.ilike(like),
+                    Activity.responsible.ilike(like),
+                )).order_by(Activity.id.desc()).limit(limit_per_section).all()
+                results['actividades'] = [{
+                    'label': r.title,
+                    'subtitle': f"{r.activity_type} · {r.responsible or '-'}",
+                    'badge': r.status,
+                    'href': f'/seguimiento#{r.id}',
+                } for r in rows]
+            except Exception:
+                results['actividades'] = []
+
+            # OCs (con coincidencia por items via search endpoint)
+            try:
+                from models import PurchaseOrder, PurchaseRequest
+                rows = PurchaseOrder.query.filter(or_(
+                    PurchaseOrder.po_code.ilike(like),
+                    PurchaseOrder.external_rq_code.ilike(like),
+                    PurchaseOrder.provider_name.ilike(like),
+                )).order_by(PurchaseOrder.id.desc()).limit(limit_per_section).all()
+                # Tambien buscar OCs cuyos items matcheen
+                req_rows = PurchaseRequest.query.filter(or_(
+                    PurchaseRequest.req_code.ilike(like),
+                    PurchaseRequest.description.ilike(like),
+                )).filter(PurchaseRequest.purchase_order_id.isnot(None)).limit(20).all()
+                seen = {r.id for r in rows}
+                for rq in req_rows:
+                    if rq.purchase_order_id not in seen and rq.purchase_order:
+                        rows.append(rq.purchase_order)
+                        seen.add(rq.purchase_order_id)
+                results['compras'] = [{
+                    'label': r.po_code,
+                    'subtitle': f"{r.provider_name}{' · RQ ' + r.external_rq_code if r.external_rq_code else ''}",
+                    'badge': r.status,
+                    'href': '/compras',
+                } for r in rows[:limit_per_section]]
+            except Exception:
+                results['compras'] = []
+
+            # Puntos lubricacion
+            try:
+                from models import LubricationPoint
+                rows = LubricationPoint.query.filter(
+                    LubricationPoint.is_active == True,  # noqa: E712
+                ).filter(or_(
+                    LubricationPoint.code.ilike(like),
+                    LubricationPoint.name.ilike(like),
+                )).limit(limit_per_section).all()
+                results['lubricacion'] = [{
+                    'label': r.code or f"LUB-{r.id}",
+                    'subtitle': r.name,
+                    'badge': r.semaphore_status or '',
+                    'href': '/lubricacion',
+                } for r in rows]
+            except Exception:
+                results['lubricacion'] = []
+
+            total = sum(len(v) for v in results.values())
+            return jsonify({"q": q, "total": total, "results": results})
+        except Exception as e:
+            logger.exception('global_search error')
+            return jsonify({"error": str(e)}), 500
+
     @app.route('/health', methods=['GET'])
     def health_check():
         """Uptime check for Render / external monitors. No auth required."""
