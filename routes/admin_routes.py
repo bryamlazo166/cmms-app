@@ -344,3 +344,58 @@ def register_admin_routes(app, db, logger):
             return redirect(url_for('index'))
         from flask import render_template
         return render_template('backup.html')
+
+    # ── ALCANCE DE INDICADORES (include_in_kpi) ─────────────────────────
+    @app.route('/configuracion-kpi', methods=['GET'])
+    @login_required
+    def kpi_scope_page():
+        if not _is_admin():
+            from flask import redirect, url_for
+            return redirect(url_for('index'))
+        from flask import render_template
+        return render_template('kpi_scope.html')
+
+    @app.route('/api/admin/kpi-scope/apply-defaults', methods=['POST'])
+    @login_required
+    def apply_kpi_default_exclusions():
+        """Marca como excluidas (include_in_kpi=False) las areas y equipos que
+        tipicamente no deben entrar en indicadores ni produccion: areas
+        BAJA/FUERA DE SERVICIO, UTILITIES, RMP; y equipos hidrolavadoras
+        en area COCCION. Idempotente."""
+        if not _is_admin():
+            return jsonify({"error": "Solo admin"}), 403
+        try:
+            results = {'areas_excluded': [], 'equipments_excluded': []}
+
+            # Areas: nombres conocidos a excluir
+            area_patterns = ['BAJA', 'FUERA DE SERVICIO', 'BAJA / FUERA DE SERVICIO',
+                            'UTILITIES', 'RMP']
+            for pat in area_patterns:
+                rows = db.session.execute(text("""
+                    UPDATE areas SET include_in_kpi = FALSE
+                    WHERE UPPER(name) LIKE :p AND include_in_kpi = TRUE
+                    RETURNING id, name
+                """), {"p": f'%{pat.upper()}%'}).fetchall()
+                for r in rows:
+                    results['areas_excluded'].append({'id': r[0], 'name': r[1], 'matched_pattern': pat})
+
+            # Equipos: hidrolavadoras dentro del area COCCION
+            rows = db.session.execute(text("""
+                UPDATE equipments e SET include_in_kpi = FALSE
+                FROM lines l, areas a
+                WHERE e.line_id = l.id AND l.area_id = a.id
+                  AND UPPER(a.name) LIKE '%COCCION%'
+                  AND (UPPER(e.name) LIKE '%HIDROLAVADORA%' OR UPPER(e.tag) LIKE '%H4%')
+                  AND e.include_in_kpi = TRUE
+                RETURNING e.id, e.tag, e.name
+            """)).fetchall()
+            for r in rows:
+                results['equipments_excluded'].append({'id': r[0], 'tag': r[1], 'name': r[2]})
+
+            db.session.commit()
+            results['ok'] = True
+            return jsonify(results)
+        except Exception as e:
+            db.session.rollback()
+            logger.exception('apply_kpi_default_exclusions error')
+            return jsonify({"error": str(e)}), 500

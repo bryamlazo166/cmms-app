@@ -808,6 +808,10 @@ _ENSURE_INDEXES_SQL = [
     # Plantillas de parada — columnas opcionales agregadas despues del create_all inicial
     "ALTER TABLE shutdown_template_items ADD COLUMN IF NOT EXISTS target_system_id INTEGER REFERENCES systems(id)",
     "ALTER TABLE shutdown_template_items ADD COLUMN IF NOT EXISTS target_component_id INTEGER REFERENCES components(id)",
+    # KPI scope flags y capacidad de equipos
+    "ALTER TABLE areas      ADD COLUMN IF NOT EXISTS include_in_kpi BOOLEAN NOT NULL DEFAULT TRUE",
+    "ALTER TABLE equipments ADD COLUMN IF NOT EXISTS include_in_kpi BOOLEAN NOT NULL DEFAULT TRUE",
+    "ALTER TABLE equipments ADD COLUMN IF NOT EXISTS capacity_tm    DOUBLE PRECISION",
 ]
 
 

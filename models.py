@@ -110,11 +110,16 @@ class Area(db.Model):
     id: Mapped[int] = mapped_column(primary_key=True)
     name: Mapped[str] = mapped_column(String(100), unique=True, nullable=False)
     description: Mapped[str] = mapped_column(Text, nullable=True)
-    
+    # Si False, esta area NO entra en los calculos de indicadores ni
+    # produccion vs mantenimiento (util para "BAJA / FUERA DE SERVICIO",
+    # "UTILITIES" u otras areas que no producen).
+    include_in_kpi: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
+
     lines = relationship("Line", back_populates="area", cascade="all, delete-orphan")
 
     def to_dict(self):
-        return {"id": self.id, "name": self.name, "description": self.description}
+        return {"id": self.id, "name": self.name, "description": self.description,
+                "include_in_kpi": self.include_in_kpi}
 
 class Line(db.Model):
     __tablename__ = 'lines'
@@ -137,12 +142,22 @@ class Equipment(db.Model):
     description: Mapped[str | None] = mapped_column(Text, nullable=True)
     criticality: Mapped[str | None] = mapped_column(String(20), nullable=True)  # Baja, Media, Alta
     line_id: Mapped[int] = mapped_column(ForeignKey('lines.id'), nullable=False)
-    
+    # Si False, este equipo NO entra en los calculos de indicadores ni de
+    # produccion (util para hidrolavadoras, equipos auxiliares, equipos
+    # dados de baja, etc.).
+    include_in_kpi: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
+    # Capacidad nominal en TM/mes — usada para ponderar disponibilidad.
+    # Si esta NULL, el calculo cae al diccionario hardcoded EQUIPMENT_CAPACITY
+    # (legacy). Llenar este campo permite quitar la dependencia del codigo.
+    capacity_tm: Mapped[float | None] = mapped_column(Float, nullable=True)
+
     line = relationship("Line", back_populates="equipments")
     systems = relationship("System", back_populates="equipment", cascade="all, delete-orphan")
 
     def to_dict(self):
-        return {"id": self.id, "name": self.name, "tag": self.tag, "description": self.description, "criticality": self.criticality, "line_id": self.line_id}
+        return {"id": self.id, "name": self.name, "tag": self.tag, "description": self.description,
+                "criticality": self.criticality, "line_id": self.line_id,
+                "include_in_kpi": self.include_in_kpi, "capacity_tm": self.capacity_tm}
 
 class System(db.Model):
     __tablename__ = 'systems'

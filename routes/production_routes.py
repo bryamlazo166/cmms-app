@@ -137,6 +137,10 @@ def register_production_routes(app, db, logger, ProductionGoal, WorkOrder, Area,
             area = area_map.get(goal.area_id)
             if not area:
                 continue
+            # Excluir areas marcadas include_in_kpi=False (ej: BAJA, UTILITIES,
+            # RMP). Aunque tengan Goal historico, no entran en el calculo.
+            if not getattr(area, 'include_in_kpi', True):
+                continue
 
             operating_hours = goal.operating_hours_month or 720.0
             tons_per_hour = (goal.monthly_avg_yield_tons / operating_hours) if operating_hours > 0 else 0
@@ -207,9 +211,12 @@ def register_production_routes(app, db, logger, ProductionGoal, WorkOrder, Area,
                 eq_id = ot.equipment_id
                 if not eq_id:
                     continue
+                eq = equip_map.get(eq_id)
+                # Excluir equipos marcados como fuera de KPI (ej: hidrolavadora 4)
+                if eq and not getattr(eq, 'include_in_kpi', True):
+                    continue
                 tons = ev['hours'] * tons_per_hour
                 if eq_id not in equipment_impact:
-                    eq = equip_map.get(eq_id)
                     equipment_impact[eq_id] = {
                         'equipment_id': eq_id,
                         'equipment_name': eq.name if eq else '-',

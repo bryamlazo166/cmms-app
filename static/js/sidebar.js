@@ -192,7 +192,8 @@
     const ADMIN_MENU_ITEMS = [
         { href: '/usuarios', icon: 'fas fa-users-cog', label: 'Usuarios', tip: 'Usuarios' },
         { href: '/mantenimiento-bd', icon: 'fas fa-database', label: 'Mant. BD', tip: 'Mantenimiento BD' },
-        { href: '/admin/backup', icon: 'fas fa-cloud-download-alt', label: 'Backup BD', tip: 'Snapshot/restore de BD', restricted: true }
+        { href: '/admin/backup', icon: 'fas fa-cloud-download-alt', label: 'Backup BD', tip: 'Snapshot/restore de BD', restricted: true },
+        { href: '/configuracion-kpi', icon: 'fas fa-filter', label: 'Alcance KPIs', tip: 'Que areas/equipos entran en indicadores', restricted: true }
     ];
 
     const ROLE_LABELS = {

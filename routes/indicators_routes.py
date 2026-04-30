@@ -4,11 +4,21 @@ import math
 from flask import jsonify, request
 
 
-# Capacidades por equipo tag (TM)
+# Capacidades por equipo tag (TM) — fallback legacy.
+# Lo correcto es setear Equipment.capacity_tm en BD; si esta NULL usa este dict.
 EQUIPMENT_CAPACITY = {
     'D1': 8000, 'D2': 8000, 'D3': 8000, 'D4': 6000, 'D5': 7000,
     'D6': 12000, 'D7': 12000, 'D8': 12000, 'D9': 12000,
 }
+
+
+def _eq_capacity(eq):
+    """Devuelve capacidad en TM del equipo (priorizando BD)."""
+    cap_db = getattr(eq, 'capacity_tm', None)
+    if cap_db is not None and cap_db > 0:
+        return float(cap_db)
+    return float(EQUIPMENT_CAPACITY.get(getattr(eq, 'tag', ''), 0) or 0)
+
 
 # Áreas con cálculo en serie (no ponderado)
 SERIES_AREAS = {'MOLINO'}
@@ -82,9 +92,12 @@ def register_indicators_routes(app, db, logger, WorkOrder, Area, Line, Equipment
             window_days = max(1, (end - start).days + 1)
             total_hours = window_days * 24
 
-            areas = Area.query.all()
+            # Solo areas/equipos marcados como include_in_kpi=True. Esto excluye
+            # cosas como "BAJA / FUERA DE SERVICIO", "UTILITIES", "RMP" o
+            # equipos auxiliares (ej: hidrolavadora 4 de Coccion).
+            areas = Area.query.filter_by(include_in_kpi=True).all()
             lines = Line.query.all()
-            equips = Equipment.query.all()
+            equips = Equipment.query.filter_by(include_in_kpi=True).all()
             line_map = {l.id: l for l in lines}
             equip_map = {e.id: e for e in equips}
             area_map = {a.id: a for a in areas}
@@ -158,13 +171,13 @@ def register_indicators_routes(app, db, logger, WorkOrder, Area, Line, Equipment
                 else:
                     # Ponderado por capacidad
                     area_equips = [e for e in equips if e.line_id and line_map.get(e.line_id) and line_map[e.line_id].area_id == area.id]
-                    has_capacity = any(EQUIPMENT_CAPACITY.get(e.tag, 0) > 0 for e in area_equips)
+                    has_capacity = any(_eq_capacity(e) > 0 for e in area_equips)
 
                     if has_capacity and area_equips:
                         weighted_sum = 0
                         total_cap = 0
                         for eq in area_equips:
-                            cap = EQUIPMENT_CAPACITY.get(eq.tag, 0)
+                            cap = _eq_capacity(eq)
                             if cap == 0:
                                 continue
                             eq_ots = [o for o in area_ots if o.get('equipment_id') == eq.id]
@@ -206,7 +219,12 @@ def register_indicators_routes(app, db, logger, WorkOrder, Area, Line, Equipment
             area = Area.query.get_or_404(area_id)
             lines = Line.query.filter_by(area_id=area_id).all()
             line_ids = [l.id for l in lines]
-            equips = Equipment.query.filter(Equipment.line_id.in_(line_ids)).all() if line_ids else []
+            # Solo equipos include_in_kpi=True (excluye p.ej. hidrolavadoras
+            # auxiliares que no entran en los calculos de produccion).
+            equips = (Equipment.query.filter(
+                Equipment.line_id.in_(line_ids),
+                Equipment.include_in_kpi == True  # noqa: E712
+            ).all()) if line_ids else []
             line_map = {l.id: l for l in lines}
 
             all_ots = WorkOrder.query.filter(WorkOrder.status == 'Cerrada').all()
@@ -224,7 +242,7 @@ def register_indicators_routes(app, db, logger, WorkOrder, Area, Line, Equipment
             for eq in equips:
                 eq_ots = [ot.to_dict() for ot in all_ots if ot.equipment_id == eq.id and ot_in_window(ot)]
                 ind = _calc_indicators(eq_ots, total_hours)
-                cap = EQUIPMENT_CAPACITY.get(eq.tag, 0)
+                cap = _eq_capacity(eq)
                 ln = line_map.get(eq.line_id)
                 ind['equipment_id'] = eq.id
                 ind['equipment_name'] = eq.name
