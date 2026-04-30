@@ -559,6 +559,9 @@ register_warehouse_routes(
     logger=logger,
     WarehouseItem=WarehouseItem,
     WarehouseMovement=WarehouseMovement,
+    RotativeAsset=RotativeAsset,
+    RotativeAssetBOM=RotativeAssetBOM,
+    Equipment=Equipment,
 )
 
 register_work_orders_routes(

@@ -4,6 +4,8 @@ from io import BytesIO
 import pandas as pd
 from flask import jsonify, request, send_file
 
+from utils.specialty_helpers import specialty_for_ot, infer_discipline_from_text
+
 
 def register_work_orders_routes(
     app,
@@ -953,10 +955,20 @@ def register_work_orders_routes(
                 provider_name = _provs_m[wo.provider_id].name if wo.provider_id and wo.provider_id in _provs_m else '-'
                 notice_code   = _nots_m[wo.notice_id].code    if wo.notice_id   and wo.notice_id   in _nots_m  else '-'
 
+                # Disciplina: 1) personal asignado / proveedor, 2) inferida del texto
+                discipline = specialty_for_ot(wo)
+                if discipline == 'SIN ASIGNAR':
+                    discipline = infer_discipline_from_text(
+                        wo.description, wo.failure_mode,
+                        equip.name if equip else None,
+                        comp.name if comp else None,
+                    )
+
                 data.append(
                     {
                         'Código': wo.code,
                         'Aviso Relacionado': notice_code,
+                        'Disciplina': discipline,
                         'Área': get_name(area),
                         'Línea': get_name(line),
                         'Equipo': get_name(equip),

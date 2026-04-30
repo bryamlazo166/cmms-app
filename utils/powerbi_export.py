@@ -901,44 +901,67 @@ def list_endpoints():
 # ────────────────────────────────────────────────────────────────
 
 def build_workbook():
-    """Construye el Excel master con todas las hojas y devuelve BytesIO."""
+    """Construye el Excel master con todas las hojas y devuelve BytesIO.
+    Cada query corre aislada: si una hoja falla, el resto del libro se genera
+    igual y la hoja problematica queda con una fila '_error' que indica el
+    motivo. Esto evita que un solo dato corrupto rompa toda la exportacion."""
+    import logging
     import pandas as pd
+
+    logger = logging.getLogger('cmms.powerbi_export')
 
     lookups = _build_lookups()
 
-    # Mapa hoja -> queryfn. Mantener nombres cortos (Excel limita a 31).
-    sheets = [
-        ('OTs',                query_work_orders(lookups)),
-        ('Avisos',             query_notices(lookups)),
-        ('Personal_OT',        query_ot_personnel(lookups)),
-        ('Materiales_OT',      query_ot_materials(lookups)),
-        ('OT_Bitacora',        query_ot_log_entries(lookups)),
-        ('Equipos',            query_equipos_flat(lookups)),
-        ('Arbol_Activos',      query_equipment_tree(lookups)),
-        ('Lub_Puntos',         query_lubrication_points(lookups)),
-        ('Lub_Ejecuciones',    query_lubrication_executions(lookups)),
-        ('Insp_Rutas',         query_inspection_routes(lookups)),
-        ('Insp_Ejecuciones',   query_inspection_executions(lookups)),
-        ('Mon_Puntos',         query_monitoring_points(lookups)),
-        ('Mon_Lecturas',       query_monitoring_readings(lookups)),
-        ('Espesores',          query_thickness(lookups)),
-        ('Paradas',            query_shutdowns(lookups)),
-        ('Paradas_OTs',        query_shutdown_ots(lookups)),
-        ('Compras',            query_purchases(lookups)),
-        ('Almacen',            query_warehouse(lookups)),
-        ('Almacen_Movimientos',query_warehouse_movements(lookups)),
-        ('Actividades',        query_activities(lookups)),
-        ('Activos_Rotativos',  query_rotative_assets(lookups)),
+    # Mapa hoja -> funcion (lazy). Mantener nombres cortos (Excel limita a 31).
+    sheet_specs = [
+        ('OTs',                 query_work_orders),
+        ('Avisos',              query_notices),
+        ('Personal_OT',         query_ot_personnel),
+        ('Materiales_OT',       query_ot_materials),
+        ('OT_Bitacora',         query_ot_log_entries),
+        ('Equipos',             query_equipos_flat),
+        ('Arbol_Activos',       query_equipment_tree),
+        ('Lub_Puntos',          query_lubrication_points),
+        ('Lub_Ejecuciones',     query_lubrication_executions),
+        ('Insp_Rutas',          query_inspection_routes),
+        ('Insp_Ejecuciones',    query_inspection_executions),
+        ('Mon_Puntos',          query_monitoring_points),
+        ('Mon_Lecturas',        query_monitoring_readings),
+        ('Espesores',           query_thickness),
+        ('Paradas',             query_shutdowns),
+        ('Paradas_OTs',         query_shutdown_ots),
+        ('Compras',             query_purchases),
+        ('Almacen',             query_warehouse),
+        ('Almacen_Movimientos', query_warehouse_movements),
+        ('Actividades',         query_activities),
+        ('Activos_Rotativos',   query_rotative_assets),
     ]
 
     output = BytesIO()
+    failures = []
     with pd.ExcelWriter(output, engine='openpyxl') as writer:
-        for sheet_name, rows in sheets:
-            df = pd.DataFrame(rows or [])
-            # Si esta vacio escribir cabecera placeholder para evitar
-            # 'sheet sin columnas' que rompe Power BI
-            if df.empty:
-                df = pd.DataFrame([{'_empty': '(sin datos)'}])
+        for sheet_name, queryfn in sheet_specs:
+            try:
+                rows = queryfn(lookups)
+                df = pd.DataFrame(rows or [])
+                if df.empty:
+                    df = pd.DataFrame([{'_empty': '(sin datos)'}])
+            except Exception as e:
+                logger.exception(f"powerbi_export: error en hoja {sheet_name}")
+                failures.append({'sheet': sheet_name, 'error': str(e)})
+                df = pd.DataFrame([{'_error': str(e)[:200]}])
             df.to_excel(writer, index=False, sheet_name=sheet_name[:31])
+
+        # Hoja meta con el listado de fallas (si las hubo) — util para diagnostico
+        from datetime import datetime as _dt
+        meta = [{
+            'generated_at': _dt.utcnow().isoformat() + 'Z',
+            'total_sheets': len(sheet_specs),
+            'failed_sheets': len(failures),
+        }]
+        if failures:
+            meta.extend(failures)
+        pd.DataFrame(meta).to_excel(writer, index=False, sheet_name='_meta')
+
     output.seek(0)
     return output

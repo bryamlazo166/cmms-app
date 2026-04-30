@@ -5,7 +5,10 @@ import pandas as pd
 from flask import jsonify, request, send_file
 
 
-def register_warehouse_routes(app, db, logger, WarehouseItem, WarehouseMovement):
+def register_warehouse_routes(
+    app, db, logger, WarehouseItem, WarehouseMovement,
+    RotativeAsset=None, RotativeAssetBOM=None, Equipment=None,
+):
     # --- WAREHOUSE ENDPOINTS ---
     @app.route('/api/warehouse', methods=['GET', 'POST'])
     def handle_warehouse():
@@ -528,4 +531,138 @@ def register_warehouse_routes(app, db, logger, WarehouseItem, WarehouseMovement)
     def handle_item_movements(id):
         moves = WarehouseMovement.query.filter_by(item_id=id).order_by(WarehouseMovement.id.desc()).all()
         return jsonify([m.to_dict() for m in moves])
+
+    # ── BOM POR EQUIPO ─────────────────────────────────────────────────────
+    # Cruza WarehouseItem ↔ RotativeAssetBOM ↔ RotativeAsset.equipment_id.
+    # Permite ver, por cada item de almacen: en que equipos se usa, cuanto
+    # stock total se necesita y si hay cobertura.
+    if RotativeAsset is not None and RotativeAssetBOM is not None and Equipment is not None:
+
+        @app.route('/api/warehouse/bom-by-equipment', methods=['GET'])
+        def warehouse_bom_by_equipment():
+            """Por cada item de almacen, lista los equipos que lo consumen
+            (via activos rotativos) y la cantidad total esperada vs stock actual.
+            """
+            try:
+                # Map equipment_id -> {tag, name}
+                equip_map = {e.id: e for e in Equipment.query.all()}
+                # Map asset_id -> equipment_id
+                asset_to_eq = {
+                    a.id: a.equipment_id for a in RotativeAsset.query.all()
+                    if a.equipment_id is not None
+                }
+                # Agrupar BOM por warehouse_item_id
+                grouped = {}  # item_id -> {'qty_total': float, 'equipments': {eq_id: qty}}
+                for bom in RotativeAssetBOM.query.all():
+                    if not bom.warehouse_item_id:
+                        continue
+                    eq_id = asset_to_eq.get(bom.asset_id)
+                    if not eq_id:
+                        continue
+                    g = grouped.setdefault(bom.warehouse_item_id, {
+                        'qty_total': 0.0, 'equipments': {}, 'asset_count': 0,
+                    })
+                    qty = float(bom.quantity or 0)
+                    g['qty_total'] += qty
+                    g['equipments'][eq_id] = g['equipments'].get(eq_id, 0.0) + qty
+                    g['asset_count'] += 1
+
+                # Construir respuesta
+                rows = []
+                for item in WarehouseItem.query.filter_by(is_active=True).all():
+                    g = grouped.get(item.id)
+                    if not g:
+                        continue  # solo items vinculados a algun equipo
+                    eq_breakdown = []
+                    for eq_id, qty in sorted(g['equipments'].items(),
+                                             key=lambda kv: -kv[1]):
+                        eq = equip_map.get(eq_id)
+                        if not eq:
+                            continue
+                        eq_breakdown.append({
+                            'equipment_id': eq_id,
+                            'tag': eq.tag,
+                            'name': eq.name,
+                            'qty_required': round(qty, 2),
+                        })
+                    qty_total = round(g['qty_total'], 2)
+                    stock = float(item.stock or 0)
+                    coverage = (stock / qty_total * 100) if qty_total > 0 else None
+                    rows.append({
+                        'item_id': item.id,
+                        'code': item.code,
+                        'name': item.name,
+                        'family': getattr(item, 'family', None),
+                        'unit': getattr(item, 'unit', None),
+                        'stock': stock,
+                        'min_stock': float(getattr(item, 'min_stock', 0) or 0),
+                        'rop': float(getattr(item, 'rop', 0) or 0),
+                        'criticality': getattr(item, 'criticality', None),
+                        'qty_required_total': qty_total,
+                        'equipment_count': len(eq_breakdown),
+                        'coverage_pct': round(coverage, 1) if coverage is not None else None,
+                        'is_covered': stock >= qty_total if qty_total > 0 else True,
+                        'equipments': eq_breakdown,
+                    })
+                # Sin cobertura primero
+                rows.sort(key=lambda r: (
+                    r['is_covered'],  # False antes que True
+                    -(r['qty_required_total'] - r['stock']),
+                ))
+                return jsonify({
+                    'rows': rows,
+                    'total_items_with_bom': len(rows),
+                    'total_uncovered': sum(1 for r in rows if not r['is_covered']),
+                })
+            except Exception as e:
+                logger.exception('warehouse_bom_by_equipment error')
+                return jsonify({"error": str(e)}), 500
+
+        @app.route('/api/warehouse/equipment-coverage/<int:equipment_id>', methods=['GET'])
+        def warehouse_equipment_coverage(equipment_id):
+            """Para un equipo, lista los repuestos que necesita y su stock."""
+            try:
+                eq = Equipment.query.get(equipment_id)
+                if not eq:
+                    return jsonify({"error": "Equipo no encontrado"}), 404
+                assets = RotativeAsset.query.filter_by(equipment_id=equipment_id).all()
+                asset_ids = [a.id for a in assets]
+                if not asset_ids:
+                    return jsonify({
+                        'equipment': {'id': eq.id, 'tag': eq.tag, 'name': eq.name},
+                        'rows': [], 'total_uncovered': 0,
+                    })
+                # Agrupar por warehouse_item_id
+                grouped = {}
+                for bom in RotativeAssetBOM.query.filter(RotativeAssetBOM.asset_id.in_(asset_ids)).all():
+                    if not bom.warehouse_item_id:
+                        continue
+                    grouped[bom.warehouse_item_id] = grouped.get(bom.warehouse_item_id, 0) + float(bom.quantity or 0)
+
+                rows = []
+                for item_id, qty_required in grouped.items():
+                    item = WarehouseItem.query.get(item_id)
+                    if not item:
+                        continue
+                    stock = float(item.stock or 0)
+                    rows.append({
+                        'item_id': item.id,
+                        'code': item.code,
+                        'name': item.name,
+                        'family': getattr(item, 'family', None),
+                        'unit': getattr(item, 'unit', None),
+                        'stock': stock,
+                        'qty_required': round(qty_required, 2),
+                        'shortage': max(0, round(qty_required - stock, 2)),
+                        'is_covered': stock >= qty_required,
+                    })
+                rows.sort(key=lambda r: (r['is_covered'], -r['shortage']))
+                return jsonify({
+                    'equipment': {'id': eq.id, 'tag': eq.tag, 'name': eq.name},
+                    'rows': rows,
+                    'total_uncovered': sum(1 for r in rows if not r['is_covered']),
+                })
+            except Exception as e:
+                logger.exception('warehouse_equipment_coverage error')
+                return jsonify({"error": str(e)}), 500
 

@@ -184,14 +184,52 @@
 <script src="/static/js/reports.js?v={{ v }}"></script>
 <script>
 async function exportPowerBI() {
+    // Usamos fetch en vez de <a href> para detectar errores (401, 500, cold-start)
+    // antes de descargar, asi evitamos archivos .json rotos en disco.
+    let resp;
+    try {
+        resp = await fetch('/api/reports/powerbi-export', {credentials: 'same-origin'});
+    } catch (e) {
+        alert('No se pudo contactar el servidor.\n\n' +
+              'Si la app esta en Render free tier puede estar en cold-start (espera 30-60s y reintenta).\n\n' +
+              'Detalle: ' + e.message);
+        return;
+    }
+    if (!resp.ok) {
+        let detail = `HTTP ${resp.status}`;
+        try {
+            const j = await resp.json();
+            if (j.error) detail = j.error;
+            if (resp.status === 401) {
+                alert('Sesion expirada. Vuelve a iniciar sesion y reintenta la descarga.');
+                window.location.href = j.redirect || '/login';
+                return;
+            }
+        } catch (_) { /* respuesta no-JSON */ }
+        alert('Error al generar el Excel:\n\n' + detail);
+        return;
+    }
+    const ct = resp.headers.get('content-type') || '';
+    if (!ct.includes('spreadsheetml')) {
+        // Si por alguna razon devolvio JSON con 200 OK
+        try {
+            const j = await resp.json();
+            alert('El servidor respondio sin Excel. Detalle:\n\n' + (j.error || JSON.stringify(j)));
+        } catch (_) {
+            alert('Respuesta inesperada del servidor (no es Excel).');
+        }
+        return;
+    }
+    const blob = await resp.blob();
+    const today = new Date().toISOString().slice(0, 10);
+    const url = URL.createObjectURL(blob);
     const a = document.createElement('a');
-    a.href = '/api/reports/powerbi-export';
-    a.download = '';
+    a.href = url;
+    a.download = `CMMS_PowerBI_${today}.xlsx`;
     document.body.appendChild(a);
     a.click();
     a.remove();
-    // Small delay so withLoading shows the spinner briefly
-    await new Promise(r => setTimeout(r, 1500));
+    URL.revokeObjectURL(url);
 }
 </script>
 </body>

@@ -21,6 +21,8 @@ from io import BytesIO
 
 from flask import jsonify, request, render_template, send_file
 
+from utils.specialty_helpers import discipline_for_weekly_item
+
 
 # ── Estimación de duración por tarea ─────────────────────────────────────────
 
@@ -678,18 +680,31 @@ def register_weekly_plan_routes(
                     continue
                 day_hours = sum(it.estimated_hours for it in day_items)
                 day_date = dt.date.fromisoformat(p.week_start) + dt.timedelta(days=d_idx)
+                # Conteo por disciplina para cabecera del dia
+                disc_counts = {'MECANICO': 0, 'ELECTRICO': 0, 'MIXTO': 0, 'SIN CLASIF': 0}
+                items_with_disc = []
+                for it in day_items:
+                    d = discipline_for_weekly_item(it)
+                    items_with_disc.append((it, d))
+                    disc_counts[d] = disc_counts.get(d, 0) + 1
+
+                breakdown = ' · '.join(
+                    f"{k.title()}: {v}" for k, v in disc_counts.items() if v > 0
+                )
                 story.append(Paragraph(
                     f"🌙 {day_names[d_idx]} — {day_date.isoformat()} · "
-                    f"{len(day_items)} tareas · {day_hours:.1f}h / {capacity:.0f}h",
+                    f"{len(day_items)} tareas · {day_hours:.1f}h / {capacity:.0f}h · {breakdown}",
                     section_style))
 
                 # Tabla
-                rows = [['#', 'Área', 'Tipo', 'Código', 'Descripción', 'Hrs', 'Check']]
-                day_items.sort(key=lambda x: (x.area.name if x.area else '', x.order_index))
-                for i, it in enumerate(day_items, 1):
+                rows = [['#', 'Área', 'Disciplina', 'Tipo', 'Código', 'Descripción', 'Hrs', 'Check']]
+                items_with_disc.sort(key=lambda x: (x[0].area.name if x[0].area else '', x[0].order_index))
+                disc_short = {'MECANICO': 'MEC', 'ELECTRICO': 'ELEC', 'MIXTO': 'MIX', 'SIN CLASIF': '-'}
+                for i, (it, disc) in enumerate(items_with_disc, 1):
                     rows.append([
                         str(i),
                         Paragraph((it.area.name if it.area else '-'), cell_style),
+                        disc_short.get(disc, disc),
                         (it.source_type or '').upper(),
                         Paragraph(it.source_code or '-', cell_bold),
                         Paragraph((it.description or it.source_name or '-')[:200], cell_style),
@@ -698,7 +713,7 @@ def register_weekly_plan_routes(
                     ])
                 tbl = Table(
                     rows,
-                    colWidths=[8 * mm, 28 * mm, 22 * mm, 25 * mm, 80 * mm, 14 * mm, 12 * mm],
+                    colWidths=[8 * mm, 26 * mm, 14 * mm, 18 * mm, 22 * mm, 75 * mm, 12 * mm, 10 * mm],
                     repeatRows=1,
                 )
                 tbl.setStyle(TableStyle([

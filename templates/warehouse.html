@@ -127,6 +127,9 @@
                     <button class="tab-link" onclick="openTab(event, 'tab-mgmt')"><i class="fas fa-chart-bar"></i>
                         Parámetros de
                         Gestión</button>
+                    <button class="tab-link" onclick="openTab(event, 'tab-bom')"><i class="fas fa-cogs"></i>
+                        BOM por
+                        Equipo</button>
                 </div>
 
                 <!-- TAB: MASTER LIST -->
@@ -198,6 +201,40 @@
                                     <th>Costo Prom.</th>
                                     <th>Estado</th>
                                     <th>Acciones</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                <!-- Populated by JS -->
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+
+                <!-- TAB: BOM POR EQUIPO -->
+                <div id="tab-bom" class="tab-content" style="display: none;">
+                    <div class="toolbar">
+                        <div class="search-bar">
+                            <input type="text" id="searchBom" placeholder="Buscar repuesto o equipo..." onkeyup="renderBomTable()">
+                        </div>
+                        <label style="display: flex; align-items: center; gap: 5px; color: #FF453A; font-weight: bold; margin-left: 10px; cursor: pointer;">
+                            <input type="checkbox" id="filterBomUncovered" onchange="renderBomTable()">
+                            <i class="fas fa-exclamation-triangle"></i> Solo sin cobertura
+                        </label>
+                        <div style="flex:1;"></div>
+                        <div id="bomKpis" style="color:#9ab0cb; font-size:.9rem;">-</div>
+                    </div>
+                    <div class="table-container">
+                        <table class="data-table" id="bomTable">
+                            <thead>
+                                <tr>
+                                    <th>Código</th>
+                                    <th>Nombre</th>
+                                    <th>Familia</th>
+                                    <th>Stock</th>
+                                    <th>Cant. requerida</th>
+                                    <th>Cobertura %</th>
+                                    <th>Equipos</th>
+                                    <th>Detalle</th>
                                 </tr>
                             </thead>
                             <tbody>
@@ -449,6 +486,69 @@
                     evt.currentTarget.classList.add("active");
 
                     if (tabName === 'tab-mgmt') renderMgmtTable();
+                    if (tabName === 'tab-bom') loadBomData();
+                }
+
+                // ── BOM POR EQUIPO ────────────────────────────────────────
+                let bomRows = [];
+
+                async function loadBomData() {
+                    const tbody = document.querySelector('#bomTable tbody');
+                    tbody.innerHTML = '<tr><td colspan="8" style="text-align:center; color:#aaa;">Cargando…</td></tr>';
+                    try {
+                        const r = await fetch('/api/warehouse/bom-by-equipment');
+                        if (!r.ok) {
+                            const j = await r.json().catch(() => ({}));
+                            throw new Error(j.error || `HTTP ${r.status}`);
+                        }
+                        const data = await r.json();
+                        bomRows = data.rows || [];
+                        const kpi = document.getElementById('bomKpis');
+                        kpi.innerHTML =
+                            `Items con BOM: <strong style="color:#5ac8fa">${data.total_items_with_bom}</strong> · ` +
+                            `Sin cobertura: <strong style="color:#ff6b61">${data.total_uncovered}</strong>`;
+                        renderBomTable();
+                    } catch (e) {
+                        tbody.innerHTML = `<tr><td colspan="8" style="text-align:center; color:#ff6b61;">Error: ${e.message}</td></tr>`;
+                    }
+                }
+
+                function renderBomTable() {
+                    const search = (document.getElementById('searchBom').value || '').toLowerCase();
+                    const onlyUncovered = document.getElementById('filterBomUncovered').checked;
+                    const tbody = document.querySelector('#bomTable tbody');
+                    tbody.innerHTML = '';
+                    let shown = 0;
+                    bomRows.forEach(row => {
+                        if (onlyUncovered && row.is_covered) return;
+                        const hay = (row.name || '').toLowerCase() + ' ' + (row.code || '').toLowerCase()
+                            + ' ' + row.equipments.map(e => `${e.tag} ${e.name}`).join(' ').toLowerCase();
+                        if (search && !hay.includes(search)) return;
+                        shown++;
+                        const cov = row.coverage_pct;
+                        let covColor = '#30D158';
+                        if (cov === null) covColor = '#888';
+                        else if (cov < 100) covColor = '#FF9F0A';
+                        if (cov !== null && cov < 50) covColor = '#FF453A';
+                        const eqList = row.equipments.slice(0, 3).map(e => e.tag).join(', ')
+                            + (row.equipments.length > 3 ? ` +${row.equipments.length - 3}` : '');
+                        const detail = row.equipments.map(e =>
+                            `${e.tag} (${e.qty_required})`).join(' · ');
+                        tbody.innerHTML += `
+                            <tr>
+                                <td>${row.code || '-'}</td>
+                                <td>${row.name || '-'}</td>
+                                <td>${row.family || '-'}</td>
+                                <td style="text-align:right;">${row.stock}</td>
+                                <td style="text-align:right;">${row.qty_required_total}</td>
+                                <td style="text-align:right; color:${covColor}; font-weight:bold;">${cov === null ? '-' : cov + '%'}</td>
+                                <td><span title="${row.equipments.map(e => e.tag + ' — ' + e.name).join('\\n')}">${row.equipment_count} equipos</span></td>
+                                <td style="font-size:.82rem; color:#9ab0cb;" title="${detail}">${eqList}</td>
+                            </tr>`;
+                    });
+                    if (shown === 0) {
+                        tbody.innerHTML = '<tr><td colspan="8" style="text-align:center; color:#888;">Sin items que cumplan los filtros</td></tr>';
+                    }
                 }
 
                 async function loadWarehouse() {

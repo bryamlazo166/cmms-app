@@ -943,11 +943,22 @@ def register_reports_routes(
 
             summary = payload.get('summary', {})
             meta = payload.get('meta', {})
+
+            # Conteo por disciplina
+            disc_counts = {}
+            for row in rows or []:
+                key = row.get('specialty') or 'SIN ASIGNAR'
+                disc_counts[key] = disc_counts.get(key, 0) + 1
+
             summary_rows = [
                 {'Indicador': 'Ventana', 'Valor': f"{meta.get('start_date', '-')} a {meta.get('end_date', '-')}", 'Detalle': meta.get('window', '-')},
                 {'Indicador': 'Total actividades', 'Valor': summary.get('total', 0), 'Detalle': ''},
                 {'Indicador': 'Preventivos', 'Valor': summary.get('preventive', 0), 'Detalle': ''},
                 {'Indicador': 'Correctivos', 'Valor': summary.get('corrective', 0), 'Detalle': ''},
+                {'Indicador': 'Mecanicas', 'Valor': disc_counts.get('MECANICO', 0), 'Detalle': 'Por disciplina'},
+                {'Indicador': 'Electricas', 'Valor': disc_counts.get('ELECTRICO', 0), 'Detalle': 'Por disciplina'},
+                {'Indicador': 'Mixtas', 'Valor': disc_counts.get('MIXTO', 0), 'Detalle': 'Asignadas a ambas disciplinas'},
+                {'Indicador': 'Sin asignar', 'Valor': disc_counts.get('SIN ASIGNAR', 0), 'Detalle': 'Sin tecnico ni proveedor'},
                 {'Indicador': 'Cerradas (Ejecutadas)', 'Valor': summary.get('closed', 0), 'Detalle': ''},
                 {'Indicador': 'No Ejecutadas', 'Valor': summary.get('no_ejecutada', 0), 'Detalle': 'Marcadas explicitamente como no ejecutadas'},
                 {'Indicador': 'Bloqueadas por logistica', 'Valor': summary.get('blocked', 0), 'Detalle': ''},

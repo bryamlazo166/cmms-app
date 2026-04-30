@@ -10,9 +10,9 @@ Estructura por digestor (90 puntos):
 - TAPA BOMBEADA CONDUCIDA: 10 puntos perimetrales (P1..P10)
 
 Espesores por defecto:
-- Paleta de trípode: 11.0 mm nominal, 9.5 alarma, 8.0 scrap (a confirmar)
-- Refuerzo trípode: 8.5 mm nominal, 8.5 alarma, 8.0 scrap (a confirmar)
-- Eje trípode: 14.5 mm nominal, 10.0 alarma, 8.0 scrap (a confirmar)
+- Paleta de trípode: 19.05 mm nominal (plancha 3/4"), 12.0 alarma, 8.0 scrap (CONFIRMADO)
+- Refuerzo trípode: 13.49 mm nominal (tubo 4" SCH 160), 10.0 alarma, 8.0 scrap (CONFIRMADO)
+- Eje trípode: 13.49 mm nominal (tubo 4" SCH 160), 10.0 alarma, 8.0 scrap (CONFIRMADO)
 - Chaqueta interna: 25.4 mm nominal, 10.0 alarma, 8.0 scrap (CONFIRMADO)
 - Tapas: 25.4 mm nominal, 10.0 alarma, 8.0 scrap (CONFIRMADO)
 """
@@ -29,12 +29,12 @@ from sqlalchemy import text
 
 # Espesores por componente (mm)
 SPECS = {
-    'PALETA':         {'nominal': 11.0, 'alarm': 9.5,  'scrap': 8.0},
-    'REFUERZO':       {'nominal': 8.5,  'alarm': 8.5,  'scrap': 8.0},
-    'EJE':            {'nominal': 14.5, 'alarm': 10.0, 'scrap': 8.0},
-    'CHAQUETA':       {'nominal': 25.4, 'alarm': 10.0, 'scrap': 8.0},
-    'TAPA_MOTRIZ':    {'nominal': 25.4, 'alarm': 10.0, 'scrap': 8.0},
-    'TAPA_CONDUCIDA': {'nominal': 25.4, 'alarm': 10.0, 'scrap': 8.0},
+    'PALETA':         {'nominal': 19.05, 'alarm': 12.0, 'scrap': 8.0},
+    'REFUERZO':       {'nominal': 13.49, 'alarm': 10.0, 'scrap': 8.0},
+    'EJE':            {'nominal': 13.49, 'alarm': 10.0, 'scrap': 8.0},
+    'CHAQUETA':       {'nominal': 25.4,  'alarm': 10.0, 'scrap': 8.0},
+    'TAPA_MOTRIZ':    {'nominal': 25.4,  'alarm': 10.0, 'scrap': 8.0},
+    'TAPA_CONDUCIDA': {'nominal': 25.4,  'alarm': 10.0, 'scrap': 8.0},
 }
 
 
