@@ -1,0 +1,44 @@
+{
+  "name": "CMMS Industrial",
+  "short_name": "CMMS",
+  "description": "Sistema de Gestion de Mantenimiento (CMMS) — Avisos, OTs, Lubricacion, Inspecciones, Espesores, Paradas, Telegram bot.",
+  "start_url": "/",
+  "scope": "/",
+  "display": "standalone",
+  "orientation": "any",
+  "theme_color": "#0A84FF",
+  "background_color": "#1C1C1E",
+  "lang": "es",
+  "icons": [
+    {
+      "src": "/static/icon-192.png",
+      "sizes": "192x192",
+      "type": "image/png",
+      "purpose": "any"
+    },
+    {
+      "src": "/static/icon-512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "any"
+    },
+    {
+      "src": "/static/icon-maskable-512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "maskable"
+    },
+    {
+      "src": "/static/favicon.svg",
+      "sizes": "any",
+      "type": "image/svg+xml",
+      "purpose": "any"
+    }
+  ],
+  "shortcuts": [
+    { "name": "Avisos", "url": "/avisos", "icons": [{ "src": "/static/icon-192.png", "sizes": "192x192" }] },
+    { "name": "Ordenes", "url": "/ordenes", "icons": [{ "src": "/static/icon-192.png", "sizes": "192x192" }] },
+    { "name": "Lubricacion", "url": "/lubricacion", "icons": [{ "src": "/static/icon-192.png", "sizes": "192x192" }] },
+    { "name": "Inspecciones", "url": "/inspecciones", "icons": [{ "src": "/static/icon-192.png", "sizes": "192x192" }] }
+  ]
+}

@@ -1,0 +1,142 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <link rel="icon" type="image/svg+xml" href="/static/favicon.svg">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Backup BD - CMMS</title>
+    <script>(function(){try{var t=localStorage.getItem('cmms.theme');if(t=='management'||t=='developer'){document.documentElement.setAttribute('data-theme',t);}}catch(e){}})();</script>
+    <link rel="stylesheet" href="/static/css/style.css?v={{ v }}">
+    <link rel="stylesheet" href="/static/css/sidebar.css?v={{ v }}">
+    <link href="https://fonts.googleapis.com/css2?family=Roboto:wght@300;400;500;700&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css">
+    <style>
+        .wrap{max-width:1100px;margin:0 auto;padding:18px;}
+        .header{background:linear-gradient(120deg,#1e2430,#151b24);border:1px solid #2d3f56;border-radius:12px;padding:16px;margin-bottom:14px;}
+        .header h1{margin:0;color:#5ac8fa;font-size:1.4rem;}
+        .header p{margin:4px 0 0;color:#9ab0cb;font-size:.85rem;}
+        .panel{background:#181d24;border:1px solid #2f4257;border-radius:12px;padding:16px;margin-bottom:14px;}
+        .panel h3{margin:0 0 12px;color:#5ac8fa;font-size:1rem;border-bottom:1px solid #2f4257;padding-bottom:8px;}
+        .btn{height:38px;border-radius:8px;padding:0 18px;font-weight:600;cursor:pointer;font-size:.9rem;border:none;display:inline-flex;align-items:center;gap:8px;}
+        .btn.primary{background:#0a84ff;color:#fff;}
+        .btn.success{background:#30D158;color:#fff;}
+        .btn.danger{background:#FF453A;color:#fff;}
+        .btn.secondary{background:#2a2d35;color:#d6d8de;border:1px solid #4a5361;}
+        table{width:100%;border-collapse:collapse;font-size:.86rem;}
+        th, td{padding:8px 10px;border-bottom:1px solid rgba(255,255,255,.06);text-align:left;}
+        th{color:#9ab0cb;text-transform:uppercase;font-size:.74rem;}
+        td.num{text-align:right;font-variant-numeric:tabular-nums;color:#bfd2ec;}
+        .alert{background:rgba(255,159,10,.1);border:1px solid rgba(255,159,10,.3);color:#FF9F0A;padding:10px 14px;border-radius:8px;font-size:.86rem;margin-bottom:12px;}
+        .info{background:rgba(90,200,250,.1);border:1px solid rgba(90,200,250,.3);color:#5ac8fa;padding:10px 14px;border-radius:8px;font-size:.86rem;margin-bottom:12px;}
+        code{background:rgba(255,255,255,.06);padding:2px 6px;border-radius:4px;font-size:.82rem;}
+    </style>
+</head>
+<body>
+    <nav class="sidebar"><div class="logo-details"><i class="fas fa-industry icon"></i><div class="logo_name">CMMS Pro</div><i class="fas fa-bars" id="btn_toggle"></i></div><ul class="nav-list"></ul></nav>
+    <section class="home-section">
+        <div class="wrap">
+            <div class="header">
+                <h1><i class="fas fa-database"></i> Backup de Base de Datos</h1>
+                <p>Snapshot manual de toda la BD a un archivo .json.gz descargable. Util como punto de restauracion antes de cambios riesgosos.</p>
+            </div>
+
+            <div class="info">
+                <strong><i class="fas fa-info-circle"></i> Como funciona:</strong>
+                Genera un dump JSON comprimido con todas las tablas. Puedes guardarlo en tu Drive/PC. Para restaurar, sube el mismo archivo
+                desde aqui — por defecto usa modo MERGE (no borra nada existente, solo agrega filas nuevas con <code>ON CONFLICT DO NOTHING</code>).
+            </div>
+
+            <div class="panel">
+                <h3><i class="fas fa-table"></i> Estado actual de la BD</h3>
+                <div id="tablesStatus"><em style="color:#666;">Cargando tablas...</em></div>
+            </div>
+
+            <div class="panel">
+                <h3><i class="fas fa-download"></i> Descargar snapshot</h3>
+                <p style="color:#9ab0cb;font-size:.86rem;margin-top:0;">Genera y descarga un .json.gz con todos los datos. Puede tardar varios segundos en BDs grandes.</p>
+                <button class="btn primary" onclick="downloadDump()">
+                    <i class="fas fa-cloud-download-alt"></i> Descargar backup completo (.json.gz)
+                </button>
+                <span id="dlStatus" style="margin-left:12px;color:#9ab0cb;font-size:.86rem;"></span>
+            </div>
+
+            <div class="panel">
+                <h3><i class="fas fa-upload"></i> Restaurar desde archivo</h3>
+                <div class="alert">
+                    <strong><i class="fas fa-exclamation-triangle"></i> Cuidado:</strong>
+                    El modo MERGE solo agrega filas nuevas (no afecta lo existente). El modo WIPE borra y reinserta — requiere
+                    <code>ALLOW_DB_RESET=true</code> en el entorno y NO se debe usar en produccion sin un backup actual.
+                </div>
+                <input type="file" id="restoreFile" accept=".gz,.json,application/gzip" style="margin-bottom:8px;">
+                <div style="display:flex;gap:8px;margin-top:6px;">
+                    <button class="btn success" onclick="restoreDump(false)">
+                        <i class="fas fa-plus"></i> Restaurar (MERGE — solo agrega)
+                    </button>
+                    <button class="btn danger" onclick="restoreDump(true)">
+                        <i class="fas fa-eraser"></i> Restaurar (WIPE — borra y reinserta)
+                    </button>
+                </div>
+                <pre id="restoreResult" style="margin-top:10px;background:#0f1319;padding:10px;border-radius:8px;color:#bfd2ec;font-size:.78rem;max-height:300px;overflow:auto;"></pre>
+            </div>
+        </div>
+    </section>
+
+    <script src="/static/js/sidebar.js?v={{ v }}"></script>
+    <script>
+        async function loadTables() {
+            try {
+                const r = await fetch('/api/admin/backup/tables');
+                const d = await r.json();
+                if (!r.ok) { document.getElementById('tablesStatus').innerHTML = `<span style="color:#ff9690">Error: ${d.error}</span>`; return; }
+                const rows = (d.tables || []).map(t =>
+                    `<tr><td>${t}</td><td class="num">${(d.counts[t] || 0).toLocaleString()}</td></tr>`
+                ).join('');
+                document.getElementById('tablesStatus').innerHTML = `
+                    <div style="margin-bottom:8px;color:#9ab0cb;">
+                        <strong>${d.tables.length}</strong> tablas |
+                        <strong>${(d.total_rows || 0).toLocaleString()}</strong> filas en total
+                    </div>
+                    <div style="max-height:300px;overflow:auto;">
+                        <table><thead><tr><th>Tabla</th><th class="num">Filas</th></tr></thead><tbody>${rows}</tbody></table>
+                    </div>`;
+            } catch (e) {
+                document.getElementById('tablesStatus').innerHTML = `<span style="color:#ff9690">Error: ${e.message}</span>`;
+            }
+        }
+
+        function downloadDump() {
+            const status = document.getElementById('dlStatus');
+            status.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Generando dump...';
+            const a = document.createElement('a');
+            a.href = '/api/admin/backup/db-dump';
+            a.download = '';
+            document.body.appendChild(a);
+            a.click();
+            a.remove();
+            setTimeout(() => { status.innerHTML = '<i class="fas fa-check" style="color:#30D158"></i> Descarga iniciada.'; }, 1500);
+        }
+
+        async function restoreDump(wipe) {
+            const f = document.getElementById('restoreFile').files[0];
+            if (!f) { alert('Selecciona un archivo .json.gz primero'); return; }
+            const action = wipe ? 'WIPE (borra todo y reinserta)' : 'MERGE (solo agrega nuevos)';
+            if (!confirm(`¿Restaurar con modo ${action}? Esta accion no se puede deshacer.`)) return;
+            const fd = new FormData();
+            fd.append('file', f);
+            const url = '/api/admin/backup/restore' + (wipe ? '?wipe=1' : '');
+            const out = document.getElementById('restoreResult');
+            out.textContent = 'Restaurando... (puede tardar)';
+            try {
+                const r = await fetch(url, { method: 'POST', body: fd });
+                const d = await r.json();
+                if (!r.ok) { out.textContent = 'Error: ' + (d.error || r.statusText); return; }
+                out.textContent = JSON.stringify(d, null, 2);
+                loadTables();
+            } catch (e) {
+                out.textContent = 'Error: ' + e.message;
+            }
+        }
+        document.addEventListener('DOMContentLoaded', loadTables);
+    </script>
+</body>
+</html>

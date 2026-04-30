@@ -1,3 +1,50 @@
+// ── PWA (Progressive Web App) ────────────────────────────────────────────────
+// Inyecta link rel=manifest, meta theme-color y registra el Service Worker.
+// Hacerlo desde sidebar.js evita modificar 30+ templates HTML.
+(function initPWA() {
+    try {
+        if (!document.querySelector('link[rel="manifest"]')) {
+            const l = document.createElement('link');
+            l.rel = 'manifest';
+            l.href = '/manifest.webmanifest';
+            document.head.appendChild(l);
+        }
+        if (!document.querySelector('meta[name="theme-color"]')) {
+            const m = document.createElement('meta');
+            m.name = 'theme-color';
+            m.content = '#0A84FF';
+            document.head.appendChild(m);
+        }
+        // iOS standalone hints
+        if (!document.querySelector('meta[name="apple-mobile-web-app-capable"]')) {
+            const m1 = document.createElement('meta');
+            m1.name = 'apple-mobile-web-app-capable';
+            m1.content = 'yes';
+            document.head.appendChild(m1);
+            const m2 = document.createElement('meta');
+            m2.name = 'apple-mobile-web-app-status-bar-style';
+            m2.content = 'black-translucent';
+            document.head.appendChild(m2);
+            const m3 = document.createElement('link');
+            m3.rel = 'apple-touch-icon';
+            m3.href = '/static/icon-192.png';
+            document.head.appendChild(m3);
+        }
+        if ('serviceWorker' in navigator && location.protocol === 'https:') {
+            // Solo en HTTPS (los SW no funcionan en HTTP plano salvo localhost)
+            window.addEventListener('load', () => {
+                navigator.serviceWorker.register('/sw.js', { scope: '/' })
+                    .catch((e) => console.warn('SW registration failed:', e));
+            });
+        } else if ('serviceWorker' in navigator && location.hostname === 'localhost') {
+            window.addEventListener('load', () => {
+                navigator.serviceWorker.register('/sw.js', { scope: '/' })
+                    .catch((e) => console.warn('SW registration failed:', e));
+            });
+        }
+    } catch (e) { console.warn('PWA init error:', e); }
+})();
+
 // ── THEME SYSTEM (Developer / Management mode) ────────────────────────────────
 // Runs synchronously when sidebar.js is parsed so data-theme is on <html>
 // before paint-relevant DOM is mutated. style.css uses CSS variable
@@ -144,7 +191,8 @@
 
     const ADMIN_MENU_ITEMS = [
         { href: '/usuarios', icon: 'fas fa-users-cog', label: 'Usuarios', tip: 'Usuarios' },
-        { href: '/mantenimiento-bd', icon: 'fas fa-database', label: 'Mant. BD', tip: 'Mantenimiento BD' }
+        { href: '/mantenimiento-bd', icon: 'fas fa-database', label: 'Mant. BD', tip: 'Mantenimiento BD' },
+        { href: '/admin/backup', icon: 'fas fa-cloud-download-alt', label: 'Backup BD', tip: 'Snapshot/restore de BD', restricted: true }
     ];
 
     const ROLE_LABELS = {

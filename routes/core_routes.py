@@ -27,6 +27,23 @@ def register_core_routes(app, db, logger, app_build_tag,
             "build": app_build_tag,
         })
 
+    @app.route('/sw.js', methods=['GET'])
+    def serve_service_worker():
+        """Sirve el Service Worker desde la RAIZ para que controle todo el sitio.
+        Si se sirve desde /static/ su scope queda limitado a /static/."""
+        from flask import send_from_directory, make_response
+        resp = make_response(send_from_directory('static', 'sw.js', mimetype='application/javascript'))
+        # No cachear el SW (debe verificar updates con cada visita)
+        resp.headers['Cache-Control'] = 'no-cache, no-store, must-revalidate'
+        resp.headers['Service-Worker-Allowed'] = '/'
+        return resp
+
+    @app.route('/manifest.webmanifest', methods=['GET'])
+    def serve_manifest():
+        from flask import send_from_directory
+        return send_from_directory('static', 'manifest.webmanifest',
+                                   mimetype='application/manifest+json')
+
     @app.route('/health', methods=['GET'])
     def health_check():
         """Uptime check for Render / external monitors. No auth required."""
