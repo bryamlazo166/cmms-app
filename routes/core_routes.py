@@ -1,4 +1,4 @@
-﻿import datetime as dt
+import datetime as dt
 import os
 from collections import defaultdict
 
@@ -957,56 +957,94 @@ def register_core_routes(app, db, logger, app_build_tag,
             return jsonify({"by_component": [], "by_equipment": [], "months": months, "error": str(e)}), 200
 
     def _failure_recurrence_impl(db, WorkOrder, cutoff, limit_n, months):
+        from models import Component as Comp, System as Sys, Equipment as Eq, Line as Ln
 
-        # Top components by corrective OT count
-        results = db.session.query(
-            WorkOrder.component_id,
-            func.count(WorkOrder.id).label('wo_count'),
-            func.max(WorkOrder.created_at).label('last_wo'),
-        ).filter(
+        # Trae TODAS las OTs correctivas del periodo (sin exigir component_id).
+        # Antes el filtro requeria component_id no nulo, lo que escondia
+        # correctivas registradas a nivel de equipo o sistema (la mayoria en
+        # la practica).
+        all_corr = WorkOrder.query.filter(
             WorkOrder.maintenance_type == 'Correctivo',
             WorkOrder.created_at >= cutoff,
-            WorkOrder.component_id.isnot(None),
-        ).group_by(WorkOrder.component_id).order_by(func.count(WorkOrder.id).desc()).limit(limit_n).all()
+        ).all()
 
-        from models import Component as Comp, System as Sys, Equipment as Eq, Line as Ln
+        days_span = max(1, (dt.datetime.utcnow() - cutoff).days)
+
+        # Pre-cargar taxonomia para evitar N+1
+        comp_ids = {wo.component_id for wo in all_corr if wo.component_id}
+        sys_ids  = {wo.system_id    for wo in all_corr if wo.system_id}
+        eq_ids   = {wo.equipment_id for wo in all_corr if wo.equipment_id}
+        comps_map = {c.id: c for c in Comp.query.filter(Comp.id.in_(comp_ids)).all()} if comp_ids else {}
+        # Tambien precargar systems/equipments para resolver jerarquia desde componente
+        for c in comps_map.values():
+            if c.system_id: sys_ids.add(c.system_id)
+        syss_map = {s.id: s for s in Sys.query.filter(Sys.id.in_(sys_ids)).all()} if sys_ids else {}
+        for s in syss_map.values():
+            if s.equipment_id: eq_ids.add(s.equipment_id)
+        eqs_map = {e.id: e for e in Eq.query.filter(Eq.id.in_(eq_ids)).all()} if eq_ids else {}
+        ln_ids = {e.line_id for e in eqs_map.values() if e.line_id}
+        lns_map = {l.id: l for l in Ln.query.filter(Ln.id.in_(ln_ids)).all()} if ln_ids else {}
+
+        # Agrupar por la granularidad MAS especifica disponible:
+        # 1. component_id si esta presente
+        # 2. system_id si no
+        # 3. equipment_id como ultimo fallback
+        # Esto da una vision mas realista de "fallas recurrentes" porque el
+        # tecnico no siempre llega al detalle de componente.
+        groups = {}  # key: (level, id) -> {wo_count, last_wo, comp/sys/eq refs}
+        for wo in all_corr:
+            if wo.component_id:
+                key = ('component', wo.component_id)
+            elif wo.system_id:
+                key = ('system', wo.system_id)
+            elif wo.equipment_id:
+                key = ('equipment', wo.equipment_id)
+            else:
+                continue  # OT sin jerarquia asociada — se ignora
+            g = groups.setdefault(key, {'wo_count': 0, 'last_wo': None})
+            g['wo_count'] += 1
+            wo_date = wo.created_at
+            if wo_date and (g['last_wo'] is None or wo_date > g['last_wo']):
+                g['last_wo'] = wo_date
+
+        # Construir respuesta para tabla "by_component" (ahora multi-nivel)
         data = []
-        for comp_id, count, last_wo in results:
-            comp = Comp.query.get(comp_id)
-            if not comp:
-                continue
-            sys_obj = Sys.query.get(comp.system_id) if comp else None
-            eq_obj = Eq.query.get(sys_obj.equipment_id) if sys_obj else None
-            ln_obj = Ln.query.get(eq_obj.line_id) if eq_obj else None
+        for (level, _id), g in groups.items():
+            comp = comps_map.get(_id) if level == 'component' else None
+            sys_obj = (syss_map.get(comp.system_id) if comp else (syss_map.get(_id) if level == 'system' else None))
+            eq_obj  = (eqs_map.get(sys_obj.equipment_id) if sys_obj else (eqs_map.get(_id) if level == 'equipment' else None))
+            ln_obj  = lns_map.get(eq_obj.line_id) if eq_obj and eq_obj.line_id else None
 
-            days_span = (dt.datetime.utcnow() - cutoff).days
+            count = g['wo_count']
+            last_wo = g['last_wo']
             mtbf_days = round(days_span / count, 1) if count > 1 else None
 
             data.append({
-                "component_id": comp_id,
-                "component_name": comp.name if comp else '?',
-                "system_name": sys_obj.name if sys_obj else '?',
-                "equipment_name": eq_obj.name if eq_obj else '?',
-                "equipment_tag": eq_obj.tag if eq_obj else '?',
-                "line_name": ln_obj.name if ln_obj else '?',
+                "level": level,  # component | system | equipment
+                "component_id": _id if level == 'component' else None,
+                "component_name": comp.name if comp else ('(nivel ' + level + ')'),
+                "system_name": sys_obj.name if sys_obj else '-',
+                "equipment_name": eq_obj.name if eq_obj else '-',
+                "equipment_tag": eq_obj.tag if eq_obj else '-',
+                "line_name": ln_obj.name if ln_obj else '-',
                 "wo_count": count,
                 "last_wo": last_wo.isoformat() if last_wo else None,
                 "mtbf_days": mtbf_days,
             })
 
-        # Top equipment
-        eq_results = db.session.query(
-            WorkOrder.equipment_id,
-            func.count(WorkOrder.id).label('wo_count'),
-        ).filter(
-            WorkOrder.maintenance_type == 'Correctivo',
-            WorkOrder.created_at >= cutoff,
-            WorkOrder.equipment_id.isnot(None),
-        ).group_by(WorkOrder.equipment_id).order_by(func.count(WorkOrder.id).desc()).limit(10).all()
+        # Ordenar por count desc y limitar
+        data.sort(key=lambda x: x['wo_count'], reverse=True)
+        data = data[:limit_n]
 
+        # Top equipment (sin cambios de logica, solo limpiamos)
+        eq_groups = {}
+        for wo in all_corr:
+            if not wo.equipment_id:
+                continue
+            eq_groups[wo.equipment_id] = eq_groups.get(wo.equipment_id, 0) + 1
         eq_data = []
-        for eq_id, count in eq_results:
-            eq = Eq.query.get(eq_id)
+        for eq_id, count in sorted(eq_groups.items(), key=lambda x: x[1], reverse=True)[:10]:
+            eq = eqs_map.get(eq_id) or Eq.query.get(eq_id)
             eq_data.append({
                 "equipment_id": eq_id,
                 "equipment_name": eq.name if eq else '?',

@@ -1634,3 +1634,94 @@
         right: 14px;
     }
 }
+
+/* ════════════════════════════════════════════════════════════════
+   MANAGEMENT MODE — Override de inline-styles con hex oscuros
+   Captura backgrounds dark hardcoded en templates (compras,
+   plantillas-paradas, reportes, modales, etc.) y los traduce a
+   variables del tema claro. Hace match por attribute selector
+   sobre el atributo style="..." del elemento.
+   Se atacan los hex más comunes: #1c1c1e, #1e1e1e, #252526,
+   #2a2a2e, #181d24, #111d2e, #222, #333, #444 y sus variantes.
+════════════════════════════════════════════════════════════════ */
+
+/* Backgrounds oscuros → bg-primary (cards/superficies) */
+:root[data-theme="management"] [style*="background:#1c1c1e"],
+:root[data-theme="management"] [style*="background: #1c1c1e"],
+:root[data-theme="management"] [style*="background-color:#1c1c1e"],
+:root[data-theme="management"] [style*="background-color: #1c1c1e"],
+:root[data-theme="management"] [style*="background:#1e1e1e"],
+:root[data-theme="management"] [style*="background: #1e1e1e"],
+:root[data-theme="management"] [style*="background-color:#1e1e1e"],
+:root[data-theme="management"] [style*="background-color: #1e1e1e"],
+:root[data-theme="management"] [style*="background:#252526"],
+:root[data-theme="management"] [style*="background: #252526"],
+:root[data-theme="management"] [style*="background-color:#252526"],
+:root[data-theme="management"] [style*="background-color: #252526"],
+:root[data-theme="management"] [style*="background:#181d24"],
+:root[data-theme="management"] [style*="background: #181d24"],
+:root[data-theme="management"] [style*="background:#111d2e"],
+:root[data-theme="management"] [style*="background: #111d2e"] {
+    background: var(--bg-primary) !important;
+    color: var(--label-primary) !important;
+    border-color: var(--sep) !important;
+}
+
+/* Backgrounds aún más oscuros (#222, #2a, panels) → bg-primary */
+:root[data-theme="management"] [style*="background:#222"],
+:root[data-theme="management"] [style*="background: #222"],
+:root[data-theme="management"] [style*="background-color:#222"],
+:root[data-theme="management"] [style*="background-color: #222"],
+:root[data-theme="management"] [style*="background:#2a2a2e"],
+:root[data-theme="management"] [style*="background: #2a2a2e"],
+:root[data-theme="management"] [style*="background-color:#2a2a2e"] {
+    background: var(--bg-secondary) !important;
+    color: var(--label-primary) !important;
+    border-color: var(--sep) !important;
+}
+
+/* Inputs/selects con fondo gris muy oscuro (#333) → bg-secondary */
+:root[data-theme="management"] [style*="background:#333"],
+:root[data-theme="management"] [style*="background: #333"],
+:root[data-theme="management"] [style*="background-color:#333"],
+:root[data-theme="management"] [style*="background-color: #333"],
+:root[data-theme="management"] [style*="background:#444"],
+:root[data-theme="management"] [style*="background-color:#444"] {
+    background: var(--bg-secondary) !important;
+    color: var(--label-primary) !important;
+    border-color: var(--sep) !important;
+}
+
+/* Texto blanco hardcoded sobre estos fondos ahora claros → texto oscuro */
+:root[data-theme="management"] [style*="color:#fff"],
+:root[data-theme="management"] [style*="color: #fff"],
+:root[data-theme="management"] [style*="color:#FFF"],
+:root[data-theme="management"] [style*="color: #FFF"],
+:root[data-theme="management"] [style*="color:white"],
+:root[data-theme="management"] [style*="color: white"] {
+    /* Solo cambiar texto blanco si el fondo del padre se volvió claro.
+       No usamos selector de descendencia para no afectar badges con
+       fondo de color sólido (verde, rojo, azul) donde el blanco SÍ es legible.
+       Excluimos elementos con clase de badge/btn-* que mantienen fondo color. */
+}
+:root[data-theme="management"] div[style*="color:#fff"]:not(.badge):not([class*="btn-"]):not([class*="status-"]):not(.logistics-chip),
+:root[data-theme="management"] span[style*="color:#fff"]:not(.badge):not([class*="btn-"]):not([class*="status-"]):not(.logistics-chip),
+:root[data-theme="management"] p[style*="color:#fff"],
+:root[data-theme="management"] h1[style*="color:#fff"],
+:root[data-theme="management"] h2[style*="color:#fff"],
+:root[data-theme="management"] h3[style*="color:#fff"],
+:root[data-theme="management"] h4[style*="color:#fff"] {
+    color: var(--label-primary) !important;
+}
+
+/* Borders oscuros (#444, #333) → sep (gris claro del tema) */
+:root[data-theme="management"] [style*="border:1px solid #444"],
+:root[data-theme="management"] [style*="border: 1px solid #444"],
+:root[data-theme="management"] [style*="border:1px solid #333"],
+:root[data-theme="management"] [style*="border: 1px solid #333"],
+:root[data-theme="management"] [style*="border-bottom:1px solid #444"],
+:root[data-theme="management"] [style*="border-bottom: 1px solid #444"],
+:root[data-theme="management"] [style*="border-top:1px solid #444"],
+:root[data-theme="management"] [style*="border-top: 1px solid #444"] {
+    border-color: var(--sep) !important;
+}

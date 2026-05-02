@@ -503,9 +503,15 @@ async function loadRecurrence() {
             const severity = r.wo_count >= 5 ? '#FF453A' : r.wo_count >= 3 ? '#FF9F0A' : '#30D158';
             const mtbf = r.mtbf_days ? `${r.mtbf_days}` : '-';
             const lastDate = r.last_wo ? r.last_wo.split('T')[0] : '-';
+            // Badge que indica el nivel de agrupacion (componente/sistema/equipo).
+            // Las OTs sin componente se agrupan a nivel sistema o equipo —
+            // mostramos esto al usuario para que sepa la granularidad real.
+            const levelBadge = r.level === 'component' ? '' :
+                ` <span title="Agrupado a nivel ${r.level} (sin componente especifico)" style="background:rgba(255,159,10,0.15);color:#FF9F0A;font-size:.65rem;padding:1px 6px;border-radius:8px;margin-left:4px;text-transform:uppercase">${r.level === 'system' ? 'SIS' : 'EQ'}</span>`;
+            const compName = (r.level === 'component') ? r.component_name : (r.level === 'system' ? r.system_name : r.equipment_name);
             return `<tr style="border-bottom:1px solid rgba(255,255,255,.05)">
                 <td style="padding:7px 10px;font-size:.80rem;color:#888">${i + 1}</td>
-                <td style="padding:7px 10px;font-size:.80rem;color:#ddd;font-weight:600">${r.component_name}</td>
+                <td style="padding:7px 10px;font-size:.80rem;color:#ddd;font-weight:600">${compName}${levelBadge}</td>
                 <td style="padding:7px 10px;font-size:.80rem;color:#aaa">${r.system_name}</td>
                 <td style="padding:7px 10px;font-size:.80rem;color:#aaa">${r.equipment_name} [${r.equipment_tag}]</td>
                 <td style="padding:7px 10px;font-size:.80rem;color:#aaa">${r.line_name}</td>
