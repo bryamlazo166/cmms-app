@@ -22,9 +22,50 @@ def register_indicators_routes(app, db, logger, WorkOrder, Area, Line, Equipment
                 pass
         return None
 
-    def _calc_indicators(ots, total_hours):
-        """Calcula MTBF, MTTR, Disponibilidad, Confiabilidad para un conjunto de OTs."""
-        failures = []
+    def _shutdown_duration(sh):
+        """Horas de una parada calculadas a partir de start_time/end_time.
+        Si end < start asume cruce de medianoche (+24h)."""
+        if not sh:
+            return 0
+        try:
+            t_start = dt.datetime.strptime(sh.start_time or '07:00', '%H:%M').time()
+            t_end = dt.datetime.strptime(sh.end_time or '19:00', '%H:%M').time()
+            base = dt.date(1970, 1, 1)
+            diff = (dt.datetime.combine(base, t_end) - dt.datetime.combine(base, t_start)).total_seconds() / 3600
+            if diff < 0:
+                diff += 24
+            return max(0.0, diff)
+        except Exception:
+            return 0
+
+    def _load_shutdown_map(ots):
+        """Pre-carga el dict {id: Shutdown} para las OTs que tengan shutdown_id."""
+        try:
+            from models import Shutdown
+        except Exception:
+            return {}
+        sh_ids = set()
+        for ot in ots:
+            sid = ot.get('shutdown_id') if isinstance(ot, dict) else getattr(ot, 'shutdown_id', None)
+            if sid:
+                sh_ids.add(sid)
+        if not sh_ids:
+            return {}
+        return {s.id: s for s in Shutdown.query.filter(Shutdown.id.in_(sh_ids)).all()}
+
+    def _calc_indicators(ots, total_hours, shutdown_map=None):
+        """Calcula MTBF, MTTR, Disponibilidad, Confiabilidad para un conjunto de OTs.
+
+        CONSOLIDACIÓN POR PARADA: cuando varias OTs comparten shutdown_id sobre el
+        mismo equipo (trabajos paralelos durante una parada programada), su downtime
+        NO se suma — se cuenta UNA sola vez usando la duración de la parada.
+        Esto evita inflar artificialmente el MTTR/Indisponibilidad cuando se
+        aprovecha una parada para hacer múltiples mejorías.
+        """
+        shutdown_map = shutdown_map or {}
+
+        # Paso 1: extraer todas las OTs con downtime > 0 (lista cruda para detalle)
+        failures_raw = []
         for ot in ots:
             dh = 0
             if ot.get('caused_downtime') and ot.get('downtime_hours'):
@@ -32,7 +73,7 @@ def register_indicators_routes(app, db, logger, WorkOrder, Area, Line, Equipment
             elif ot.get('real_duration') and ot.get('caused_downtime'):
                 dh = float(ot['real_duration'])
             if dh > 0:
-                failures.append({
+                failures_raw.append({
                     'id': ot.get('id'),
                     'code': ot.get('code'),
                     'description': ot.get('description'),
@@ -42,10 +83,48 @@ def register_indicators_routes(app, db, logger, WorkOrder, Area, Line, Equipment
                     'scheduled_date': ot.get('scheduled_date'),
                     'equipment_name': ot.get('equipment_name', ''),
                     'equipment_tag': ot.get('equipment_tag', ''),
+                    'shutdown_id': ot.get('shutdown_id'),
+                    'equipment_id': ot.get('equipment_id'),
                 })
 
-        n_failures = len(failures)
-        total_downtime = sum(f['downtime_hours'] for f in failures)
+        # Paso 2: consolidar OTs que pertenecen a la misma parada (mismo equipo).
+        # standalone = OTs sin shutdown_id (correctivos espontáneos) → se cuentan 1 a 1
+        # in_shutdown = OTs con shutdown_id → se agrupan por (shutdown_id, equipment_id)
+        standalone = [f for f in failures_raw if not f.get('shutdown_id')]
+        in_shutdown = [f for f in failures_raw if f.get('shutdown_id')]
+
+        groups = {}
+        for f in in_shutdown:
+            # Si la OT no tiene equipment_id, agrupar por shutdown únicamente
+            key = (f['shutdown_id'], f.get('equipment_id') or 0)
+            groups.setdefault(key, []).append(f)
+
+        consolidated = list(standalone)
+        for (sh_id, eq_id), group in groups.items():
+            sh = shutdown_map.get(sh_id)
+            sh_dur = _shutdown_duration(sh)
+            # Preferir duración real de la parada; si no se conoce, usar el MAX
+            # del downtime registrado en las OTs (NO la suma, asumimos paralelismo)
+            dh = sh_dur if sh_dur > 0 else max(f['downtime_hours'] for f in group)
+            consolidated.append({
+                'id': group[0]['id'],
+                'code': (sh.code if sh and sh.code else f'PP-{sh_id}'),
+                'description': (sh.name if sh else f'Parada {sh_id}') + f' — {len(group)} OT(s) consolidada(s)',
+                'downtime_hours': round(dh, 2),
+                'maintenance_type': 'Parada Programada',
+                'status': 'Cerrada',
+                'scheduled_date': group[0].get('scheduled_date'),
+                'equipment_name': group[0].get('equipment_name', ''),
+                'equipment_tag': group[0].get('equipment_tag', ''),
+                'shutdown_id': sh_id,
+                'equipment_id': eq_id,
+                'consolidated_count': len(group),
+                'consolidated_ot_ids': [f['id'] for f in group],
+                'consolidated_raw_total': round(sum(f['downtime_hours'] for f in group), 2),
+            })
+
+        n_failures = len(consolidated)
+        total_downtime = sum(f['downtime_hours'] for f in consolidated)
         uptime = max(0, total_hours - total_downtime)
 
         mtbf = round(uptime / n_failures, 2) if n_failures > 0 else round(total_hours, 2)
@@ -66,7 +145,9 @@ def register_indicators_routes(app, db, logger, WorkOrder, Area, Line, Equipment
             'downtime_hours': round(total_downtime, 2),
             'failure_count': n_failures,
             'total_ots': len(ots),
-            'failures': sorted(failures, key=lambda f: f['downtime_hours'], reverse=True),
+            'failures': sorted(consolidated, key=lambda f: f['downtime_hours'], reverse=True),
+            'failures_detail': sorted(failures_raw, key=lambda f: f['downtime_hours'], reverse=True),
+            'consolidated_groups': len(groups),
         }
 
     @app.route('/api/indicators/areas', methods=['GET'])
@@ -117,6 +198,7 @@ def register_indicators_routes(app, db, logger, WorkOrder, Area, Line, Equipment
 
             # Agrupar OTs por area
             ots_by_area = {}
+            ots_window = []
             for ot in all_ots:
                 if not ot_in_window(ot):
                     continue
@@ -128,6 +210,10 @@ def register_indicators_routes(app, db, logger, WorkOrder, Area, Line, Equipment
                 od['equipment_name'] = eq.name if eq else '-'
                 od['equipment_tag'] = eq.tag if eq else '-'
                 ots_by_area[aid].append(od)
+                ots_window.append(od)
+
+            # Pre-cargar paradas referenciadas para consolidación de downtime
+            shutdown_map = _load_shutdown_map(ots_window)
 
             # Calcular por área
             result = []
@@ -143,16 +229,16 @@ def register_indicators_routes(app, db, logger, WorkOrder, Area, Line, Equipment
                         equip_avails = []
                         for eq in area_equips:
                             eq_ots = [o for o in area_ots if o.get('equipment_id') == eq.id]
-                            ind = _calc_indicators(eq_ots, total_hours)
+                            ind = _calc_indicators(eq_ots, total_hours, shutdown_map)
                             equip_avails.append(ind['availability'] / 100)
                         series_avail = 1.0
                         for a in equip_avails:
                             series_avail *= a
-                        area_indicators = _calc_indicators(area_ots, total_hours)
+                        area_indicators = _calc_indicators(area_ots, total_hours, shutdown_map)
                         area_indicators['availability'] = round(series_avail * 100, 2)
                         area_indicators['calc_method'] = 'serie'
                     else:
-                        area_indicators = _calc_indicators(area_ots, total_hours)
+                        area_indicators = _calc_indicators(area_ots, total_hours, shutdown_map)
                         area_indicators['calc_method'] = 'simple'
                 else:
                     # Ponderado por capacidad
@@ -167,16 +253,16 @@ def register_indicators_routes(app, db, logger, WorkOrder, Area, Line, Equipment
                             if cap == 0:
                                 continue
                             eq_ots = [o for o in area_ots if o.get('equipment_id') == eq.id]
-                            ind = _calc_indicators(eq_ots, total_hours)
+                            ind = _calc_indicators(eq_ots, total_hours, shutdown_map)
                             weighted_sum += ind['availability'] * cap
                             total_cap += cap
-                        area_indicators = _calc_indicators(area_ots, total_hours)
+                        area_indicators = _calc_indicators(area_ots, total_hours, shutdown_map)
                         if total_cap > 0:
                             area_indicators['availability'] = round(weighted_sum / total_cap, 2)
                         area_indicators['calc_method'] = 'ponderado'
                         area_indicators['total_capacity'] = total_cap
                     else:
-                        area_indicators = _calc_indicators(area_ots, total_hours)
+                        area_indicators = _calc_indicators(area_ots, total_hours, shutdown_map)
                         area_indicators['calc_method'] = 'simple'
 
                 area_indicators['area_id'] = area.id
@@ -224,10 +310,14 @@ def register_indicators_routes(app, db, logger, WorkOrder, Area, Line, Equipment
                 except Exception:
                     return False
 
+            # Pre-cargar paradas para consolidación de downtime
+            relevant_ots = [ot for ot in all_ots if ot.equipment_id in {e.id for e in equips} and ot_in_window(ot)]
+            shutdown_map = _load_shutdown_map(relevant_ots)
+
             result = []
             for eq in equips:
                 eq_ots = [ot.to_dict() for ot in all_ots if ot.equipment_id == eq.id and ot_in_window(ot)]
-                ind = _calc_indicators(eq_ots, total_hours)
+                ind = _calc_indicators(eq_ots, total_hours, shutdown_map)
                 cap = _eq_capacity(eq)
                 ln = line_map.get(eq.line_id)
                 ind['equipment_id'] = eq.id
@@ -286,7 +376,8 @@ def register_indicators_routes(app, db, logger, WorkOrder, Area, Line, Equipment
                 od['downtime_hours_calc'] = round(dh, 2)
                 ots_data.append(od)
 
-            ind = _calc_indicators(ots_data, total_hours)
+            shutdown_map = _load_shutdown_map(ots_data)
+            ind = _calc_indicators(ots_data, total_hours, shutdown_map)
             ind['equipment_id'] = eq.id
             ind['equipment_name'] = eq.name
             ind['equipment_tag'] = eq.tag

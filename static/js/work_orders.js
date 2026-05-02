@@ -70,13 +70,87 @@ document.addEventListener('DOMContentLoaded', () => {
             document.getElementById('downtimeHoursGroup').style.display =
                 this.value === '1' ? '' : 'none';
             checkDowntimeVsDuration();
+            recalcCloseTimes();
         });
     }
     const dtHoursInput = document.getElementById('closeDowntimeHours');
     if (dtHoursInput) {
-        dtHoursInput.addEventListener('input', checkDowntimeVsDuration);
+        dtHoursInput.addEventListener('input', () => { checkDowntimeVsDuration(); recalcCloseTimes(); });
     }
+    ['realStart', 'realEnd'].forEach(id => {
+        const el = document.getElementById(id);
+        if (el) el.addEventListener('input', recalcCloseTimes);
+    });
 });
+
+// Badge de downtime para el listado: color según severidad
+function renderDowntimeBadge(ot) {
+    if (!ot.caused_downtime) {
+        return '<span style="color:rgba(255,255,255,.2);font-size:.78rem">-</span>';
+    }
+    const h = parseFloat(ot.downtime_hours) || 0;
+    let color = '#30D158';      // verde 0
+    if (h > 4) color = '#FF453A';        // rojo >4h
+    else if (h > 1) color = '#FF9F0A';   // ámbar 1-4h
+    return `<span title="Horas de paro que afectan disponibilidad" style="color:${color};font-weight:600;font-size:.82rem;">⚡ ${h.toFixed(1)}h</span>`;
+}
+
+// Formatea horas decimales como "Xh Ym" o "X.Yh"
+function formatHours(hrs) {
+    if (hrs == null || isNaN(hrs)) return '—';
+    if (hrs < 0) return '⚠ negativo';
+    const h = Math.floor(hrs);
+    const m = Math.round((hrs - h) * 60);
+    if (h === 0 && m === 0) return '0';
+    if (h === 0) return `${m}m`;
+    if (m === 0) return `${h}h`;
+    return `${h}h ${m}m`;
+}
+
+// Recalcula los 3 tiempos del bloque resumen del modal de cierre
+function recalcCloseTimes() {
+    const elResp = document.getElementById('timeResponse');
+    const elInt = document.getElementById('timeIntervention');
+    const elDt = document.getElementById('timeDowntime');
+    if (!elResp || !elInt || !elDt) return;
+
+    const start = document.getElementById('realStart').value;
+    const end = document.getElementById('realEnd').value;
+    const requestDate = (window.activeExecutionOT && (window.activeExecutionOT.notice_request_date || window.activeExecutionOT.request_date)) || null;
+
+    // Tiempo de respuesta: aviso → inicio
+    if (requestDate && start) {
+        try {
+            const r = new Date(requestDate);
+            const s = new Date(start);
+            const hrs = (s - r) / 3600000;
+            elResp.textContent = formatHours(hrs);
+        } catch (e) { elResp.textContent = '—'; }
+    } else {
+        elResp.textContent = '—';
+    }
+
+    // Tiempo de intervención: inicio → fin
+    if (start && end) {
+        try {
+            const hrs = (new Date(end) - new Date(start)) / 3600000;
+            elInt.textContent = formatHours(hrs);
+        } catch (e) { elInt.textContent = '—'; }
+    } else {
+        elInt.textContent = '—';
+    }
+
+    // Indisponibilidad
+    const caused = document.getElementById('closeCausedDowntime').value === '1';
+    if (!caused) {
+        elDt.textContent = '0 (no afecta)';
+        elDt.style.color = '#888';
+    } else {
+        const dt = parseFloat(document.getElementById('closeDowntimeHours').value);
+        elDt.textContent = isNaN(dt) ? '—' : formatHours(dt);
+        elDt.style.color = '#FF9F0A';
+    }
+}
 
 function checkDowntimeVsDuration() {
     const warn = document.getElementById('durationVsDowntimeWarning');
@@ -534,6 +608,7 @@ function renderPlanningTable(data = null) {
             <td><span class="badge ${priorityClass}">${ot.priority || '-'}</span></td>
             <td>${ot.scheduled_date || '-'}</td>
             <td>${ot.real_end_date || '-'}</td>
+            <td>${renderDowntimeBadge(ot)}</td>
             <td>${ot.shutdown_id ? `<a href="/paradas#${ot.shutdown_id}" onclick="event.stopPropagation();filterByShutdown(${ot.shutdown_id},'${(ot.shutdown_code||ot.shutdown_name||'').replace(/'/g,"&#39;")}');return false;" style="color:#FF9F0A;text-decoration:none;font-size:.72rem;display:inline-block;padding:2px 8px;border:1px solid #FF9F0A;border-radius:10px;background:rgba(255,159,10,.08);" title="${(ot.shutdown_name||'').replace(/"/g,'&quot;')} — click para filtrar OTs de esta parada">${ot.shutdown_code || ot.shutdown_name || 'Parada'}</a>` : '<span style="color:rgba(255,255,255,.2);font-size:.78rem">-</span>'}</td>
             <td>${assignedTo}</td>
             <td>
@@ -1161,6 +1236,7 @@ async function searchForExecution() {
     }
 
     activeExecutionOT = ot;
+    window.activeExecutionOT = ot;
     panel.classList.remove('hidden');
 
     document.getElementById('exec-ot-code').innerText = ot.code || `OT-${ot.id}`;
@@ -1302,6 +1378,80 @@ async function searchForExecution() {
     loadOTPhotos(ot.id);
     loadNoticePhotosInExecution(ot.notice_id);
     document.getElementById('logDate').value = new Date().toISOString().slice(0, 10);
+
+    // Indicadores y tiempos (solo OT cerrada)
+    renderIndicatorsBlock(ot, personnel);
+}
+
+// Pinta el bloque "Indicadores y Tiempos" en el detalle de la OT.
+// Solo visible cuando la OT está cerrada — muestra los 3 tiempos calculados
+// + suma de horas-hombre + impacto en disponibilidad.
+function renderIndicatorsBlock(ot, personnel) {
+    const block = document.getElementById('exec-indicators-block');
+    if (!block) return;
+    if (ot.status !== 'Cerrada') {
+        block.style.display = 'none';
+        return;
+    }
+    block.style.display = '';
+
+    // Tiempo de respuesta
+    const respEl = document.getElementById('ind-response');
+    if (ot.notice_request_date && ot.real_start_date) {
+        try {
+            const r = new Date(ot.notice_request_date);
+            const s = new Date(ot.real_start_date);
+            const hrs = (s - r) / 3600000;
+            respEl.textContent = formatHours(hrs);
+            respEl.title = `Aviso: ${ot.notice_request_date} → Inicio: ${ot.real_start_date}`;
+        } catch (e) { respEl.textContent = '—'; }
+    } else {
+        respEl.textContent = ot.notice_request_date ? '—' : '(sin aviso)';
+    }
+
+    // Tiempo de intervención
+    const intEl = document.getElementById('ind-intervention');
+    if (ot.real_start_date && ot.real_end_date) {
+        try {
+            const hrs = (new Date(ot.real_end_date) - new Date(ot.real_start_date)) / 3600000;
+            intEl.textContent = formatHours(hrs);
+        } catch (e) { intEl.textContent = '—'; }
+    } else {
+        intEl.textContent = '—';
+    }
+
+    // Indisponibilidad
+    const dtEl = document.getElementById('ind-downtime');
+    const impactMsg = document.getElementById('ind-impact-msg');
+    if (ot.caused_downtime && ot.downtime_hours != null) {
+        const h = parseFloat(ot.downtime_hours);
+        dtEl.textContent = formatHours(h);
+        dtEl.style.color = h > 4 ? '#FF453A' : (h > 1 ? '#FF9F0A' : '#30D158');
+        impactMsg.style.display = '';
+        impactMsg.innerHTML = `<i class="fas fa-info-circle"></i> Esta OT aporta <strong>${h.toFixed(2)}h</strong> al downtime del equipo en el cálculo de MTTR/Disponibilidad del periodo.`;
+    } else {
+        dtEl.textContent = '0 (sin paro)';
+        dtEl.style.color = '#30D158';
+        impactMsg.style.display = 'none';
+    }
+
+    // Horas-hombre (suma de hours_worked)
+    const mhEl = document.getElementById('ind-manhours');
+    if (Array.isArray(personnel) && personnel.length > 0) {
+        const total = personnel.reduce((s, p) => s + (parseFloat(p.hours_worked) || 0), 0);
+        const cnt = personnel.length;
+        mhEl.textContent = `${total.toFixed(1)}h (${cnt} pers.)`;
+    } else {
+        mhEl.textContent = '—';
+    }
+
+    // Mostrar botón de edición solo si el rol lo permite (admin/supervisor/gerencia)
+    const editBtn = document.getElementById('btn-edit-closed-hours');
+    if (editBtn) {
+        const role = ((_currentUser && _currentUser.role) || '').toLowerCase();
+        const allowed = ['admin', 'supervisor', 'gerencia'].includes(role);
+        editBtn.style.display = allowed ? '' : 'none';
+    }
 }
 
 function populateExecutionOperationalInfo(ot) {
@@ -1628,6 +1778,9 @@ async function openCloseModal() {
     renderClosePersonnelTable();
 
     document.getElementById('closeOTModal').showModal();
+
+    // Refrescar el bloque resumen de los 3 tiempos (respuesta/intervención/downtime)
+    try { recalcCloseTimes(); } catch (e) { /* noop */ }
 }
 
 function renderClosePersonnelTable() {
@@ -1783,6 +1936,77 @@ async function handleCloseOTSubmit(e) {
         shareOTWhatsApp(id, data.execution_comments, `${hours}h ${minutes}m`);
     }
 }
+
+// ── Edición post-cierre de horas (jefatura/admin) ────────────────────
+function openEditClosedHoursModal() {
+    const ot = window.activeExecutionOT;
+    if (!ot || ot.status !== 'Cerrada') {
+        alert('Solo se pueden ajustar horas de OTs cerradas.');
+        return;
+    }
+    document.getElementById('editClosedHoursOtId').value = ot.id;
+    document.getElementById('editRealStart').value = ot.real_start_date || '';
+    document.getElementById('editRealEnd').value = ot.real_end_date || '';
+    document.getElementById('editCausedDowntime').value = ot.caused_downtime ? '1' : '0';
+    document.getElementById('editDowntimeHours').value = ot.downtime_hours != null ? ot.downtime_hours : '';
+    document.getElementById('editHoursReason').value = '';
+    document.getElementById('editClosedHoursModal').showModal();
+}
+window.openEditClosedHoursModal = openEditClosedHoursModal;
+
+async function submitEditClosedHours() {
+    const id = document.getElementById('editClosedHoursOtId').value;
+    const reason = document.getElementById('editHoursReason').value.trim();
+    if (!reason) {
+        alert('Debe indicar el motivo del ajuste.');
+        document.getElementById('editHoursReason').focus();
+        return;
+    }
+    const causedDowntime = document.getElementById('editCausedDowntime').value === '1';
+    const dtHoursRaw = document.getElementById('editDowntimeHours').value;
+    const payload = {
+        real_start_date: document.getElementById('editRealStart').value || null,
+        real_end_date: document.getElementById('editRealEnd').value || null,
+        caused_downtime: causedDowntime,
+        downtime_hours: causedDowntime ? (dtHoursRaw === '' ? null : parseFloat(dtHoursRaw)) : null,
+        reason: reason,
+    };
+    try {
+        const res = await fetch(`/api/work-orders/${id}/hours`, {
+            method: 'PATCH',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(payload),
+        });
+        if (!res.ok) {
+            const err = await res.json().catch(() => ({}));
+            alert('Error: ' + (err.error || res.statusText));
+            return;
+        }
+        const updated = await res.json();
+        document.getElementById('editClosedHoursModal').close();
+        // Refrescar la vista de ejecución y el listado
+        const idx = allWorkOrders.findIndex(o => Number(o.id) === Number(id));
+        if (idx >= 0) {
+            // Preservar campos enriquecidos (notice_request_date, area_name, etc.)
+            allWorkOrders[idx] = { ...allWorkOrders[idx], ...updated };
+            window.activeExecutionOT = allWorkOrders[idx];
+        }
+        // Refrescar bloque de indicadores
+        try {
+            const pRes = await fetch(`/api/work_orders/${id}/personnel`);
+            const personnel = pRes.ok ? await pRes.json() : [];
+            renderIndicatorsBlock(window.activeExecutionOT, personnel);
+        } catch (e) { /* noop */ }
+        // Refrescar listado y bitácora
+        loadWorkOrders();
+        if (typeof loadOTLog === 'function') loadOTLog(id);
+        alert('✅ Horas actualizadas y registradas en la bitácora.');
+    } catch (e) {
+        console.error(e);
+        alert('Error al guardar: ' + e.message);
+    }
+}
+window.submitEditClosedHours = submitEditClosedHours;
 
 async function shareOTWhatsApp(otId, comments, duration) {
     const ot = allWorkOrders.find(o => o.id === parseInt(otId));

@@ -38,6 +38,9 @@ self.addEventListener('fetch', (event) => {
   if (req.method !== 'GET') return;
   const url = new URL(req.url);
 
+  // Solo http(s): chrome-extension, data:, blob:, etc. no son cacheables
+  if (url.protocol !== 'http:' && url.protocol !== 'https:') return;
+
   // Nunca cachear endpoints de auth ni acciones del bot
   if (url.pathname.startsWith('/login') ||
       url.pathname.startsWith('/logout') ||

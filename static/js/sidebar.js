@@ -145,12 +145,17 @@
             m.content = '#0A84FF';
             document.head.appendChild(m);
         }
-        // iOS standalone hints
+        // PWA standalone hints (Apple legacy + estándar W3C nuevo)
         if (!document.querySelector('meta[name="apple-mobile-web-app-capable"]')) {
             const m1 = document.createElement('meta');
             m1.name = 'apple-mobile-web-app-capable';
             m1.content = 'yes';
             document.head.appendChild(m1);
+            // Estándar W3C reemplazo de la propiedad Apple
+            const m1b = document.createElement('meta');
+            m1b.name = 'mobile-web-app-capable';
+            m1b.content = 'yes';
+            document.head.appendChild(m1b);
             const m2 = document.createElement('meta');
             m2.name = 'apple-mobile-web-app-status-bar-style';
             m2.content = 'black-translucent';

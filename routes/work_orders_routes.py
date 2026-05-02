@@ -816,11 +816,13 @@ def register_work_orders_routes(
         _equip_ids = {wo.equipment_id for wo in entries if wo.equipment_id}
         _sys_ids   = {wo.system_id    for wo in entries if wo.system_id}
         _comp_ids  = {wo.component_id for wo in entries if wo.component_id}
+        _notice_ids = {wo.notice_id   for wo in entries if wo.notice_id}
         areas_map  = {a.id: a for a in Area.query.filter(Area.id.in_(_area_ids)).all()}           if _area_ids  else {}
         lines_map  = {l.id: l for l in Line.query.filter(Line.id.in_(_line_ids)).all()}           if _line_ids  else {}
         equips_map = {e.id: e for e in Equipment.query.filter(Equipment.id.in_(_equip_ids)).all()} if _equip_ids else {}
         syss_map   = {s.id: s for s in System.query.filter(System.id.in_(_sys_ids)).all()}        if _sys_ids   else {}
         comps_map  = {c.id: c for c in Component.query.filter(Component.id.in_(_comp_ids)).all()} if _comp_ids  else {}
+        notices_map = {n.id: n for n in MaintenanceNotice.query.filter(MaintenanceNotice.id.in_(_notice_ids)).all()} if _notice_ids else {}
 
         # Enrich with hierarchy names
         results = []
@@ -864,6 +866,14 @@ def register_work_orders_routes(
                 crit = wo.notice.criticality
 
             data['criticality'] = crit
+
+            # Datos del aviso vinculado (request_date para calcular tiempo de respuesta)
+            if wo.notice_id and wo.notice_id in notices_map:
+                _n = notices_map[wo.notice_id]
+                data['notice_request_date'] = _n.request_date
+                data['notice_code'] = _n.code or f"AV-{_n.id:04d}"
+            else:
+                data['notice_request_date'] = None
 
             # Datos de la parada vinculada (si existe)
             sh_id = getattr(wo, 'shutdown_id', None)
@@ -1054,6 +1064,99 @@ def register_work_orders_routes(
             return jsonify(data)
         except Exception as e:
             logger.exception(f"Error get OT by code {code}")
+            return jsonify({"error": str(e)}), 500
+
+    # ── Edición post-cierre de horas (jefatura/admin) ───────────────────
+    # Endpoint dedicado para ajustar horas reales y downtime de OTs ya cerradas.
+    # Requiere rol jefatura (admin/supervisor/gerencia) — modifica KPIs históricos
+    # de disponibilidad/MTTR, por eso se audita cada cambio en OTLogEntry.
+    @app.route('/api/work-orders/<int:id>/hours', methods=['PATCH'])
+    def patch_wot_hours(id):
+        try:
+            from flask_login import current_user
+            allowed_roles = ('admin', 'supervisor', 'gerencia')
+            user_role = getattr(current_user, 'role', None)
+            if user_role not in allowed_roles:
+                return jsonify({"error": "Solo jefatura/administrador puede editar horas de OT cerrada."}), 403
+
+            wo = WorkOrder.query.get(id)
+            if not wo:
+                return jsonify({"error": "Work Order not found"}), 404
+
+            data = request.get_json() or {}
+
+            # Solo aplica a OT cerrada (durante ejecución se usa el flujo normal)
+            if wo.status != 'Cerrada':
+                return jsonify({"error": "Este endpoint solo edita OTs cerradas. Use el flujo normal de edición."}), 400
+
+            editable = ('real_start_date', 'real_end_date', 'real_duration',
+                        'caused_downtime', 'downtime_hours')
+
+            prev = {f: getattr(wo, f) for f in editable}
+
+            for f in editable:
+                if f in data:
+                    v = data[f]
+                    if isinstance(v, str) and v.strip() == '':
+                        v = None
+                    if f == 'caused_downtime':
+                        v = bool(v)
+                    elif f in ('real_duration', 'downtime_hours') and v is not None:
+                        try:
+                            v = float(v)
+                        except (TypeError, ValueError):
+                            v = None
+                    setattr(wo, f, v)
+
+            # Si dieron fechas pero no duración, recalcula
+            if ('real_start_date' in data or 'real_end_date' in data) and 'real_duration' not in data:
+                try:
+                    if wo.real_start_date and wo.real_end_date:
+                        ds = datetime.fromisoformat(wo.real_start_date.replace('Z', ''))
+                        de = datetime.fromisoformat(wo.real_end_date.replace('Z', ''))
+                        wo.real_duration = round((de - ds).total_seconds() / 3600.0, 2)
+                except Exception:
+                    pass
+
+            # Auditoría: registra solo los campos que cambiaron
+            changes = []
+            labels = {
+                'real_start_date': 'Inicio real',
+                'real_end_date': 'Fin real',
+                'real_duration': 'Duración (h)',
+                'caused_downtime': 'Causó parada',
+                'downtime_hours': 'Horas de paro',
+            }
+            for f in editable:
+                old_v = prev[f]
+                new_v = getattr(wo, f)
+                if (old_v or '') != (new_v or '') and (old_v is not None or new_v is not None):
+                    changes.append(f"{labels[f]}: {old_v if old_v not in (None,'') else '—'} → {new_v if new_v not in (None,'') else '—'}")
+
+            if changes and OTLogEntry:
+                author = None
+                try:
+                    author = current_user.full_name or current_user.username
+                except Exception:
+                    pass
+                reason = (data.get('reason') or '').strip()
+                comment = 'Edición post-cierre de horas: ' + '; '.join(changes)
+                if reason:
+                    comment += f" | Motivo: {reason}"
+                db.session.add(OTLogEntry(
+                    work_order_id=wo.id,
+                    log_date=datetime.now().strftime('%Y-%m-%d'),
+                    log_type='CIERRE',
+                    author=author or 'sistema',
+                    comment=comment,
+                ))
+
+            db.session.commit()
+            logger.info(f"OT {wo.id} hours edited post-cierre by {user_role}: {len(changes)} cambios")
+            return jsonify(wo.to_dict())
+        except Exception as e:
+            db.session.rollback()
+            logger.exception(f"Error patching OT hours {id}")
             return jsonify({"error": str(e)}), 500
 
     @app.route('/api/work-orders/<int:id>', methods=['PUT', 'DELETE'])
