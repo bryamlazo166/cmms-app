@@ -116,12 +116,15 @@ function recalcCloseTimes() {
 
     const start = document.getElementById('realStart').value;
     const end = document.getElementById('realEnd').value;
-    const requestDate = (window.activeExecutionOT && (window.activeExecutionOT.notice_request_date || window.activeExecutionOT.request_date)) || null;
+    // Preferir notice_reported_at (hora real del reporte) sobre request_date
+    // (fecha de captura). Solo si reported_at no existe usar request_date.
+    const ot = window.activeExecutionOT;
+    const reportRef = ot ? (ot.notice_reported_at || ot.notice_request_date || ot.reported_at || ot.request_date) : null;
 
-    // Tiempo de respuesta: aviso → inicio
-    if (requestDate && start) {
+    // Tiempo de respuesta: reporte → inicio
+    if (reportRef && start) {
         try {
-            const r = new Date(requestDate);
+            const r = new Date(reportRef);
             const s = new Date(start);
             const hrs = (s - r) / 3600000;
             elResp.textContent = formatHours(hrs);
@@ -1395,18 +1398,23 @@ function renderIndicatorsBlock(ot, personnel) {
     }
     block.style.display = '';
 
-    // Tiempo de respuesta
+    // Tiempo de respuesta — preferir reported_at (hora real) sobre request_date (captura)
     const respEl = document.getElementById('ind-response');
-    if (ot.notice_request_date && ot.real_start_date) {
+    const reportRef = ot.notice_reported_at || ot.notice_request_date;
+    const channel = ot.notice_report_channel;
+    if (reportRef && ot.real_start_date) {
         try {
-            const r = new Date(ot.notice_request_date);
+            const r = new Date(reportRef);
             const s = new Date(ot.real_start_date);
             const hrs = (s - r) / 3600000;
             respEl.textContent = formatHours(hrs);
-            respEl.title = `Aviso: ${ot.notice_request_date} → Inicio: ${ot.real_start_date}`;
+            const fuente = ot.notice_reported_at
+                ? `Reportado (${channel || 'manual'}): ${ot.notice_reported_at}`
+                : `Aviso creado: ${ot.notice_request_date}`;
+            respEl.title = `${fuente} → Inicio: ${ot.real_start_date}`;
         } catch (e) { respEl.textContent = '—'; }
     } else {
-        respEl.textContent = ot.notice_request_date ? '—' : '(sin aviso)';
+        respEl.textContent = reportRef ? '—' : '(sin aviso)';
     }
 
     // Tiempo de intervención

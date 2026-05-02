@@ -1,4 +1,5 @@
-﻿from flask import jsonify, request
+from datetime import datetime
+from flask import jsonify, request
 
 
 def register_notices_routes(
@@ -13,6 +14,7 @@ def register_notices_routes(
     WarehouseItem,
     update_entry,
     delete_entry,
+    OTLogEntry=None,
 ):
     @app.route('/api/notices', methods=['GET', 'POST'])
     def handle_notices():
@@ -29,6 +31,16 @@ def register_notices_routes(
                 for k, v in clean_data.items():
                     if isinstance(v, str) and v.strip() == "":
                         clean_data[k] = None
+
+                # Defaults para los nuevos campos de reporte:
+                # - report_channel: si no se especifica, asumir SISTEMA
+                # - reported_at: si el canal es SISTEMA o no hay valor manual,
+                #   usar request_date como aproximación (= momento de captura)
+                if not clean_data.get('report_channel'):
+                    clean_data['report_channel'] = 'SISTEMA'
+                if not clean_data.get('reported_at'):
+                    # Para canal SISTEMA reported_at = request_date (now)
+                    clean_data['reported_at'] = clean_data.get('request_date')
 
                 logger.info(f"Cleaned notice data: {clean_data}")
 
@@ -200,6 +212,72 @@ def register_notices_routes(
         if request.method == 'PUT':
             return update_entry(MaintenanceNotice, id, request.json)
         return delete_entry(MaintenanceNotice, id)
+
+    # ── Edición auditada de la hora real del reporte ──────────────────
+    # Restringido a jefatura/admin: cambiar reported_at modifica el T.respuesta
+    # histórico, así que cada edición se registra en la bitácora de la OT vinculada
+    # (si existe), o en logs del sistema si el aviso aún no tiene OT.
+    @app.route('/api/notices/<int:id>/reported-at', methods=['PATCH'])
+    def patch_notice_reported_at(id):
+        try:
+            from flask_login import current_user
+            allowed_roles = ('admin', 'supervisor', 'gerencia')
+            user_role = getattr(current_user, 'role', None)
+            if user_role not in allowed_roles:
+                return jsonify({"error": "Solo jefatura/administrador puede ajustar la hora del reporte."}), 403
+
+            notice = MaintenanceNotice.query.get(id)
+            if not notice:
+                return jsonify({"error": "Notice not found"}), 404
+
+            data = request.get_json() or {}
+            prev_reported_at = notice.reported_at
+            prev_channel = notice.report_channel
+
+            new_reported = data.get('reported_at')
+            if isinstance(new_reported, str) and new_reported.strip() == '':
+                new_reported = None
+            new_channel = data.get('report_channel')
+            if isinstance(new_channel, str) and new_channel.strip() == '':
+                new_channel = None
+
+            notice.reported_at = new_reported
+            if new_channel is not None:
+                notice.report_channel = new_channel
+
+            reason = (data.get('reason') or '').strip()
+
+            changes = []
+            if (prev_reported_at or '') != (notice.reported_at or ''):
+                changes.append(f"Hora del reporte: {prev_reported_at or '—'} → {notice.reported_at or '—'}")
+            if (prev_channel or '') != (notice.report_channel or ''):
+                changes.append(f"Canal: {prev_channel or '—'} → {notice.report_channel or '—'}")
+
+            # Auditoría: si el aviso tiene OT vinculada, escribir en su bitácora
+            if changes and OTLogEntry and notice.work_order:
+                author = None
+                try:
+                    author = current_user.full_name or current_user.username
+                except Exception:
+                    pass
+                comment = 'Edición de hora real del reporte (aviso): ' + '; '.join(changes)
+                if reason:
+                    comment += f" | Motivo: {reason}"
+                db.session.add(OTLogEntry(
+                    work_order_id=notice.work_order.id,
+                    log_date=datetime.now().strftime('%Y-%m-%d'),
+                    log_type='NOTA',
+                    author=author or 'sistema',
+                    comment=comment,
+                ))
+
+            db.session.commit()
+            logger.info(f"Notice {notice.id} reported_at edited by {user_role}: {len(changes)} cambios")
+            return jsonify(notice.to_dict())
+        except Exception as e:
+            db.session.rollback()
+            logger.exception(f"Error patching notice reported_at {id}")
+            return jsonify({"error": str(e)}), 500
 
     @app.route('/api/predictive/check-duplicates', methods=['GET'])
     def check_duplicates():

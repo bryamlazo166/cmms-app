@@ -867,13 +867,18 @@ def register_work_orders_routes(
 
             data['criticality'] = crit
 
-            # Datos del aviso vinculado (request_date para calcular tiempo de respuesta)
+            # Datos del aviso vinculado (reported_at preferido sobre request_date
+            # para calcular el tiempo de respuesta real)
             if wo.notice_id and wo.notice_id in notices_map:
                 _n = notices_map[wo.notice_id]
                 data['notice_request_date'] = _n.request_date
+                data['notice_reported_at'] = getattr(_n, 'reported_at', None)
+                data['notice_report_channel'] = getattr(_n, 'report_channel', None)
                 data['notice_code'] = _n.code or f"AV-{_n.id:04d}"
             else:
                 data['notice_request_date'] = None
+                data['notice_reported_at'] = None
+                data['notice_report_channel'] = None
 
             # Datos de la parada vinculada (si existe)
             sh_id = getattr(wo, 'shutdown_id', None)

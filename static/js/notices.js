@@ -8,6 +8,50 @@ let currentScopeFilter = 'ALL';
 let _treeSelectionCallback = null; // when set, tree node clicks call this instead of selectHierarchy
 let _promotingNoticeId = null;
 
+// ── Datos del reporte (helpers) ───────────────────────────────────────────
+// Devuelve "YYYY-MM-DDTHH:MM" en hora local (compatible con <input type=datetime-local>).
+function getNowLocalDatetime() {
+    const d = new Date();
+    const pad = n => String(n).padStart(2, '0');
+    return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`;
+}
+
+// Convierte un valor del backend (date "YYYY-MM-DD" o ISO) al formato esperado por datetime-local.
+function formatForDatetimeLocal(v) {
+    if (!v) return '';
+    if (/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}/.test(v)) return v.slice(0, 16);
+    if (/^\d{4}-\d{2}-\d{2}$/.test(v)) return v + 'T00:00';
+    try {
+        const d = new Date(v);
+        if (isNaN(d.getTime())) return '';
+        const pad = n => String(n).padStart(2, '0');
+        return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`;
+    } catch (e) { return ''; }
+}
+
+// Reacciona al cambio de canal del reporte:
+// - SISTEMA: la "hora real" es ahora (no editable, se asume que opera el CMMS)
+// - Otros canales: hora editable, mensaje recordando poner la hora real
+window.onReportChannelChange = function () {
+    const channel = (document.getElementById('reportChannel') || {}).value || 'SISTEMA';
+    const reportedEl = document.getElementById('reportedAt');
+    const hint = document.getElementById('reportedAtHint');
+    if (!reportedEl) return;
+    if (channel === 'SISTEMA') {
+        // Si está vacío, llenar con ahora
+        if (!reportedEl.value) reportedEl.value = getNowLocalDatetime();
+        if (hint) {
+            hint.style.color = '#888';
+            hint.innerHTML = 'ℹ️ Captura automática (canal Sistema)';
+        }
+    } else {
+        if (hint) {
+            hint.style.color = '#FF9F0A';
+            hint.innerHTML = '⚠️ Pon la hora REAL en que producción avisó (no la hora actual si lo registras tarde)';
+        }
+    }
+};
+
 // ── Scope helpers ────────────────────────────────────────────────────────────
 function scopeLabel(scope) {
     if (scope === 'FUERA_PLAN') return '🚧 Fuera de Plan';
@@ -296,6 +340,8 @@ async function saveNotice(e) {
         criticality: val('criticality'),
         priority: val('priority'),
         request_date: val('requestDate'),
+        reported_at: val('reportedAt'),
+        report_channel: val('reportChannel'),
         planning_date: val('planningDate'),
         maintenance_type: val('maintType'),
         ot_number: val('otNumber'),
@@ -339,6 +385,13 @@ document.addEventListener('DOMContentLoaded', async () => {
         // Default Date: Today
         const today = new Date().toISOString().split('T')[0];
         document.getElementById('requestDate').value = today;
+
+        // Default datos del reporte: canal SISTEMA + hora actual
+        const channelEl = document.getElementById('reportChannel');
+        if (channelEl) channelEl.value = 'SISTEMA';
+        const reportedEl = document.getElementById('reportedAt');
+        if (reportedEl) reportedEl.value = getNowLocalDatetime();
+        onReportChannelChange();
 
         // Default Status
         document.getElementById('status').value = 'Pendiente';
@@ -450,6 +503,12 @@ window.editNotice = async (id) => {
         document.getElementById('criticality').value = n.criticality || 'Baja';
         document.getElementById('priority').value = n.priority || 'Baja';
         document.getElementById('requestDate').value = n.request_date || '';
+        // Datos del reporte (nuevos campos)
+        const channelEl = document.getElementById('reportChannel');
+        if (channelEl) channelEl.value = n.report_channel || 'SISTEMA';
+        const reportedEl = document.getElementById('reportedAt');
+        if (reportedEl) reportedEl.value = formatForDatetimeLocal(n.reported_at);
+        onReportChannelChange();
         document.getElementById('status').value = n.status || 'Pendiente';
 
         // Advanced

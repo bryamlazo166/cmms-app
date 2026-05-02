@@ -604,6 +604,7 @@ register_notices_routes(
     WarehouseItem=WarehouseItem,
     update_entry=update_entry,
     delete_entry=delete_entry,
+    OTLogEntry=OTLogEntry,
 )
 
 register_reports_routes(
@@ -866,6 +867,10 @@ _ENSURE_COLUMNS = [
     ("rotative_asset_bom", "free_text", "VARCHAR(200)"),
     ("maintenance_notices", "scope", "VARCHAR(20) DEFAULT 'PLAN' NOT NULL"),
     ("maintenance_notices", "free_location", "VARCHAR(255)"),
+    # Hora real del reporte (cuando produccion aviso, puede diferir de request_date)
+    # y canal por el que llego el aviso (SISTEMA, WHATSAPP, VERBAL, RADIO, CORREO).
+    ("maintenance_notices", "reported_at", "VARCHAR(20)"),
+    ("maintenance_notices", "report_channel", "VARCHAR(20)"),
     ("ot_materials", "subtype", "VARCHAR(20)"),
     ("ot_materials", "item_name_free", "VARCHAR(200)"),
     ("ot_materials", "unit", "VARCHAR(20)"),

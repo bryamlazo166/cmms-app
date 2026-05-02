@@ -349,7 +349,14 @@ class MaintenanceNotice(db.Model):
     description: Mapped[str | None] = mapped_column(Text, nullable=True)
     criticality: Mapped[str | None] = mapped_column(String(20), nullable=True)
     priority: Mapped[str | None] = mapped_column(String(20), nullable=True)
-    request_date: Mapped[str | None] = mapped_column(String(20), nullable=True)  # F.Solicitud - when created
+    request_date: Mapped[str | None] = mapped_column(String(20), nullable=True)  # F.Solicitud - when created in CMMS
+    # reported_at: hora en que producción avisó realmente (puede ser anterior a
+    # request_date si el aviso llegó por WhatsApp/verbal y se registró tarde).
+    # Si NULL, el cálculo de tiempo de respuesta cae a request_date (retrocompat).
+    reported_at: Mapped[str | None] = mapped_column(String(20), nullable=True)
+    # report_channel: canal por el que producción reportó (SISTEMA, WHATSAPP,
+    # VERBAL, RADIO, CORREO). Útil para analizar adopción del CMMS.
+    report_channel: Mapped[str | None] = mapped_column(String(20), nullable=True)
     treatment_date: Mapped[str | None] = mapped_column(String(20), nullable=True)  # F.Tratada - when OT started
     planning_date: Mapped[str | None] = mapped_column(String(20), nullable=True)  # F.Programado - from OT scheduled
     closed_date: Mapped[Optional[str]] = mapped_column(String(20), nullable=True)  # F.Fin - cuando se cerró el aviso

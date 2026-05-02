@@ -485,12 +485,40 @@
 
                         <div class="form-row">
                             <div class="form-group">
-                                <label>Fecha Solicitud</label>
+                                <label>Fecha Solicitud <small style="color:#888;">(captura en el CMMS)</small></label>
                                 <input type="date" id="requestDate">
                             </div>
                             <div class="form-group">
                                 <label>Fecha Programación</label>
                                 <input type="date" id="planningDate">
+                            </div>
+                        </div>
+
+                        <!-- Bloque DATOS DEL REPORTE — para medir T.respuesta real -->
+                        <div style="border:1px solid rgba(10,132,255,0.3); padding:10px; border-radius:6px; margin-bottom:10px; background:rgba(10,132,255,0.05);">
+                            <label style="color:#5AC8FA; display:block; margin-bottom:8px;">
+                                <i class="fas fa-clock"></i> Datos del reporte
+                                <small style="color:#888; font-weight:normal;">(alimenta el T. respuesta de KPI)</small>
+                            </label>
+                            <div class="form-row">
+                                <div class="form-group">
+                                    <label style="font-size:0.85em;">Canal del reporte</label>
+                                    <select id="reportChannel" onchange="onReportChannelChange()">
+                                        <option value="SISTEMA">📱 Sistema (CMMS)</option>
+                                        <option value="WHATSAPP">💬 WhatsApp</option>
+                                        <option value="VERBAL">🗣️ Verbal / Presencial</option>
+                                        <option value="RADIO">📻 Radio</option>
+                                        <option value="CORREO">✉️ Correo</option>
+                                        <option value="OTRO">Otro</option>
+                                    </select>
+                                </div>
+                                <div class="form-group">
+                                    <label style="font-size:0.85em;">Hora real del reporte</label>
+                                    <input type="datetime-local" id="reportedAt">
+                                    <small id="reportedAtHint" style="display:block; color:#FF9F0A; font-size:0.75em; margin-top:3px;">
+                                        ⚠️ Pon la hora REAL en que producción avisó (no la hora actual si lo registras tarde)
+                                    </small>
+                                </div>
                             </div>
                         </div>
 
