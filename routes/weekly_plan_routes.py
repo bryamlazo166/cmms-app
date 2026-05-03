@@ -329,30 +329,48 @@ def register_weekly_plan_routes(
                     return MonitoringPoint.query.get(sid)
                 return None
 
-            filtered_sources = []
+            # Enriquecer todos los sources con responsabilidad
             for src in sources:
                 obj = _get_source_obj(src)
                 if not obj:
+                    src['_obj'] = None
                     continue
                 eq = equip_map.get(getattr(obj, 'equipment_id', None))
                 party, prov_id = resolve_responsibility(obj, equipment=eq)
-                src['_obj'] = obj  # cache para no re-query
+                src['_obj'] = obj
                 src['_party'] = party
                 src['_provider_id'] = prov_id
                 src['_equipment_id'] = getattr(obj, 'equipment_id', None)
+            sources = [s for s in sources if s.get('_obj')]
 
-                if only_provider and p.provider_id:
-                    # Solo puntos del proveedor del plan
+            # ── Filtrado por responsabilidad (con fallback inteligente) ─────
+            # Si el plan tiene proveedor y only_provider=True, intentamos
+            # filtrar. Pero si el resultado deja CERO puntos (porque el
+            # usuario aun no asigno equipos al proveedor), hacemos FALLBACK
+            # automatico: usamos todos los puntos y avisamos en la respuesta.
+            warning_msg = None
+            total_before_filter = len(sources)
+            if only_provider and p.provider_id:
+                provider_sources = []
+                for src in sources:
+                    party = src.get('_party')
+                    prov_id = src.get('_provider_id')
                     if party != PROVEEDOR:
                         continue
-                    # Si el punto especifica proveedor concreto, debe coincidir.
-                    # Si no especifica (heredado del equipo) y el equipo tampoco,
-                    # se asume que aplica al proveedor del plan.
                     if prov_id and prov_id != p.provider_id:
                         continue
-                filtered_sources.append(src)
-
-            sources = filtered_sources
+                    provider_sources.append(src)
+                if provider_sources:
+                    sources = provider_sources
+                else:
+                    # Fallback: nadie esta marcado como del proveedor todavia.
+                    warning_msg = (
+                        f"No hay puntos preventivos asignados al proveedor del plan. "
+                        f"Se planificaron TODOS los {total_before_filter} puntos disponibles. "
+                        f"Para que el filtro funcione, asigna primero los equipos al "
+                        f"proveedor en /responsabilidades (o edita Equipment.default_responsible_party)."
+                    )
+                    only_provider = False  # marcar como no-filtrado para la respuesta
 
             # ── Agrupar por equipo si group_by_equipment ────────────────────
             # Cada grupo se considera una unidad atomica que cae el mismo dia
@@ -449,6 +467,7 @@ def register_weekly_plan_routes(
                 "hours_per_day": [round(x, 2) for x in day_totals],
                 "capacity_per_day": capacity_per_day,
                 "fill_pct": [round((x / capacity_per_day * 100) if capacity_per_day else 0, 1) for x in day_totals],
+                "warning": warning_msg,
             })
         except Exception as e:
             db.session.rollback()

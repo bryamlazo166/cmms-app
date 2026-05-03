@@ -281,6 +281,10 @@ def register_core_routes(app, db, logger, app_build_tag,
     def thickness_page():
         return render_template('thickness.html')
 
+    @app.route('/responsabilidades')
+    def responsibility_page():
+        return render_template('responsibility.html')
+
     @app.route('/cockpit')
     def cockpit_page():
         return render_template('cockpit.html')

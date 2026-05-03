@@ -1,0 +1,391 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <link rel="icon" type="image/svg+xml" href="/static/favicon.svg">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Responsabilidad de Mantenimiento - CMMS</title>
+    <!-- CMMS_THEME_INIT -->
+    <script>(function(){try{var t=localStorage.getItem('cmms.theme');if(t=='management'||t=='developer'){document.documentElement.setAttribute('data-theme',t);}}catch(e){}})();</script>
+    <link rel="stylesheet" href="/static/css/style.css?v={{ v }}">
+    <link rel="stylesheet" href="/static/css/sidebar.css?v={{ v }}">
+    <link href="https://fonts.googleapis.com/css2?family=Roboto:wght@300;400;500;700&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css">
+    <style>
+        .wrap{max-width:1600px;margin:0 auto;padding:16px;}
+        .header{background:linear-gradient(120deg,#1e2430,#151b24);border:1px solid #2d3f56;border-radius:12px;padding:16px;margin-bottom:12px;}
+        .header h1{margin:0;color:#5ac8fa;font-size:1.4rem;display:flex;align-items:center;gap:10px;}
+        .header p{margin:6px 0 0;color:#9ab0cb;font-size:.85rem;}
+        .stats{display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:10px;margin-bottom:14px;}
+        .stat{background:#181d24;border:1px solid #2f4257;border-radius:10px;padding:12px 14px;}
+        .stat .lbl{color:#9ab0cb;font-size:.72rem;text-transform:uppercase;letter-spacing:.5px;}
+        .stat .val{color:#fff;font-size:1.4rem;font-weight:700;margin-top:4px;}
+        .stat.int{border-left:4px solid #5AC8FA;}
+        .stat.prov{border-left:4px solid #30D158;}
+        .toolbar{display:flex;gap:10px;align-items:center;margin-bottom:12px;flex-wrap:wrap;background:#181d24;border:1px solid #2f4257;border-radius:10px;padding:10px 14px;}
+        .toolbar select, .toolbar input{height:36px;background:#0f1319;color:#d5e2f5;border:1px solid #344964;border-radius:6px;padding:4px 10px;font-size:.86rem;}
+        .toolbar label{color:#9ab0cb;font-size:.78rem;font-weight:600;}
+        .btn{height:36px;border:1px solid #385273;border-radius:8px;background:#193451;color:#d7e9ff;padding:0 14px;font-weight:600;cursor:pointer;font-size:.84rem;display:inline-flex;align-items:center;gap:6px;}
+        .btn:hover{background:#234870;}
+        .btn.primary{background:#0a84ff;border-color:#0a84ff;color:#fff;}
+        .btn.success{background:#30D158;border-color:#30D158;color:#fff;}
+        .btn.warn{background:#FF9F0A;border-color:#FF9F0A;color:#fff;}
+        .btn:disabled{opacity:.4;cursor:not-allowed;}
+        .selection-bar{background:linear-gradient(90deg,#1a3a5c,#0f2640);border:1px solid #5ac8fa;border-radius:10px;padding:10px 14px;margin-bottom:12px;display:none;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:10px;}
+        .selection-bar.active{display:flex;}
+        .selection-bar .count{color:#5ac8fa;font-weight:700;}
+        table{width:100%;border-collapse:collapse;background:#181d24;border:1px solid #2f4257;border-radius:10px;overflow:hidden;}
+        thead{background:#0f1319;}
+        th{padding:10px 8px;text-align:left;color:#9ab0cb;font-size:.78rem;font-weight:600;text-transform:uppercase;letter-spacing:.3px;border-bottom:1px solid #2f4257;}
+        td{padding:8px;color:#d5e2f5;font-size:.85rem;border-bottom:1px solid #2229;}
+        tr:hover td{background:rgba(90,200,250,.04);}
+        tr.selected td{background:rgba(90,200,250,.10);}
+        .pill{padding:2px 10px;border-radius:12px;font-weight:700;font-size:.72rem;display:inline-block;}
+        .pill-int{background:rgba(10,132,255,.15);color:#5AC8FA;border:1px solid rgba(10,132,255,.4);}
+        .pill-prov{background:rgba(48,209,88,.15);color:#30D158;border:1px solid rgba(48,209,88,.4);}
+        .quick-act{background:transparent;border:1px solid #344964;color:#9ab0cb;padding:3px 8px;border-radius:6px;cursor:pointer;font-size:.72rem;margin-left:4px;}
+        .quick-act:hover{border-color:#5ac8fa;color:#5ac8fa;}
+        .quick-act.prov:hover{border-color:#30D158;color:#30D158;}
+        input[type="checkbox"]{width:16px;height:16px;cursor:pointer;}
+    </style>
+</head>
+<body>
+<nav class="sidebar">
+    <div class="logo-details"><i class="fas fa-industry icon"></i><div class="logo_name">CMMS Pro</div><i class="fas fa-bars" id="btn_toggle"></i></div>
+    <ul class="nav-list"></ul>
+</nav>
+
+<section class="home-section">
+    <div class="wrap">
+        <div class="header">
+            <h1><i class="fas fa-user-tag"></i> Responsabilidad de Mantenimiento</h1>
+            <p>Define qué equipos atiende mantenimiento <strong style="color:#5AC8FA;">interno</strong> y cuáles el <strong style="color:#30D158;">proveedor externo</strong>. Los puntos preventivos heredan el responsable del equipo automáticamente.</p>
+        </div>
+
+        <!-- Resumen -->
+        <div class="stats">
+            <div class="stat int">
+                <div class="lbl"><i class="fas fa-tools"></i> Equipos Internos</div>
+                <div class="val" id="statInt">—</div>
+            </div>
+            <div class="stat prov">
+                <div class="lbl"><i class="fas fa-handshake"></i> Equipos Proveedor</div>
+                <div class="val" id="statProv">—</div>
+            </div>
+            <div class="stat">
+                <div class="lbl">Total equipos KPI</div>
+                <div class="val" id="statTotal">—</div>
+            </div>
+            <div class="stat">
+                <div class="lbl">Puntos preventivos</div>
+                <div class="val" id="statPoints">—</div>
+            </div>
+        </div>
+
+        <!-- Filtros -->
+        <div class="toolbar">
+            <label>Área:</label>
+            <select id="fArea" onchange="renderTable()"><option value="">Todas</option></select>
+            <label>Línea:</label>
+            <select id="fLine" onchange="renderTable()"><option value="">Todas</option></select>
+            <label>Responsable:</label>
+            <select id="fResp" onchange="renderTable()">
+                <option value="">Todos</option>
+                <option value="INTERNO">🔵 Internos</option>
+                <option value="PROVEEDOR">🟢 Proveedor</option>
+            </select>
+            <label>Buscar:</label>
+            <input id="fSearch" type="search" placeholder="Tag o nombre..." oninput="renderTable()" style="min-width:200px;">
+            <span style="margin-left:auto;color:#9ab0cb;font-size:.78rem;" id="rowCount"></span>
+        </div>
+
+        <!-- Barra de seleccion -->
+        <div class="selection-bar" id="selBar">
+            <div>
+                <span class="count" id="selCount">0</span> equipos seleccionados
+            </div>
+            <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;">
+                <span style="color:#9ab0cb;font-size:.82rem;">Asignar responsable:</span>
+                <button class="btn" onclick="bulkAssign('INTERNO')" style="background:rgba(10,132,255,.2);border-color:#5AC8FA;color:#5AC8FA;">
+                    <i class="fas fa-tools"></i> Mantenimiento Interno
+                </button>
+                <select id="bulkProvider" style="height:36px;background:#0f1319;color:#d5e2f5;border:1px solid #344964;border-radius:6px;padding:4px 10px;">
+                    <option value="">- Sin proveedor especifico -</option>
+                </select>
+                <button class="btn success" onclick="bulkAssign('PROVEEDOR')">
+                    <i class="fas fa-handshake"></i> Proveedor
+                </button>
+                <button class="btn" onclick="clearSelection()">Cancelar</button>
+            </div>
+        </div>
+
+        <!-- Tabla -->
+        <table>
+            <thead>
+                <tr>
+                    <th style="width:36px;"><input type="checkbox" id="chkAll" onchange="toggleAll(this)"></th>
+                    <th>Área</th>
+                    <th>Línea</th>
+                    <th>Tag</th>
+                    <th>Equipo</th>
+                    <th style="text-align:center;">Responsable</th>
+                    <th>Proveedor</th>
+                    <th style="text-align:center;">Puntos preventivos</th>
+                    <th style="text-align:center;">Acción rápida</th>
+                </tr>
+            </thead>
+            <tbody id="tbody">
+                <tr><td colspan="9" style="text-align:center;padding:30px;color:#9ab0cb;">Cargando...</td></tr>
+            </tbody>
+        </table>
+    </div>
+</section>
+
+<script src="/static/js/sidebar.js?v={{ v }}"></script>
+<script>
+let _state = {
+    equipments: [],
+    areas: [],
+    lines: [],
+    providers: [],
+    selected: new Set(),
+    pointCounts: {},  // equipment_id -> count
+};
+
+document.addEventListener('DOMContentLoaded', async () => {
+    await Promise.all([loadAreas(), loadLines(), loadProviders(), loadPointCounts()]);
+    await loadEquipments();
+});
+
+async function loadAreas() {
+    const r = await fetch('/api/areas');
+    _state.areas = await r.json();
+    const sel = document.getElementById('fArea');
+    _state.areas.sort((a,b)=>a.name.localeCompare(b.name)).forEach(a => {
+        sel.insertAdjacentHTML('beforeend', `<option value="${a.id}">${a.name}</option>`);
+    });
+}
+
+async function loadLines() {
+    const r = await fetch('/api/lines');
+    _state.lines = await r.json();
+    const sel = document.getElementById('fLine');
+    _state.lines.sort((a,b)=>a.name.localeCompare(b.name)).forEach(l => {
+        sel.insertAdjacentHTML('beforeend', `<option value="${l.id}">${l.name}</option>`);
+    });
+}
+
+async function loadProviders() {
+    const r = await fetch('/api/providers');
+    _state.providers = await r.json();
+    const sel = document.getElementById('bulkProvider');
+    _state.providers.forEach(p => {
+        sel.insertAdjacentHTML('beforeend', `<option value="${p.id}">${p.name}</option>`);
+    });
+    // Si solo hay 1 proveedor, lo selecciono por defecto (UX rapido)
+    if (_state.providers.length === 1) sel.value = _state.providers[0].id;
+}
+
+async function loadPointCounts() {
+    // Cuenta puntos preventivos por equipo (lub + insp + monitoring)
+    try {
+        const [lubs, insps, mons] = await Promise.all([
+            fetch('/api/lubrication/points').then(r => r.json()).catch(() => []),
+            fetch('/api/inspection/routes').then(r => r.json()).catch(() => []),
+            fetch('/api/monitoring/points').then(r => r.json()).catch(() => []),
+        ]);
+        const counts = {};
+        const tally = (list) => list.forEach(p => {
+            const id = p.equipment_id;
+            if (id) counts[id] = (counts[id] || 0) + 1;
+        });
+        if (Array.isArray(lubs)) tally(lubs);
+        if (Array.isArray(insps)) tally(insps);
+        if (Array.isArray(mons)) tally(mons);
+        _state.pointCounts = counts;
+    } catch (e) { console.warn('Point counts failed', e); }
+}
+
+async function loadEquipments() {
+    const r = await fetch('/api/equipments');
+    _state.equipments = await r.json();
+    renderStats();
+    renderTable();
+}
+
+function renderStats() {
+    let intCnt = 0, provCnt = 0, totalPoints = 0;
+    _state.equipments.forEach(e => {
+        if (e.default_responsible_party === 'PROVEEDOR') provCnt++;
+        else intCnt++;
+        totalPoints += _state.pointCounts[e.id] || 0;
+    });
+    document.getElementById('statInt').textContent = intCnt;
+    document.getElementById('statProv').textContent = provCnt;
+    document.getElementById('statTotal').textContent = _state.equipments.length;
+    document.getElementById('statPoints').textContent = totalPoints;
+}
+
+function renderTable() {
+    const tbody = document.getElementById('tbody');
+    const fArea = document.getElementById('fArea').value;
+    const fLine = document.getElementById('fLine').value;
+    const fResp = document.getElementById('fResp').value;
+    const fSearch = (document.getElementById('fSearch').value || '').toLowerCase();
+
+    const lineMap = {}; _state.lines.forEach(l => lineMap[l.id] = l);
+    const areaMap = {}; _state.areas.forEach(a => areaMap[a.id] = a);
+    const provMap = {}; _state.providers.forEach(p => provMap[p.id] = p);
+
+    let rows = _state.equipments.map(e => {
+        const line = lineMap[e.line_id];
+        const area = line ? areaMap[line.area_id] : null;
+        return {
+            ...e,
+            line_name: line ? line.name : '-',
+            area_name: area ? area.name : '-',
+            area_id: area ? area.id : null,
+        };
+    });
+
+    // Filtros
+    if (fArea) rows = rows.filter(r => String(r.area_id) === fArea);
+    if (fLine) rows = rows.filter(r => String(r.line_id) === fLine);
+    if (fResp) rows = rows.filter(r => (r.default_responsible_party || 'INTERNO') === fResp);
+    if (fSearch) rows = rows.filter(r =>
+        (r.tag || '').toLowerCase().includes(fSearch) || (r.name || '').toLowerCase().includes(fSearch));
+
+    rows.sort((a,b) => {
+        if (a.area_name !== b.area_name) return a.area_name.localeCompare(b.area_name);
+        if (a.line_name !== b.line_name) return a.line_name.localeCompare(b.line_name);
+        return (a.tag || '').localeCompare(b.tag || '', 'es', {numeric:true});
+    });
+
+    document.getElementById('rowCount').textContent = `${rows.length} equipos`;
+
+    if (!rows.length) {
+        tbody.innerHTML = '<tr><td colspan="9" style="text-align:center;padding:30px;color:#9ab0cb;">Sin equipos para el filtro actual.</td></tr>';
+        return;
+    }
+
+    tbody.innerHTML = rows.map(e => {
+        const party = e.default_responsible_party || 'INTERNO';
+        const pill = party === 'PROVEEDOR'
+            ? '<span class="pill pill-prov"><i class="fas fa-handshake"></i> PROVEEDOR</span>'
+            : '<span class="pill pill-int"><i class="fas fa-tools"></i> INTERNO</span>';
+        const provName = e.default_provider_id && provMap[e.default_provider_id]
+            ? provMap[e.default_provider_id].name : '<span style="color:#666;">—</span>';
+        const points = _state.pointCounts[e.id] || 0;
+        const checked = _state.selected.has(e.id) ? 'checked' : '';
+        const sel = _state.selected.has(e.id) ? 'selected' : '';
+        const quickInt = `<button class="quick-act" title="Asignar a Interno" onclick="quickAssign(${e.id}, 'INTERNO')"><i class="fas fa-tools"></i></button>`;
+        const quickProv = `<button class="quick-act prov" title="Asignar a Proveedor" onclick="quickAssign(${e.id}, 'PROVEEDOR')"><i class="fas fa-handshake"></i></button>`;
+        return `<tr class="${sel}">
+            <td><input type="checkbox" data-id="${e.id}" ${checked} onchange="toggleRow(${e.id}, this)"></td>
+            <td style="color:#9ab0cb;">${e.area_name}</td>
+            <td style="color:#9ab0cb;">${e.line_name}</td>
+            <td style="color:#5AC8FA;font-weight:600;">${e.tag || '-'}</td>
+            <td>${e.name || '-'}</td>
+            <td style="text-align:center;">${pill}</td>
+            <td>${provName}</td>
+            <td style="text-align:center;color:${points > 0 ? '#FFD60A' : '#666'};font-weight:${points > 0 ? '600' : 'normal'};">${points}</td>
+            <td style="text-align:center;">${quickInt}${quickProv}</td>
+        </tr>`;
+    }).join('');
+
+    document.getElementById('chkAll').checked = false;
+    refreshSelectionBar();
+}
+
+function toggleRow(id, el) {
+    if (el.checked) _state.selected.add(id);
+    else _state.selected.delete(id);
+    el.closest('tr').classList.toggle('selected', el.checked);
+    refreshSelectionBar();
+}
+
+function toggleAll(el) {
+    document.querySelectorAll('#tbody input[type="checkbox"]').forEach(c => {
+        const id = Number(c.dataset.id);
+        c.checked = el.checked;
+        if (el.checked) _state.selected.add(id);
+        else _state.selected.delete(id);
+        c.closest('tr').classList.toggle('selected', el.checked);
+    });
+    refreshSelectionBar();
+}
+
+function refreshSelectionBar() {
+    const bar = document.getElementById('selBar');
+    document.getElementById('selCount').textContent = _state.selected.size;
+    bar.classList.toggle('active', _state.selected.size > 0);
+}
+
+function clearSelection() {
+    _state.selected.clear();
+    renderTable();
+}
+
+async function bulkAssign(party) {
+    if (!_state.selected.size) return;
+    const provId = party === 'PROVEEDOR'
+        ? Number(document.getElementById('bulkProvider').value) || null
+        : null;
+    if (party === 'PROVEEDOR' && !provId && _state.providers.length > 1) {
+        if (!confirm('No seleccionaste un proveedor especifico. Los equipos quedaran como "PROVEEDOR (sin asignar)". ¿Continuar?')) return;
+    }
+    const ids = Array.from(_state.selected);
+    if (!confirm(`Asignar ${ids.length} equipos a ${party}${provId ? ' (' + (_state.providers.find(p=>p.id===provId)||{}).name + ')' : ''}?`)) return;
+    try {
+        const r = await fetch('/api/equipments/bulk-responsibility', {
+            method: 'POST',
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify({equipment_ids: ids, responsible_party: party, provider_id: provId}),
+        });
+        const j = await r.json();
+        if (!r.ok) return alert('Error: ' + (j.error || 'desconocido'));
+        // Actualizar local sin reload
+        _state.equipments.forEach(e => {
+            if (_state.selected.has(e.id)) {
+                e.default_responsible_party = party;
+                e.default_provider_id = provId;
+            }
+        });
+        _state.selected.clear();
+        renderStats();
+        renderTable();
+        alert(`✓ ${j.updated} equipos actualizados.`);
+    } catch (e) { alert('Error: ' + e.message); }
+}
+
+async function quickAssign(id, party) {
+    const provId = party === 'PROVEEDOR' && _state.providers.length === 1
+        ? _state.providers[0].id
+        : (Number(document.getElementById('bulkProvider').value) || null);
+    try {
+        const r = await fetch('/api/equipments/bulk-responsibility', {
+            method: 'POST',
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify({equipment_ids: [id], responsible_party: party, provider_id: provId}),
+        });
+        const j = await r.json();
+        if (!r.ok) return alert('Error: ' + (j.error || 'desconocido'));
+        const eq = _state.equipments.find(e => e.id === id);
+        if (eq) {
+            eq.default_responsible_party = party;
+            eq.default_provider_id = provId;
+        }
+        renderStats();
+        renderTable();
+    } catch (e) { alert('Error: ' + e.message); }
+}
+
+window.toggleRow = toggleRow;
+window.toggleAll = toggleAll;
+window.bulkAssign = bulkAssign;
+window.quickAssign = quickAssign;
+window.clearSelection = clearSelection;
+window.renderTable = renderTable;
+</script>
+</body>
+</html>

@@ -254,7 +254,10 @@ async function autoPlan() {
         });
         const j = await r.json();
         if (!r.ok) return alert('Error: ' + (j.error || 'desconocido'));
-        alert(`${j.items_placed} tareas distribuidas. Ocupación por noche: ${j.fill_pct.map(p=>p+'%').join(' · ')}`);
+        let msg = `${j.items_placed} tareas distribuidas. Ocupación por noche: ${j.fill_pct.map(p=>p+'%').join(' · ')}`;
+        if (j.items_skipped_no_capacity) msg += `\n${j.items_skipped_no_capacity} items NO entraron por falta de capacidad.`;
+        if (j.warning) msg += `\n\n⚠️  ${j.warning}`;
+        alert(msg);
         await loadPlanDetail(_state.plan.id);
     } catch (e) { alert('Error: ' + e.message); }
 }
