@@ -1,10 +1,13 @@
 // CMMS PWA Service Worker
 // Estrategia: network-first para HTML/API, cache-first para assets estaticos.
 // El nombre del cache cambia con cada deploy para forzar refresh limpio.
-const CACHE_NAME = 'cmms-v1';
+// Bump CACHE_NAME (ej v1 → v2) cuando cambien CSS/JS y necesites invalidar
+// los assets cacheados en clientes ya instalados.
+const CACHE_NAME = 'cmms-v2';
 const ASSET_PATHS = [
   '/static/css/style.css',
   '/static/css/sidebar.css',
+  '/static/css/themes.css',
   '/static/js/sidebar.js',
   '/static/favicon.svg',
   '/static/icon-192.png',
