@@ -111,9 +111,26 @@
                 <button class="btn-wn primary" onclick="openNewPlanModal()"><i class="fas fa-plus"></i> Nueva Semana</button>
                 <button class="btn-wn magic" onclick="autoPlan()" id="btnAuto" disabled><i class="fas fa-magic"></i> Auto-planificar</button>
                 <button class="btn-wn publish" onclick="publishPlan()" id="btnPublish" disabled><i class="fas fa-link"></i> Publicar</button>
-                <button class="btn-wn pdf" onclick="exportPdf()" id="btnPdf" disabled><i class="fas fa-file-pdf"></i> PDF</button>
+                <button class="btn-wn pdf" onclick="exportPdf()" id="btnPdf" disabled><i class="fas fa-file-pdf"></i> PDF Detalle</button>
+                <button class="btn-wn" onclick="exportMatrixExcel()" id="btnXlsx" disabled style="background:#1F7A3D;border-color:#1F7A3D;color:#fff;"><i class="fas fa-file-excel"></i> Excel</button>
+                <button class="btn-wn" onclick="exportMatrixPdf()" id="btnMatPdf" disabled style="background:#1F4E79;border-color:#1F4E79;color:#fff;"><i class="fas fa-table"></i> PDF Matriz</button>
                 <button class="btn-wn" onclick="deletePlan()" id="btnDel" disabled style="background:rgba(255,69,58,.15);color:#ff6b63;border-color:rgba(255,69,58,.4);"><i class="fas fa-trash"></i></button>
             </div>
+        </div>
+
+        <!-- Toggle vista Calendario / Matriz -->
+        <div id="viewToggle" style="display:none; margin-bottom:12px;">
+            <div style="display:inline-flex; background:#1b212b; border:1px solid #2f4257; border-radius:8px; padding:3px;">
+                <button id="vt-cal" onclick="switchView('calendar')" class="vt-btn active" style="padding:6px 14px;border:none;background:#0a84ff;color:#fff;border-radius:6px;cursor:pointer;font-weight:600;font-size:.82rem;">
+                    <i class="fas fa-calendar-week"></i> Calendario
+                </button>
+                <button id="vt-mat" onclick="switchView('matrix')" class="vt-btn" style="padding:6px 14px;border:none;background:transparent;color:#9ab0cb;border-radius:6px;cursor:pointer;font-weight:600;font-size:.82rem;">
+                    <i class="fas fa-th"></i> Matriz (Equipo × Día)
+                </button>
+            </div>
+            <span style="color:#9ab0cb; font-size:.78rem; margin-left:12px;">
+                La vista matriz consolida automáticamente actividades del mismo equipo (ej: chumacera motriz + conducida + cadena → "lubricación de chumaceras y cadena")
+            </span>
         </div>
 
         <!-- Banner publicación -->
@@ -160,6 +177,20 @@
                 <p>Selecciona un plan o crea uno nuevo con el botón "Nueva Semana".</p>
             </div>
             <div id="calGrid" class="cal-grid" style="display:none;"></div>
+        </div>
+
+        <!-- Vista Matriz (estilo Excel del proveedor) -->
+        <div id="matrixContainer" style="display:none; background:#1b212b; border:1px solid #2f4257; border-radius:12px; padding:14px; overflow-x:auto;">
+            <table id="matrixTable" style="width:100%; border-collapse:collapse; font-size:.78rem; min-width:980px;">
+                <thead id="matrixHead"></thead>
+                <tbody id="matrixBody"></tbody>
+            </table>
+            <div id="matrixLegend" style="margin-top:10px; font-size:.74rem; color:#9ab0cb;">
+                <span style="display:inline-block; padding:2px 8px; background:#2E75B6; color:#fff; font-weight:700; border-radius:3px;">P</span> Planificado
+                <span style="display:inline-block; padding:2px 8px; background:#FFC000; color:#fff; font-weight:700; border-radius:3px; margin-left:10px;">½</span> Parcial
+                <span style="display:inline-block; padding:2px 8px; background:#70AD47; color:#fff; font-weight:700; border-radius:3px; margin-left:10px;">✓</span> Ejecutado
+                <span style="margin-left:18px; color:#888;">(click sobre una celda para ver/marcar los items consolidados)</span>
+            </div>
         </div>
     </div>
 </section>

@@ -85,7 +85,10 @@ function renderAll() {
     document.getElementById('btnAuto').disabled = false;
     document.getElementById('btnPublish').disabled = false;
     document.getElementById('btnPdf').disabled = false;
+    const btnXlsx = document.getElementById('btnXlsx'); if (btnXlsx) btnXlsx.disabled = false;
+    const btnMatPdf = document.getElementById('btnMatPdf'); if (btnMatPdf) btnMatPdf.disabled = false;
     document.getElementById('btnDel').disabled = false;
+    const vt = document.getElementById('viewToggle'); if (vt) vt.style.display = 'block';
 
     // Banner publicación
     const banner = document.getElementById('publishBanner');
@@ -274,11 +277,166 @@ function copyPublicUrl() {
     });
 }
 
-// ── PDF ────────────────────────────────────────────────────────────────
+// ── PDF / Excel exports ────────────────────────────────────────────────
 function exportPdf() {
     if (!_state.plan) return;
     window.open(`/api/weekly-plans/${_state.plan.id}/report/pdf`, '_blank');
 }
+
+function exportMatrixExcel() {
+    if (!_state.plan) return;
+    window.open(`/api/weekly-plans/${_state.plan.id}/matrix/excel`, '_blank');
+}
+
+function exportMatrixPdf() {
+    if (!_state.plan) return;
+    window.open(`/api/weekly-plans/${_state.plan.id}/matrix/pdf`, '_blank');
+}
+window.exportMatrixExcel = exportMatrixExcel;
+window.exportMatrixPdf = exportMatrixPdf;
+
+// ── Vista Matriz (alterna al calendario) ────────────────────────────────
+let _matrixData = null;
+
+async function switchView(view) {
+    const cal = document.getElementById('calContainer');
+    const mat = document.getElementById('matrixContainer');
+    const btnCal = document.getElementById('vt-cal');
+    const btnMat = document.getElementById('vt-mat');
+    if (view === 'matrix') {
+        cal.style.display = 'none';
+        mat.style.display = 'block';
+        btnCal.style.background = 'transparent';
+        btnCal.style.color = '#9ab0cb';
+        btnMat.style.background = '#0a84ff';
+        btnMat.style.color = '#fff';
+        await loadAndRenderMatrix();
+    } else {
+        cal.style.display = 'block';
+        mat.style.display = 'none';
+        btnMat.style.background = 'transparent';
+        btnMat.style.color = '#9ab0cb';
+        btnCal.style.background = '#0a84ff';
+        btnCal.style.color = '#fff';
+    }
+}
+window.switchView = switchView;
+
+async function loadAndRenderMatrix() {
+    if (!_state.plan) return;
+    const tbody = document.getElementById('matrixBody');
+    tbody.innerHTML = '<tr><td colspan="11" style="text-align:center;padding:30px;color:#9ab0cb;">Cargando...</td></tr>';
+    try {
+        const r = await fetch(`/api/weekly-plans/${_state.plan.id}/matrix`);
+        if (!r.ok) throw new Error('HTTP ' + r.status);
+        _matrixData = await r.json();
+        renderMatrix();
+    } catch (e) {
+        tbody.innerHTML = `<tr><td colspan="11" style="text-align:center;padding:20px;color:#FF453A;">Error: ${e.message}</td></tr>`;
+    }
+}
+
+function renderMatrix() {
+    if (!_matrixData) return;
+    const head = document.getElementById('matrixHead');
+    const body = document.getElementById('matrixBody');
+    const days = _matrixData.days;
+    const rows = _matrixData.rows;
+
+    // Cabecera
+    let headHtml = '<tr style="background:#1F4E79;color:#fff;">'
+        + '<th style="padding:8px 6px;text-align:left;border:1px solid #2f4257;">Área</th>'
+        + '<th style="padding:8px 6px;text-align:left;border:1px solid #2f4257;">Equipo</th>'
+        + '<th style="padding:8px 6px;text-align:left;border:1px solid #2f4257;">Actividad</th>'
+        + '<th style="padding:8px 6px;text-align:center;border:1px solid #2f4257;width:50px;">Hrs</th>';
+    days.forEach(d => {
+        const bg = d.is_weekend ? '#C00000' : '#2E75B6';
+        const dateLabel = d.date ? d.date.slice(-5) : '';
+        headHtml += `<th style="padding:6px 4px;text-align:center;border:1px solid #2f4257;background:${bg};width:60px;">
+            ${d.name}<div style="font-size:.66rem;color:rgba(255,255,255,.78);font-weight:400;">${dateLabel}</div>
+        </th>`;
+    });
+    headHtml += '</tr>';
+    head.innerHTML = headHtml;
+
+    // Filas
+    if (!rows.length) {
+        body.innerHTML = '<tr><td colspan="11" style="text-align:center;padding:30px;color:#9ab0cb;">Plan vacío. Agrega items o usa Auto-planificar.</td></tr>';
+        return;
+    }
+    let bodyHtml = '';
+    let lastArea = null;
+    rows.forEach((row, idx) => {
+        // Banda de área (separador visual)
+        const areaChanged = row.area_name !== lastArea;
+        if (areaChanged) {
+            bodyHtml += `<tr><td colspan="11" style="padding:6px 8px;background:#0f1319;color:#FF9F0A;font-weight:700;font-size:.78rem;border:1px solid #2f4257;">${row.area_name}</td></tr>`;
+            lastArea = row.area_name;
+        }
+        bodyHtml += `<tr style="background:${idx % 2 ? '#161d27' : '#1b212b'};">
+            <td style="padding:6px;border:1px solid #2f4257;color:#9ab0cb;font-size:.74rem;">${row.area_name}</td>
+            <td style="padding:6px;border:1px solid #2f4257;color:#5AC8FA;font-weight:600;">${row.equipment_tag}<div style="font-size:.7rem;color:#9ab0cb;font-weight:400;">${row.equipment_name}</div></td>
+            <td style="padding:6px;border:1px solid #2f4257;color:#d5e2f5;">${row.activity}</td>
+            <td style="padding:6px;border:1px solid #2f4257;text-align:center;color:#FFD60A;font-weight:600;">${row.total_hours}</td>`;
+        for (let d = 0; d < 7; d++) {
+            const dd = row.days[d];
+            const has = dd.item_ids.length > 0;
+            let bg = 'transparent', mark = '', color = '#fff', cursor = 'default';
+            if (has) {
+                cursor = 'pointer';
+                if (dd.status === 'EJECUTADO') { bg = '#70AD47'; mark = '✓'; }
+                else if (dd.status === 'PARCIAL') { bg = '#FFC000'; mark = '½'; }
+                else { bg = '#2E75B6'; mark = 'P'; }
+            }
+            const onclick = has ? `onclick="openMatrixCell(${row.area_id||0},'${row.equipment_tag.replace(/'/g,'')}',${d})"` : '';
+            const title = has ? `${dd.label} (${dd.hours}h, ${dd.item_ids.length} item${dd.item_ids.length>1?'s':''})` : '';
+            bodyHtml += `<td ${onclick} title="${title}" style="padding:6px;border:1px solid #2f4257;text-align:center;background:${bg};color:${color};font-weight:700;font-size:1rem;cursor:${cursor};">${mark}</td>`;
+        }
+        bodyHtml += '</tr>';
+    });
+    body.innerHTML = bodyHtml;
+}
+
+// Click sobre celda de la matriz → modal con los items consolidados de esa
+// celda y opcion de marcarlos como ejecutados en bloque.
+async function openMatrixCell(areaId, equipmentTag, dayIdx) {
+    if (!_matrixData) return;
+    const row = _matrixData.rows.find(r => (r.area_id || 0) === areaId
+        && r.equipment_tag === equipmentTag);
+    if (!row) return;
+    const dd = row.days[dayIdx];
+    if (!dd.item_ids.length) return;
+
+    // Obtener detalle completo de los items desde _state.plan.items
+    const items = (_state.plan.items || []).filter(it => dd.item_ids.includes(it.id));
+    const dayName = DAY_FULL[dayIdx];
+    const lines = items.map(it => {
+        const done = it.status === 'EJECUTADO' ? '✓ ' : '○ ';
+        return `${done}${it.source_code || '-'} · ${it.source_name || it.description || '(sin descripción)'} (${it.estimated_hours}h)`;
+    }).join('\n');
+
+    const totalH = dd.hours;
+    const msg = `${dayName} — ${row.equipment_tag} ${row.equipment_name}\n\nActividad consolidada: ${row.activity}\nTotal: ${totalH}h en ${items.length} item(s):\n\n${lines}\n\n¿Marcar TODOS como ejecutados?`;
+
+    if (!confirm(msg)) return;
+    const notes = prompt('Notas de ejecución (opcional, aplica a los ' + items.length + ' items):') || '';
+
+    let okCount = 0, errors = [];
+    for (const it of items) {
+        if (it.status === 'EJECUTADO') continue;
+        try {
+            const r = await fetch(`/api/weekly-plans/${_state.plan.id}/items/${it.id}/execute`,
+                { method: 'POST', headers: {'Content-Type':'application/json'},
+                  body: JSON.stringify({notes: notes}) });
+            if (r.ok) okCount++;
+            else errors.push(it.source_code || it.id);
+        } catch (e) { errors.push(it.source_code || it.id); }
+    }
+    alert(`Ejecutados: ${okCount} de ${items.length}` + (errors.length ? `\nErrores: ${errors.join(', ')}` : ''));
+    await loadPlanDetail(_state.plan.id);
+    await loadAndRenderMatrix();
+}
+window.openMatrixCell = openMatrixCell;
 
 // ── Eliminar plan ──────────────────────────────────────────────────────
 async function deletePlan() {

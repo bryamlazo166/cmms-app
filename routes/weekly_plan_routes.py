@@ -631,6 +631,449 @@ def register_weekly_plan_routes(
             logger.error(f"public_execute_item error: {e}")
             return jsonify({"error": str(e)}), 500
 
+    # ── Vista Matriz: actividades x dias (estilo Excel del proveedor) ─────
+    # El usuario maneja un Excel donde cada fila es (Area, Equipo, Sub-Equipo,
+    # Actividad) y las columnas son los 7 dias con celdas marcadas con "P"
+    # cuando esa actividad debe ejecutarse ese dia. Esta vista replica ese
+    # formato dentro del CMMS y permite exportarlo.
+    #
+    # Consolidacion inteligente: cuando el mismo equipo/dia tiene 3 puntos
+    # del tipo "lubricacion chumacera motriz", "lubricacion chumacera
+    # conducida" y "lubricacion cadena" → se consolidan en una sola fila
+    # "LUBRICACION DE CHUMACERAS Y CADENA" (porque en la realidad es UNA
+    # sola visita del lubricador que toca los 3 puntos).
+
+    def _extract_activity_parts(source_name):
+        """Extrae (verbo, [componentes]) de un nombre tipo
+        'LUBRICACION CHUMACERA MOTRIZ TH1'.
+        Retorna ('LUBRICACION', ['CHUMACERA MOTRIZ']) o (None, [name]) si no
+        reconoce el verbo."""
+        if not source_name:
+            return None, []
+        s = str(source_name).upper().strip()
+        # Verbos comunes en planes preventivos (orden: mas largo primero)
+        verbs = ['LUBRICACION DE', 'LUBRICACION', 'LUBRICACIÓN DE', 'LUBRICACIÓN',
+                 'INSPECCION DE', 'INSPECCION', 'INSPECCIÓN DE', 'INSPECCIÓN',
+                 'CAMBIO DE', 'CAMBIO',
+                 'VERIFICACION DE', 'VERIFICACION', 'VERIFICACIÓN DE', 'VERIFICACIÓN',
+                 'MEDICION DE', 'MEDICION', 'MEDICIÓN DE', 'MEDICIÓN',
+                 'LIMPIEZA DE', 'LIMPIEZA',
+                 'AJUSTE DE', 'AJUSTE',
+                 'TOMA DE', 'ANALISIS DE', 'ANÁLISIS DE']
+        verb_found = None
+        rest = s
+        for v in verbs:
+            if s.startswith(v + ' '):
+                verb_found = v.replace(' DE', '').replace('LUBRICACIÓN', 'LUBRICACION')\
+                    .replace('INSPECCIÓN', 'INSPECCION').replace('VERIFICACIÓN', 'VERIFICACION')\
+                    .replace('MEDICIÓN', 'MEDICION').replace('ANÁLISIS', 'ANALISIS')
+                rest = s[len(v):].strip()
+                break
+        if not verb_found:
+            return None, [s]
+        # Quitar tag de equipo del final (ej "TH1", "SEC2-TH1") — usualmente el
+        # ultimo token alfanumerico que parece codigo. Heuristica simple:
+        # tokens que matchean ^[A-Z]+\d+$ o tienen guion al final.
+        import re as _re
+        tokens = rest.split()
+        while tokens and (_re.match(r'^[A-Z]*\d+[A-Z\d-]*$', tokens[-1])
+                          or tokens[-1] in ('Y', 'DE', 'DEL', 'LA', 'EL')):
+            tokens.pop()
+        component = ' '.join(tokens).strip()
+        return verb_found, ([component] if component else [])
+
+    def _consolidate_activity_label(items):
+        """Dada una lista de items con mismo verbo+equipo+dia, devuelve UN label
+        consolidado tipo 'LUBRICACION DE CHUMACERAS Y CADENA'."""
+        if not items:
+            return ''
+        if len(items) == 1:
+            return items[0].source_name or items[0].description or ''
+
+        verb = None
+        components = []
+        for it in items:
+            v, comps = _extract_activity_parts(it.source_name or it.description or '')
+            if v and not verb:
+                verb = v
+            components.extend(comps)
+
+        if not verb:
+            # No se pudo extraer verbo; devolver join simple
+            return ' + '.join(it.source_name or '' for it in items)
+
+        # Pluralizar y deduplicar componentes
+        # Ej: ['CHUMACERA MOTRIZ', 'CHUMACERA CONDUCIDA', 'CADENA']
+        #     -> agrupar por palabra raiz: 'CHUMACERAS' + 'CADENA'
+        from collections import OrderedDict
+        roots = OrderedDict()  # raiz -> lista de calificadores
+        for c in components:
+            if not c:
+                continue
+            words = c.split()
+            root = words[0] if words else c
+            qualifier = ' '.join(words[1:]) if len(words) > 1 else ''
+            roots.setdefault(root, []).append(qualifier)
+
+        parts = []
+        for root, quals in roots.items():
+            quals = [q for q in quals if q]
+            if len(quals) > 1 or (len(quals) == 1 and any(q == '' for q in roots[root])):
+                # Plural si hay multiples calificadores
+                plural = root + 'S' if not root.endswith('S') else root
+                parts.append(plural)
+            elif len(quals) == 1 and quals[0]:
+                parts.append(f"{root} {quals[0]}")
+            else:
+                parts.append(root)
+
+        if len(parts) == 1:
+            return f"{verb} DE {parts[0]}"
+        if len(parts) == 2:
+            return f"{verb} DE {parts[0]} Y {parts[1]}"
+        return f"{verb} DE {', '.join(parts[:-1])} Y {parts[-1]}"
+
+    def _build_matrix(plan):
+        """Devuelve la matriz tipo Gantt para un plan:
+        rows = [{area, equipment_tag, equipment_name, activity, hours, days: {0..6: bool/item_ids}, item_ids_per_day}]
+        days_meta = [{idx, name, date}]
+        """
+        from models import Equipment as _Eq, Area as _Ar
+        # Pre-cargar nombres de equipo
+        eq_ids = {it.source_id for it in plan.items if it.source_id}
+        # No siempre source_id apunta a equipment; el equipment esta en
+        # equipment_tag y/o source_name. Mejor reagrupar por tag.
+
+        # Agrupar items por (area_id, equipment_tag, verbo) para consolidar
+        from collections import defaultdict
+        groups = defaultdict(lambda: defaultdict(list))  # key -> day -> [items]
+        for it in plan.items:
+            verb, _comps = _extract_activity_parts(it.source_name or it.description or '')
+            verb_key = verb or 'OTRO'
+            tag = it.equipment_tag or '(Sin equipo)'
+            area_id = it.area_id or 0
+            key = (area_id, tag, verb_key)
+            groups[key][it.day_of_week].append(it)
+
+        # Construir filas
+        area_map = {a.id: a for a in _Ar.query.all()}
+        # Equipos: buscar por tag para obtener nombre legible
+        all_tags = {tag for (_, tag, _) in groups.keys() if tag != '(Sin equipo)'}
+        eq_by_tag = {e.tag: e for e in _Eq.query.filter(_Eq.tag.in_(all_tags)).all()} if all_tags else {}
+
+        rows = []
+        for (area_id, tag, verb_key), days_dict in groups.items():
+            area = area_map.get(area_id)
+            eq = eq_by_tag.get(tag)
+            # Para cada dia consolidamos los items de ese grupo
+            day_labels = {}
+            day_items = {}
+            day_status = {}
+            day_hours = {}
+            total_hours = 0.0
+            unified_label_set = set()
+            for d, items in days_dict.items():
+                label = _consolidate_activity_label(items)
+                day_labels[d] = label
+                day_items[d] = [it.id for it in items]
+                day_status[d] = 'EJECUTADO' if all(it.status == 'EJECUTADO' for it in items) \
+                    else ('PARCIAL' if any(it.status == 'EJECUTADO' for it in items) else 'PLANIFICADO')
+                hh = sum(float(it.estimated_hours or 0) for it in items)
+                day_hours[d] = round(hh, 2)
+                total_hours += hh
+                unified_label_set.add(label)
+
+            # Activity label para la fila: usar el label consolidado mas largo
+            activity_label = max(unified_label_set, key=len) if unified_label_set else verb_key
+
+            rows.append({
+                'area_id': area_id,
+                'area_name': area.name if area else '(Sin area)',
+                'equipment_tag': tag,
+                'equipment_name': eq.name if eq else tag,
+                'activity': activity_label,
+                'verb': verb_key,
+                'total_hours': round(total_hours, 2),
+                'days': {d: {'label': day_labels.get(d, ''),
+                             'item_ids': day_items.get(d, []),
+                             'hours': day_hours.get(d, 0),
+                             'status': day_status.get(d, '')} for d in range(7)},
+            })
+
+        rows.sort(key=lambda r: (r['area_name'], r['equipment_tag'], r['activity']))
+
+        # Metadata de dias
+        day_names_short = ['LUN', 'MAR', 'MIE', 'JUE', 'VIE', 'SAB', 'DOM']
+        days_meta = []
+        try:
+            base = dt.date.fromisoformat(plan.week_start)
+            for i in range(7):
+                d = base + dt.timedelta(days=i)
+                days_meta.append({'idx': i, 'name': day_names_short[i],
+                                  'date': d.isoformat(), 'is_weekend': i >= 5})
+        except Exception:
+            for i in range(7):
+                days_meta.append({'idx': i, 'name': day_names_short[i],
+                                  'date': '', 'is_weekend': i >= 5})
+
+        return rows, days_meta
+
+    @app.route('/api/weekly-plans/<int:plan_id>/matrix', methods=['GET'])
+    def wp_matrix(plan_id):
+        """Devuelve la matriz consolidada (tipo Excel del proveedor) en JSON."""
+        try:
+            p = WeeklyPlan.query.get_or_404(plan_id)
+            rows, days_meta = _build_matrix(p)
+            return jsonify({
+                'plan': p.to_dict(),
+                'days': days_meta,
+                'rows': rows,
+                'totals': {
+                    'rows': len(rows),
+                    'total_hours': round(sum(r['total_hours'] for r in rows), 2),
+                    'executed_rows': sum(1 for r in rows if all(
+                        d['status'] == 'EJECUTADO' or not d['item_ids']
+                        for d in r['days'].values())),
+                },
+            })
+        except Exception as e:
+            logger.exception(f"wp_matrix error: {e}")
+            return jsonify({"error": str(e)}), 500
+
+    @app.route('/api/weekly-plans/<int:plan_id>/matrix/excel', methods=['GET'])
+    def wp_matrix_excel(plan_id):
+        """Exporta la matriz a XLSX con celdas P/✓ por dia (replica del Excel
+        que el usuario envia al proveedor)."""
+        try:
+            from openpyxl import Workbook
+            from openpyxl.styles import Font, PatternFill, Alignment, Border, Side
+            from openpyxl.utils import get_column_letter
+
+            p = WeeklyPlan.query.get_or_404(plan_id)
+            rows, days_meta = _build_matrix(p)
+
+            wb = Workbook()
+            ws = wb.active
+            ws.title = "Plan Semanal"
+
+            # Estilos
+            header_fill = PatternFill('solid', fgColor='1F4E79')
+            header_font = Font(bold=True, color='FFFFFF', size=10)
+            day_fill_lab = PatternFill('solid', fgColor='2E75B6')
+            day_fill_wknd = PatternFill('solid', fgColor='C00000')
+            mark_planned = PatternFill('solid', fgColor='2E75B6')
+            mark_executed = PatternFill('solid', fgColor='70AD47')
+            thin = Side(style='thin', color='BFBFBF')
+            border = Border(left=thin, right=thin, top=thin, bottom=thin)
+            center = Alignment(horizontal='center', vertical='center', wrap_text=True)
+            left = Alignment(horizontal='left', vertical='center', wrap_text=True)
+
+            # Cabecera del documento
+            ws.merge_cells('A1:K1')
+            ws['A1'] = f"PROGRAMA SEMANAL DE MANTENIMIENTO - {p.code or 'PN'}"
+            ws['A1'].font = Font(bold=True, size=14, color='1F4E79')
+            ws['A1'].alignment = center
+
+            ws.merge_cells('A2:K2')
+            ws['A2'] = (f"Semana {p.week_start} al {p.week_end} · "
+                        f"Proveedor: {p.provider.name if p.provider else 'Por asignar'} · "
+                        f"Capacidad: {p.tech_count}t × {p.hours_per_night}h/noche")
+            ws['A2'].alignment = center
+            ws['A2'].font = Font(italic=True, size=9, color='5A6570')
+
+            # Cabecera de columnas (fila 4)
+            headers = ['AREA', 'EQUIPO', 'ACTIVIDAD', 'HRS']
+            for d in days_meta:
+                headers.append(f"{d['name']}\n{d['date'][-5:] if d['date'] else ''}")
+            for col_idx, h in enumerate(headers, 1):
+                c = ws.cell(row=4, column=col_idx, value=h)
+                c.fill = header_fill
+                c.font = header_font
+                c.alignment = center
+                c.border = border
+            # Marcar fines de semana
+            for d in days_meta:
+                if d['is_weekend']:
+                    col = 5 + d['idx']
+                    ws.cell(row=4, column=col).fill = day_fill_wknd
+
+            # Filas de datos
+            for r_idx, row in enumerate(rows, start=5):
+                ws.cell(row=r_idx, column=1, value=row['area_name']).alignment = left
+                ws.cell(row=r_idx, column=2, value=f"{row['equipment_tag']} {row['equipment_name']}").alignment = left
+                ws.cell(row=r_idx, column=3, value=row['activity']).alignment = left
+                ws.cell(row=r_idx, column=4, value=row['total_hours']).alignment = center
+                for d in range(7):
+                    cell = ws.cell(row=r_idx, column=5 + d)
+                    day_data = row['days'][d]
+                    if day_data['item_ids']:
+                        if day_data['status'] == 'EJECUTADO':
+                            cell.value = '✓'
+                            cell.fill = mark_executed
+                            cell.font = Font(bold=True, color='FFFFFF', size=11)
+                        elif day_data['status'] == 'PARCIAL':
+                            cell.value = '½'
+                            cell.fill = PatternFill('solid', fgColor='FFC000')
+                            cell.font = Font(bold=True, color='FFFFFF', size=11)
+                        else:
+                            cell.value = 'P'
+                            cell.fill = mark_planned
+                            cell.font = Font(bold=True, color='FFFFFF', size=11)
+                    cell.alignment = center
+                # Bordes a toda la fila
+                for col_idx in range(1, 12):
+                    ws.cell(row=r_idx, column=col_idx).border = border
+
+            # Anchos de columna
+            ws.column_dimensions['A'].width = 18
+            ws.column_dimensions['B'].width = 28
+            ws.column_dimensions['C'].width = 45
+            ws.column_dimensions['D'].width = 8
+            for d in range(7):
+                ws.column_dimensions[get_column_letter(5 + d)].width = 9
+
+            # Congelar paneles (titulos siempre visibles)
+            ws.freeze_panes = 'E5'
+
+            # Pie con leyenda
+            footer_row = 5 + len(rows) + 2
+            ws.cell(row=footer_row, column=1,
+                    value="Leyenda: P=Planificado · ½=Parcialmente ejecutado · ✓=Ejecutado").font = Font(italic=True, size=9)
+
+            bio = BytesIO()
+            wb.save(bio)
+            bio.seek(0)
+            filename = f"Plan_Semanal_{p.code or p.id}.xlsx"
+            return send_file(
+                bio, as_attachment=True, download_name=filename,
+                mimetype='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+            )
+        except Exception as e:
+            logger.exception(f"wp_matrix_excel error: {e}")
+            return jsonify({"error": str(e)}), 500
+
+    @app.route('/api/weekly-plans/<int:plan_id>/matrix/pdf', methods=['GET'])
+    def wp_matrix_pdf(plan_id):
+        """Exporta la matriz a PDF horizontal (apaisado) con celdas P/✓."""
+        try:
+            from reportlab.lib import colors
+            from reportlab.lib.pagesizes import A4, landscape
+            from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
+            from reportlab.lib.units import mm
+            from reportlab.platypus import (
+                SimpleDocTemplate, Paragraph, Spacer, Table, TableStyle,
+            )
+
+            p = WeeklyPlan.query.get_or_404(plan_id)
+            rows, days_meta = _build_matrix(p)
+
+            bio = BytesIO()
+            doc = SimpleDocTemplate(
+                bio, pagesize=landscape(A4),
+                leftMargin=10 * mm, rightMargin=10 * mm,
+                topMargin=10 * mm, bottomMargin=10 * mm,
+                title=f"Plan Semanal {p.code or p.id}",
+            )
+            styles = getSampleStyleSheet()
+            title_style = ParagraphStyle('t', parent=styles['Title'], fontSize=14,
+                                         textColor=colors.HexColor('#1F4E79'), alignment=1)
+            sub_style = ParagraphStyle('s', parent=styles['Normal'], fontSize=9,
+                                       textColor=colors.HexColor('#5A6570'), alignment=1)
+            cell_style = ParagraphStyle('c', parent=styles['Normal'], fontSize=7, leading=8)
+            cell_bold = ParagraphStyle('cb', parent=styles['Normal'], fontSize=7, leading=8,
+                                       fontName='Helvetica-Bold')
+
+            story = []
+            story.append(Paragraph(f"PROGRAMA SEMANAL DE MANTENIMIENTO — {p.code or 'PN'}", title_style))
+            story.append(Paragraph(
+                f"Semana {p.week_start} al {p.week_end} · "
+                f"Proveedor: {p.provider.name if p.provider else 'Por asignar'} · "
+                f"{p.tech_count} técnicos × {p.hours_per_night}h/noche",
+                sub_style))
+            story.append(Spacer(1, 4 * mm))
+
+            # Cabecera de tabla
+            header_row = ['ÁREA', 'EQUIPO', 'ACTIVIDAD', 'HRS']
+            for d in days_meta:
+                header_row.append(f"{d['name']}\n{d['date'][-5:] if d['date'] else ''}")
+
+            table_data = [header_row]
+            for r in rows:
+                row_cells = [
+                    Paragraph(r['area_name'], cell_style),
+                    Paragraph(f"<b>{r['equipment_tag']}</b><br/>{r['equipment_name']}", cell_style),
+                    Paragraph(r['activity'], cell_style),
+                    f"{r['total_hours']}h",
+                ]
+                for d in range(7):
+                    dd = r['days'][d]
+                    if dd['item_ids']:
+                        if dd['status'] == 'EJECUTADO':
+                            row_cells.append('✓')
+                        elif dd['status'] == 'PARCIAL':
+                            row_cells.append('½')
+                        else:
+                            row_cells.append('P')
+                    else:
+                        row_cells.append('')
+                table_data.append(row_cells)
+
+            tbl = Table(
+                table_data,
+                colWidths=[20 * mm, 35 * mm, 65 * mm, 10 * mm,
+                           15 * mm, 15 * mm, 15 * mm, 15 * mm, 15 * mm, 15 * mm, 15 * mm],
+                repeatRows=1,
+            )
+            ts = TableStyle([
+                ('BACKGROUND', (0, 0), (-1, 0), colors.HexColor('#1F4E79')),
+                ('TEXTCOLOR', (0, 0), (-1, 0), colors.white),
+                ('FONT', (0, 0), (-1, 0), 'Helvetica-Bold', 8),
+                ('FONT', (0, 1), (-1, -1), 'Helvetica', 7),
+                ('GRID', (0, 0), (-1, -1), 0.3, colors.HexColor('#BFBFBF')),
+                ('VALIGN', (0, 0), (-1, -1), 'MIDDLE'),
+                ('ALIGN', (3, 0), (-1, -1), 'CENTER'),
+                ('PADDING', (0, 0), (-1, -1), 2),
+            ])
+            # Pintar fines de semana en cabecera
+            for d in days_meta:
+                if d['is_weekend']:
+                    col = 4 + d['idx']
+                    ts.add('BACKGROUND', (col, 0), (col, 0), colors.HexColor('#C00000'))
+            # Pintar celdas marcadas
+            for r_idx, r in enumerate(rows, start=1):
+                for d in range(7):
+                    dd = r['days'][d]
+                    if dd['item_ids']:
+                        col = 4 + d
+                        if dd['status'] == 'EJECUTADO':
+                            ts.add('BACKGROUND', (col, r_idx), (col, r_idx), colors.HexColor('#70AD47'))
+                            ts.add('TEXTCOLOR', (col, r_idx), (col, r_idx), colors.white)
+                        elif dd['status'] == 'PARCIAL':
+                            ts.add('BACKGROUND', (col, r_idx), (col, r_idx), colors.HexColor('#FFC000'))
+                            ts.add('TEXTCOLOR', (col, r_idx), (col, r_idx), colors.white)
+                        else:
+                            ts.add('BACKGROUND', (col, r_idx), (col, r_idx), colors.HexColor('#2E75B6'))
+                            ts.add('TEXTCOLOR', (col, r_idx), (col, r_idx), colors.white)
+                        ts.add('FONT', (col, r_idx), (col, r_idx), 'Helvetica-Bold', 9)
+
+            tbl.setStyle(ts)
+            story.append(tbl)
+            story.append(Spacer(1, 3 * mm))
+            story.append(Paragraph(
+                "<i>Leyenda: P = Planificado · ½ = Parcialmente ejecutado · ✓ = Ejecutado</i>",
+                ParagraphStyle('lg', parent=styles['Normal'], fontSize=7, textColor=colors.HexColor('#5A6570'))))
+
+            doc.build(story)
+            bio.seek(0)
+            filename = f"Plan_Semanal_{p.code or p.id}.pdf"
+            return send_file(
+                bio, as_attachment=True, download_name=filename,
+                mimetype='application/pdf',
+            )
+        except Exception as e:
+            logger.exception(f"wp_matrix_pdf error: {e}")
+            return jsonify({"error": str(e)}), 500
+
     # ── Export PDF ───────────────────────────────────────────────────────
 
     @app.route('/api/weekly-plans/<int:plan_id>/report/pdf', methods=['GET'])
