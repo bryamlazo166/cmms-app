@@ -1,0 +1,290 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <link rel="icon" type="image/svg+xml" href="/static/favicon.svg">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Pérdidas de Producción - CMMS</title>
+    <!-- CMMS_THEME_INIT -->
+    <script>(function(){try{var t=localStorage.getItem('cmms.theme');if(t=='management'||t=='developer'){document.documentElement.setAttribute('data-theme',t);}}catch(e){}})();</script>
+    <link rel="stylesheet" href="/static/css/style.css?v={{ v }}">
+    <link rel="stylesheet" href="/static/css/sidebar.css?v={{ v }}">
+    <link href="https://fonts.googleapis.com/css2?family=Roboto:wght@300;400;500;700&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css">
+    <script src="https://cdn.jsdelivr.net/npm/echarts@5.5.0/dist/echarts.min.js"></script>
+    <style>
+        .wrap{max-width:1700px;margin:0 auto;padding:16px;}
+        .header{background:linear-gradient(120deg,#3a1a1a,#241010);border:1px solid #6b2828;border-radius:12px;padding:16px;margin-bottom:12px;}
+        .header h1{margin:0;color:#FF6B61;font-size:1.4rem;display:flex;align-items:center;gap:10px;}
+        .header p{margin:6px 0 0;color:#d8a8a8;font-size:.85rem;}
+        .toolbar{display:flex;gap:10px;align-items:center;margin-bottom:12px;flex-wrap:wrap;background:#181d24;border:1px solid #2f4257;border-radius:10px;padding:10px 14px;}
+        .toolbar label{color:#9ab0cb;font-size:.78rem;font-weight:600;}
+        .toolbar input,.toolbar select{height:36px;background:#0f1319;color:#d5e2f5;border:1px solid #344964;border-radius:6px;padding:4px 10px;font-size:.86rem;}
+        .btn{height:36px;border:1px solid #385273;border-radius:8px;background:#193451;color:#d7e9ff;padding:0 14px;font-weight:600;cursor:pointer;font-size:.84rem;display:inline-flex;align-items:center;gap:6px;}
+        .btn:hover{background:#234870;}
+        .btn.primary{background:#0a84ff;border-color:#0a84ff;color:#fff;}
+        .btn.warn{background:#FF9F0A;border-color:#FF9F0A;color:#fff;}
+
+        /* KPIs gigantes */
+        .big-kpis{display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:12px;margin-bottom:14px;}
+        .big-kpi{background:#181d24;border:1px solid #2f4257;border-radius:12px;padding:14px 16px;border-left:5px solid;}
+        .big-kpi.cap{border-left-color:#5AC8FA;}
+        .big-kpi.up{border-left-color:#30D158;}
+        .big-kpi.down{border-left-color:#FF453A;}
+        .big-kpi.avail{border-left-color:#FFD60A;}
+        .big-kpi .lbl{color:#9ab0cb;font-size:.74rem;text-transform:uppercase;letter-spacing:.5px;margin-bottom:6px;}
+        .big-kpi .val{color:#fff;font-size:1.8rem;font-weight:700;line-height:1;}
+        .big-kpi .sub{color:#9ab0cb;font-size:.72rem;margin-top:6px;}
+
+        /* Sankey */
+        .sankey-wrap{background:#181d24;border:1px solid #2f4257;border-radius:12px;padding:16px;margin-bottom:14px;}
+        .sankey-wrap h3{margin:0 0 8px;color:#5AC8FA;font-size:1rem;display:flex;align-items:center;gap:8px;}
+        .sankey-wrap p{color:#9ab0cb;font-size:.8rem;margin:0 0 10px;}
+        #sankeyChart{width:100%;height:560px;}
+
+        /* Tablas top */
+        .top-grid{display:grid;grid-template-columns:1fr 1fr;gap:14px;margin-bottom:14px;}
+        @media(max-width:900px){.top-grid{grid-template-columns:1fr;}}
+        .top-card{background:#181d24;border:1px solid #2f4257;border-radius:12px;padding:14px;}
+        .top-card h3{margin:0 0 10px;color:#FF9F0A;font-size:.95rem;}
+        .top-card table{width:100%;border-collapse:collapse;font-size:.82rem;}
+        .top-card th{padding:6px 8px;text-align:left;color:#9ab0cb;font-size:.72rem;text-transform:uppercase;border-bottom:1px solid #2f4257;}
+        .top-card td{padding:6px 8px;color:#d5e2f5;border-bottom:1px solid #2229;}
+        .top-card .bar{background:#2a3a50;height:5px;border-radius:3px;margin-top:3px;overflow:hidden;}
+        .top-card .bar > span{display:block;height:100%;background:#FF453A;}
+
+        .empty-state{text-align:center;padding:60px 20px;color:#9ab0cb;}
+        .empty-state i{font-size:2.5rem;color:#444;margin-bottom:10px;}
+    </style>
+</head>
+<body>
+<nav class="sidebar">
+    <div class="logo-details"><i class="fas fa-industry icon"></i><div class="logo_name">CMMS Pro</div><i class="fas fa-bars" id="btn_toggle"></i></div>
+    <ul class="nav-list"></ul>
+</nav>
+
+<section class="home-section">
+    <div class="wrap">
+        <div class="header">
+            <h1><i class="fas fa-fire"></i> Pérdidas de Producción</h1>
+            <p>Diagrama Sankey: cómo se distribuyeron las horas perdidas entre áreas, equipos y modos de falla. Ideal para presentar a jefatura el impacto de los paros y priorizar inversión.</p>
+        </div>
+
+        <!-- Toolbar -->
+        <div class="toolbar">
+            <label>Desde:</label>
+            <input type="date" id="periodStart">
+            <label>Hasta:</label>
+            <input type="date" id="periodEnd">
+            <button class="btn primary" onclick="reload()"><i class="fas fa-sync"></i> Actualizar</button>
+            <button class="btn warn" onclick="exportPng()" id="btnExport" disabled><i class="fas fa-download"></i> PNG (presentación)</button>
+            <a href="/flujo-planta" class="btn"><i class="fas fa-project-diagram"></i> Ver Flujo de Planta</a>
+            <span style="margin-left:auto;color:#9ab0cb;font-size:.78rem;" id="periodLabel"></span>
+        </div>
+
+        <!-- KPIs gigantes -->
+        <div class="big-kpis" id="bigKpis"></div>
+
+        <!-- Sankey -->
+        <div class="sankey-wrap">
+            <h3><i class="fas fa-water"></i> Distribución de horas perdidas</h3>
+            <p>Cada banda muestra cuántas horas se perdieron en cada área → equipo → modo de falla. Más grueso = más impacto.</p>
+            <div id="sankeyChart"></div>
+            <div id="sankeyEmpty" class="empty-state" style="display:none;">
+                <i class="fas fa-chart-area"></i>
+                <p><strong>No hay pérdidas registradas en el periodo.</strong></p>
+                <p style="font-size:.85rem;">Eso significa: no hay OTs cerradas con <code>caused_downtime=true</code> entre las fechas seleccionadas.</p>
+            </div>
+        </div>
+
+        <!-- Top tablas -->
+        <div class="top-grid">
+            <div class="top-card">
+                <h3><i class="fas fa-cog"></i> Top equipos con más paro</h3>
+                <table id="topEqTable"><thead><tr><th>Equipo</th><th>Área</th><th style="text-align:right;">Horas</th><th style="text-align:right;">%</th></tr></thead><tbody></tbody></table>
+            </div>
+            <div class="top-card">
+                <h3><i class="fas fa-exclamation-triangle"></i> Top modos de falla</h3>
+                <table id="topModeTable"><thead><tr><th>Modo</th><th style="text-align:right;">Horas</th><th style="text-align:right;">%</th></tr></thead><tbody></tbody></table>
+            </div>
+        </div>
+
+        <!-- Pareto por área -->
+        <div class="top-card">
+            <h3><i class="fas fa-chart-bar"></i> Pérdidas por área</h3>
+            <table id="topAreaTable" style="width:100%;border-collapse:collapse;font-size:.82rem;"><thead><tr><th>Área</th><th style="text-align:right;">Horas perdidas</th><th style="text-align:right;">%</th><th style="width:40%;">Distribución</th></tr></thead><tbody></tbody></table>
+        </div>
+    </div>
+</section>
+
+<script src="/static/js/sidebar.js?v={{ v }}"></script>
+<script>
+let _chart = null;
+let _data = null;
+
+function defaultPeriod() {
+    const today = new Date();
+    const firstThis = new Date(today.getFullYear(), today.getMonth(), 1);
+    const lastPrev = new Date(firstThis - 1);
+    const firstPrev = new Date(lastPrev.getFullYear(), lastPrev.getMonth(), 1);
+    return { start: firstPrev.toISOString().slice(0,10), end: today.toISOString().slice(0,10) };
+}
+
+document.addEventListener('DOMContentLoaded', () => {
+    const def = defaultPeriod();
+    document.getElementById('periodStart').value = def.start;
+    document.getElementById('periodEnd').value = def.end;
+    _chart = echarts.init(document.getElementById('sankeyChart'));
+    window.addEventListener('resize', () => _chart && _chart.resize());
+    reload();
+});
+
+async function reload() {
+    const start = document.getElementById('periodStart').value;
+    const end = document.getElementById('periodEnd').value;
+    document.getElementById('periodLabel').textContent = 'Calculando...';
+    try {
+        const r = await fetch(`/api/production-losses?start=${start}&end=${end}`);
+        if (!r.ok) throw new Error('HTTP ' + r.status);
+        _data = await r.json();
+        document.getElementById('periodLabel').textContent =
+            `${_data.period.start} a ${_data.period.end} · ${_data.period.days} días`;
+        renderKpis();
+        renderSankey();
+        renderTops();
+    } catch (e) {
+        document.getElementById('periodLabel').textContent = 'Error: ' + e.message;
+    }
+}
+window.reload = reload;
+
+function renderKpis() {
+    const cont = document.getElementById('bigKpis');
+    cont.innerHTML = `
+        <div class="big-kpi cap">
+            <div class="lbl">Capacidad teórica</div>
+            <div class="val">${formatHrs(_data.total_capacity_hours)}</div>
+            <div class="sub">N equipos × periodo (24/7)</div>
+        </div>
+        <div class="big-kpi up">
+            <div class="lbl">Tiempo productivo</div>
+            <div class="val">${formatHrs(_data.total_uptime_hours)}</div>
+            <div class="sub">Sin paro registrado</div>
+        </div>
+        <div class="big-kpi down">
+            <div class="lbl">Horas perdidas</div>
+            <div class="val">${formatHrs(_data.total_downtime_hours)}</div>
+            <div class="sub">${_data.losses_by_equipment.length} equipos afectados</div>
+        </div>
+        <div class="big-kpi avail">
+            <div class="lbl">Disponibilidad global</div>
+            <div class="val">${_data.overall_availability_pct}%</div>
+            <div class="sub">Promedio del periodo</div>
+        </div>
+    `;
+}
+
+function formatHrs(h) {
+    if (h == null) return '—';
+    if (h < 100) return `${h.toFixed(1)}h`;
+    if (h < 10000) return `${Math.round(h)}h`;
+    return `${(h/24).toFixed(0)}d`;  // días si > 10k horas
+}
+
+function renderSankey() {
+    const sankey = _data.sankey || {};
+    const empty = document.getElementById('sankeyEmpty');
+    if (!sankey.nodes || !sankey.nodes.length || !sankey.links || !sankey.links.length) {
+        document.getElementById('sankeyChart').style.display = 'none';
+        empty.style.display = 'block';
+        document.getElementById('btnExport').disabled = true;
+        return;
+    }
+    document.getElementById('sankeyChart').style.display = 'block';
+    empty.style.display = 'none';
+    document.getElementById('btnExport').disabled = false;
+
+    // Color según categoría (área=azul, equipo=ámbar, modo=rojo)
+    const catColor = { area: '#5AC8FA', equipment: '#FF9F0A', mode: '#FF453A' };
+    const nodes = sankey.nodes.map(n => ({
+        name: n.name,
+        itemStyle: { color: catColor[n.category] || '#9ab0cb' },
+    }));
+    const links = sankey.links.map(l => ({
+        source: sankey.nodes[l.source].name,
+        target: sankey.nodes[l.target].name,
+        value: l.value,
+    }));
+
+    _chart.setOption({
+        backgroundColor: 'transparent',
+        tooltip: {
+            trigger: 'item',
+            formatter: function(p) {
+                if (p.dataType === 'edge') {
+                    return `<b>${p.data.source}</b> → <b>${p.data.target}</b><br>${p.data.value.toFixed(2)} horas perdidas`;
+                }
+                return `<b>${p.name}</b><br>${(p.value || 0).toFixed(2)} horas`;
+            },
+        },
+        series: [{
+            type: 'sankey',
+            data: nodes,
+            links: links,
+            emphasis: { focus: 'adjacency' },
+            label: { color: '#d5e2f5', fontSize: 11, fontWeight: 600 },
+            lineStyle: { color: 'gradient', curveness: 0.5, opacity: 0.55 },
+            nodeAlign: 'left',
+            nodeWidth: 18,
+            nodeGap: 10,
+            layoutIterations: 32,
+        }],
+    });
+}
+
+function renderTops() {
+    // Top equipos
+    const eqBody = document.querySelector('#topEqTable tbody');
+    eqBody.innerHTML = (_data.losses_by_equipment || []).slice(0, 10).map(e => `
+        <tr>
+            <td><strong style="color:#5AC8FA;">${e.equipment_tag}</strong> ${e.equipment_name}</td>
+            <td style="color:#9ab0cb;">${e.area_name}</td>
+            <td style="text-align:right;color:#FF453A;font-weight:600;">${e.hours.toFixed(1)}h</td>
+            <td style="text-align:right;">${e.pct}%</td>
+        </tr>
+    `).join('') || '<tr><td colspan="4" style="text-align:center;color:#9ab0cb;padding:20px;">Sin datos</td></tr>';
+
+    // Top modos
+    const modeBody = document.querySelector('#topModeTable tbody');
+    modeBody.innerHTML = (_data.losses_by_failure_mode || []).slice(0, 10).map(m => `
+        <tr>
+            <td>${m.mode}</td>
+            <td style="text-align:right;color:#FF453A;font-weight:600;">${m.hours.toFixed(1)}h</td>
+            <td style="text-align:right;">${m.pct}%</td>
+        </tr>
+    `).join('') || '<tr><td colspan="3" style="text-align:center;color:#9ab0cb;padding:20px;">Sin datos</td></tr>';
+
+    // Pareto por area
+    const areaBody = document.querySelector('#topAreaTable tbody');
+    areaBody.innerHTML = (_data.losses_by_area || []).map(a => `
+        <tr>
+            <td><strong>${a.area_name}</strong></td>
+            <td style="text-align:right;color:#FF453A;font-weight:600;">${a.hours.toFixed(1)}h</td>
+            <td style="text-align:right;">${a.pct}%</td>
+            <td><div class="bar"><span style="width:${Math.min(100, a.pct)}%;"></span></div></td>
+        </tr>
+    `).join('') || '<tr><td colspan="4" style="text-align:center;color:#9ab0cb;padding:20px;">Sin datos</td></tr>';
+}
+
+function exportPng() {
+    if (!_chart) return alert('Diagrama no inicializado');
+    const url = _chart.getDataURL({type: 'png', pixelRatio: 2, backgroundColor: '#fff'});
+    const link = document.createElement('a');
+    link.download = `perdidas_produccion_${_data.period.start}_a_${_data.period.end}.png`;
+    link.href = url;
+    link.click();
+}
+window.exportPng = exportPng;
+</script>
+</body>
+</html>

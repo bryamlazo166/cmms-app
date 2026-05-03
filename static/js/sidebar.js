@@ -319,6 +319,8 @@
         { href: '/produccion', icon: 'fas fa-seedling', label: 'Produccion vs Mtto', tip: 'Confiabilidad de Produccion', restricted: true },
         { href: '/programa-nocturno', icon: 'fas fa-moon', label: 'Programa Nocturno', tip: 'Preventivos turno noche', restricted: true },
         { href: '/responsabilidades', icon: 'fas fa-user-tag', label: 'Responsabilidades', tip: 'Asignar responsable de mantenimiento por equipo', restricted: true },
+        { href: '/flujo-planta', icon: 'fas fa-project-diagram', label: 'Flujo de Planta', tip: 'Diagrama de flujo con disponibilidad por equipo', restricted: true },
+        { href: '/perdidas-produccion', icon: 'fas fa-fire', label: 'Pérdidas Producción', tip: 'Sankey de horas perdidas — para presentar a jefatura', restricted: true },
         { href: '/insights', icon: 'fas fa-brain', label: 'Resumen Ejecutivo', tip: 'Resumen IA para gerencia', restricted: true },
         { href: '/optimizacion-preventivos', icon: 'fas fa-sliders-h', label: 'Optimizar Preventivos', tip: 'Detectar puntos sobre/sub-mantenidos', restricted: true },
         { href: '/seguimiento', icon: 'fas fa-tasks', label: 'Seguimiento', tip: 'Seguimiento' },

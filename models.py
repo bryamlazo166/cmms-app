@@ -167,10 +167,17 @@ class Equipment(db.Model):
     # campo responsible_party_override; si esta NULL hereda del equipo.
     default_responsible_party: Mapped[str] = mapped_column(String(20), nullable=False, default='INTERNO')
     default_provider_id: Mapped[int | None] = mapped_column(ForeignKey('providers.id'), nullable=True)
+    # Flujo de proceso de la planta: posicion secuencial dentro de la linea
+    # (TH POZA=1, TH ALIMENTADOR=2, TRITURADOR=3...) y a que equipo aguas abajo
+    # alimenta su producto. Permite auto-generar el diagrama de flujo en
+    # /flujo-planta y calcular dependencias serie/paralelo para indicadores.
+    process_order: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    feeds_into_equipment_id: Mapped[int | None] = mapped_column(ForeignKey('equipments.id'), nullable=True)
 
     line = relationship("Line", back_populates="equipments")
     systems = relationship("System", back_populates="equipment", cascade="all, delete-orphan")
     default_provider = relationship("Provider", foreign_keys=[default_provider_id])
+    feeds_into = relationship("Equipment", remote_side='Equipment.id', foreign_keys=[feeds_into_equipment_id])
 
     def to_dict(self):
         return {"id": self.id, "name": self.name, "tag": self.tag, "description": self.description,
@@ -181,7 +188,9 @@ class Equipment(db.Model):
                 "yield_factor": self.yield_factor,
                 "default_responsible_party": self.default_responsible_party,
                 "default_provider_id": self.default_provider_id,
-                "default_provider_name": self.default_provider.name if self.default_provider else None}
+                "default_provider_name": self.default_provider.name if self.default_provider else None,
+                "process_order": self.process_order,
+                "feeds_into_equipment_id": self.feeds_into_equipment_id}
 
 class System(db.Model):
     __tablename__ = 'systems'

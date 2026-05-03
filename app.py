@@ -51,6 +51,7 @@ from routes.monitoring_routes import register_monitoring_routes
 from routes.thickness_routes import register_thickness_routes
 from routes.shutdown_routes import register_shutdown_routes
 from routes.indicators_routes import register_indicators_routes
+from routes.plant_flow_routes import register_plant_flow_routes
 from routes.notices_routes import register_notices_routes
 from routes.reports_routes import register_reports_routes
 from routes.rotative_assets_routes import register_rotative_assets_routes
@@ -696,6 +697,16 @@ register_indicators_routes(
     Equipment=Equipment,
 )
 
+register_plant_flow_routes(
+    app=app,
+    db=db,
+    logger=logger,
+    Equipment=Equipment,
+    Area=Area,
+    Line=Line,
+    WorkOrder=WorkOrder,
+)
+
 register_production_routes(
     app=app,
     db=db,
@@ -877,6 +888,9 @@ _ENSURE_COLUMNS = [
     # de ese punto especifico difiere del default del equipo.
     ("equipments", "default_responsible_party", "VARCHAR(20) DEFAULT 'INTERNO' NOT NULL"),
     ("equipments", "default_provider_id", "INTEGER REFERENCES providers(id)"),
+    # Flujo de proceso para diagrama de planta y calculo de dependencias
+    ("equipments", "process_order", "INTEGER"),
+    ("equipments", "feeds_into_equipment_id", "INTEGER REFERENCES equipments(id)"),
     ("lubrication_points", "responsible_party_override", "VARCHAR(20)"),
     ("lubrication_points", "provider_id_override", "INTEGER REFERENCES providers(id)"),
     ("monitoring_points", "responsible_party_override", "VARCHAR(20)"),

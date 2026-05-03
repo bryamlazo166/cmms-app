@@ -1,0 +1,347 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <link rel="icon" type="image/svg+xml" href="/static/favicon.svg">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Flujo de Planta - CMMS</title>
+    <!-- CMMS_THEME_INIT -->
+    <script>(function(){try{var t=localStorage.getItem('cmms.theme');if(t=='management'||t=='developer'){document.documentElement.setAttribute('data-theme',t);}}catch(e){}})();</script>
+    <link rel="stylesheet" href="/static/css/style.css?v={{ v }}">
+    <link rel="stylesheet" href="/static/css/sidebar.css?v={{ v }}">
+    <link href="https://fonts.googleapis.com/css2?family=Roboto:wght@300;400;500;700&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css">
+    <script src="https://cdn.jsdelivr.net/npm/mermaid@10.9.0/dist/mermaid.min.js"></script>
+    <style>
+        .wrap{max-width:1700px;margin:0 auto;padding:16px;}
+        .header{background:linear-gradient(120deg,#1e2430,#151b24);border:1px solid #2d3f56;border-radius:12px;padding:16px;margin-bottom:12px;}
+        .header h1{margin:0;color:#5ac8fa;font-size:1.4rem;display:flex;align-items:center;gap:10px;}
+        .header p{margin:6px 0 0;color:#9ab0cb;font-size:.85rem;}
+        .toolbar{display:flex;gap:10px;align-items:center;margin-bottom:12px;flex-wrap:wrap;background:#181d24;border:1px solid #2f4257;border-radius:10px;padding:10px 14px;}
+        .toolbar label{color:#9ab0cb;font-size:.78rem;font-weight:600;}
+        .toolbar input,.toolbar select{height:36px;background:#0f1319;color:#d5e2f5;border:1px solid #344964;border-radius:6px;padding:4px 10px;font-size:.86rem;}
+        .btn{height:36px;border:1px solid #385273;border-radius:8px;background:#193451;color:#d7e9ff;padding:0 14px;font-weight:600;cursor:pointer;font-size:.84rem;display:inline-flex;align-items:center;gap:6px;}
+        .btn:hover{background:#234870;}
+        .btn.primary{background:#0a84ff;border-color:#0a84ff;color:#fff;}
+        .btn.warn{background:#FF9F0A;border-color:#FF9F0A;color:#fff;}
+        .btn.success{background:#30D158;border-color:#30D158;color:#fff;}
+        .btn:disabled{opacity:.4;cursor:not-allowed;}
+
+        /* KPIs por area */
+        .area-kpis{display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:10px;margin-bottom:12px;}
+        .kpi-card{background:#181d24;border:1px solid #2f4257;border-radius:10px;padding:12px 14px;border-left:4px solid #5AC8FA;}
+        .kpi-card.green{border-left-color:#30D158;}
+        .kpi-card.amber{border-left-color:#FF9F0A;}
+        .kpi-card.red{border-left-color:#FF453A;}
+        .kpi-card .lbl{color:#9ab0cb;font-size:.74rem;text-transform:uppercase;letter-spacing:.4px;}
+        .kpi-card .val{color:#fff;font-size:1.6rem;font-weight:700;margin-top:4px;line-height:1;}
+        .kpi-card .sub{color:#9ab0cb;font-size:.72rem;margin-top:6px;}
+
+        /* Diagrama */
+        .diagram-wrap{background:#fff;border:1px solid #2f4257;border-radius:12px;padding:20px;overflow:auto;min-height:400px;position:relative;}
+        :root[data-theme="management"] .diagram-wrap{background:#fff;}
+        .legend{display:flex;gap:18px;margin-top:10px;padding:10px 14px;background:#181d24;border:1px solid #2f4257;border-radius:8px;flex-wrap:wrap;font-size:.82rem;color:#9ab0cb;}
+        .legend-item{display:flex;align-items:center;gap:6px;}
+        .legend-box{width:14px;height:14px;border-radius:3px;border:1px solid #333;}
+        .empty-state{text-align:center;padding:60px 20px;color:#9ab0cb;}
+        .empty-state i{font-size:2.5rem;color:#444;margin-bottom:10px;}
+        .empty-state p{margin:6px 0;}
+        .empty-state .hint{font-size:.85rem;color:#9ab0cb;}
+
+        /* Mermaid node overrides — colores semaforo aplicados via classDef */
+        .mermaid svg{max-width:100%!important;}
+
+        /* Modal de drill-down */
+        .modal-bd{position:fixed;inset:0;background:rgba(0,0,0,.72);display:none;justify-content:center;align-items:flex-start;padding-top:5vh;z-index:1000;}
+        .modal-bd.open{display:flex;}
+        .modal-box{background:#151b24;border:1px solid #2f4257;border-radius:14px;padding:20px;width:92%;max-width:600px;max-height:85vh;overflow-y:auto;}
+        .modal-box h2{margin:0 0 14px;color:#5AC8FA;font-size:1.15rem;}
+        .modal-box .field{margin-bottom:8px;color:#d5e2f5;}
+        .modal-box .field strong{color:#9ab0cb;font-weight:600;}
+        .modal-actions{display:flex;gap:10px;justify-content:flex-end;margin-top:16px;}
+    </style>
+</head>
+<body>
+<nav class="sidebar">
+    <div class="logo-details"><i class="fas fa-industry icon"></i><div class="logo_name">CMMS Pro</div><i class="fas fa-bars" id="btn_toggle"></i></div>
+    <ul class="nav-list"></ul>
+</nav>
+
+<section class="home-section">
+    <div class="wrap">
+        <div class="header">
+            <h1><i class="fas fa-project-diagram"></i> Flujo de Planta — Disponibilidad por Equipo</h1>
+            <p>Diagrama auto-generado del proceso productivo. Cada equipo se pinta según su disponibilidad real del periodo. Click sobre un equipo para ver detalle.</p>
+        </div>
+
+        <!-- Toolbar de periodo -->
+        <div class="toolbar">
+            <label>Desde:</label>
+            <input type="date" id="periodStart">
+            <label>Hasta:</label>
+            <input type="date" id="periodEnd">
+            <button class="btn primary" onclick="reloadFlow()"><i class="fas fa-sync"></i> Actualizar</button>
+            <button class="btn warn" onclick="seedFromPdf()" title="Pre-cargar el flujo del PDF (idempotente, no sobrescribe configuracion manual)"><i class="fas fa-magic"></i> Pre-cargar flujo del PDF</button>
+            <button class="btn" onclick="exportPng()" id="btnExport" disabled><i class="fas fa-download"></i> PNG</button>
+            <a href="/responsabilidades" class="btn"><i class="fas fa-edit"></i> Editar responsables / flujo</a>
+            <span style="margin-left:auto;color:#9ab0cb;font-size:.78rem;" id="periodLabel"></span>
+        </div>
+
+        <!-- KPIs por area -->
+        <div class="area-kpis" id="areaKpis"></div>
+
+        <!-- Diagrama -->
+        <div class="diagram-wrap" id="diagramWrap">
+            <div class="empty-state" id="emptyState">
+                <i class="fas fa-project-diagram"></i>
+                <p><strong>Sin flujo configurado todavia.</strong></p>
+                <p class="hint">Click en "Pre-cargar flujo del PDF" para cargar la configuracion inicial automaticamente,<br>
+                   o ve a /responsabilidades para conectar equipos manualmente.</p>
+            </div>
+            <div class="mermaid" id="mermaidDiagram" style="display:none;"></div>
+        </div>
+
+        <div class="legend">
+            <div class="legend-item"><div class="legend-box" style="background:#C8E6C9;border-color:#2E7D32;"></div> Disponibilidad ≥ 95%</div>
+            <div class="legend-item"><div class="legend-box" style="background:#FFE0B2;border-color:#E65100;"></div> 85% — 95%</div>
+            <div class="legend-item"><div class="legend-box" style="background:#FFCDD2;border-color:#C62828;"></div> &lt; 85%</div>
+            <div class="legend-item" style="margin-left:auto;color:#666;">Click sobre cualquier equipo para ver detalle</div>
+        </div>
+    </div>
+</section>
+
+<!-- Modal drill-down -->
+<div class="modal-bd" id="nodeModal" onclick="if(event.target===this)closeModal()">
+    <div class="modal-box">
+        <h2 id="modalTitle">Detalle equipo</h2>
+        <div id="modalBody"></div>
+        <div class="modal-actions">
+            <a id="goEquipmentBtn" href="#" class="btn primary" target="_blank"><i class="fas fa-external-link-alt"></i> Ver historial</a>
+            <button class="btn" onclick="closeModal()">Cerrar</button>
+        </div>
+    </div>
+</div>
+
+<script src="/static/js/sidebar.js?v={{ v }}"></script>
+<script>
+mermaid.initialize({startOnLoad:false, theme:'default', securityLevel:'loose',
+    flowchart:{curve:'basis', rankSpacing:50, nodeSpacing:30, useMaxWidth:true}});
+
+let _flowData = null;
+
+function defaultPeriod() {
+    const today = new Date();
+    const firstThis = new Date(today.getFullYear(), today.getMonth(), 1);
+    const lastPrev = new Date(firstThis - 1);
+    const firstPrev = new Date(lastPrev.getFullYear(), lastPrev.getMonth(), 1);
+    return { start: firstPrev.toISOString().slice(0,10), end: today.toISOString().slice(0,10) };
+}
+
+document.addEventListener('DOMContentLoaded', () => {
+    const def = defaultPeriod();
+    document.getElementById('periodStart').value = def.start;
+    document.getElementById('periodEnd').value = def.end;
+    reloadFlow();
+});
+
+async function reloadFlow() {
+    const start = document.getElementById('periodStart').value;
+    const end = document.getElementById('periodEnd').value;
+    document.getElementById('periodLabel').textContent = 'Calculando...';
+    try {
+        const r = await fetch(`/api/plant-flow?start=${start}&end=${end}`);
+        if (!r.ok) throw new Error('HTTP ' + r.status);
+        _flowData = await r.json();
+        document.getElementById('periodLabel').textContent =
+            `${_flowData.period.start} a ${_flowData.period.end} · ${_flowData.period.days} dias`;
+        renderAreaKPIs();
+        renderDiagram();
+    } catch (e) {
+        document.getElementById('periodLabel').textContent = 'Error: ' + e.message;
+    }
+}
+
+function renderAreaKPIs() {
+    const cont = document.getElementById('areaKpis');
+    const areaKpi = _flowData.area_kpi || [];
+    if (!areaKpi.length) { cont.innerHTML = ''; return; }
+    cont.innerHTML = areaKpi.sort((a,b)=>a.area_name.localeCompare(b.area_name)).map(a => {
+        const cls = a.availability >= 95 ? 'green' : (a.availability >= 85 ? 'amber' : 'red');
+        return `<div class="kpi-card ${cls}">
+            <div class="lbl">${a.area_name}</div>
+            <div class="val">${a.availability}%</div>
+            <div class="sub">${a.line_count} lineas · ${a.total_downtime}h paro acumulado</div>
+        </div>`;
+    }).join('');
+}
+
+function renderDiagram() {
+    const empty = document.getElementById('emptyState');
+    const target = document.getElementById('mermaidDiagram');
+    const nodes = _flowData.nodes || [];
+    const edges = _flowData.edges || [];
+
+    // Si no hay aristas, asumimos que el flujo no esta configurado todavia
+    const configuredNodes = nodes.filter(n => n.feeds_into_equipment_id || n.process_order);
+    if (!configuredNodes.length || !edges.length) {
+        empty.style.display = 'block';
+        target.style.display = 'none';
+        document.getElementById('btnExport').disabled = true;
+        return;
+    }
+    empty.style.display = 'none';
+    target.style.display = 'block';
+    document.getElementById('btnExport').disabled = false;
+
+    // Construir Mermaid: agrupar por subgraphs (areas) + subgraphs anidados (lineas)
+    // Solo nodos que tienen process_order o son destino de algun edge
+    const referenced = new Set();
+    edges.forEach(e => { referenced.add(e.from); referenced.add(e.to); });
+    const visibleNodes = nodes.filter(n =>
+        referenced.has(n.id) || n.process_order != null);
+
+    // Agrupar por area -> linea
+    const groups = {};
+    visibleNodes.forEach(n => {
+        const a = n.area_name || 'Sin Area';
+        const l = n.line_name || 'Sin Linea';
+        groups[a] = groups[a] || {};
+        groups[a][l] = groups[a][l] || [];
+        groups[a][l].push(n);
+    });
+
+    let m = 'flowchart LR\n';
+    // Definir clases de estilo (semaforo)
+    m += '  classDef green fill:#C8E6C9,stroke:#2E7D32,stroke-width:2px,color:#1B5E20;\n';
+    m += '  classDef amber fill:#FFE0B2,stroke:#E65100,stroke-width:2px,color:#5D2D00;\n';
+    m += '  classDef red fill:#FFCDD2,stroke:#C62828,stroke-width:2px,color:#770000;\n';
+    m += '  classDef nodata fill:#ECEFF1,stroke:#90A4AE,stroke-width:1px,color:#37474F;\n';
+
+    // Crear ID seguro Mermaid (alfanumerico)
+    const safeId = (n) => 'N' + n.id;
+
+    // Subgraphs por area
+    Object.keys(groups).sort().forEach((areaName, ai) => {
+        const areaId = `A${ai}`;
+        m += `  subgraph ${areaId}["<b>${areaName}</b>"]\n`;
+        m += `    direction LR\n`;
+        const lines = groups[areaName];
+        Object.keys(lines).sort().forEach((lineName, li) => {
+            const lineId = `${areaId}_L${li}`;
+            m += `    subgraph ${lineId}["${lineName}"]\n`;
+            m += `      direction LR\n`;
+            // Ordenar nodos por process_order
+            const lineNodes = lines[lineName].sort((a,b) =>
+                (a.process_order || 99) - (b.process_order || 99));
+            lineNodes.forEach(n => {
+                // Etiqueta: tag + nombre (truncado) + disponibilidad
+                const nm = (n.name || '').length > 22 ? (n.name.slice(0,20)+'…') : (n.name||'');
+                const lbl = `<b>${n.tag}</b><br/>${nm}<br/>${n.availability}%`;
+                m += `      ${safeId(n)}["${lbl}"]\n`;
+            });
+            m += `    end\n`;
+        });
+        m += `  end\n`;
+    });
+
+    // Aristas (cross-area permitido — Percolador → Secador)
+    edges.forEach(e => {
+        const fromN = visibleNodes.find(n => n.id === e.from);
+        const toN = visibleNodes.find(n => n.id === e.to);
+        if (fromN && toN) {
+            m += `  ${safeId(fromN)} --> ${safeId(toN)}\n`;
+        }
+    });
+
+    // Aplicar clase de color a cada nodo
+    visibleNodes.forEach(n => {
+        const cls = n.failure_count === 0 && n.downtime_hours === 0 && !n.process_order
+            ? 'nodata' : n.color;
+        m += `  class ${safeId(n)} ${cls}\n`;
+    });
+
+    // Click → drill-down (Mermaid soporta click via data-id en SVG; usamos callback)
+    visibleNodes.forEach(n => {
+        m += `  click ${safeId(n)} call onNodeClick(${n.id})\n`;
+    });
+
+    target.removeAttribute('data-processed');
+    target.innerHTML = m;
+    mermaid.run({ nodes: [target] });
+}
+
+window.onNodeClick = function(equipmentId) {
+    const n = (_flowData.nodes || []).find(x => x.id === equipmentId);
+    if (!n) return;
+    document.getElementById('modalTitle').textContent = `${n.tag} — ${n.name}`;
+    const cls = n.color === 'green' ? '#30D158' : (n.color === 'amber' ? '#FF9F0A' : '#FF453A');
+    document.getElementById('modalBody').innerHTML = `
+        <div class="field"><strong>Área:</strong> ${n.area_name || '-'}</div>
+        <div class="field"><strong>Línea:</strong> ${n.line_name || '-'}</div>
+        <div class="field"><strong>Criticidad:</strong> ${n.criticality || '-'}</div>
+        <div class="field"><strong>Orden de proceso:</strong> ${n.process_order ?? '-'}</div>
+        <hr style="border-color:#2f4257;">
+        <div class="field" style="font-size:1.1em;"><strong>Disponibilidad:</strong> <span style="color:${cls};font-weight:700;">${n.availability}%</span></div>
+        <div class="field"><strong>Horas de paro acumuladas:</strong> ${n.downtime_hours} h</div>
+        <div class="field"><strong>Eventos de falla:</strong> ${n.failure_count}</div>
+        <div class="field" style="font-size:.85em;color:#9ab0cb;margin-top:10px;">Periodo: ${_flowData.period.start} a ${_flowData.period.end}</div>
+    `;
+    document.getElementById('goEquipmentBtn').href = `/historial-equipo?equipment_id=${equipmentId}`;
+    document.getElementById('nodeModal').classList.add('open');
+};
+
+function closeModal() {
+    document.getElementById('nodeModal').classList.remove('open');
+}
+window.closeModal = closeModal;
+
+async function seedFromPdf() {
+    if (!confirm('Pre-cargar el flujo del PDF (Triturado, Coccion, Secado)?\nNo sobrescribe configuracion manual existente — solo llena lo vacio.')) return;
+    try {
+        const r = await fetch('/api/plant-flow/seed-from-pdf', { method: 'POST' });
+        const j = await r.json();
+        if (!r.ok) return alert('Error: ' + (j.error || 'desconocido'));
+        let msg = `✓ ${j.edges_created} conexiones creadas.`;
+        if (j.fields_already_set) msg += `\n${j.fields_already_set} campos ya estaban configurados (no se sobrescribieron).`;
+        if (j.tags_not_found && j.tags_not_found.length) {
+            msg += `\n\n⚠️ Tags no encontrados (revisar TAG en /jerarquia):\n${j.tags_not_found.join(', ')}`;
+        }
+        alert(msg);
+        await reloadFlow();
+    } catch (e) { alert('Error: ' + e.message); }
+}
+window.seedFromPdf = seedFromPdf;
+
+function exportPng() {
+    // Convierte el SVG del diagrama a PNG y lo descarga
+    const svg = document.querySelector('#mermaidDiagram svg');
+    if (!svg) return alert('Diagrama no disponible');
+    const xml = new XMLSerializer().serializeToString(svg);
+    const svgBlob = new Blob([xml], {type: 'image/svg+xml;charset=utf-8'});
+    const url = URL.createObjectURL(svgBlob);
+    const img = new Image();
+    img.onload = function() {
+        const canvas = document.createElement('canvas');
+        const scale = 2;  // alta resolucion
+        canvas.width = img.width * scale;
+        canvas.height = img.height * scale;
+        const ctx = canvas.getContext('2d');
+        ctx.fillStyle = '#fff';
+        ctx.fillRect(0, 0, canvas.width, canvas.height);
+        ctx.scale(scale, scale);
+        ctx.drawImage(img, 0, 0);
+        canvas.toBlob(blob => {
+            const link = document.createElement('a');
+            link.download = `flujo_planta_${_flowData.period.start}_a_${_flowData.period.end}.png`;
+            link.href = URL.createObjectURL(blob);
+            link.click();
+        });
+        URL.revokeObjectURL(url);
+    };
+    img.src = url;
+}
+window.exportPng = exportPng;
+window.reloadFlow = reloadFlow;
+</script>
+</body>
+</html>
