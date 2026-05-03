@@ -13,7 +13,7 @@ import math
 from flask import jsonify, render_template, request
 
 
-def register_plant_flow_routes(app, db, logger, Equipment, Area, Line, WorkOrder):
+def register_plant_flow_routes(app, db, logger, Equipment, Area, Line, WorkOrder, EquipmentFlowEdge):
 
     def _default_period():
         """Desde el primer dia del mes anterior hasta hoy."""
@@ -132,6 +132,23 @@ def register_plant_flow_routes(app, db, logger, Equipment, Area, Line, WorkOrder
                 if n['feeds_into_equipment_id'] and n['feeds_into_equipment_id'] in valid_ids
             ]
 
+            # Bypass / rutas alternativas (lineas punteadas en el diagrama)
+            tag_by_id = {n['id']: n['tag'] for n in nodes}
+            bypass_rows = EquipmentFlowEdge.query.filter_by(is_active=True).all()
+            bypass_edges = [
+                {
+                    'id': b.id,
+                    'from': b.from_equipment_id,
+                    'to': b.to_equipment_id,
+                    'from_tag': tag_by_id.get(b.from_equipment_id),
+                    'to_tag': tag_by_id.get(b.to_equipment_id),
+                    'edge_type': b.edge_type,
+                    'note': b.note,
+                }
+                for b in bypass_rows
+                if b.from_equipment_id in valid_ids and b.to_equipment_id in valid_ids
+            ]
+
             # Disponibilidad por linea (producto de los equipos en serie)
             line_kpi = {}
             for line_id, line in lines.items():
@@ -177,6 +194,7 @@ def register_plant_flow_routes(app, db, logger, Equipment, Area, Line, WorkOrder
                 },
                 'nodes': nodes,
                 'edges': edges,
+                'bypass_edges': bypass_edges,
                 'line_kpi': list(line_kpi.values()),
                 'area_kpi': list(area_kpi.values()),
             })
@@ -479,4 +497,64 @@ def register_plant_flow_routes(app, db, logger, Equipment, Area, Line, WorkOrder
         except Exception as e:
             db.session.rollback()
             logger.exception(f"seed_from_pdf error: {e}")
+            return jsonify({"error": str(e)}), 500
+
+    # ── Bypass / rutas alternativas ───────────────────────────────────────────
+    @app.route('/api/plant-flow/bypass', methods=['GET'])
+    def api_bypass_list():
+        try:
+            rows = EquipmentFlowEdge.query.order_by(EquipmentFlowEdge.id.desc()).all()
+            return jsonify([r.to_dict() for r in rows])
+        except Exception as e:
+            logger.exception(f"bypass_list error: {e}")
+            return jsonify({"error": str(e)}), 500
+
+    @app.route('/api/plant-flow/bypass', methods=['POST'])
+    def api_bypass_create():
+        try:
+            data = request.get_json() or {}
+            from_id = data.get('from_equipment_id')
+            to_id = data.get('to_equipment_id')
+            if not from_id or not to_id:
+                return jsonify({"error": "from_equipment_id y to_equipment_id requeridos"}), 400
+            if int(from_id) == int(to_id):
+                return jsonify({"error": "origen y destino no pueden ser el mismo equipo"}), 400
+            if not Equipment.query.get(from_id) or not Equipment.query.get(to_id):
+                return jsonify({"error": "equipo no encontrado"}), 404
+            # Evitar duplicados
+            exists = EquipmentFlowEdge.query.filter_by(
+                from_equipment_id=from_id, to_equipment_id=to_id).first()
+            if exists:
+                exists.is_active = True
+                exists.edge_type = (data.get('edge_type') or exists.edge_type or 'BYPASS').upper()
+                exists.note = data.get('note') or exists.note
+                db.session.commit()
+                return jsonify({"ok": True, "id": exists.id, "reactivated": True})
+            edge = EquipmentFlowEdge(
+                from_equipment_id=int(from_id),
+                to_equipment_id=int(to_id),
+                edge_type=(data.get('edge_type') or 'BYPASS').upper(),
+                note=data.get('note'),
+                is_active=True,
+            )
+            db.session.add(edge)
+            db.session.commit()
+            return jsonify({"ok": True, "id": edge.id})
+        except Exception as e:
+            db.session.rollback()
+            logger.exception(f"bypass_create error: {e}")
+            return jsonify({"error": str(e)}), 500
+
+    @app.route('/api/plant-flow/bypass/<int:edge_id>', methods=['DELETE'])
+    def api_bypass_delete(edge_id):
+        try:
+            edge = EquipmentFlowEdge.query.get(edge_id)
+            if not edge:
+                return jsonify({"error": "no encontrado"}), 404
+            db.session.delete(edge)
+            db.session.commit()
+            return jsonify({"ok": True})
+        except Exception as e:
+            db.session.rollback()
+            logger.exception(f"bypass_delete error: {e}")
             return jsonify({"error": str(e)}), 500

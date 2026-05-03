@@ -83,6 +83,7 @@
             <button class="btn primary" onclick="reloadFlow()"><i class="fas fa-sync"></i> Actualizar</button>
             <button class="btn warn" onclick="seedFromPdf()" title="Pre-cargar el flujo del PDF (idempotente, no sobrescribe configuracion manual)"><i class="fas fa-magic"></i> Pre-cargar flujo del PDF</button>
             <button class="btn" onclick="exportPng()" id="btnExport" disabled><i class="fas fa-download"></i> PNG</button>
+            <button class="btn" onclick="exportSvg()" id="btnExportSvg" disabled><i class="fas fa-file-code"></i> SVG</button>
             <a href="/responsabilidades" class="btn"><i class="fas fa-edit"></i> Editar responsables / flujo</a>
             <span style="margin-left:auto;color:#9ab0cb;font-size:.78rem;" id="periodLabel"></span>
         </div>
@@ -105,6 +106,7 @@
             <div class="legend-item"><div class="legend-box" style="background:#C8E6C9;border-color:#2E7D32;"></div> Disponibilidad ≥ 95%</div>
             <div class="legend-item"><div class="legend-box" style="background:#FFE0B2;border-color:#E65100;"></div> 85% — 95%</div>
             <div class="legend-item"><div class="legend-box" style="background:#FFCDD2;border-color:#C62828;"></div> &lt; 85%</div>
+            <div class="legend-item"><div style="width:32px;height:0;border-top:2px dashed #FF9F0A;"></div> Bypass / ruta alternativa (compuerta)</div>
             <div class="legend-item" style="margin-left:auto;color:#666;">Click sobre cualquier equipo para ver detalle</div>
         </div>
     </div>
@@ -124,8 +126,11 @@
 
 <script src="/static/js/sidebar.js?v={{ v }}"></script>
 <script>
+// htmlLabels:false evita <foreignObject> en el SVG, lo que permite exportar
+// como PNG sin "Tainted canvas" (foreignObject con HTML/CSS externo
+// contamina el canvas y bloquea toBlob/toDataURL).
 mermaid.initialize({startOnLoad:false, theme:'default', securityLevel:'loose',
-    flowchart:{curve:'basis', rankSpacing:50, nodeSpacing:30, useMaxWidth:true}});
+    flowchart:{curve:'basis', rankSpacing:50, nodeSpacing:30, useMaxWidth:true, htmlLabels:false}});
 
 let _flowData = null;
 
@@ -180,23 +185,27 @@ function renderDiagram() {
     const target = document.getElementById('mermaidDiagram');
     const nodes = _flowData.nodes || [];
     const edges = _flowData.edges || [];
+    const bypasses = _flowData.bypass_edges || [];
 
     // Si no hay aristas, asumimos que el flujo no esta configurado todavia
     const configuredNodes = nodes.filter(n => n.feeds_into_equipment_id || n.process_order);
-    if (!configuredNodes.length || !edges.length) {
+    if (!configuredNodes.length || (!edges.length && !bypasses.length)) {
         empty.style.display = 'block';
         target.style.display = 'none';
         document.getElementById('btnExport').disabled = true;
+        document.getElementById('btnExportSvg').disabled = true;
         return;
     }
     empty.style.display = 'none';
     target.style.display = 'block';
     document.getElementById('btnExport').disabled = false;
+    document.getElementById('btnExportSvg').disabled = false;
 
     // Construir Mermaid: agrupar por subgraphs (areas) + subgraphs anidados (lineas)
-    // Solo nodos que tienen process_order o son destino de algun edge
+    // Solo nodos que tienen process_order o son destino de algun edge (incluido bypass)
     const referenced = new Set();
     edges.forEach(e => { referenced.add(e.from); referenced.add(e.to); });
+    bypasses.forEach(b => { referenced.add(b.from); referenced.add(b.to); });
     const visibleNodes = nodes.filter(n =>
         referenced.has(n.id) || n.process_order != null);
 
@@ -234,9 +243,11 @@ function renderDiagram() {
             const lineNodes = lines[lineName].sort((a,b) =>
                 (a.process_order || 99) - (b.process_order || 99));
             lineNodes.forEach(n => {
-                // Etiqueta: tag + nombre (truncado) + disponibilidad
-                const nm = (n.name || '').length > 22 ? (n.name.slice(0,20)+'…') : (n.name||'');
-                const lbl = `<b>${n.tag}</b><br/>${nm}<br/>${n.availability}%`;
+                // Etiqueta plana (htmlLabels:false) — usar \n para salto de linea
+                // y comillas escapadas. Sin HTML para que el SVG sea exportable.
+                const nm = (n.name || '').length > 22 ? (n.name.slice(0,20)+'...') : (n.name||'');
+                const safe = (s) => String(s).replace(/"/g, '\\"');
+                const lbl = `${safe(n.tag)}\n${safe(nm)}\n${n.availability}%`;
                 m += `      ${safeId(n)}["${lbl}"]\n`;
             });
             m += `    end\n`;
@@ -252,6 +263,23 @@ function renderDiagram() {
             m += `  ${safeId(fromN)} --> ${safeId(toN)}\n`;
         }
     });
+
+    // Bypass / rutas alternativas: linea punteada con texto opcional.
+    // Indice de orden en Mermaid: empieza despues de las aristas principales.
+    const bypassLineStart = edges.length;
+    bypasses.forEach(b => {
+        const fromN = visibleNodes.find(n => n.id === b.from);
+        const toN = visibleNodes.find(n => n.id === b.to);
+        if (!fromN || !toN) return;
+        const lbl = b.note ? `|"${String(b.note).replace(/"/g, '\\"')}"|` : '';
+        m += `  ${safeId(fromN)} -.->${lbl} ${safeId(toN)}\n`;
+    });
+    // Estilo de las aristas bypass: ambar punteado mas grueso
+    if (bypasses.length) {
+        const indices = [];
+        for (let i = 0; i < bypasses.length; i++) indices.push(bypassLineStart + i);
+        m += `  linkStyle ${indices.join(',')} stroke:#FF9F0A,stroke-width:2px,stroke-dasharray:6 4;\n`;
+    }
 
     // Aplicar clase de color a cada nodo
     visibleNodes.forEach(n => {
@@ -312,35 +340,81 @@ async function seedFromPdf() {
 }
 window.seedFromPdf = seedFromPdf;
 
-function exportPng() {
-    // Convierte el SVG del diagrama a PNG y lo descarga
+// Prepara una copia "auto-contenida" del SVG: width/height inline, xmlns,
+// fondo blanco. Sin esto las dimensiones llegan como % al canvas y la
+// imagen sale 0×0; con foreignObject (htmlLabels:true) tambien se contamina
+// el canvas — por eso usamos htmlLabels:false en mermaid.initialize.
+function _serializeStandaloneSvg() {
     const svg = document.querySelector('#mermaidDiagram svg');
-    if (!svg) return alert('Diagrama no disponible');
-    const xml = new XMLSerializer().serializeToString(svg);
-    const svgBlob = new Blob([xml], {type: 'image/svg+xml;charset=utf-8'});
-    const url = URL.createObjectURL(svgBlob);
+    if (!svg) return null;
+    const clone = svg.cloneNode(true);
+    if (!clone.getAttribute('xmlns')) clone.setAttribute('xmlns', 'http://www.w3.org/2000/svg');
+    if (!clone.getAttribute('xmlns:xlink')) clone.setAttribute('xmlns:xlink', 'http://www.w3.org/1999/xlink');
+
+    // Resolver tamaño real desde viewBox o bbox
+    const vb = svg.viewBox && svg.viewBox.baseVal;
+    let w = vb && vb.width ? vb.width : (svg.clientWidth || 1200);
+    let h = vb && vb.height ? vb.height : (svg.clientHeight || 700);
+    clone.setAttribute('width', w);
+    clone.setAttribute('height', h);
+
+    // Fondo blanco para PNG
+    const bg = document.createElementNS('http://www.w3.org/2000/svg', 'rect');
+    bg.setAttribute('width', '100%');
+    bg.setAttribute('height', '100%');
+    bg.setAttribute('fill', '#ffffff');
+    clone.insertBefore(bg, clone.firstChild);
+
+    return { xml: new XMLSerializer().serializeToString(clone), width: w, height: h };
+}
+
+function exportPng() {
+    const data = _serializeStandaloneSvg();
+    if (!data) return alert('Diagrama no disponible');
+    // Data URI base64 evita Blob URL cross-origin issues
+    const b64 = btoa(unescape(encodeURIComponent(data.xml)));
+    const dataUrl = 'data:image/svg+xml;base64,' + b64;
     const img = new Image();
     img.onload = function() {
         const canvas = document.createElement('canvas');
-        const scale = 2;  // alta resolucion
-        canvas.width = img.width * scale;
-        canvas.height = img.height * scale;
+        const scale = 2;
+        canvas.width = data.width * scale;
+        canvas.height = data.height * scale;
         const ctx = canvas.getContext('2d');
         ctx.fillStyle = '#fff';
         ctx.fillRect(0, 0, canvas.width, canvas.height);
         ctx.scale(scale, scale);
         ctx.drawImage(img, 0, 0);
-        canvas.toBlob(blob => {
-            const link = document.createElement('a');
-            link.download = `flujo_planta_${_flowData.period.start}_a_${_flowData.period.end}.png`;
-            link.href = URL.createObjectURL(blob);
-            link.click();
-        });
-        URL.revokeObjectURL(url);
+        try {
+            canvas.toBlob(blob => {
+                const link = document.createElement('a');
+                link.download = `flujo_planta_${_flowData.period.start}_a_${_flowData.period.end}.png`;
+                link.href = URL.createObjectURL(blob);
+                link.click();
+            });
+        } catch (err) {
+            alert('No se pudo exportar a PNG: ' + err.message + '\nDescarga el SVG en su lugar.');
+        }
     };
-    img.src = url;
+    img.onerror = function() {
+        alert('Error cargando el SVG para exportar. Usa el boton SVG.');
+    };
+    img.src = dataUrl;
 }
+
+function exportSvg() {
+    const data = _serializeStandaloneSvg();
+    if (!data) return alert('Diagrama no disponible');
+    const blob = new Blob([data.xml], {type: 'image/svg+xml;charset=utf-8'});
+    const link = document.createElement('a');
+    link.download = `flujo_planta_${_flowData.period.start}_a_${_flowData.period.end}.svg`;
+    link.href = URL.createObjectURL(blob);
+    link.click();
+    setTimeout(() => URL.revokeObjectURL(link.href), 1000);
+}
+
 window.exportPng = exportPng;
+window.exportSvg = exportSvg;
 window.reloadFlow = reloadFlow;
 </script>
 </body>

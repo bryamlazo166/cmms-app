@@ -126,6 +126,48 @@
             </div>
         </div>
 
+        <!-- Bypass / rutas alternativas (compuertas) -->
+        <details style="margin-bottom:14px;background:#181d24;border:1px solid #2f4257;border-radius:10px;padding:10px 14px;">
+            <summary style="cursor:pointer;color:#FF9F0A;font-weight:700;font-size:.92rem;">
+                <i class="fas fa-random"></i> Bypass / rutas alternativas (compuertas)
+                <span style="color:#9ab0cb;font-weight:400;font-size:.82rem;margin-left:8px;">— se dibujan punteadas en el diagrama</span>
+            </summary>
+            <div style="margin-top:12px;color:#9ab0cb;font-size:.8rem;">
+                Define conexiones alternativas: cuando un equipo se detiene se abre una compuerta y el flujo
+                pasa por otra ruta. Estas conexiones <strong>NO reemplazan</strong> la ruta principal (columna "Alimenta a"),
+                la complementan.
+            </div>
+            <div style="display:flex;gap:8px;align-items:end;flex-wrap:wrap;margin-top:12px;">
+                <div>
+                    <label style="display:block;color:#9ab0cb;font-size:.72rem;margin-bottom:3px;">Desde equipo</label>
+                    <select id="bypassFrom" style="height:34px;background:#0f1319;color:#d5e2f5;border:1px solid #344964;border-radius:6px;padding:4px 8px;min-width:240px;font-size:.82rem;">
+                        <option value="">— seleccionar —</option>
+                    </select>
+                </div>
+                <div>
+                    <label style="display:block;color:#9ab0cb;font-size:.72rem;margin-bottom:3px;">Hacia equipo</label>
+                    <select id="bypassTo" style="height:34px;background:#0f1319;color:#d5e2f5;border:1px solid #344964;border-radius:6px;padding:4px 8px;min-width:240px;font-size:.82rem;">
+                        <option value="">— seleccionar —</option>
+                    </select>
+                </div>
+                <div style="flex:1;min-width:200px;">
+                    <label style="display:block;color:#9ab0cb;font-size:.72rem;margin-bottom:3px;">Nota (opcional)</label>
+                    <input type="text" id="bypassNote" placeholder="Ej: compuerta lateral TH3" style="width:100%;height:34px;background:#0f1319;color:#d5e2f5;border:1px solid #344964;border-radius:6px;padding:4px 8px;font-size:.82rem;">
+                </div>
+                <button class="btn" onclick="addBypass()" style="background:rgba(255,159,10,.2);border-color:#FF9F0A;color:#FF9F0A;">
+                    <i class="fas fa-plus"></i> Agregar bypass
+                </button>
+            </div>
+            <table style="margin-top:12px;font-size:.82rem;">
+                <thead>
+                    <tr><th>Desde</th><th>Hacia</th><th>Tipo</th><th>Nota</th><th style="width:60px;"></th></tr>
+                </thead>
+                <tbody id="bypassTbody">
+                    <tr><td colspan="5" style="text-align:center;color:#9ab0cb;padding:14px;">Sin bypass configurados</td></tr>
+                </tbody>
+            </table>
+        </details>
+
         <!-- Tabla -->
         <div style="margin-bottom:8px;color:#9ab0cb;font-size:.78rem;">
             <i class="fas fa-info-circle"></i> Las columnas <strong>Orden #</strong> y <strong>Alimenta a</strong> definen el flujo de proceso visible en <a href="/flujo-planta" style="color:#5AC8FA;">/flujo-planta</a>. Los cambios se guardan automáticamente al perder el foco.
@@ -167,6 +209,8 @@ let _state = {
 document.addEventListener('DOMContentLoaded', async () => {
     await Promise.all([loadAreas(), loadLines(), loadProviders(), loadPointCounts()]);
     await loadEquipments();
+    populateBypassSelects();
+    loadBypasses();
 });
 
 async function loadAreas() {
@@ -512,6 +556,77 @@ window.bulkAssign = bulkAssign;
 window.quickAssign = quickAssign;
 window.clearSelection = clearSelection;
 window.renderTable = renderTable;
+
+// ── Bypass / rutas alternativas ──────────────────────────────────────────────
+function populateBypassSelects() {
+    const opts = ['<option value="">— seleccionar —</option>']
+        .concat(_state.equipments
+            .slice()
+            .sort((a, b) => (a.tag || '').localeCompare(b.tag || ''))
+            .map(e => `<option value="${e.id}">${e.tag} — ${e.name}</option>`));
+    document.getElementById('bypassFrom').innerHTML = opts.join('');
+    document.getElementById('bypassTo').innerHTML = opts.join('');
+}
+
+async function loadBypasses() {
+    try {
+        const r = await fetch('/api/plant-flow/bypass');
+        const list = await r.json();
+        const tbody = document.getElementById('bypassTbody');
+        if (!Array.isArray(list) || !list.length) {
+            tbody.innerHTML = '<tr><td colspan="5" style="text-align:center;color:#9ab0cb;padding:14px;">Sin bypass configurados</td></tr>';
+            return;
+        }
+        tbody.innerHTML = list.map(b => `
+            <tr>
+                <td><strong>${b.from_tag || '?'}</strong></td>
+                <td><strong>${b.to_tag || '?'}</strong></td>
+                <td><span class="pill" style="background:rgba(255,159,10,.15);color:#FF9F0A;border:1px solid rgba(255,159,10,.4);">${b.edge_type}</span></td>
+                <td style="color:#9ab0cb;">${b.note || '—'}</td>
+                <td><button class="quick-act" onclick="deleteBypass(${b.id})" title="Eliminar"><i class="fas fa-trash"></i></button></td>
+            </tr>
+        `).join('');
+    } catch (e) { console.warn('loadBypasses failed', e); }
+}
+
+async function addBypass() {
+    const fromId = document.getElementById('bypassFrom').value;
+    const toId = document.getElementById('bypassTo').value;
+    const note = document.getElementById('bypassNote').value.trim();
+    if (!fromId || !toId) return alert('Selecciona origen y destino.');
+    if (fromId === toId) return alert('Origen y destino no pueden ser el mismo equipo.');
+    try {
+        const r = await fetch('/api/plant-flow/bypass', {
+            method: 'POST',
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify({
+                from_equipment_id: parseInt(fromId, 10),
+                to_equipment_id: parseInt(toId, 10),
+                edge_type: 'BYPASS',
+                note: note || null,
+            }),
+        });
+        const j = await r.json();
+        if (!r.ok) return alert('Error: ' + (j.error || 'desconocido'));
+        document.getElementById('bypassFrom').value = '';
+        document.getElementById('bypassTo').value = '';
+        document.getElementById('bypassNote').value = '';
+        await loadBypasses();
+    } catch (e) { alert('Error: ' + e.message); }
+}
+
+async function deleteBypass(id) {
+    if (!confirm('¿Eliminar este bypass?')) return;
+    try {
+        const r = await fetch(`/api/plant-flow/bypass/${id}`, {method: 'DELETE'});
+        const j = await r.json();
+        if (!r.ok) return alert('Error: ' + (j.error || 'desconocido'));
+        await loadBypasses();
+    } catch (e) { alert('Error: ' + e.message); }
+}
+
+window.addBypass = addBypass;
+window.deleteBypass = deleteBypass;
 </script>
 </body>
 </html>

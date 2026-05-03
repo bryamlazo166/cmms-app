@@ -192,6 +192,39 @@ class Equipment(db.Model):
                 "process_order": self.process_order,
                 "feeds_into_equipment_id": self.feeds_into_equipment_id}
 
+
+# Aristas adicionales del flujo de planta. La conexion principal va en
+# Equipment.feeds_into_equipment_id (1:1 aguas abajo); esta tabla guarda las
+# rutas alternativas: bypass por compuerta, derivaciones a equipos paralelos,
+# etc. Se renderizan en /flujo-planta como lineas punteadas.
+class EquipmentFlowEdge(db.Model):
+    __tablename__ = 'equipment_flow_edges'
+    id: Mapped[int] = mapped_column(primary_key=True)
+    from_equipment_id: Mapped[int] = mapped_column(ForeignKey('equipments.id'), nullable=False)
+    to_equipment_id: Mapped[int] = mapped_column(ForeignKey('equipments.id'), nullable=False)
+    # BYPASS = compuerta que salta el equipo siguiente cuando esta detenido.
+    # ALTERNATE = ruta paralela permanentemente disponible.
+    edge_type: Mapped[str] = mapped_column(String(20), nullable=False, default='BYPASS')
+    note: Mapped[str | None] = mapped_column(String(200), nullable=True)
+    is_active: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+
+    from_equipment = relationship("Equipment", foreign_keys=[from_equipment_id])
+    to_equipment = relationship("Equipment", foreign_keys=[to_equipment_id])
+
+    def to_dict(self):
+        return {
+            "id": self.id,
+            "from_equipment_id": self.from_equipment_id,
+            "to_equipment_id": self.to_equipment_id,
+            "from_tag": self.from_equipment.tag if self.from_equipment else None,
+            "to_tag": self.to_equipment.tag if self.to_equipment else None,
+            "edge_type": self.edge_type,
+            "note": self.note,
+            "is_active": self.is_active,
+        }
+
+
 class System(db.Model):
     __tablename__ = 'systems'
     id: Mapped[int] = mapped_column(primary_key=True)

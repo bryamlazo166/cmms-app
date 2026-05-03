@@ -25,6 +25,7 @@ from models import (
     Shutdown, ShutdownArea,
     ProductionGoal,
     WeeklyPlan, WeeklyPlanItem,
+    EquipmentFlowEdge,
 )
 from utils.crud_helpers import create_entry, get_entries, update_entry, delete_entry
 from utils.reporting_helpers import (
@@ -705,6 +706,7 @@ register_plant_flow_routes(
     Area=Area,
     Line=Line,
     WorkOrder=WorkOrder,
+    EquipmentFlowEdge=EquipmentFlowEdge,
 )
 
 register_production_routes(
