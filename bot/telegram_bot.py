@@ -1954,13 +1954,19 @@ def _register_lubrication(app, data):
                 "now": datetime.utcnow()
             })
 
-            # Recalculate schedule and update point
-            next_due, semaphore = _calculate_lubrication_schedule(execution_date, freq_days, warn_days)
-            _db.session.execute(text("""
-                UPDATE lubrication_points
-                SET last_service_date = :lsd, next_due_date = :nd, semaphore_status = :ss
-                WHERE id = :id
-            """), {"lsd": execution_date, "nd": next_due, "ss": semaphore, "id": pid})
+            # Solo avanza el cronograma si esta ejecucion es la mas reciente.
+            # Si la fecha es retroactiva (ej. registro tardio), se guarda en el
+            # historial pero last_service_date / semaforo no deben retroceder.
+            current_last = _db.session.execute(text(
+                "SELECT last_service_date FROM lubrication_points WHERE id = :id"
+            ), {"id": pid}).scalar()
+            if (not current_last) or (str(execution_date) >= str(current_last)):
+                next_due, semaphore = _calculate_lubrication_schedule(execution_date, freq_days, warn_days)
+                _db.session.execute(text("""
+                    UPDATE lubrication_points
+                    SET last_service_date = :lsd, next_due_date = :nd, semaphore_status = :ss
+                    WHERE id = :id
+                """), {"lsd": execution_date, "nd": next_due, "ss": semaphore, "id": pid})
 
             _db.session.commit()
             _db.session.remove()

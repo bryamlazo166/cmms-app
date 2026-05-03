@@ -330,14 +330,21 @@ def register_lubrication_routes(
                     comments=data.get('comments')
                 )
 
-                point.last_service_date = execution_date
-                next_due, semaphore = _calculate_lubrication_schedule(
-                    point.last_service_date,
-                    point.frequency_days,
-                    point.warning_days
-                )
-                point.next_due_date = next_due
-                point.semaphore_status = semaphore
+                # Solo avanza el cronograma si esta ejecucion es la mas reciente.
+                # Una ejecucion retroactiva (fecha anterior a la ultima ya registrada)
+                # se guarda en el historial pero no debe mover last_service_date hacia
+                # atras ni reactivar el semaforo en rojo.
+                current_last = _parse_date_flexible(point.last_service_date)
+                new_exec = _parse_date_flexible(execution_date)
+                if (current_last is None) or (new_exec and new_exec >= current_last):
+                    point.last_service_date = execution_date
+                    next_due, semaphore = _calculate_lubrication_schedule(
+                        point.last_service_date,
+                        point.frequency_days,
+                        point.warning_days
+                    )
+                    point.next_due_date = next_due
+                    point.semaphore_status = semaphore
 
                 create_notice = bool(data.get('create_notice', True))
                 if create_notice and (execution.leak_detected or execution.anomaly_detected):
