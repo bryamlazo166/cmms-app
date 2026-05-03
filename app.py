@@ -871,6 +871,18 @@ _ENSURE_COLUMNS = [
     # y canal por el que llego el aviso (SISTEMA, WHATSAPP, VERBAL, RADIO, CORREO).
     ("maintenance_notices", "reported_at", "VARCHAR(20)"),
     ("maintenance_notices", "report_channel", "VARCHAR(20)"),
+    # Matriz de responsabilidad de mantenimiento (Opcion C: hibrido).
+    # default en Equipment = responsable por defecto del equipo.
+    # override en cada punto preventivo = excepcion puntual cuando el responsable
+    # de ese punto especifico difiere del default del equipo.
+    ("equipments", "default_responsible_party", "VARCHAR(20) DEFAULT 'INTERNO' NOT NULL"),
+    ("equipments", "default_provider_id", "INTEGER REFERENCES providers(id)"),
+    ("lubrication_points", "responsible_party_override", "VARCHAR(20)"),
+    ("lubrication_points", "provider_id_override", "INTEGER REFERENCES providers(id)"),
+    ("monitoring_points", "responsible_party_override", "VARCHAR(20)"),
+    ("monitoring_points", "provider_id_override", "INTEGER REFERENCES providers(id)"),
+    ("inspection_routes", "responsible_party_override", "VARCHAR(20)"),
+    ("inspection_routes", "provider_id_override", "INTEGER REFERENCES providers(id)"),
     ("ot_materials", "subtype", "VARCHAR(20)"),
     ("ot_materials", "item_name_free", "VARCHAR(200)"),
     ("ot_materials", "unit", "VARCHAR(20)"),

@@ -343,11 +343,13 @@ function renderMatrix() {
     const days = _matrixData.days;
     const rows = _matrixData.rows;
 
-    // Cabecera
+    // Cabecera (con Línea y badge de responsable)
     let headHtml = '<tr style="background:#1F4E79;color:#fff;">'
         + '<th style="padding:8px 6px;text-align:left;border:1px solid #2f4257;">Área</th>'
+        + '<th style="padding:8px 6px;text-align:left;border:1px solid #2f4257;">Línea</th>'
         + '<th style="padding:8px 6px;text-align:left;border:1px solid #2f4257;">Equipo</th>'
         + '<th style="padding:8px 6px;text-align:left;border:1px solid #2f4257;">Actividad</th>'
+        + '<th style="padding:8px 6px;text-align:center;border:1px solid #2f4257;width:60px;">Resp.</th>'
         + '<th style="padding:8px 6px;text-align:center;border:1px solid #2f4257;width:50px;">Hrs</th>';
     days.forEach(d => {
         const bg = d.is_weekend ? '#C00000' : '#2E75B6';
@@ -360,23 +362,31 @@ function renderMatrix() {
     head.innerHTML = headHtml;
 
     // Filas
+    const TOTAL_COLS = 13;
     if (!rows.length) {
-        body.innerHTML = '<tr><td colspan="11" style="text-align:center;padding:30px;color:#9ab0cb;">Plan vacío. Agrega items o usa Auto-planificar.</td></tr>';
+        body.innerHTML = `<tr><td colspan="${TOTAL_COLS}" style="text-align:center;padding:30px;color:#9ab0cb;">Plan vacío. Agrega items o usa Auto-planificar.</td></tr>`;
         return;
     }
+    const partyBadge = (party) => {
+        if (party === 'PROVEEDOR') return '<span style="background:rgba(48,209,88,.15);color:#30D158;border:1px solid rgba(48,209,88,.4);padding:1px 6px;border-radius:8px;font-size:.65rem;font-weight:700;">PROV</span>';
+        if (party === 'INTERNO') return '<span style="background:rgba(10,132,255,.15);color:#5AC8FA;border:1px solid rgba(10,132,255,.4);padding:1px 6px;border-radius:8px;font-size:.65rem;font-weight:700;">INT</span>';
+        if (party === 'MIXTO') return '<span style="background:rgba(255,159,10,.15);color:#FF9F0A;border:1px solid rgba(255,159,10,.4);padding:1px 6px;border-radius:8px;font-size:.65rem;font-weight:700;">MIX</span>';
+        return '<span style="color:#666;font-size:.7rem;">—</span>';
+    };
     let bodyHtml = '';
     let lastArea = null;
     rows.forEach((row, idx) => {
-        // Banda de área (separador visual)
         const areaChanged = row.area_name !== lastArea;
         if (areaChanged) {
-            bodyHtml += `<tr><td colspan="11" style="padding:6px 8px;background:#0f1319;color:#FF9F0A;font-weight:700;font-size:.78rem;border:1px solid #2f4257;">${row.area_name}</td></tr>`;
+            bodyHtml += `<tr><td colspan="${TOTAL_COLS}" style="padding:6px 8px;background:#0f1319;color:#FF9F0A;font-weight:700;font-size:.78rem;border:1px solid #2f4257;">${row.area_name}</td></tr>`;
             lastArea = row.area_name;
         }
         bodyHtml += `<tr style="background:${idx % 2 ? '#161d27' : '#1b212b'};">
             <td style="padding:6px;border:1px solid #2f4257;color:#9ab0cb;font-size:.74rem;">${row.area_name}</td>
-            <td style="padding:6px;border:1px solid #2f4257;color:#5AC8FA;font-weight:600;">${row.equipment_tag}<div style="font-size:.7rem;color:#9ab0cb;font-weight:400;">${row.equipment_name}</div></td>
+            <td style="padding:6px;border:1px solid #2f4257;color:#9ab0cb;font-size:.74rem;">${row.line_name || '-'}</td>
+            <td style="padding:6px;border:1px solid #2f4257;color:#d5e2f5;font-weight:600;">${row.equipment_name}<div style="font-size:.7rem;color:#5AC8FA;font-weight:400;">${row.equipment_tag}</div></td>
             <td style="padding:6px;border:1px solid #2f4257;color:#d5e2f5;">${row.activity}</td>
+            <td style="padding:6px;border:1px solid #2f4257;text-align:center;">${partyBadge(row.responsible_party)}</td>
             <td style="padding:6px;border:1px solid #2f4257;text-align:center;color:#FFD60A;font-weight:600;">${row.total_hours}</td>`;
         for (let d = 0; d < 7; d++) {
             const dd = row.days[d];

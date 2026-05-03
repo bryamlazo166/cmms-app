@@ -1,4 +1,4 @@
-﻿from flask import jsonify, request
+from flask import jsonify, request
 
 
 def register_master_data_routes(
@@ -106,6 +106,33 @@ def register_master_data_routes(
         if request.method == 'PUT':
             return update_entry(Equipment, id, request.json)
         return delete_entry(Equipment, id)
+
+    @app.route('/api/equipments/bulk-responsibility', methods=['POST'])
+    def bulk_set_equipment_responsibility():
+        """Asigna responsable y proveedor a multiples equipos a la vez.
+        Body: { equipment_ids: [int], responsible_party: 'INTERNO'|'PROVEEDOR',
+                provider_id: int|null }
+        """
+        try:
+            data = request.json or {}
+            ids = data.get('equipment_ids') or []
+            party = data.get('responsible_party')
+            provider_id = data.get('provider_id')
+            if not ids:
+                return jsonify({"error": "equipment_ids requerido"}), 400
+            if party not in ('INTERNO', 'PROVEEDOR'):
+                return jsonify({"error": "responsible_party debe ser INTERNO o PROVEEDOR"}), 400
+
+            updated = 0
+            for eq in Equipment.query.filter(Equipment.id.in_(ids)).all():
+                eq.default_responsible_party = party
+                eq.default_provider_id = provider_id if party == 'PROVEEDOR' else None
+                updated += 1
+            db.session.commit()
+            return jsonify({"ok": True, "updated": updated})
+        except Exception as e:
+            db.session.rollback()
+            return jsonify({"error": str(e)}), 500
 
     @app.route('/api/systems', methods=['GET', 'POST'])
     def handle_systems():

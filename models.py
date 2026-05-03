@@ -160,9 +160,17 @@ class Equipment(db.Model):
     # rendimiento real ~30% → produce ~3600 TM/mes de harina.
     # Default 1.0 (sin perdida de proceso) para no afectar calculos legacy.
     yield_factor: Mapped[float] = mapped_column(Float, nullable=False, default=1.0)
+    # Responsable por defecto del mantenimiento de este equipo:
+    # 'INTERNO' = area de mantenimiento de la empresa
+    # 'PROVEEDOR' = proveedor externo (FAPMETAL, etc.)
+    # Cada punto preventivo (lub/insp/mon) puede sobrescribir esto via su
+    # campo responsible_party_override; si esta NULL hereda del equipo.
+    default_responsible_party: Mapped[str] = mapped_column(String(20), nullable=False, default='INTERNO')
+    default_provider_id: Mapped[int | None] = mapped_column(ForeignKey('providers.id'), nullable=True)
 
     line = relationship("Line", back_populates="equipments")
     systems = relationship("System", back_populates="equipment", cascade="all, delete-orphan")
+    default_provider = relationship("Provider", foreign_keys=[default_provider_id])
 
     def to_dict(self):
         return {"id": self.id, "name": self.name, "tag": self.tag, "description": self.description,
@@ -170,7 +178,10 @@ class Equipment(db.Model):
                 "include_in_kpi": self.include_in_kpi, "capacity_tm": self.capacity_tm,
                 "shift_hours_per_day": self.shift_hours_per_day,
                 "work_days_per_week": self.work_days_per_week,
-                "yield_factor": self.yield_factor}
+                "yield_factor": self.yield_factor,
+                "default_responsible_party": self.default_responsible_party,
+                "default_provider_id": self.default_provider_id,
+                "default_provider_name": self.default_provider.name if self.default_provider else None}
 
 class System(db.Model):
     __tablename__ = 'systems'
@@ -785,6 +796,12 @@ class LubricationPoint(db.Model):
     next_due_date: Mapped[str | None] = mapped_column(String(20), nullable=True)
     semaphore_status: Mapped[str] = mapped_column(String(20), nullable=False, default='PENDIENTE')
     is_active: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
+    # Override de responsabilidad. NULL = hereda de Equipment.default_responsible_party.
+    # Solo llenar cuando ESTE punto especifico tiene un responsable distinto al
+    # default del equipo (ej: el equipo es del proveedor pero esta lubricacion
+    # diaria la hace mantenimiento interno).
+    responsible_party_override: Mapped[str | None] = mapped_column(String(20), nullable=True)
+    provider_id_override: Mapped[int | None] = mapped_column(ForeignKey('providers.id'), nullable=True)
 
     area = relationship("Area")
     line = relationship("Line")
@@ -817,7 +834,19 @@ class LubricationPoint(db.Model):
             "last_service_date": self.last_service_date,
             "next_due_date": self.next_due_date,
             "semaphore_status": self.semaphore_status,
-            "is_active": self.is_active
+            "is_active": self.is_active,
+            "responsible_party_override": self.responsible_party_override,
+            "provider_id_override": self.provider_id_override,
+            # Responsable efectivo (resuelve override -> default del equipo -> INTERNO)
+            "effective_responsible_party": (
+                self.responsible_party_override
+                or (self.equipment.default_responsible_party if self.equipment else 'INTERNO')
+            ),
+            "effective_provider_id": (
+                self.provider_id_override
+                if self.responsible_party_override
+                else (self.equipment.default_provider_id if self.equipment else None)
+            ),
         }
 
 
@@ -892,6 +921,9 @@ class MonitoringPoint(db.Model):
     next_due_date: Mapped[str | None] = mapped_column(String(20), nullable=True)
     semaphore_status: Mapped[str] = mapped_column(String(20), nullable=False, default='PENDIENTE')
     is_active: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
+    # Override de responsabilidad (NULL = hereda del Equipment)
+    responsible_party_override: Mapped[str | None] = mapped_column(String(20), nullable=True)
+    provider_id_override: Mapped[int | None] = mapped_column(ForeignKey('providers.id'), nullable=True)
 
     area = relationship("Area")
     line = relationship("Line")
@@ -928,7 +960,18 @@ class MonitoringPoint(db.Model):
             "last_measurement_date": self.last_measurement_date,
             "next_due_date": self.next_due_date,
             "semaphore_status": self.semaphore_status,
-            "is_active": self.is_active
+            "is_active": self.is_active,
+            "responsible_party_override": self.responsible_party_override,
+            "provider_id_override": self.provider_id_override,
+            "effective_responsible_party": (
+                self.responsible_party_override
+                or (self.equipment.default_responsible_party if self.equipment else 'INTERNO')
+            ),
+            "effective_provider_id": (
+                self.provider_id_override
+                if self.responsible_party_override
+                else (self.equipment.default_provider_id if self.equipment else None)
+            ),
         }
 
 
@@ -1066,6 +1109,9 @@ class InspectionRoute(db.Model):
     next_due_date: Mapped[str | None] = mapped_column(String(20), nullable=True)
     semaphore_status: Mapped[str | None] = mapped_column(String(10), nullable=True)
     is_active: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
+    # Override de responsabilidad (NULL = hereda del Equipment)
+    responsible_party_override: Mapped[str | None] = mapped_column(String(20), nullable=True)
+    provider_id_override: Mapped[int | None] = mapped_column(ForeignKey('providers.id'), nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
 
     area = relationship("Area")
@@ -1093,6 +1139,17 @@ class InspectionRoute(db.Model):
             "semaphore_status": self.semaphore_status,
             "is_active": self.is_active,
             "item_count": len(self.items) if self.items else 0,
+            "responsible_party_override": self.responsible_party_override,
+            "provider_id_override": self.provider_id_override,
+            "effective_responsible_party": (
+                self.responsible_party_override
+                or (self.equipment.default_responsible_party if self.equipment else 'INTERNO')
+            ),
+            "effective_provider_id": (
+                self.provider_id_override
+                if self.responsible_party_override
+                else (self.equipment.default_provider_id if self.equipment else None)
+            ),
         }
 
 

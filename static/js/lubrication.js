@@ -177,13 +177,29 @@ function updateKPIs(d) {
 }
 
 function renderPoints(points) {
-    const tbody = q('tbodyPoints');
     lubState.points = points || [];
-    if (!points || !points.length) {
-        tbody.innerHTML = '<tr><td colspan="11">Sin puntos registrados.</td></tr>';
-        renderPointSelect();
+    renderPointsTable();
+    renderPointSelect();
+}
+
+// Render con filtro de responsable aplicado (separado para poder re-renderizar
+// solo al cambiar el filtro sin re-fetchear).
+function renderPointsTable() {
+    const tbody = q('tbodyPoints');
+    if (!tbody) return;
+    const respFilter = (q('fResponsible') || {}).value || '';
+    let points = lubState.points || [];
+    if (respFilter) {
+        points = points.filter(p => (p.effective_responsible_party || 'INTERNO') === respFilter);
+    }
+    if (!points.length) {
+        tbody.innerHTML = '<tr><td colspan="12">Sin puntos para el filtro actual.</td></tr>';
         return;
     }
+    const respBadge = (party) => {
+        if (party === 'PROVEEDOR') return '<span style="background:rgba(48,209,88,.15);color:#30D158;border:1px solid rgba(48,209,88,.4);padding:1px 6px;border-radius:8px;font-size:.7rem;font-weight:700;" title="Proveedor">PROV</span>';
+        return '<span style="background:rgba(10,132,255,.15);color:#5AC8FA;border:1px solid rgba(10,132,255,.4);padding:1px 6px;border-radius:8px;font-size:.7rem;font-weight:700;" title="Mantenimiento interno">INT</span>';
+    };
     tbody.innerHTML = points.map(p => {
         const inactive = p.is_active === false;
         const rowStyle = inactive ? 'opacity:0.45;' : '';
@@ -192,6 +208,7 @@ function renderPoints(points) {
         const toggleIcon = inactive ? 'fa-rotate-left' : 'fa-ban';
         const toggleTitle = inactive ? 'Reactivar' : 'Desactivar';
         const toggleClass = inactive ? 'btn-reactivate' : 'btn-del';
+        const party = p.effective_responsible_party || 'INTERNO';
         return `<tr style="${rowStyle}">
             <td>${p.code || '-'}</td>
             <td>${p.name || '-'}</td>
@@ -203,15 +220,15 @@ function renderPoints(points) {
             <td>${p.last_service_date || '-'}</td>
             <td>${p.next_due_date || '-'}</td>
             <td><span class="pill ${pillClass}">${semaphore}</span></td>
+            <td>${respBadge(party)}</td>
             <td>
                 ${inactive ? '' : `<button class="btn-icon btn-edit" title="Editar" onclick="openEditModal(${p.id})"><i class="fas fa-pen"></i></button>`}
                 <button class="btn-icon ${toggleClass}" title="${toggleTitle}" onclick="togglePoint(${p.id}, ${inactive})"><i class="fas ${toggleIcon}"></i></button>
             </td>
         </tr>`;
     }).join('');
-
-    renderPointSelect();
 }
+window.renderPointsTable = renderPointsTable;
 
 function renderExecutions(rows) {
     const tbody = q('tbodyExec');

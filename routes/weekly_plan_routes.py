@@ -259,33 +259,43 @@ def register_weekly_plan_routes(
         """Distribuye puntos preventivos en las 4 áreas × 7 noches llenando la capacidad.
 
         Algoritmo:
-        - Recolecta puntos (todos o filtrados) usando utils.preventive_sources
-        - Ordena por prioridad: ROJO → AMARILLO → VERDE, next_due_date asc
-        - Para cada punto: elige el (día, área) con menos horas ocupadas dentro del área del punto
-        - Llena hasta capacity_per_day por día, máximo
+        - Recolecta puntos preventivos activos.
+        - FILTRO POR RESPONSABLE: si el plan tiene provider_id, solo incluye puntos
+          cuya responsabilidad efectiva sea ese proveedor (matriz de
+          responsabilidad: Equipment.default_responsible_party + override por punto).
+        - GRUPO POR EQUIPO: agrupa los puntos por (area, equipment) para que TODOS
+          los puntos del mismo equipo caigan el MISMO dia (preferencia del usuario:
+          terminar un equipo antes de pasar al siguiente — el lubricador ataca el
+          equipo completo en una visita).
+        - Cada grupo se asigna al dia con menos carga dentro de su area.
+
+        Body opcional: { clear_existing: bool, only_provider: bool, group_by_equipment: bool }
         """
         try:
             from utils.preventive_sources import collect_sources
+            from utils.responsibility import resolve_responsibility, INTERNO, PROVEEDOR
+
             p = WeeklyPlan.query.get_or_404(plan_id)
             data = request.get_json() or {}
             clear_existing = bool(data.get('clear_existing', True))
+            # Por defecto si el plan tiene proveedor, filtramos por el (es lo
+            # que el usuario espera: el plan del proveedor solo trae lo del proveedor).
+            only_provider = bool(data.get('only_provider', bool(p.provider_id)))
+            group_by_equipment = bool(data.get('group_by_equipment', True))
 
-            # Limpiar ítems PLANIFICADO previos si se pide
             if clear_existing:
                 for it in list(p.items):
                     if it.status == 'PLANIFICADO':
                         db.session.delete(it)
                 db.session.flush()
 
-            capacity_per_day = p.tech_count * p.hours_per_night  # h-h por noche
+            capacity_per_day = p.tech_count * p.hours_per_night
 
-            # Mapas para enrichment y filtrado
             areas_all = Area.query.all()
             line_map = {l.id: l for l in Line.query.all()}
             equip_map = {e.id: e for e in Equipment.query.all()}
             area_map = {a.id: a for a in areas_all}
 
-            # Puntos ya en otras OTs abiertas o ya incluidos en este plan: no duplicar
             open_ots = WorkOrder.query.filter(
                 WorkOrder.status.in_(['Abierta', 'Programada', 'En Progreso']),
                 WorkOrder.source_type.isnot(None),
@@ -295,7 +305,6 @@ def register_weekly_plan_routes(
                 if it.source_type and it.source_id:
                     excluded.add((it.source_type, it.source_id))
 
-            # Recolectar (todos los activos, no solo vencidos — queremos llenar capacidad)
             sources = collect_sources(
                 LubricationPoint, InspectionRoute, MonitoringPoint,
                 _calc_lub_schedule=_calculate_lubrication_schedule,
@@ -306,16 +315,10 @@ def register_weekly_plan_routes(
                 area_map=area_map, line_map=line_map, equip_map=equip_map,
             )
 
-            # Estado de carga por día y área
-            load = {d: {a.id: 0.0 for a in areas_all} for d in range(7)}
-            day_totals = [0.0] * 7
-            # Pre-cargar ítems EJECUTADO que queden (no se borran)
-            for it in p.items:
-                if 0 <= it.day_of_week <= 6 and it.area_id in load[it.day_of_week]:
-                    load[it.day_of_week][it.area_id] += it.estimated_hours or 0
-                    day_totals[it.day_of_week] += it.estimated_hours or 0
-
-            # Helper: resolver objeto origen para calcular horas
+            # ── Filtrado por responsabilidad ────────────────────────────────
+            # El plan apunta a UN proveedor (o ninguno). Filtramos los puntos
+            # cuya responsabilidad efectiva sea ese proveedor (o cualquiera si
+            # only_provider=False, util si quieres ver carga total).
             def _get_source_obj(src):
                 t, sid = src['source_type'], src['source_id']
                 if t == 'lubrication':
@@ -326,58 +329,112 @@ def register_weekly_plan_routes(
                     return MonitoringPoint.query.get(sid)
                 return None
 
-            # Distribuir
-            placed = 0
+            filtered_sources = []
             for src in sources:
-                if not src.get('area_id'):
-                    continue
-                aid = src['area_id']
-                # Elegir el día con menos carga dentro del área
-                candidate_days = list(range(7))
-                # Ordenar por (horas_del_dia_en_el_area, carga_total_del_dia)
-                candidate_days.sort(key=lambda d: (load[d].get(aid, 0), day_totals[d]))
-
                 obj = _get_source_obj(src)
-                hours = _estimate_hours(src['source_type'], obj, WorkOrder=WorkOrder) if obj else 1.0
+                if not obj:
+                    continue
+                eq = equip_map.get(getattr(obj, 'equipment_id', None))
+                party, prov_id = resolve_responsibility(obj, equipment=eq)
+                src['_obj'] = obj  # cache para no re-query
+                src['_party'] = party
+                src['_provider_id'] = prov_id
+                src['_equipment_id'] = getattr(obj, 'equipment_id', None)
+
+                if only_provider and p.provider_id:
+                    # Solo puntos del proveedor del plan
+                    if party != PROVEEDOR:
+                        continue
+                    # Si el punto especifica proveedor concreto, debe coincidir.
+                    # Si no especifica (heredado del equipo) y el equipo tampoco,
+                    # se asume que aplica al proveedor del plan.
+                    if prov_id and prov_id != p.provider_id:
+                        continue
+                filtered_sources.append(src)
+
+            sources = filtered_sources
+
+            # ── Agrupar por equipo si group_by_equipment ────────────────────
+            # Cada grupo se considera una unidad atomica que cae el mismo dia
+            # en la misma area. El orden de procesamiento es por prioridad del
+            # peor punto del grupo (semaforo mas critico).
+            if group_by_equipment:
+                from collections import OrderedDict
+                groups_dict = OrderedDict()
+                # Mantener orden de llegada para preservar prioridad de collect_sources
+                for src in sources:
+                    eq_id = src.get('_equipment_id') or 0
+                    aid = src.get('area_id') or 0
+                    key = (aid, eq_id)
+                    groups_dict.setdefault(key, []).append(src)
+                groups = list(groups_dict.values())
+            else:
+                groups = [[s] for s in sources]
+
+            # Carga inicial por dia/area (considerando items EJECUTADO ya en plan)
+            load = {d: {a.id: 0.0 for a in areas_all} for d in range(7)}
+            day_totals = [0.0] * 7
+            for it in p.items:
+                if 0 <= it.day_of_week <= 6 and it.area_id in load[it.day_of_week]:
+                    load[it.day_of_week][it.area_id] += it.estimated_hours or 0
+                    day_totals[it.day_of_week] += it.estimated_hours or 0
+
+            placed = 0
+            skipped = 0
+            for group in groups:
+                if not group or not group[0].get('area_id'):
+                    continue
+                aid = group[0]['area_id']
+
+                # Calcular horas totales del grupo
+                group_hours = []
+                for src in group:
+                    obj = src.get('_obj')
+                    h = _estimate_hours(src['source_type'], obj, WorkOrder=WorkOrder) if obj else 1.0
+                    group_hours.append(h)
+                total_group_hours = sum(group_hours)
+
+                # Elegir dia con menos carga en el area, y donde quepa el grupo COMPLETO
+                candidate_days = list(range(7))
+                candidate_days.sort(key=lambda d: (load[d].get(aid, 0), day_totals[d]))
 
                 chosen_day = None
                 for d in candidate_days:
-                    if day_totals[d] + hours <= capacity_per_day:
+                    if day_totals[d] + total_group_hours <= capacity_per_day:
                         chosen_day = d
                         break
                 if chosen_day is None:
-                    # Ya no entra ni forzando. Detener.
+                    # No cabe el grupo completo en ningun dia.
+                    # Politica: si group_by_equipment, NO partir el grupo (preferencia
+                    # del usuario: mejor postergar todo el equipo). Skip.
+                    skipped += len(group)
                     if min(day_totals) >= capacity_per_day:
                         break
-                    # Si todavía hay huecos en otros días pero no en el área del punto,
-                    # lo colocamos igual en el día de menor carga total (permite pasar del día ideal)
-                    chosen_day = candidate_days[0]
-                    if day_totals[chosen_day] + hours > capacity_per_day:
-                        continue  # ya no hay capacidad real
+                    continue
 
-                # Crear ítem
-                order = sum(1 for it in p.items if it.day_of_week == chosen_day and it.area_id == aid)
-                item = WeeklyPlanItem(
-                    plan_id=p.id,
-                    day_of_week=chosen_day,
-                    area_id=aid,
-                    order_index=order,
-                    source_type=src['source_type'],
-                    source_id=src['source_id'],
-                    source_code=src.get('code', ''),
-                    source_name=src.get('name', ''),
-                    equipment_tag=src.get('equipment_tag', ''),
-                    description=src.get('description', ''),
-                    estimated_hours=hours,
-                    status='PLANIFICADO',
-                )
-                db.session.add(item)
-                p.items.append(item)
-                load[chosen_day][aid] = load[chosen_day].get(aid, 0) + hours
-                day_totals[chosen_day] += hours
-                placed += 1
+                # Colocar todos los items del grupo en chosen_day
+                order_base = sum(1 for it in p.items if it.day_of_week == chosen_day and it.area_id == aid)
+                for i, src in enumerate(group):
+                    item = WeeklyPlanItem(
+                        plan_id=p.id,
+                        day_of_week=chosen_day,
+                        area_id=aid,
+                        order_index=order_base + i,
+                        source_type=src['source_type'],
+                        source_id=src['source_id'],
+                        source_code=src.get('code', ''),
+                        source_name=src.get('name', ''),
+                        equipment_tag=src.get('equipment_tag', ''),
+                        description=src.get('description', ''),
+                        estimated_hours=group_hours[i],
+                        status='PLANIFICADO',
+                    )
+                    db.session.add(item)
+                    p.items.append(item)
+                    placed += 1
+                load[chosen_day][aid] = load[chosen_day].get(aid, 0) + total_group_hours
+                day_totals[chosen_day] += total_group_hours
 
-                # Si todos los días están llenos, detener
                 if all(dt_h >= capacity_per_day for dt_h in day_totals):
                     break
 
@@ -385,6 +442,10 @@ def register_weekly_plan_routes(
             return jsonify({
                 "ok": True,
                 "items_placed": placed,
+                "items_skipped_no_capacity": skipped,
+                "groups_processed": len(groups),
+                "filtered_by_provider": bool(only_provider and p.provider_id),
+                "grouped_by_equipment": group_by_equipment,
                 "hours_per_day": [round(x, 2) for x in day_totals],
                 "capacity_per_day": capacity_per_day,
                 "fill_pct": [round((x / capacity_per_day * 100) if capacity_per_day else 0, 1) for x in day_totals],
@@ -735,14 +796,12 @@ def register_weekly_plan_routes(
 
     def _build_matrix(plan):
         """Devuelve la matriz tipo Gantt para un plan:
-        rows = [{area, equipment_tag, equipment_name, activity, hours, days: {0..6: bool/item_ids}, item_ids_per_day}]
+        rows = [{area, line, equipment_tag, equipment_name, activity, hours, days, responsible_party}]
         days_meta = [{idx, name, date}]
         """
-        from models import Equipment as _Eq, Area as _Ar
-        # Pre-cargar nombres de equipo
-        eq_ids = {it.source_id for it in plan.items if it.source_id}
-        # No siempre source_id apunta a equipment; el equipment esta en
-        # equipment_tag y/o source_name. Mejor reagrupar por tag.
+        from models import Equipment as _Eq, Area as _Ar, Line as _Ln, LubricationPoint as _LP, \
+            InspectionRoute as _IR, MonitoringPoint as _MP
+        from utils.responsibility import resolve_responsibility
 
         # Agrupar items por (area_id, equipment_tag, verbo) para consolidar
         from collections import defaultdict
@@ -755,16 +814,32 @@ def register_weekly_plan_routes(
             key = (area_id, tag, verb_key)
             groups[key][it.day_of_week].append(it)
 
-        # Construir filas
+        # Pre-cargar mapas
         area_map = {a.id: a for a in _Ar.query.all()}
-        # Equipos: buscar por tag para obtener nombre legible
+        line_map = {l.id: l for l in _Ln.query.all()}
         all_tags = {tag for (_, tag, _) in groups.keys() if tag != '(Sin equipo)'}
         eq_by_tag = {e.tag: e for e in _Eq.query.filter(_Eq.tag.in_(all_tags)).all()} if all_tags else {}
+        # Pre-cargar puntos preventivos por tipo+id para resolver responsabilidad
+        ids_by_type = defaultdict(set)
+        for it in plan.items:
+            if it.source_type and it.source_id:
+                ids_by_type[it.source_type].add(it.source_id)
+        points_map = {}  # (type, id) -> obj
+        if ids_by_type.get('lubrication'):
+            for o in _LP.query.filter(_LP.id.in_(ids_by_type['lubrication'])).all():
+                points_map[('lubrication', o.id)] = o
+        if ids_by_type.get('inspection'):
+            for o in _IR.query.filter(_IR.id.in_(ids_by_type['inspection'])).all():
+                points_map[('inspection', o.id)] = o
+        if ids_by_type.get('monitoring'):
+            for o in _MP.query.filter(_MP.id.in_(ids_by_type['monitoring'])).all():
+                points_map[('monitoring', o.id)] = o
 
         rows = []
         for (area_id, tag, verb_key), days_dict in groups.items():
             area = area_map.get(area_id)
             eq = eq_by_tag.get(tag)
+            line = line_map.get(eq.line_id) if eq and eq.line_id else None
             # Para cada dia consolidamos los items de ese grupo
             day_labels = {}
             day_items = {}
@@ -772,6 +847,8 @@ def register_weekly_plan_routes(
             day_hours = {}
             total_hours = 0.0
             unified_label_set = set()
+            party_set = set()
+            providers_set = set()
             for d, items in days_dict.items():
                 label = _consolidate_activity_label(items)
                 day_labels[d] = label
@@ -782,17 +859,37 @@ def register_weekly_plan_routes(
                 day_hours[d] = round(hh, 2)
                 total_hours += hh
                 unified_label_set.add(label)
+                # Resolver responsable para cada item
+                for it in items:
+                    obj = points_map.get((it.source_type, it.source_id))
+                    if obj:
+                        p_party, p_pid = resolve_responsibility(obj, equipment=eq)
+                        party_set.add(p_party)
+                        if p_pid:
+                            providers_set.add(p_pid)
 
-            # Activity label para la fila: usar el label consolidado mas largo
             activity_label = max(unified_label_set, key=len) if unified_label_set else verb_key
+
+            # Resumen del responsable: si hay UNO solo lo muestra; si hay mezcla, "MIXTO"
+            if len(party_set) == 1:
+                row_party = next(iter(party_set))
+            elif party_set:
+                row_party = 'MIXTO'
+            else:
+                row_party = ''
 
             rows.append({
                 'area_id': area_id,
                 'area_name': area.name if area else '(Sin area)',
+                'line_id': line.id if line else None,
+                'line_name': line.name if line else '-',
                 'equipment_tag': tag,
                 'equipment_name': eq.name if eq else tag,
+                # Nombre comun para mostrar al mecanico (combina nombre + tag entre parentesis)
+                'equipment_display': (f"{eq.name} ({tag})" if eq else tag),
                 'activity': activity_label,
                 'verb': verb_key,
+                'responsible_party': row_party,
                 'total_hours': round(total_hours, 2),
                 'days': {d: {'label': day_labels.get(d, ''),
                              'item_ids': day_items.get(d, []),
@@ -800,7 +897,7 @@ def register_weekly_plan_routes(
                              'status': day_status.get(d, '')} for d in range(7)},
             })
 
-        rows.sort(key=lambda r: (r['area_name'], r['equipment_tag'], r['activity']))
+        rows.sort(key=lambda r: (r['area_name'], r['line_name'], r['equipment_name'], r['activity']))
 
         # Metadata de dias
         day_names_short = ['LUN', 'MAR', 'MIE', 'JUE', 'VIE', 'SAB', 'DOM']
@@ -881,8 +978,8 @@ def register_weekly_plan_routes(
             ws['A2'].alignment = center
             ws['A2'].font = Font(italic=True, size=9, color='5A6570')
 
-            # Cabecera de columnas (fila 4)
-            headers = ['AREA', 'EQUIPO', 'ACTIVIDAD', 'HRS']
+            # Cabecera de columnas (fila 4) — ahora con LINEA y nombre comun de EQUIPO
+            headers = ['AREA', 'LINEA', 'EQUIPO', 'ACTIVIDAD', 'HRS']
             for d in days_meta:
                 headers.append(f"{d['name']}\n{d['date'][-5:] if d['date'] else ''}")
             for col_idx, h in enumerate(headers, 1):
@@ -891,20 +988,22 @@ def register_weekly_plan_routes(
                 c.font = header_font
                 c.alignment = center
                 c.border = border
-            # Marcar fines de semana
+            # Marcar fines de semana (offset +1 por la nueva columna LINEA)
             for d in days_meta:
                 if d['is_weekend']:
-                    col = 5 + d['idx']
+                    col = 6 + d['idx']
                     ws.cell(row=4, column=col).fill = day_fill_wknd
 
             # Filas de datos
             for r_idx, row in enumerate(rows, start=5):
                 ws.cell(row=r_idx, column=1, value=row['area_name']).alignment = left
-                ws.cell(row=r_idx, column=2, value=f"{row['equipment_tag']} {row['equipment_name']}").alignment = left
-                ws.cell(row=r_idx, column=3, value=row['activity']).alignment = left
-                ws.cell(row=r_idx, column=4, value=row['total_hours']).alignment = center
+                ws.cell(row=r_idx, column=2, value=row['line_name']).alignment = left
+                # Equipo: nombre comun primero, codigo entre parentesis (mecanico se guia por nombre)
+                ws.cell(row=r_idx, column=3, value=row['equipment_display']).alignment = left
+                ws.cell(row=r_idx, column=4, value=row['activity']).alignment = left
+                ws.cell(row=r_idx, column=5, value=row['total_hours']).alignment = center
                 for d in range(7):
-                    cell = ws.cell(row=r_idx, column=5 + d)
+                    cell = ws.cell(row=r_idx, column=6 + d)
                     day_data = row['days'][d]
                     if day_data['item_ids']:
                         if day_data['status'] == 'EJECUTADO':
@@ -920,25 +1019,30 @@ def register_weekly_plan_routes(
                             cell.fill = mark_planned
                             cell.font = Font(bold=True, color='FFFFFF', size=11)
                     cell.alignment = center
-                # Bordes a toda la fila
-                for col_idx in range(1, 12):
+                # Bordes a toda la fila (12 cols ahora)
+                for col_idx in range(1, 13):
                     ws.cell(row=r_idx, column=col_idx).border = border
 
             # Anchos de columna
-            ws.column_dimensions['A'].width = 18
-            ws.column_dimensions['B'].width = 28
-            ws.column_dimensions['C'].width = 45
-            ws.column_dimensions['D'].width = 8
+            ws.column_dimensions['A'].width = 16  # AREA
+            ws.column_dimensions['B'].width = 18  # LINEA
+            ws.column_dimensions['C'].width = 30  # EQUIPO (nombre + tag)
+            ws.column_dimensions['D'].width = 42  # ACTIVIDAD
+            ws.column_dimensions['E'].width = 8   # HRS
             for d in range(7):
-                ws.column_dimensions[get_column_letter(5 + d)].width = 9
+                ws.column_dimensions[get_column_letter(6 + d)].width = 9
 
             # Congelar paneles (titulos siempre visibles)
-            ws.freeze_panes = 'E5'
+            ws.freeze_panes = 'F5'
 
             # Pie con leyenda
             footer_row = 5 + len(rows) + 2
             ws.cell(row=footer_row, column=1,
                     value="Leyenda: P=Planificado · ½=Parcialmente ejecutado · ✓=Ejecutado").font = Font(italic=True, size=9)
+            # Total de horas y filas
+            total_h = sum(r['total_hours'] for r in rows)
+            ws.cell(row=footer_row + 1, column=1,
+                    value=f"Total: {len(rows)} actividades agrupadas · {round(total_h, 2)} horas planificadas").font = Font(italic=True, size=9, color='1F4E79')
 
             bio = BytesIO()
             wb.save(bio)
@@ -992,8 +1096,8 @@ def register_weekly_plan_routes(
                 sub_style))
             story.append(Spacer(1, 4 * mm))
 
-            # Cabecera de tabla
-            header_row = ['ÁREA', 'EQUIPO', 'ACTIVIDAD', 'HRS']
+            # Cabecera de tabla — ahora con LINEA
+            header_row = ['ÁREA', 'LÍNEA', 'EQUIPO', 'ACTIVIDAD', 'HRS']
             for d in days_meta:
                 header_row.append(f"{d['name']}\n{d['date'][-5:] if d['date'] else ''}")
 
@@ -1001,7 +1105,9 @@ def register_weekly_plan_routes(
             for r in rows:
                 row_cells = [
                     Paragraph(r['area_name'], cell_style),
-                    Paragraph(f"<b>{r['equipment_tag']}</b><br/>{r['equipment_name']}", cell_style),
+                    Paragraph(r['line_name'], cell_style),
+                    # Equipo: nombre comun en negrita, codigo abajo en gris
+                    Paragraph(f"<b>{r['equipment_name']}</b><br/><font color='#888888' size='6'>{r['equipment_tag']}</font>", cell_style),
                     Paragraph(r['activity'], cell_style),
                     f"{r['total_hours']}h",
                 ]
@@ -1020,8 +1126,8 @@ def register_weekly_plan_routes(
 
             tbl = Table(
                 table_data,
-                colWidths=[20 * mm, 35 * mm, 65 * mm, 10 * mm,
-                           15 * mm, 15 * mm, 15 * mm, 15 * mm, 15 * mm, 15 * mm, 15 * mm],
+                colWidths=[18 * mm, 22 * mm, 38 * mm, 60 * mm, 10 * mm,
+                           14 * mm, 14 * mm, 14 * mm, 14 * mm, 14 * mm, 14 * mm, 14 * mm],
                 repeatRows=1,
             )
             ts = TableStyle([
@@ -1031,20 +1137,20 @@ def register_weekly_plan_routes(
                 ('FONT', (0, 1), (-1, -1), 'Helvetica', 7),
                 ('GRID', (0, 0), (-1, -1), 0.3, colors.HexColor('#BFBFBF')),
                 ('VALIGN', (0, 0), (-1, -1), 'MIDDLE'),
-                ('ALIGN', (3, 0), (-1, -1), 'CENTER'),
+                ('ALIGN', (4, 0), (-1, -1), 'CENTER'),
                 ('PADDING', (0, 0), (-1, -1), 2),
             ])
-            # Pintar fines de semana en cabecera
+            # Pintar fines de semana en cabecera (offset +1 por LINEA)
             for d in days_meta:
                 if d['is_weekend']:
-                    col = 4 + d['idx']
+                    col = 5 + d['idx']
                     ts.add('BACKGROUND', (col, 0), (col, 0), colors.HexColor('#C00000'))
             # Pintar celdas marcadas
             for r_idx, r in enumerate(rows, start=1):
                 for d in range(7):
                     dd = r['days'][d]
                     if dd['item_ids']:
-                        col = 4 + d
+                        col = 5 + d
                         if dd['status'] == 'EJECUTADO':
                             ts.add('BACKGROUND', (col, r_idx), (col, r_idx), colors.HexColor('#70AD47'))
                             ts.add('TEXTCOLOR', (col, r_idx), (col, r_idx), colors.white)

@@ -104,16 +104,24 @@
         </div>
 
         <div class="panel">
-            <div style="display:flex; align-items:center; justify-content:space-between; padding-right:14px;">
+            <div style="display:flex; align-items:center; justify-content:space-between; padding-right:14px;flex-wrap:wrap;gap:10px;">
                 <h3>Puntos de Lubricacion</h3>
-                <button id="btnToggleInactive" class="btn-toggle-inactive" onclick="toggleInactiveFilter()">
-                    <i class="fas fa-eye"></i> Mostrar Inactivos
-                </button>
+                <div style="display:flex;gap:8px;align-items:center;">
+                    <!-- Filtro por responsable -->
+                    <select id="fResponsible" onchange="renderPointsTable()" style="padding:6px 10px;border-radius:6px;background:rgba(255,255,255,.06);border:1px solid rgba(255,255,255,.15);color:rgba(255,255,255,.85);font-size:.84rem;">
+                        <option value="">Todos los responsables</option>
+                        <option value="INTERNO">🔵 Solo Internos (Mantenimiento)</option>
+                        <option value="PROVEEDOR">🟢 Solo Proveedor</option>
+                    </select>
+                    <button id="btnToggleInactive" class="btn-toggle-inactive" onclick="toggleInactiveFilter()">
+                        <i class="fas fa-eye"></i> Mostrar Inactivos
+                    </button>
+                </div>
             </div>
             <div class="table-wrap">
                 <table>
-                    <thead><tr><th>Codigo</th><th>Punto</th><th>Equipo</th><th>Sistema</th><th>Componente</th><th>Lubricante</th><th>Frecuencia</th><th>Ultimo</th><th>Proximo</th><th>Semaforo</th><th>Accion</th></tr></thead>
-                    <tbody id="tbodyPoints"><tr><td colspan="11">Cargando...</td></tr></tbody>
+                    <thead><tr><th>Codigo</th><th>Punto</th><th>Equipo</th><th>Sistema</th><th>Componente</th><th>Lubricante</th><th>Frecuencia</th><th>Ultimo</th><th>Proximo</th><th>Semaforo</th><th>Resp.</th><th>Accion</th></tr></thead>
+                    <tbody id="tbodyPoints"><tr><td colspan="12">Cargando...</td></tr></tbody>
                 </table>
             </div>
         </div>
