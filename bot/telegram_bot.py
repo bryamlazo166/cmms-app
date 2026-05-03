@@ -1826,23 +1826,65 @@ def _resolve_lub_point_fuzzy(_db, text, point_query):
                     alts.update(syns); alts.add(key)
             return alts
 
-        # Score ponderado: tag exacto > tag substring > code > name/sistema/componente.
+        # Helper: verifica si `token` aparece como palabra completa en `text_blob`,
+        # rodeada por delimitadores no alfanumericos (espacio, guion, punto, etc.).
+        # Critico para que "th1" NO matchee con "th10" como substring.
+        import re as _re_local
+        _word_cache = {}
+        def _word_match(token, text_blob):
+            if not token or not text_blob:
+                return False
+            key = (token, text_blob)
+            if key in _word_cache:
+                return _word_cache[key]
+            # (?<![a-z0-9]) = no precedido por alfanumerico
+            # (?![a-z0-9])  = no seguido por alfanumerico
+            pat = r'(?<![a-z0-9])' + _re_local.escape(token) + r'(?![a-z0-9])'
+            res = bool(_re_local.search(pat, text_blob))
+            _word_cache[key] = res
+            return res
+
+        # Score ponderado:
+        #   5 = todos los tokens hacen word-match en el TAG (mejor caso, ej "SEC2-TH1")
+        #   4 = tag exacto (== token)
+        #   3 = token aparece como palabra completa en tag (boundary)
+        #   2 = token aparece como palabra completa en code
+        #   1 = aparece en cualquier campo descriptivo (name/eq/area/sys/comp)
+        # Las menciones de area ("secador 2") tambien contribuyen via r[8].
         def score_row(r):
             code = (r[1] or '').lower()
             name = (r[2] or '').lower()
             tag = (r[6] or '').lower()
             eq_name = (r[7] or '').lower()
-            sys_n = (r[10] if len(r) > 10 else '' or '').lower() if len(r) > 10 else ''
-            comp = (r[11] if len(r) > 11 else '' or '').lower() if len(r) > 11 else ''
+            area_n = (r[8] or '').lower() if len(r) > 8 else ''
+            sys_n = (r[10] or '').lower() if len(r) > 10 else ''
+            comp = (r[11] or '').lower() if len(r) > 11 else ''
+
+            # Bonus global: TODOS los tokens (o su sinonimo) word-matchean en el tag
+            tag_full_match = all(
+                any(_word_match(a, tag) for a in alts_for(t))
+                for t in tokens
+            ) if tag else False
+
             s = 0
+            if tag_full_match:
+                s += 5 * len(tokens)  # bonus dominante por match perfecto del equipo
+
             for t in tokens:
                 t_alts = alts_for(t)
                 w = 0
-                if any(a == tag for a in t_alts): w = max(w, 4)
-                elif any(a in tag for a in t_alts): w = max(w, 3)
-                if any(a in code for a in t_alts): w = max(w, 2)
-                if any(a in name or a in eq_name or a in sys_n or a in comp
-                       for a in t_alts): w = max(w, 1)
+                # Tag: exacto > word-boundary; NUNCA substring suelto (evita TH1 vs TH10)
+                if any(a == tag for a in t_alts):
+                    w = max(w, 4)
+                elif any(_word_match(a, tag) for a in t_alts):
+                    w = max(w, 3)
+                # Code: word-boundary, evita falsos positivos en codigos largos
+                if any(_word_match(a, code) for a in t_alts):
+                    w = max(w, 2)
+                # Campos descriptivos: substring permitido (busqueda flexible)
+                if any(a in name or a in eq_name or a in area_n
+                       or a in sys_n or a in comp for a in t_alts):
+                    w = max(w, 1)
                 s += w
             return s
 

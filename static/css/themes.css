@@ -1725,3 +1725,77 @@
 :root[data-theme="management"] [style*="border-top: 1px solid #444"] {
     border-color: var(--sep) !important;
 }
+
+/* ════════════════════════════════════════════════════════════════
+   MANAGEMENT MODE — Overrides especificos por clase CSS
+   Cards con backgrounds dark definidos via clases (no inline) en
+   <style> blocks dentro de templates: purchasing.html (.purchase-card),
+   shutdown_templates.html (.tpl-card, .item-row), reports.html
+   (.reports-header, .weekly-kpi, .kpi-card).
+════════════════════════════════════════════════════════════════ */
+
+/* Compras: cards de Bandeja de Entrada de Solicitudes */
+:root[data-theme="management"] .purchase-card {
+    background: var(--bg-primary) !important;
+    border: 1px solid var(--sep) !important;
+    color: var(--label-primary) !important;
+    box-shadow: var(--shadow-sm);
+}
+:root[data-theme="management"] .purchase-card .req-code,
+:root[data-theme="management"] .purchase-card .req-title,
+:root[data-theme="management"] .purchase-card strong {
+    color: var(--label-primary) !important;
+}
+:root[data-theme="management"] .purchase-card .req-meta,
+:root[data-theme="management"] .purchase-card small,
+:root[data-theme="management"] .purchase-card .req-date {
+    color: var(--label-secondary) !important;
+}
+
+/* Plantillas-paradas: cards y filas de items */
+:root[data-theme="management"] .tpl-card,
+:root[data-theme="management"] .item-row {
+    background: var(--bg-primary) !important;
+    border: 1px solid var(--sep) !important;
+    color: var(--label-primary) !important;
+}
+:root[data-theme="management"] .tpl-card.active,
+:root[data-theme="management"] .tpl-card:hover {
+    border-color: var(--sys-blue) !important;
+    background: var(--bg-tertiary) !important;
+}
+:root[data-theme="management"] .tpl-card .tpl-name,
+:root[data-theme="management"] .tpl-card .tpl-desc,
+:root[data-theme="management"] .tpl-card .tpl-count {
+    color: var(--label-primary) !important;
+}
+
+/* Reportes: header del Reporte Ejecutivo (gradiente oscuro) */
+:root[data-theme="management"] .reports-header {
+    background: var(--bg-primary) !important;
+    border: 1px solid var(--sep) !important;
+    color: var(--label-primary) !important;
+    box-shadow: var(--shadow-sm);
+}
+:root[data-theme="management"] .reports-header h1,
+:root[data-theme="management"] .reports-header h2,
+:root[data-theme="management"] .reports-header h3,
+:root[data-theme="management"] .reports-header p,
+:root[data-theme="management"] .reports-header span {
+    color: var(--label-primary) !important;
+}
+
+/* Reportes: KPI cards del Plan Semanal (TOTAL/PREVENTIVO/CORRECTIVO/etc.) */
+:root[data-theme="management"] .weekly-kpi,
+:root[data-theme="management"] .kpi-card {
+    background: var(--bg-primary) !important;
+    border: 1px solid var(--sep) !important;
+    color: var(--label-primary) !important;
+    box-shadow: var(--shadow-sm);
+}
+:root[data-theme="management"] .weekly-kpi .kpi-label,
+:root[data-theme="management"] .weekly-kpi .kpi-value,
+:root[data-theme="management"] .kpi-card .kpi-label,
+:root[data-theme="management"] .kpi-card .kpi-value {
+    color: var(--label-primary) !important;
+}
