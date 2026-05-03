@@ -105,21 +105,31 @@
                 <span class="count" id="selCount">0</span> equipos seleccionados
             </div>
             <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;">
-                <span style="color:#9ab0cb;font-size:.82rem;">Asignar responsable:</span>
+                <span style="color:#9ab0cb;font-size:.82rem;">Responsable:</span>
                 <button class="btn" onclick="bulkAssign('INTERNO')" style="background:rgba(10,132,255,.2);border-color:#5AC8FA;color:#5AC8FA;">
-                    <i class="fas fa-tools"></i> Mantenimiento Interno
+                    <i class="fas fa-tools"></i> Interno
                 </button>
                 <select id="bulkProvider" style="height:36px;background:#0f1319;color:#d5e2f5;border:1px solid #344964;border-radius:6px;padding:4px 10px;">
-                    <option value="">- Sin proveedor especifico -</option>
+                    <option value="">- Sin proveedor -</option>
                 </select>
                 <button class="btn success" onclick="bulkAssign('PROVEEDOR')">
                     <i class="fas fa-handshake"></i> Proveedor
+                </button>
+                <span style="color:#9ab0cb;font-size:.82rem;border-left:1px solid #2f4257;padding-left:10px;margin-left:4px;">Flujo:</span>
+                <button class="btn" onclick="autoSequence(true)" title="Asigna orden 1,2,3,... a los equipos seleccionados Y los conecta en cadena (cada uno alimenta al siguiente)" style="background:rgba(255,159,10,.2);border-color:#FF9F0A;color:#FF9F0A;">
+                    <i class="fas fa-link"></i> Auto-secuenciar + conectar
+                </button>
+                <button class="btn" onclick="autoSequence(false)" title="Solo asigna orden 1,2,3,... sin tocar las conexiones" style="background:rgba(255,159,10,.1);border-color:#FF9F0A;color:#FF9F0A;">
+                    <i class="fas fa-sort-numeric-down"></i> Solo orden
                 </button>
                 <button class="btn" onclick="clearSelection()">Cancelar</button>
             </div>
         </div>
 
         <!-- Tabla -->
+        <div style="margin-bottom:8px;color:#9ab0cb;font-size:.78rem;">
+            <i class="fas fa-info-circle"></i> Las columnas <strong>Orden #</strong> y <strong>Alimenta a</strong> definen el flujo de proceso visible en <a href="/flujo-planta" style="color:#5AC8FA;">/flujo-planta</a>. Los cambios se guardan automáticamente al perder el foco.
+        </div>
         <table>
             <thead>
                 <tr>
@@ -130,12 +140,14 @@
                     <th>Equipo</th>
                     <th style="text-align:center;">Responsable</th>
                     <th>Proveedor</th>
+                    <th style="text-align:center;width:60px;" title="Posicion en la linea (1=primero)">Orden #</th>
+                    <th style="width:200px;" title="A que equipo aguas abajo entrega su producto">Alimenta a</th>
                     <th style="text-align:center;">Puntos preventivos</th>
                     <th style="text-align:center;">Acción rápida</th>
                 </tr>
             </thead>
             <tbody id="tbody">
-                <tr><td colspan="9" style="text-align:center;padding:30px;color:#9ab0cb;">Cargando...</td></tr>
+                <tr><td colspan="11" style="text-align:center;padding:30px;color:#9ab0cb;">Cargando...</td></tr>
             </tbody>
         </table>
     </div>
@@ -264,9 +276,19 @@ function renderTable() {
     document.getElementById('rowCount').textContent = `${rows.length} equipos`;
 
     if (!rows.length) {
-        tbody.innerHTML = '<tr><td colspan="9" style="text-align:center;padding:30px;color:#9ab0cb;">Sin equipos para el filtro actual.</td></tr>';
+        tbody.innerHTML = '<tr><td colspan="11" style="text-align:center;padding:30px;color:#9ab0cb;">Sin equipos para el filtro actual.</td></tr>';
         return;
     }
+
+    // Helper: opciones del select "Alimenta a" — todos los equipos excepto el mismo,
+    // ordenados por area > linea > orden > nombre
+    const allEqsForSelect = [..._state.equipments].sort((a,b) => {
+        const al = lineMap[a.line_id]; const bl = lineMap[b.line_id];
+        const aa = al ? areaMap[al.area_id] : null; const ba = bl ? areaMap[bl.area_id] : null;
+        if ((aa?.name || '') !== (ba?.name || '')) return (aa?.name || '').localeCompare(ba?.name || '');
+        if ((al?.name || '') !== (bl?.name || '')) return (al?.name || '').localeCompare(bl?.name || '');
+        return (a.tag || '').localeCompare(b.tag || '', 'es', {numeric:true});
+    });
 
     tbody.innerHTML = rows.map(e => {
         const party = e.default_responsible_party || 'INTERNO';
@@ -280,6 +302,18 @@ function renderTable() {
         const sel = _state.selected.has(e.id) ? 'selected' : '';
         const quickInt = `<button class="quick-act" title="Asignar a Interno" onclick="quickAssign(${e.id}, 'INTERNO')"><i class="fas fa-tools"></i></button>`;
         const quickProv = `<button class="quick-act prov" title="Asignar a Proveedor" onclick="quickAssign(${e.id}, 'PROVEEDOR')"><i class="fas fa-handshake"></i></button>`;
+
+        // Inputs de flujo
+        const orderInput = `<input type="number" min="0" step="1" value="${e.process_order ?? ''}" data-id="${e.id}" onchange="saveFlow(${e.id}, 'process_order', this.value)" style="width:50px;background:#0f1319;color:#d5e2f5;border:1px solid #344964;border-radius:4px;padding:3px 6px;text-align:center;font-size:.84rem;" placeholder="—">`;
+        const feedsOpts = '<option value="">- Ninguno (fin de linea) -</option>' +
+            allEqsForSelect.filter(x => x.id !== e.id).map(x => {
+                const xline = lineMap[x.line_id];
+                const xarea = xline ? areaMap[xline.area_id] : null;
+                const sel = (e.feeds_into_equipment_id === x.id) ? 'selected' : '';
+                return `<option value="${x.id}" ${sel}>${xarea?.name || ''} · ${x.tag} ${x.name}</option>`;
+            }).join('');
+        const feedsSelect = `<select data-id="${e.id}" onchange="saveFlow(${e.id}, 'feeds_into_equipment_id', this.value)" style="width:100%;background:#0f1319;color:#d5e2f5;border:1px solid #344964;border-radius:4px;padding:3px 6px;font-size:.78rem;">${feedsOpts}</select>`;
+
         return `<tr class="${sel}">
             <td><input type="checkbox" data-id="${e.id}" ${checked} onchange="toggleRow(${e.id}, this)"></td>
             <td style="color:#9ab0cb;">${e.area_name}</td>
@@ -288,6 +322,8 @@ function renderTable() {
             <td>${e.name || '-'}</td>
             <td style="text-align:center;">${pill}</td>
             <td>${provName}</td>
+            <td style="text-align:center;">${orderInput}</td>
+            <td>${feedsSelect}</td>
             <td style="text-align:center;color:${points > 0 ? '#FFD60A' : '#666'};font-weight:${points > 0 ? '600' : 'normal'};">${points}</td>
             <td style="text-align:center;">${quickInt}${quickProv}</td>
         </tr>`;
@@ -357,6 +393,96 @@ async function bulkAssign(party) {
         alert(`✓ ${j.updated} equipos actualizados.`);
     } catch (e) { alert('Error: ' + e.message); }
 }
+
+// Guarda un cambio de flujo (process_order o feeds_into_equipment_id) inline.
+// Hace flash visual verde al guardar OK.
+async function saveFlow(id, field, value) {
+    const payload = { equipment_id: id };
+    if (field === 'process_order') {
+        payload.process_order = value === '' ? null : parseInt(value, 10);
+    } else if (field === 'feeds_into_equipment_id') {
+        payload.feeds_into_equipment_id = value === '' ? null : parseInt(value, 10);
+    }
+    try {
+        const r = await fetch('/api/plant-flow/bulk-update', {
+            method: 'POST',
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify({ updates: [payload] }),
+        });
+        const j = await r.json();
+        if (!r.ok) {
+            alert('Error: ' + (j.error || 'desconocido'));
+            return;
+        }
+        // Actualizar cache local
+        const eq = _state.equipments.find(e => e.id === id);
+        if (eq) {
+            if (field === 'process_order') eq.process_order = payload.process_order;
+            if (field === 'feeds_into_equipment_id') eq.feeds_into_equipment_id = payload.feeds_into_equipment_id;
+        }
+        // Flash verde en el input
+        const el = document.querySelector(`[data-id="${id}"][onchange*="${field}"]`);
+        if (el) {
+            const orig = el.style.borderColor;
+            el.style.borderColor = '#30D158';
+            setTimeout(() => { el.style.borderColor = orig; }, 800);
+        }
+    } catch (e) { alert('Error: ' + e.message); }
+}
+window.saveFlow = saveFlow;
+
+// Auto-secuenciar: asigna process_order incremental (1,2,3...) a los equipos
+// seleccionados en el orden actual de la tabla, y opcionalmente conecta cada
+// uno con el siguiente (feeds_into_equipment_id).
+async function autoSequence(connectChain) {
+    if (_state.selected.size < 2) {
+        alert('Selecciona al menos 2 equipos para auto-secuenciar.');
+        return;
+    }
+    // Tomar el orden de los equipos tal como aparecen renderizados (filtros aplicados)
+    const orderedIds = [];
+    document.querySelectorAll('#tbody input[type="checkbox"][data-id]').forEach(cb => {
+        const id = Number(cb.dataset.id);
+        if (_state.selected.has(id)) orderedIds.push(id);
+    });
+    if (orderedIds.length < 2) return;
+
+    const verb = connectChain
+        ? `Asignar orden 1..${orderedIds.length} y conectar cada uno con el siguiente`
+        : `Asignar orden 1..${orderedIds.length} (sin tocar las conexiones)`;
+    if (!confirm(`${verb}?\n\nEquipos en orden:\n${orderedIds.map((id, i) => {
+        const eq = _state.equipments.find(e => e.id === id);
+        return `  ${i + 1}. ${eq ? eq.tag + ' · ' + eq.name : id}`;
+    }).join('\n')}`)) return;
+
+    const updates = orderedIds.map((id, i) => {
+        const u = { equipment_id: id, process_order: i + 1 };
+        if (connectChain) {
+            u.feeds_into_equipment_id = i < orderedIds.length - 1 ? orderedIds[i + 1] : null;
+        }
+        return u;
+    });
+    try {
+        const r = await fetch('/api/plant-flow/bulk-update', {
+            method: 'POST',
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify({ updates }),
+        });
+        const j = await r.json();
+        if (!r.ok) return alert('Error: ' + (j.error || 'desconocido'));
+        // Actualizar cache local
+        updates.forEach(u => {
+            const eq = _state.equipments.find(e => e.id === u.equipment_id);
+            if (!eq) return;
+            if ('process_order' in u) eq.process_order = u.process_order;
+            if ('feeds_into_equipment_id' in u) eq.feeds_into_equipment_id = u.feeds_into_equipment_id;
+        });
+        _state.selected.clear();
+        renderTable();
+        alert(`✓ ${j.updated} equipos actualizados.`);
+    } catch (e) { alert('Error: ' + e.message); }
+}
+window.autoSequence = autoSequence;
 
 async function quickAssign(id, party) {
     const provId = party === 'PROVEEDOR' && _state.providers.length === 1
