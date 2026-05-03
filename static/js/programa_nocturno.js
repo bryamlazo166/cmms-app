@@ -401,7 +401,10 @@ function renderMatrix() {
                 else if (dd.status === 'PARCIAL') { bg = '#FFC000'; mark = '½'; }
                 else { bg = '#2E75B6'; mark = 'P'; }
             }
-            const onclick = has ? `onclick="openMatrixCell(${row.area_id||0},'${row.equipment_tag.replace(/'/g,'')}',${d})"` : '';
+            // Pasamos rowIdx directo (no area+tag) — evita ambiguedad cuando hay
+            // multiples filas para el mismo equipo (ej: una fila FAJA + otra
+            // fila CHUMACERAS, ambas del DIGESTOR #1 D1).
+            const onclick = has ? `onclick="openMatrixCell(${idx},${d})"` : '';
             const title = has ? `${dd.label} (${dd.hours}h, ${dd.item_ids.length} item${dd.item_ids.length>1?'s':''})` : '';
             bodyHtml += `<td ${onclick} title="${title}" style="padding:6px;border:1px solid #2f4257;text-align:center;background:${bg};color:${color};font-weight:700;font-size:1rem;cursor:${cursor};">${mark}</td>`;
         }
@@ -412,10 +415,11 @@ function renderMatrix() {
 
 // Click sobre celda de la matriz → modal con los items consolidados de esa
 // celda y opcion de marcarlos como ejecutados en bloque.
-async function openMatrixCell(areaId, equipmentTag, dayIdx) {
+// Recibe el INDEX de la fila para evitar ambiguedad cuando hay varias filas
+// del mismo equipo (ej: FAJA + CHUMACERAS sobre DIGESTOR #1).
+async function openMatrixCell(rowIdx, dayIdx) {
     if (!_matrixData) return;
-    const row = _matrixData.rows.find(r => (r.area_id || 0) === areaId
-        && r.equipment_tag === equipmentTag);
+    const row = _matrixData.rows[rowIdx];
     if (!row) return;
     const dd = row.days[dayIdx];
     if (!dd.item_ids.length) return;
