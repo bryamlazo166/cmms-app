@@ -781,6 +781,266 @@ async function deleteSpec(apiType, specId) {
     loadSpecs();
 }
 
+// ── Plantillas estandar de specs por categoria de componente ────────────────
+// Estas plantillas se aplican al componente actualmente abierto en el modal
+// de specs (taxonomia). Cada categoria define la lista exacta de campos que
+// deben existir para garantizar informacion homogenea entre componentes del
+// mismo tipo (ej: todas las chumaceras tienen los mismos campos).
+const COMPONENT_SPEC_TEMPLATES = {
+    chumacera: [
+        { key: 'Marca', unit: '' },
+        { key: 'Modelo', unit: '' },
+        { key: 'Tipo de chumacera', unit: '' },
+        { key: 'Tipo de rodamiento', unit: '' },
+        { key: 'Diametro interior (eje)', unit: 'mm' },
+        { key: 'Diametro exterior carcasa', unit: 'mm' },
+        { key: 'Ancho carcasa', unit: 'mm' },
+        { key: 'Tipo de sello', unit: '' },
+        { key: 'Tornilleria de fijacion', unit: '' },
+        { key: 'Lubricante recomendado', unit: '' },
+        { key: 'Cantidad de lubricante', unit: 'g' },
+        { key: 'Frecuencia de relubricacion', unit: 'dias' },
+        { key: 'Carga dinamica (C)', unit: 'kN' },
+        { key: 'Carga estatica (Co)', unit: 'kN' },
+        { key: 'Velocidad nominal', unit: 'rpm' },
+        { key: 'Posicion (motriz/conducida)', unit: '' },
+    ],
+    rodamiento: [
+        { key: 'Marca', unit: '' },
+        { key: 'Designacion / Modelo', unit: '' },
+        { key: 'Tipo', unit: '' },
+        { key: 'Diametro interior (d)', unit: 'mm' },
+        { key: 'Diametro exterior (D)', unit: 'mm' },
+        { key: 'Ancho (B)', unit: 'mm' },
+        { key: 'Sello / Proteccion', unit: '' },
+        { key: 'Juego interno', unit: '' },
+        { key: 'Lubricante', unit: '' },
+        { key: 'Carga dinamica (C)', unit: 'kN' },
+        { key: 'Carga estatica (Co)', unit: 'kN' },
+        { key: 'Velocidad nominal', unit: 'rpm' },
+        { key: 'Velocidad limite', unit: 'rpm' },
+    ],
+    cadena: [
+        { key: 'Marca', unit: '' },
+        { key: 'Norma', unit: '' },
+        { key: 'Designacion', unit: '' },
+        { key: 'Paso', unit: 'mm o pulg' },
+        { key: 'Tipo de cadena', unit: '' },
+        { key: 'Numero de eslabones', unit: 'eslabones' },
+        { key: 'Longitud total', unit: 'm' },
+        { key: 'Diametro del rodillo', unit: 'mm' },
+        { key: 'Ancho interior eslabon', unit: 'mm' },
+        { key: 'Material', unit: '' },
+        { key: 'Resistencia a la traccion', unit: 'kN' },
+        { key: 'Lubricante recomendado', unit: '' },
+        { key: 'Frecuencia de lubricacion', unit: 'dias' },
+        { key: 'Tipo de eslabon de cierre', unit: '' },
+    ],
+    faja: [
+        { key: 'Marca', unit: '' },
+        { key: 'Tipo de faja', unit: '' },
+        { key: 'Designacion / Codigo', unit: '' },
+        { key: 'Perfil / Seccion', unit: '' },
+        { key: 'Largo nominal', unit: 'mm o pulg' },
+        { key: 'Ancho', unit: 'mm' },
+        { key: 'Espesor', unit: 'mm' },
+        { key: 'Numero de fajas en juego', unit: 'unidades' },
+        { key: 'Material / Compuesto', unit: '' },
+        { key: 'Tension recomendada', unit: 'N o kgf' },
+        { key: 'Frecuencia de inspeccion', unit: 'dias' },
+        { key: 'Vida util estimada', unit: 'horas o meses' },
+    ],
+    sprocket: [
+        { key: 'Marca', unit: '' },
+        { key: 'Tipo (motriz/conducido)', unit: '' },
+        { key: 'Norma', unit: '' },
+        { key: 'Paso de la cadena', unit: 'mm o pulg' },
+        { key: 'Numero de dientes (Z)', unit: 'dientes' },
+        { key: 'Diametro primitivo (Dp)', unit: 'mm' },
+        { key: 'Diametro exterior (De)', unit: 'mm' },
+        { key: 'Diametro interior (Di)', unit: 'mm' },
+        { key: 'Ancho de diente', unit: 'mm' },
+        { key: 'Diametro del eje', unit: 'mm' },
+        { key: 'Tipo de masa (cubo)', unit: '' },
+        { key: 'Material', unit: '' },
+        { key: 'Tratamiento termico', unit: '' },
+        { key: 'Tipo de fijacion', unit: '' },
+    ],
+    polea: [
+        { key: 'Marca', unit: '' },
+        { key: 'Tipo (motriz/conducida)', unit: '' },
+        { key: 'Tipo de polea', unit: '' },
+        { key: 'Numero de canales', unit: 'canales' },
+        { key: 'Perfil / Seccion', unit: '' },
+        { key: 'Diametro exterior', unit: 'mm' },
+        { key: 'Diametro primitivo', unit: 'mm' },
+        { key: 'Diametro del eje', unit: 'mm' },
+        { key: 'Ancho total', unit: 'mm' },
+        { key: 'Tipo de fijacion (chaveta/buje)', unit: '' },
+        { key: 'Material', unit: '' },
+        { key: 'Balanceo', unit: '' },
+    ],
+    motor_electrico: [
+        { key: 'Marca', unit: '' },
+        { key: 'Modelo', unit: '' },
+        { key: 'Numero de serie', unit: '' },
+        { key: 'Potencia nominal', unit: 'HP / kW' },
+        { key: 'Voltaje nominal', unit: 'V' },
+        { key: 'Conexion', unit: '' },
+        { key: 'Frecuencia', unit: 'Hz' },
+        { key: 'Corriente nominal', unit: 'A' },
+        { key: 'Corriente de arranque', unit: 'A' },
+        { key: 'Velocidad sincrona', unit: 'rpm' },
+        { key: 'Velocidad nominal', unit: 'rpm' },
+        { key: 'Numero de polos', unit: '' },
+        { key: 'Factor de potencia (cos φ)', unit: '' },
+        { key: 'Eficiencia (clase)', unit: '' },
+        { key: 'Tipo de rotor', unit: '' },
+        { key: 'Frame / Carcasa', unit: '' },
+        { key: 'Norma carcasa', unit: '' },
+        { key: 'Grado de proteccion', unit: '' },
+        { key: 'Clase de aislamiento', unit: '' },
+        { key: 'Tipo de servicio', unit: '' },
+        { key: 'Rodamiento lado acople', unit: '' },
+        { key: 'Rodamiento lado libre', unit: '' },
+        { key: 'Tipo de arranque', unit: '' },
+        { key: 'Forma de montaje', unit: '' },
+        { key: 'Peso', unit: 'kg' },
+    ],
+    motorreductor: [
+        { key: 'Marca', unit: '' },
+        { key: 'Modelo motor', unit: '' },
+        { key: 'Modelo reductor', unit: '' },
+        { key: 'Numero de serie', unit: '' },
+        { key: 'Tipo de reductor', unit: '' },
+        { key: 'Potencia entrada', unit: 'HP / kW' },
+        { key: 'Voltaje motor', unit: 'V' },
+        { key: 'Corriente motor', unit: 'A' },
+        { key: 'RPM entrada', unit: 'rpm' },
+        { key: 'RPM salida', unit: 'rpm' },
+        { key: 'Relacion de reduccion (i)', unit: '' },
+        { key: 'Torque salida nominal', unit: 'Nm' },
+        { key: 'Factor de servicio (fS)', unit: '' },
+        { key: 'Eficiencia del reductor', unit: '%' },
+        { key: 'Forma de montaje', unit: '' },
+        { key: 'Tipo de eje salida', unit: '' },
+        { key: 'Diametro eje salida', unit: 'mm' },
+        { key: 'Lubricante reductor', unit: '' },
+        { key: 'Volumen lubricante', unit: 'L' },
+        { key: 'Frecuencia cambio aceite', unit: 'h o dias' },
+        { key: 'Rodamientos reductor', unit: '' },
+        { key: 'Tipo de retenes', unit: '' },
+        { key: 'Grado proteccion', unit: '' },
+        { key: 'Peso total', unit: 'kg' },
+    ],
+    caja_reductora: [
+        { key: 'Marca', unit: '' },
+        { key: 'Modelo', unit: '' },
+        { key: 'Numero de serie', unit: '' },
+        { key: 'Tipo de reductor', unit: '' },
+        { key: 'Potencia que admite', unit: 'HP / kW' },
+        { key: 'RPM entrada maxima', unit: 'rpm' },
+        { key: 'Relacion de reduccion (i)', unit: '' },
+        { key: 'Torque salida nominal', unit: 'Nm' },
+        { key: 'Factor de servicio (fS)', unit: '' },
+        { key: 'Diametro eje entrada', unit: 'mm' },
+        { key: 'Diametro eje salida', unit: 'mm' },
+        { key: 'Tipo eje salida', unit: '' },
+        { key: 'Forma de montaje', unit: '' },
+        { key: 'Lubricante recomendado', unit: '' },
+        { key: 'Volumen lubricante', unit: 'L' },
+        { key: 'Frecuencia cambio aceite', unit: 'h o dias' },
+        { key: 'Rodamientos (lista)', unit: '' },
+        { key: 'Retenes (entrada/salida)', unit: '' },
+        { key: 'Grado proteccion', unit: '' },
+        { key: 'Peso', unit: 'kg' },
+    ],
+    eje: [
+        { key: 'Material', unit: '' },
+        { key: 'Tratamiento termico', unit: '' },
+        { key: 'Diametro nominal', unit: 'mm' },
+        { key: 'Longitud total', unit: 'mm' },
+        { key: 'Diametros escalonados', unit: 'mm' },
+        { key: 'Tolerancias zona rodamientos', unit: '' },
+        { key: 'Chaveteros', unit: '' },
+        { key: 'Roscas / Hilos', unit: '' },
+        { key: 'Acabado superficial', unit: '' },
+        { key: 'Plano de referencia', unit: '' },
+    ],
+    rodillo: [
+        { key: 'Marca', unit: '' },
+        { key: 'Tipo de rodillo', unit: '' },
+        { key: 'Diametro exterior', unit: 'mm' },
+        { key: 'Diametro interior (eje)', unit: 'mm' },
+        { key: 'Largo total', unit: 'mm' },
+        { key: 'Largo de cara', unit: 'mm' },
+        { key: 'Material del cuerpo', unit: '' },
+        { key: 'Recubrimiento', unit: '' },
+        { key: 'Rodamientos internos', unit: '' },
+        { key: 'Tipo de sello', unit: '' },
+        { key: 'Lubricante', unit: '' },
+        { key: 'Carga maxima', unit: 'kg' },
+        { key: 'Velocidad maxima', unit: 'rpm' },
+    ],
+    valvula: [
+        { key: 'Marca', unit: '' },
+        { key: 'Modelo', unit: '' },
+        { key: 'Tipo de valvula', unit: '' },
+        { key: 'Tamaño nominal (DN)', unit: 'pulg' },
+        { key: 'Norma de conexion', unit: '' },
+        { key: 'Tipo de extremos', unit: '' },
+        { key: 'Material del cuerpo', unit: '' },
+        { key: 'Material del trim', unit: '' },
+        { key: 'Presion nominal (PN)', unit: 'bar o psi' },
+        { key: 'Temperatura max servicio', unit: '°C' },
+        { key: 'Tipo de actuador', unit: '' },
+        { key: 'Cv (coeficiente de flujo)', unit: '' },
+        { key: 'Fluido de servicio', unit: '' },
+    ],
+};
+
+window.applyComponentSpecTemplate = async function(category) {
+    if (!_specsCtx || !_specsCtx.id) {
+        alert('Abre primero la ficha de un componente.');
+        return;
+    }
+    const tpl = COMPONENT_SPEC_TEMPLATES[category];
+    if (!tpl) { alert('Plantilla no encontrada.'); return; }
+
+    if (!confirm(`Aplicar plantilla "${category.replace(/_/g, ' ')}"?\nSe agregaran ${tpl.length} caracteristicas vacias para que las completes.\nLas que ya existan no se duplican.`)) return;
+
+    const apiT = _apiType(_specsCtx.type);
+    const id = _specsCtx.id;
+
+    // Cargar specs existentes para no duplicar (case-insensitive)
+    let existing = [];
+    try {
+        const r = await fetch(`/api/specs/${apiT}/${id}`);
+        existing = await r.json();
+    } catch (e) { existing = []; }
+    const existingKeys = new Set((existing || []).map(s => (s.key_name || '').toLowerCase().trim()));
+
+    let added = 0, skipped = 0;
+    for (const row of tpl) {
+        if (existingKeys.has(row.key.toLowerCase().trim())) {
+            skipped++;
+            continue;
+        }
+        try {
+            await fetch(`/api/specs/${apiT}/${id}`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ key_name: row.key, value_text: '—', unit: row.unit || '' })
+            });
+            added++;
+        } catch (e) {
+            console.warn('Error agregando spec:', row.key, e);
+        }
+    }
+    await loadSpecs();
+    alert(`✓ Plantilla aplicada: ${added} caracteristicas agregadas${skipped ? `, ${skipped} ya existian (omitidas)` : ''}.\nUsa el lapiz al final de cada fila para completar los valores.`);
+};
+
 async function loadDocLinks() {
     const { type, id } = _specsCtx;
     const apiT = _apiType(type);

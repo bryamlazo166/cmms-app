@@ -435,6 +435,26 @@
                 <!-- Specs Section -->
                 <div style="margin-bottom:20px">
                     <h4 style="margin:0 0 10px 0;color:#FF9F0A;font-size:.85rem"><i class="fas fa-sliders-h"></i> Especificaciones Tecnicas</h4>
+
+                    <!-- Plantillas estandar — homogeneizan la informacion entre componentes del mismo tipo -->
+                    <div style="background:rgba(90,200,250,0.08);border:1px solid rgba(90,200,250,0.3);border-radius:6px;padding:8px 10px;margin-bottom:10px;">
+                        <div style="font-size:.74rem;color:#5AC8FA;font-weight:700;margin-bottom:6px;"><i class="fas fa-magic"></i> Aplicar plantilla estandar:</div>
+                        <div style="display:flex;flex-wrap:wrap;gap:4px;">
+                            <button type="button" onclick="applyComponentSpecTemplate('chumacera')" style="background:rgba(90,200,250,0.15);border:1px solid #5AC8FA;color:#5AC8FA;padding:3px 8px;border-radius:4px;font-size:.72rem;cursor:pointer;">Chumacera</button>
+                            <button type="button" onclick="applyComponentSpecTemplate('rodamiento')" style="background:rgba(90,200,250,0.15);border:1px solid #5AC8FA;color:#5AC8FA;padding:3px 8px;border-radius:4px;font-size:.72rem;cursor:pointer;">Rodamiento</button>
+                            <button type="button" onclick="applyComponentSpecTemplate('cadena')" style="background:rgba(90,200,250,0.15);border:1px solid #5AC8FA;color:#5AC8FA;padding:3px 8px;border-radius:4px;font-size:.72rem;cursor:pointer;">Cadena</button>
+                            <button type="button" onclick="applyComponentSpecTemplate('faja')" style="background:rgba(90,200,250,0.15);border:1px solid #5AC8FA;color:#5AC8FA;padding:3px 8px;border-radius:4px;font-size:.72rem;cursor:pointer;">Faja / Banda</button>
+                            <button type="button" onclick="applyComponentSpecTemplate('sprocket')" style="background:rgba(90,200,250,0.15);border:1px solid #5AC8FA;color:#5AC8FA;padding:3px 8px;border-radius:4px;font-size:.72rem;cursor:pointer;">Pi&ntilde;on / Sprocket</button>
+                            <button type="button" onclick="applyComponentSpecTemplate('polea')" style="background:rgba(90,200,250,0.15);border:1px solid #5AC8FA;color:#5AC8FA;padding:3px 8px;border-radius:4px;font-size:.72rem;cursor:pointer;">Polea</button>
+                            <button type="button" onclick="applyComponentSpecTemplate('motor_electrico')" style="background:rgba(90,200,250,0.15);border:1px solid #5AC8FA;color:#5AC8FA;padding:3px 8px;border-radius:4px;font-size:.72rem;cursor:pointer;">Motor Electrico</button>
+                            <button type="button" onclick="applyComponentSpecTemplate('motorreductor')" style="background:rgba(90,200,250,0.15);border:1px solid #5AC8FA;color:#5AC8FA;padding:3px 8px;border-radius:4px;font-size:.72rem;cursor:pointer;">Motorreductor</button>
+                            <button type="button" onclick="applyComponentSpecTemplate('caja_reductora')" style="background:rgba(90,200,250,0.15);border:1px solid #5AC8FA;color:#5AC8FA;padding:3px 8px;border-radius:4px;font-size:.72rem;cursor:pointer;">Caja Reductora</button>
+                            <button type="button" onclick="applyComponentSpecTemplate('eje')" style="background:rgba(90,200,250,0.15);border:1px solid #5AC8FA;color:#5AC8FA;padding:3px 8px;border-radius:4px;font-size:.72rem;cursor:pointer;">Eje</button>
+                            <button type="button" onclick="applyComponentSpecTemplate('rodillo')" style="background:rgba(90,200,250,0.15);border:1px solid #5AC8FA;color:#5AC8FA;padding:3px 8px;border-radius:4px;font-size:.72rem;cursor:pointer;">Rodillo</button>
+                            <button type="button" onclick="applyComponentSpecTemplate('valvula')" style="background:rgba(90,200,250,0.15);border:1px solid #5AC8FA;color:#5AC8FA;padding:3px 8px;border-radius:4px;font-size:.72rem;cursor:pointer;">V&aacute;lvula</button>
+                        </div>
+                    </div>
+
                     <div id="specsList" style="margin-bottom:10px"></div>
                     <div style="display:grid;grid-template-columns:1fr 1fr auto auto;gap:6px;align-items:center">
                         <input type="text" id="specKey" placeholder="Propiedad (ej: RPM)" style="height:30px;background:#2a2a2e;border:1px solid #444;border-radius:6px;color:#ddd;padding:0 8px;font-size:.80rem">
