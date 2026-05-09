@@ -6,11 +6,26 @@ primer dia del mes anterior hasta hoy.
 
 Tambien expone Sankey de perdidas de produccion (Sprint 2): horas perdidas por
 equipo y modo de falla en el periodo.
+
+DISPONIBILIDAD:
+- Operativa  (Ao): incluye TODO paro (preventivo + correctivo + parada planificada).
+                   Refleja "% del tiempo que el equipo realmente produjo".
+- Inherente  (Ai): solo correctivos no programados (sin shutdown_id).
+                   Refleja "que tan confiable es el equipo per se" (ISO 14224).
+
+Ambas se calculan FUSIONANDO intervalos solapados — dos OTs paralelas en el
+mismo periodo cuentan UNA sola vez (su union, no su suma). Las horas teoricas
+respetan shift_hours_per_day y work_days_per_week del equipo.
 """
 import datetime as dt
 import math
 
 from flask import jsonify, render_template, request
+
+from utils.kpi_helpers import (
+    calendar_hours_for_equipment,
+    eq_capacity,
+)
 
 
 def register_plant_flow_routes(app, db, logger, Equipment, Area, Line, WorkOrder, EquipmentFlowEdge):
@@ -31,21 +46,135 @@ def register_plant_flow_routes(app, db, logger, Equipment, Area, Line, WorkOrder
         except Exception:
             return default
 
-    def _calc_equipment_availability(eq_id, ots_in_period, total_hours):
-        """Disponibilidad simple: (total_hours - sum(downtime)) / total_hours * 100"""
-        downtime = 0.0
+    def _parse_ts(raw):
+        """Convierte un string 'YYYY-MM-DD' o 'YYYY-MM-DDTHH:MM[:SS]' a datetime.
+        Devuelve None si no se puede interpretar."""
+        if not raw:
+            return None
+        try:
+            s = str(raw)[:19]
+            if 'T' in s:
+                # ISO con tiempo: '2026-04-08T16:40' o '2026-04-08T16:40:00'
+                if len(s) == 16:
+                    s += ':00'
+                return dt.datetime.fromisoformat(s)
+            # Solo fecha
+            return dt.datetime.fromisoformat(s + 'T00:00:00')
+        except Exception:
+            return None
+
+    def _ot_interval(ot):
+        """Extrae (inicio, fin) de paro de una OT con varias estrategias:
+          1. real_start_date + real_end_date (preferido)
+          2. real_start_date + downtime_hours
+          3. real_end_date - downtime_hours
+        Devuelve (None, None) si no hay datos suficientes.
+        """
+        ini = _parse_ts(ot.real_start_date)
+        fin = _parse_ts(ot.real_end_date)
+        dh = float(ot.downtime_hours or 0)
+
+        if ini and fin and fin > ini:
+            return ini, fin
+        if ini and dh > 0:
+            return ini, ini + dt.timedelta(hours=dh)
+        if fin and dh > 0:
+            return fin - dt.timedelta(hours=dh), fin
+        return None, None
+
+    def _merge_and_total_hours(intervals, period_start_dt, period_end_dt):
+        """Acota cada intervalo al periodo, ordena, fusiona los solapados
+        y devuelve el total de horas resultante.
+
+        Ej: dos OTs paralelas de 8h en el mismo dia se fusionan en una
+        sola ventana de 8h (no 16h). Esto evita el sobrecont eo cuando
+        varios equipos de mantenimiento trabajan en paralelo en una parada.
+        """
+        clipped = []
+        for ini, fin in intervals:
+            if not (ini and fin):
+                continue
+            a = max(ini, period_start_dt)
+            b = min(fin, period_end_dt)
+            if b > a:
+                clipped.append((a, b))
+
+        if not clipped:
+            return 0.0
+
+        clipped.sort(key=lambda x: x[0])
+        merged = [clipped[0]]
+        for a, b in clipped[1:]:
+            last_a, last_b = merged[-1]
+            if a <= last_b:
+                merged[-1] = (last_a, max(last_b, b))
+            else:
+                merged.append((a, b))
+
+        return sum((b - a).total_seconds() / 3600.0 for a, b in merged)
+
+    def _calc_equipment_availability(eq, ots_in_period, period_start, period_end):
+        """Disponibilidad operativa e inherente con fusion de intervalos.
+
+        - theoretical: horas en que el equipo DEBIA producir, respetando
+          shift_hours_per_day y work_days_per_week (no asume 24/7).
+        - downtime_op: paro total (cualquier OT con caused_downtime).
+        - downtime_inh: solo correctivos sin shutdown_id (confiabilidad pura).
+        - Aplica cap defensivo: downtime nunca supera theoretical.
+
+        Devuelve dict con ambos KPIs.
+        """
+        theoretical = calendar_hours_for_equipment(eq, period_start, period_end)
+        if theoretical <= 0:
+            return {
+                'availability_op': 100.0, 'availability_inh': 100.0,
+                'downtime_op_hours': 0.0, 'downtime_inh_hours': 0.0,
+                'n_failures': 0, 'theoretical_hours': 0.0,
+            }
+
+        p_start_dt = dt.datetime.combine(period_start, dt.time(0, 0))
+        p_end_dt = dt.datetime.combine(period_end, dt.time(23, 59, 59))
+
+        intervals_all = []
+        intervals_inh = []
         n_failures = 0
+
         for ot in ots_in_period:
-            if ot.equipment_id != eq_id:
+            if ot.equipment_id != eq.id:
                 continue
             if not (ot.caused_downtime and ot.downtime_hours):
                 continue
-            downtime += float(ot.downtime_hours)
+            ini, fin = _ot_interval(ot)
+            if not (ini and fin):
+                continue
+            intervals_all.append((ini, fin))
             n_failures += 1
-        if total_hours <= 0:
-            return 100.0, 0, 0
-        avail = max(0.0, (total_hours - downtime) / total_hours * 100)
-        return round(avail, 2), round(downtime, 2), n_failures
+
+            mt = (ot.maintenance_type or '').strip().lower()
+            is_corrective = mt in ('correctivo', 'correctiva', 'corrective')
+            # Inherente: SOLO correctivos no programados (sin parada planificada)
+            if is_corrective and not ot.shutdown_id:
+                intervals_inh.append((ini, fin))
+
+        downtime_op = _merge_and_total_hours(intervals_all, p_start_dt, p_end_dt)
+        downtime_inh = _merge_and_total_hours(intervals_inh, p_start_dt, p_end_dt)
+
+        # Cap defensivo: si por dato sucio el paro excede las horas teoricas,
+        # se acota a 100% de paro (disponibilidad 0%) en lugar de negativo.
+        downtime_op = min(downtime_op, theoretical)
+        downtime_inh = min(downtime_inh, theoretical)
+
+        avail_op = max(0.0, (theoretical - downtime_op) / theoretical * 100)
+        avail_inh = max(0.0, (theoretical - downtime_inh) / theoretical * 100)
+
+        return {
+            'availability_op': round(avail_op, 2),
+            'availability_inh': round(avail_inh, 2),
+            'downtime_op_hours': round(downtime_op, 2),
+            'downtime_inh_hours': round(downtime_inh, 2),
+            'n_failures': n_failures,
+            'theoretical_hours': round(theoretical, 2),
+        }
 
     @app.route('/flujo-planta', methods=['GET'])
     def plant_flow_page():
@@ -65,42 +194,60 @@ def register_plant_flow_routes(app, db, logger, Equipment, Area, Line, WorkOrder
             start = _parse_date(request.args.get('start'), d_start)
             end = _parse_date(request.args.get('end'), d_end)
             window_days = max(1, (end - start).days + 1)
-            total_hours = window_days * 24
+            # total_hours_24x7 se mantiene en la respuesta para referencia,
+            # pero el calculo por equipo usa calendar_hours_for_equipment().
+            total_hours_24x7 = window_days * 24
 
             # Equipos KPI-relevantes con su jerarquia
             equipments = Equipment.query.filter_by(include_in_kpi=True).all()
             areas = {a.id: a for a in Area.query.all()}
             lines = {l.id: l for l in Line.query.all()}
 
-            # OTs cerradas en el periodo con downtime
+            # OTs cerradas en el periodo con downtime. Se cargan TODAS las
+            # OTs con caused_downtime=true y se filtran luego por ventana,
+            # porque una OT puede empezar antes del periodo y terminar dentro.
             all_ots = WorkOrder.query.filter(
                 WorkOrder.status == 'Cerrada',
                 WorkOrder.caused_downtime == True,  # noqa: E712
             ).all()
 
-            def in_window(ot):
-                d = ot.real_end_date or ot.scheduled_date or ot.real_start_date
-                if not d:
-                    return False
-                try:
-                    od = dt.date.fromisoformat(d[:10])
-                    return start <= od <= end
-                except Exception:
-                    return False
+            def overlaps_window(ot):
+                """Una OT cuenta si su intervalo de paro toca el periodo."""
+                ini, fin = _ot_interval(ot)
+                if not (ini and fin):
+                    # Fallback: si no podemos armar intervalo, usar fechas sueltas
+                    d = ot.real_end_date or ot.scheduled_date or ot.real_start_date
+                    if not d:
+                        return False
+                    try:
+                        od = dt.date.fromisoformat(d[:10])
+                        return start <= od <= end
+                    except Exception:
+                        return False
+                p_start_dt = dt.datetime.combine(start, dt.time(0, 0))
+                p_end_dt = dt.datetime.combine(end, dt.time(23, 59, 59))
+                return ini <= p_end_dt and fin >= p_start_dt
 
-            ots_in_period = [o for o in all_ots if in_window(o)]
+            ots_in_period = [o for o in all_ots if overlaps_window(o)]
+
+            # Bypass: pre-cargar para flag de equipos con redundancia
+            bypass_rows = EquipmentFlowEdge.query.filter_by(is_active=True).all()
+            bypass_in_ids = {b.to_equipment_id for b in bypass_rows}
+            bypass_out_ids = {b.from_equipment_id for b in bypass_rows}
+            equipos_con_bypass = bypass_in_ids | bypass_out_ids
 
             # Construir nodos
             nodes = []
             for eq in equipments:
                 line = lines.get(eq.line_id)
                 area = areas.get(line.area_id) if line else None
-                avail, downtime, fails = _calc_equipment_availability(
-                    eq.id, ots_in_period, total_hours)
-                # Color semaforo
-                if avail >= 95:
+                kpi = _calc_equipment_availability(eq, ots_in_period, start, end)
+                avail_op = kpi['availability_op']
+                avail_inh = kpi['availability_inh']
+                # Color semaforo basado en disponibilidad operativa (la mas conservadora)
+                if avail_op >= 95:
                     color = 'green'
-                elif avail >= 85:
+                elif avail_op >= 85:
                     color = 'amber'
                 else:
                     color = 'red'
@@ -114,9 +261,17 @@ def register_plant_flow_routes(app, db, logger, Equipment, Area, Line, WorkOrder
                     'area_name': area.name if area else None,
                     'process_order': eq.process_order,
                     'feeds_into_equipment_id': eq.feeds_into_equipment_id,
-                    'availability': avail,
-                    'downtime_hours': downtime,
-                    'failure_count': fails,
+                    'capacity_tm': eq_capacity(eq),
+                    # Doble KPI: operativa (todo) e inherente (solo correctivos)
+                    'availability': avail_op,         # legacy: alias de operativa
+                    'availability_op': avail_op,
+                    'availability_inh': avail_inh,
+                    'downtime_hours': kpi['downtime_op_hours'],
+                    'downtime_op_hours': kpi['downtime_op_hours'],
+                    'downtime_inh_hours': kpi['downtime_inh_hours'],
+                    'theoretical_hours': kpi['theoretical_hours'],
+                    'failure_count': kpi['n_failures'],
+                    'has_bypass': eq.id in equipos_con_bypass,
                     'color': color,
                     'criticality': eq.criticality,
                 })
@@ -134,7 +289,6 @@ def register_plant_flow_routes(app, db, logger, Equipment, Area, Line, WorkOrder
 
             # Bypass / rutas alternativas (lineas punteadas en el diagrama)
             tag_by_id = {n['id']: n['tag'] for n in nodes}
-            bypass_rows = EquipmentFlowEdge.query.filter_by(is_active=True).all()
             bypass_edges = [
                 {
                     'id': b.id,
@@ -149,40 +303,81 @@ def register_plant_flow_routes(app, db, logger, Equipment, Area, Line, WorkOrder
                 if b.from_equipment_id in valid_ids and b.to_equipment_id in valid_ids
             ]
 
-            # Disponibilidad por linea (producto de los equipos en serie)
+            # ── Disponibilidad por LINEA (modelo serie, pero suaviza bypass) ──
+            # A_linea = producto de A_equipo. Equipos con bypass aportan un
+            # promedio entre su A_eq y 100% (aproximacion de que la linea no
+            # se detiene si el bypass esta operativo).
             line_kpi = {}
             for line_id, line in lines.items():
                 line_eqs = [n for n in nodes if n['line_id'] == line_id]
                 if not line_eqs:
                     continue
-                # Producto de disponibilidades (modelo serie)
-                prod = 1.0
+                prod_op = 1.0
+                prod_inh = 1.0
                 for n in line_eqs:
-                    prod *= (n['availability'] / 100.0)
+                    contrib_op = n['availability_op']
+                    contrib_inh = n['availability_inh']
+                    if n['has_bypass']:
+                        # Aproximacion: equipo con bypass no penaliza la linea al 100%.
+                        # Su contribucion efectiva es el promedio con disponibilidad
+                        # plena del bypass. Para un calculo exacto habria que
+                        # modelar disponibilidad del bypass (info que aun no tenemos).
+                        contrib_op = (contrib_op + 100.0) / 2.0
+                        contrib_inh = (contrib_inh + 100.0) / 2.0
+                    prod_op *= (contrib_op / 100.0)
+                    prod_inh *= (contrib_inh / 100.0)
+
                 line_kpi[line_id] = {
                     'line_id': line_id,
                     'line_name': line.name,
                     'area_id': line.area_id,
                     'area_name': areas[line.area_id].name if areas.get(line.area_id) else None,
                     'equipment_count': len(line_eqs),
-                    'availability': round(prod * 100, 2),
+                    'availability': round(prod_op * 100, 2),         # legacy alias
+                    'availability_op': round(prod_op * 100, 2),
+                    'availability_inh': round(prod_inh * 100, 2),
                     'total_downtime': round(sum(n['downtime_hours'] for n in line_eqs), 2),
                     'total_failures': sum(n['failure_count'] for n in line_eqs),
+                    # Suma de capacidades de los equipos de la linea (para
+                    # ponderar el area por capacidad de produccion).
+                    'capacity_tm': sum(n.get('capacity_tm') or 0 for n in line_eqs),
+                    'has_bypass': any(n['has_bypass'] for n in line_eqs),
                 }
 
-            # Disponibilidad por area (promedio ponderado simple)
+            # ── Disponibilidad por AREA (promedio ponderado por capacity_tm) ──
+            # Una linea grande (digestores 12000 TM/mes) pesa mas que una
+            # pequena (auxiliar 500 TM/mes). Si todas las lineas tienen 0 de
+            # capacidad, fallback a promedio aritmetico.
             area_kpi = {}
             for area_id, area in areas.items():
                 area_lines = [lk for lk in line_kpi.values() if lk['area_id'] == area_id]
                 if not area_lines:
                     continue
-                avg_avail = sum(lk['availability'] for lk in area_lines) / len(area_lines)
+                total_cap = sum(lk['capacity_tm'] for lk in area_lines)
+                if total_cap > 0:
+                    weighted_op = sum(
+                        lk['availability_op'] * lk['capacity_tm'] for lk in area_lines
+                    ) / total_cap
+                    weighted_inh = sum(
+                        lk['availability_inh'] * lk['capacity_tm'] for lk in area_lines
+                    ) / total_cap
+                    weighting = 'capacity_tm'
+                else:
+                    n_lines = len(area_lines)
+                    weighted_op = sum(lk['availability_op'] for lk in area_lines) / n_lines
+                    weighted_inh = sum(lk['availability_inh'] for lk in area_lines) / n_lines
+                    weighting = 'simple_mean'
+
                 area_kpi[area_id] = {
                     'area_id': area_id,
                     'area_name': area.name,
                     'line_count': len(area_lines),
-                    'availability': round(avg_avail, 2),
+                    'availability': round(weighted_op, 2),         # legacy alias
+                    'availability_op': round(weighted_op, 2),
+                    'availability_inh': round(weighted_inh, 2),
                     'total_downtime': round(sum(lk['total_downtime'] for lk in area_lines), 2),
+                    'capacity_tm': round(total_cap, 2),
+                    'weighting': weighting,
                 }
 
             return jsonify({
@@ -190,7 +385,7 @@ def register_plant_flow_routes(app, db, logger, Equipment, Area, Line, WorkOrder
                     'start': start.isoformat(),
                     'end': end.isoformat(),
                     'days': window_days,
-                    'hours': total_hours,
+                    'hours': total_hours_24x7,
                 },
                 'nodes': nodes,
                 'edges': edges,

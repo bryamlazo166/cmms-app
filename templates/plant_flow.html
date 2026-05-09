@@ -81,6 +81,14 @@
             <label>Hasta:</label>
             <input type="date" id="periodEnd">
             <button class="btn primary" onclick="reloadFlow()"><i class="fas fa-sync"></i> Actualizar</button>
+            <span style="border-left:1px solid #344964;height:24px;margin:0 4px;"></span>
+            <label title="Operativa: incluye todos los paros (preventivos, correctivos, paradas planificadas).
+Inherente: solo correctivos no programados — confiabilidad pura del equipo (ISO 14224).">Mostrar:</label>
+            <select id="kpiMode" onchange="switchKpiMode()">
+                <option value="op">Disponibilidad operativa</option>
+                <option value="inh">Disponibilidad inherente</option>
+            </select>
+            <span style="border-left:1px solid #344964;height:24px;margin:0 4px;"></span>
             <button class="btn warn" onclick="seedFromPdf()" title="Pre-cargar el flujo del PDF (idempotente, no sobrescribe configuracion manual)"><i class="fas fa-magic"></i> Pre-cargar flujo del PDF</button>
             <button class="btn" onclick="exportPng()" id="btnExport" disabled><i class="fas fa-download"></i> PNG</button>
             <button class="btn" onclick="exportSvg()" id="btnExportSvg" disabled><i class="fas fa-file-code"></i> SVG</button>
@@ -133,6 +141,31 @@ mermaid.initialize({startOnLoad:false, theme:'default', securityLevel:'loose',
     flowchart:{curve:'basis', rankSpacing:50, nodeSpacing:30, useMaxWidth:true, htmlLabels:false}});
 
 let _flowData = null;
+let _kpiMode = 'op'; // 'op' = operativa (todo), 'inh' = inherente (solo correctivos)
+
+// Lee el campo correspondiente al modo activo. Compatible con respuestas
+// viejas del backend que solo tengan `availability` (sin _op/_inh).
+function pickAvail(node, field /* 'availability' | 'downtime_hours' */) {
+    if (_kpiMode === 'inh') {
+        if (field === 'availability') return node.availability_inh ?? node.availability ?? 100;
+        if (field === 'downtime_hours') return node.downtime_inh_hours ?? node.downtime_hours ?? 0;
+    }
+    if (field === 'availability') return node.availability_op ?? node.availability ?? 100;
+    if (field === 'downtime_hours') return node.downtime_op_hours ?? node.downtime_hours ?? 0;
+    return node[field];
+}
+
+function colorOf(av) {
+    return av >= 95 ? 'green' : (av >= 85 ? 'amber' : 'red');
+}
+
+function switchKpiMode() {
+    _kpiMode = document.getElementById('kpiMode').value || 'op';
+    if (!_flowData) return;
+    renderAreaKPIs();
+    renderDiagram();
+}
+window.switchKpiMode = switchKpiMode;
 
 function defaultPeriod() {
     const today = new Date();
@@ -170,12 +203,19 @@ function renderAreaKPIs() {
     const cont = document.getElementById('areaKpis');
     const areaKpi = _flowData.area_kpi || [];
     if (!areaKpi.length) { cont.innerHTML = ''; return; }
+    const modeLabel = _kpiMode === 'inh' ? 'Inherente' : 'Operativa';
     cont.innerHTML = areaKpi.sort((a,b)=>a.area_name.localeCompare(b.area_name)).map(a => {
-        const cls = a.availability >= 95 ? 'green' : (a.availability >= 85 ? 'amber' : 'red');
+        const av = pickAvail(a, 'availability');
+        const otra = _kpiMode === 'inh'
+            ? (a.availability_op ?? a.availability ?? null)
+            : (a.availability_inh ?? null);
+        const cls = colorOf(av);
+        const otraLbl = _kpiMode === 'inh' ? 'Op' : 'Inh';
+        const otraTxt = (otra != null) ? `<span style="color:#7a8da4;font-size:.78rem;">· ${otraLbl}: ${otra}%</span>` : '';
         return `<div class="kpi-card ${cls}">
-            <div class="lbl">${a.area_name}</div>
-            <div class="val">${a.availability}%</div>
-            <div class="sub">${a.line_count} lineas · ${a.total_downtime}h paro acumulado</div>
+            <div class="lbl">${a.area_name} <span style="color:#5AC8FA;font-size:.65rem;">(${modeLabel})</span></div>
+            <div class="val">${av}% ${otraTxt}</div>
+            <div class="sub">${a.line_count} lineas · ${a.total_downtime}h paro · cap: ${(a.capacity_tm||0).toLocaleString()} TM</div>
         </div>`;
     }).join('');
 }
@@ -247,7 +287,9 @@ function renderDiagram() {
                 // y comillas escapadas. Sin HTML para que el SVG sea exportable.
                 const nm = (n.name || '').length > 22 ? (n.name.slice(0,20)+'...') : (n.name||'');
                 const safe = (s) => String(s).replace(/"/g, '\\"');
-                const lbl = `${safe(n.tag)}\n${safe(nm)}\n${n.availability}%`;
+                const av = pickAvail(n, 'availability');
+                const bypassFlag = n.has_bypass ? ' (bypass)' : '';
+                const lbl = `${safe(n.tag)}${bypassFlag}\n${safe(nm)}\n${av}%`;
                 m += `      ${safeId(n)}["${lbl}"]\n`;
             });
             m += `    end\n`;
@@ -281,10 +323,12 @@ function renderDiagram() {
         m += `  linkStyle ${indices.join(',')} stroke:#FF9F0A,stroke-width:2px,stroke-dasharray:6 4;\n`;
     }
 
-    // Aplicar clase de color a cada nodo
+    // Aplicar clase de color a cada nodo basada en el KPI activo
     visibleNodes.forEach(n => {
-        const cls = n.failure_count === 0 && n.downtime_hours === 0 && !n.process_order
-            ? 'nodata' : n.color;
+        const av = pickAvail(n, 'availability');
+        const dt = pickAvail(n, 'downtime_hours');
+        const cls = (n.failure_count === 0 && dt === 0 && !n.process_order)
+            ? 'nodata' : colorOf(av);
         m += `  class ${safeId(n)} ${cls}\n`;
     });
 
@@ -302,16 +346,36 @@ window.onNodeClick = function(equipmentId) {
     const n = (_flowData.nodes || []).find(x => x.id === equipmentId);
     if (!n) return;
     document.getElementById('modalTitle').textContent = `${n.tag} — ${n.name}`;
-    const cls = n.color === 'green' ? '#30D158' : (n.color === 'amber' ? '#FF9F0A' : '#FF453A');
+    const aOp = n.availability_op ?? n.availability ?? 0;
+    const aInh = n.availability_inh ?? n.availability ?? 0;
+    const dtOp = n.downtime_op_hours ?? n.downtime_hours ?? 0;
+    const dtInh = n.downtime_inh_hours ?? 0;
+    const colOp = aOp >= 95 ? '#30D158' : (aOp >= 85 ? '#FF9F0A' : '#FF453A');
+    const colInh = aInh >= 95 ? '#30D158' : (aInh >= 85 ? '#FF9F0A' : '#FF453A');
     document.getElementById('modalBody').innerHTML = `
         <div class="field"><strong>Área:</strong> ${n.area_name || '-'}</div>
         <div class="field"><strong>Línea:</strong> ${n.line_name || '-'}</div>
         <div class="field"><strong>Criticidad:</strong> ${n.criticality || '-'}</div>
         <div class="field"><strong>Orden de proceso:</strong> ${n.process_order ?? '-'}</div>
+        <div class="field"><strong>Capacidad nominal:</strong> ${(n.capacity_tm||0).toLocaleString()} TM</div>
+        ${n.has_bypass ? '<div class="field"><strong>Bypass:</strong> <span style="color:#FF9F0A;">Sí (tiene ruta alternativa)</span></div>' : ''}
         <hr style="border-color:#2f4257;">
-        <div class="field" style="font-size:1.1em;"><strong>Disponibilidad:</strong> <span style="color:${cls};font-weight:700;">${n.availability}%</span></div>
-        <div class="field"><strong>Horas de paro acumuladas:</strong> ${n.downtime_hours} h</div>
-        <div class="field"><strong>Eventos de falla:</strong> ${n.failure_count}</div>
+        <div class="field" style="font-size:1.05em;">
+            <strong>Disponibilidad Operativa:</strong>
+            <span style="color:${colOp};font-weight:700;">${aOp}%</span>
+            <div style="font-size:.78em;color:#9ab0cb;margin:2px 0 6px 0;">
+                Incluye preventivos + correctivos + paradas planificadas (${dtOp}h paro).
+            </div>
+        </div>
+        <div class="field" style="font-size:1.05em;">
+            <strong>Disponibilidad Inherente:</strong>
+            <span style="color:${colInh};font-weight:700;">${aInh}%</span>
+            <div style="font-size:.78em;color:#9ab0cb;margin:2px 0 6px 0;">
+                Solo correctivos no programados (${dtInh}h) — confiabilidad pura del equipo (ISO 14224).
+            </div>
+        </div>
+        <div class="field"><strong>Eventos de falla en periodo:</strong> ${n.failure_count}</div>
+        <div class="field"><strong>Horas teóricas (jornada del equipo):</strong> ${n.theoretical_hours ?? '-'} h</div>
         <div class="field" style="font-size:.85em;color:#9ab0cb;margin-top:10px;">Periodo: ${_flowData.period.start} a ${_flowData.period.end}</div>
     `;
     document.getElementById('goEquipmentBtn').href = `/historial-equipo?equipment_id=${equipmentId}`;
