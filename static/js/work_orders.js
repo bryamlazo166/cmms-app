@@ -2643,7 +2643,23 @@ function loadReportStatus(ot) {
     document.getElementById('reportRequired').checked = !!ot.report_required;
     document.getElementById('reportDueDate').value = ot.report_due_date || '';
     document.getElementById('reportReceivedDate').value = ot.report_received_date || '';
+    const urlInput = document.getElementById('reportUrl');
+    if (urlInput) urlInput.value = ot.report_url || '';
+    updateReportUrlButton();
     updateReportBadge(ot);
+}
+
+function updateReportUrlButton() {
+    const input = document.getElementById('reportUrl');
+    const btn = document.getElementById('reportUrlOpen');
+    if (!input || !btn) return;
+    const url = (input.value || '').trim();
+    if (url && (url.startsWith('http://') || url.startsWith('https://'))) {
+        btn.href = url;
+        btn.style.display = 'inline-block';
+    } else {
+        btn.style.display = 'none';
+    }
 }
 
 function updateReportBadge(ot) {
@@ -2669,9 +2685,16 @@ async function updateReport() {
     const required = document.getElementById('reportRequired').checked;
     const dueDate = document.getElementById('reportDueDate').value;
     const receivedDate = document.getElementById('reportReceivedDate').value;
+    const urlInput = document.getElementById('reportUrl');
+    const reportUrl = (urlInput ? urlInput.value : '').trim();
+
+    if (reportUrl && !(reportUrl.startsWith('http://') || reportUrl.startsWith('https://'))) {
+        alert('El link del informe debe iniciar con http:// o https://');
+        return;
+    }
 
     try {
-        await fetch(`/api/work_orders/${activeExecutionOT.id}/report`, {
+        const r = await fetch(`/api/work_orders/${activeExecutionOT.id}/report`, {
             method: 'PUT',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({
@@ -2679,8 +2702,19 @@ async function updateReport() {
                 report_status: receivedDate ? 'RECIBIDO' : (required ? 'PENDIENTE' : null),
                 report_due_date: dueDate || null,
                 report_received_date: receivedDate || null,
+                report_url: reportUrl || null,
             })
         });
+        if (r.ok) {
+            const updated = await r.json();
+            // Refrescar estado local
+            activeExecutionOT.report_url = updated.report_url;
+            activeExecutionOT.report_required = updated.report_required;
+            activeExecutionOT.report_status = updated.report_status;
+            activeExecutionOT.report_due_date = updated.report_due_date;
+            activeExecutionOT.report_received_date = updated.report_received_date;
+        }
+        updateReportUrlButton();
         updateReportBadge(activeExecutionOT);
     } catch (e) { console.error('Report update error:', e); }
 

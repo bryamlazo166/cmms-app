@@ -227,6 +227,12 @@ def register_work_orders_routes(
                 wo.report_due_date = data['report_due_date'] or None
             if 'report_received_date' in data:
                 wo.report_received_date = data['report_received_date'] or None
+            if 'report_url' in data:
+                url = (data.get('report_url') or '').strip()
+                # Validacion minima: si viene algo, debe parecer URL
+                if url and not (url.startswith('http://') or url.startswith('https://')):
+                    return jsonify({"error": "report_url debe iniciar con http:// o https://"}), 400
+                wo.report_url = url or None
             db.session.commit()
             return jsonify(wo.to_dict())
         except Exception as e:

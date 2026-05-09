@@ -698,7 +698,7 @@ def _build_cmms_context_real(app):
                 SELECT w.id, w.code, w.maintenance_type, w.status, w.description,
                        w.scheduled_date, w.failure_mode, w.real_start_date, w.real_end_date,
                        e.name, e.tag, c.name, s.name, l.name, w.notice_id,
-                       t.name as tech_name, w.technician_id
+                       t.name as tech_name, w.technician_id, w.report_url
                 FROM work_orders w
                 LEFT JOIN equipments e ON w.equipment_id = e.id
                 LEFT JOIN components c ON w.component_id = c.id
@@ -711,7 +711,35 @@ def _build_cmms_context_real(app):
             for o in ots:
                 eq = f"{o[10] or ''} {o[9] or '-'}".strip()
                 tech = o[15] or '-'
-                ctx.append(f"  {o[1]} | {o[2] or '-'} | {o[3]} | {eq} | {o[12] or ''}/{o[11] or ''} | {o[4] or '-'} | Falla: {o[6] or '-'} | Tec: {tech} | Prog: {o[5] or '-'} | id:{o[0]}")
+                report_part = f" | Informe: {o[17]}" if o[17] else ""
+                ctx.append(f"  {o[1]} | {o[2] or '-'} | {o[3]} | {eq} | {o[12] or ''}/{o[11] or ''} | {o[4] or '-'} | Falla: {o[6] or '-'} | Tec: {tech} | Prog: {o[5] or '-'} | id:{o[0]}{report_part}")
+
+            # Bitacora / Log entries — relevantes para responder "muestrame el informe / bitacora"
+            # Trae las ultimas 80 entradas de las OTs visibles en contexto. Si una entrada
+            # contiene una URL, el LLM debe devolverla como enlace clickeable al usuario.
+            try:
+                ot_ids_for_log = [o[0] for o in ots]
+                if ot_ids_for_log:
+                    logs = _db.session.execute(text("""
+                        SELECT le.id, w.code, le.log_date, le.log_type, le.author, le.comment
+                        FROM ot_log_entries le
+                        JOIN work_orders w ON le.work_order_id = w.id
+                        WHERE le.work_order_id = ANY(:ids)
+                        ORDER BY le.id DESC LIMIT 80
+                    """), {"ids": ot_ids_for_log}).fetchall()
+                    if logs:
+                        ctx.append(f"\n=== BITACORA DE OTs ({len(logs)} entradas recientes) ===")
+                        ctx.append("INSTRUCCION: si el usuario pide 'el informe' o 'la bitacora' de una OT,")
+                        ctx.append("busca aqui las entradas correspondientes. Si una entrada contiene una URL")
+                        ctx.append("(http://... o https://...), devuelvela al usuario como enlace clickeable.")
+                        ctx.append("Tambien revisa el campo 'Informe:' en la lista de OTs (es report_url directo).")
+                        for lg in logs:
+                            comment = (lg[5] or '').replace('\n', ' ')
+                            if len(comment) > 240:
+                                comment = comment[:240] + '...'
+                            ctx.append(f"  {lg[1]} | {lg[2]} | {lg[3]} | {lg[4] or '-'} | {comment}")
+            except Exception as e:
+                ctx.append(f"(error bitacora: {e})")
 
             # Notices (last 30) — include scope and free_location for FUERA_PLAN/GENERAL
             try:
@@ -1531,7 +1559,7 @@ def _add_log_entry(app, data):
                 return None, f"OT {ot_code} no encontrada"
             ot_id = row[0]
             _db.session.execute(text("""
-                INSERT INTO ot_bitacora (work_order_id, entry_date, comment, entry_type, created_at)
+                INSERT INTO ot_log_entries (work_order_id, log_date, comment, log_type, created_at)
                 VALUES (:wid, :d, :c, :t, NOW())
             """), {
                 "wid": ot_id, "d": date.today().isoformat(),
@@ -1596,7 +1624,7 @@ _NOTICE_EDITABLE = {'description', 'criticality', 'priority', 'maintenance_type'
 _OT_EDITABLE = {'description', 'failure_mode', 'maintenance_type', 'technician_id',
                 'scheduled_date', 'estimated_duration', 'tech_count',
                 'execution_comments', 'caused_downtime', 'downtime_hours',
-                'report_required', 'report_due_date', 'status',
+                'report_required', 'report_due_date', 'report_url', 'status',
                 'real_start_date', 'real_end_date',
                 'equipment_id', 'system_id', 'component_id', 'line_id', 'area_id'}
 
@@ -3108,6 +3136,18 @@ REGLA PARA BLOQUEOS: Cuando el usuario reporta que un digestor se "bloqueo", "tr
 
 4. AGREGAR NOTA A BITACORA:
 {"action": "add_log", "data": {"ot_code": "OT-0034", "comment": "Se cambio faja y se alineo poleas", "entry_type": "NOTA|AVANCE|MATERIAL|PROVEEDOR|INFORME"}}
+
+REGLA CRITICA — CONSULTAR vs ESCRIBIR EN BITACORA:
+- Si el usuario dice "revisa la bitacora", "muestrame la bitacora", "que dice la bitacora", "muestrame el informe", "necesito el informe", "hay link del informe", "donde esta el informe", es una CONSULTA (action:"none") — NO uses add_log.
+- Para responder, busca en la seccion "BITACORA DE OTs" del contexto entradas de la OT solicitada.
+- Si la OT tiene un "Informe: <url>" en la lista de OTs, devuelve ese URL al usuario.
+- Si alguna entrada de bitacora contiene una URL (http://... o https://...), preserva esa URL en tu respuesta como link clickeable [Informe](url).
+- Si no hay ni report_url ni URLs en la bitacora, di "no hay informe registrado para la OT-XXXX" — y sugiere que se cargue desde la pantalla de OTs (campo "Link del informe").
+- Solo usa add_log cuando el usuario pida REGISTRAR/AGREGAR/ANOTAR algo nuevo ("agrega a la bitacora", "anota que...", "registra en la OT que...").
+
+REGISTRAR LINK DE INFORME — Si el usuario dice "el informe de la OT-XXXX esta en https://...",
+"agrega el link del informe a la OT-XXXX: <url>", "guarda el informe de la OT-XXXX en <url>", usa:
+{"action": "edit_ot", "data": {"ot_code": "OT-XXXX", "fields": {"report_url": "https://..."}}}
 
 5. REPROGRAMAR OT (cambiar fecha):
 {"action": "reschedule_ot", "data": {"ot_code": "OT-0034", "new_date": "2026-04-10"}}

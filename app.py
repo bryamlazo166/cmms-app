@@ -877,6 +877,7 @@ _ENSURE_COLUMNS = [
     ("work_orders", "report_status", "VARCHAR(20)"),
     ("work_orders", "report_due_date", "VARCHAR(20)"),
     ("work_orders", "report_received_date", "VARCHAR(20)"),
+    ("work_orders", "report_url", "VARCHAR(500)"),
     ("rotative_asset_bom", "free_text", "VARCHAR(200)"),
     ("maintenance_notices", "scope", "VARCHAR(20) DEFAULT 'PLAN' NOT NULL"),
     ("maintenance_notices", "free_location", "VARCHAR(255)"),

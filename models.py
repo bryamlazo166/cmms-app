@@ -505,6 +505,9 @@ class WorkOrder(db.Model):
     # PENDIENTE | RECIBIDO
     report_due_date: Mapped[str | None] = mapped_column(String(20), nullable=True)
     report_received_date: Mapped[str | None] = mapped_column(String(20), nullable=True)
+    # Link al informe tecnico (Google Drive, OneDrive, S3, etc.). El bot de
+    # Telegram lo devuelve cuando se le pide el informe de la OT.
+    report_url: Mapped[str | None] = mapped_column(String(500), nullable=True)
 
     def to_dict(self):
         return {c.name: getattr(self, c.name) for c in self.__table__.columns}
