@@ -687,6 +687,163 @@ async function saveSpec(e) {
     await loadSpecs(assetId);
 }
 
+// ── Plantillas de specs estandar por categoria ──────────────────────────────
+// Cada plantilla genera una lista de filas vacias (key_name + unit, sin valor)
+// que el usuario completa luego. Sirve para homogeneizar la ficha tecnica
+// entre activos del mismo tipo (ej: todas las chumaceras tienen los mismos
+// campos: marca, modelo, diametro interior, sello, lubricante, etc.).
+const SPEC_TEMPLATES = {
+    chumacera: [
+        { key: 'Marca', unit: '' },
+        { key: 'Modelo', unit: '' },
+        { key: 'Tipo de chumacera', unit: '' },         // SY, SYJ, SYK / brida / pared
+        { key: 'Tipo de rodamiento', unit: '' },        // bolas, rodillos, autoalineante
+        { key: 'Diametro interior (eje)', unit: 'mm' },
+        { key: 'Diametro exterior carcasa', unit: 'mm' },
+        { key: 'Ancho carcasa', unit: 'mm' },
+        { key: 'Tipo de sello', unit: '' },             // LL, ZZ, RS, 2RS, taconite
+        { key: 'Tornilleria de fijacion', unit: '' },   // espárragos M16, etc.
+        { key: 'Lubricante recomendado', unit: '' },    // grasa NLGI 2 mineral / litio
+        { key: 'Cantidad de lubricante', unit: 'g' },
+        { key: 'Frecuencia de relubricacion', unit: 'dias' },
+        { key: 'Carga dinamica (C)', unit: 'kN' },
+        { key: 'Carga estatica (Co)', unit: 'kN' },
+        { key: 'Velocidad nominal', unit: 'rpm' },
+        { key: 'Posicion (motriz/conducida)', unit: '' },
+    ],
+    cadena: [
+        { key: 'Marca', unit: '' },
+        { key: 'Norma', unit: '' },                     // ANSI, BS, DIN, ISO
+        { key: 'Designacion', unit: '' },               // ej: ANSI 80, ISO 16B
+        { key: 'Paso', unit: 'mm o pulg' },
+        { key: 'Tipo de cadena', unit: '' },            // simple, doble, triple, silente, transportadora
+        { key: 'Numero de eslabones', unit: 'eslabones' },
+        { key: 'Longitud total', unit: 'm' },
+        { key: 'Diametro del rodillo', unit: 'mm' },
+        { key: 'Ancho interior eslabon', unit: 'mm' },
+        { key: 'Material', unit: '' },                  // acero al carbono, inox, galvanizada
+        { key: 'Resistencia a la traccion', unit: 'kN' },
+        { key: 'Lubricante recomendado', unit: '' },
+        { key: 'Frecuencia de lubricacion', unit: 'dias' },
+        { key: 'Tipo de eslabon de cierre', unit: '' }, // clip, pasador chaveta
+    ],
+    motor_electrico: [
+        { key: 'Marca', unit: '' },
+        { key: 'Modelo', unit: '' },
+        { key: 'Numero de serie', unit: '' },
+        { key: 'Potencia nominal', unit: 'HP / kW' },
+        { key: 'Voltaje nominal', unit: 'V' },
+        { key: 'Conexion', unit: '' },                  // estrella, triangulo, dual
+        { key: 'Frecuencia', unit: 'Hz' },
+        { key: 'Corriente nominal', unit: 'A' },
+        { key: 'Corriente de arranque', unit: 'A' },
+        { key: 'Velocidad sincrona', unit: 'rpm' },
+        { key: 'Velocidad nominal', unit: 'rpm' },
+        { key: 'Numero de polos', unit: '' },
+        { key: 'Factor de potencia (cos φ)', unit: '' },
+        { key: 'Eficiencia (clase)', unit: '' },        // IE2, IE3, IE4
+        { key: 'Tipo de rotor', unit: '' },             // jaula de ardilla, bobinado
+        { key: 'Frame / Carcasa', unit: '' },           // 184T, 132M, etc.
+        { key: 'Norma carcasa', unit: '' },             // NEMA / IEC
+        { key: 'Grado de proteccion', unit: '' },       // IP55, IP65
+        { key: 'Clase de aislamiento', unit: '' },      // F, H
+        { key: 'Tipo de servicio', unit: '' },          // S1 continuo
+        { key: 'Rodamiento lado acople', unit: '' },    // 6308-2RS / 2Z
+        { key: 'Rodamiento lado libre', unit: '' },     // 6206-2RS
+        { key: 'Tipo de arranque', unit: '' },          // DOL, soft starter, variador
+        { key: 'Forma de montaje', unit: '' },          // B3, B5, B14
+        { key: 'Peso', unit: 'kg' },
+    ],
+    motorreductor: [
+        { key: 'Marca', unit: '' },                     // SEW, Sumitomo, Nord, Siemens
+        { key: 'Modelo motor', unit: '' },
+        { key: 'Modelo reductor', unit: '' },
+        { key: 'Numero de serie', unit: '' },
+        { key: 'Tipo de reductor', unit: '' },          // sinfin-corona, helicoidal, planetario, ortogonal
+        { key: 'Potencia entrada', unit: 'HP / kW' },
+        { key: 'Voltaje motor', unit: 'V' },
+        { key: 'Corriente motor', unit: 'A' },
+        { key: 'RPM entrada', unit: 'rpm' },
+        { key: 'RPM salida', unit: 'rpm' },
+        { key: 'Relacion de reduccion (i)', unit: '' },
+        { key: 'Torque salida nominal', unit: 'Nm' },
+        { key: 'Factor de servicio (fS)', unit: '' },
+        { key: 'Eficiencia del reductor', unit: '%' },
+        { key: 'Forma de montaje', unit: '' },          // M1, M2, B3, B5
+        { key: 'Tipo de eje salida', unit: '' },        // macizo, hueco, brida
+        { key: 'Diametro eje salida', unit: 'mm' },
+        { key: 'Lubricante reductor', unit: '' },       // ISO VG 220, sintetico
+        { key: 'Volumen lubricante', unit: 'L' },
+        { key: 'Frecuencia cambio aceite', unit: 'h o dias' },
+        { key: 'Rodamientos reductor', unit: '' },      // lista
+        { key: 'Tipo de retenes', unit: '' },           // CR, NAK, dim/dim/ancho
+        { key: 'Grado proteccion', unit: '' },          // IP55, IP65
+        { key: 'Peso total', unit: 'kg' },
+    ],
+    caja_reductora: [
+        { key: 'Marca', unit: '' },
+        { key: 'Modelo', unit: '' },
+        { key: 'Numero de serie', unit: '' },
+        { key: 'Tipo de reductor', unit: '' },          // sinfin-corona, helicoidal, planetario
+        { key: 'Potencia que admite', unit: 'HP / kW' },
+        { key: 'RPM entrada maxima', unit: 'rpm' },
+        { key: 'Relacion de reduccion (i)', unit: '' },
+        { key: 'Torque salida nominal', unit: 'Nm' },
+        { key: 'Factor de servicio (fS)', unit: '' },
+        { key: 'Diametro eje entrada', unit: 'mm' },
+        { key: 'Diametro eje salida', unit: 'mm' },
+        { key: 'Tipo eje salida', unit: '' },           // macizo, hueco, brida
+        { key: 'Forma de montaje', unit: '' },
+        { key: 'Lubricante recomendado', unit: '' },    // ISO VG 220
+        { key: 'Volumen lubricante', unit: 'L' },
+        { key: 'Frecuencia cambio aceite', unit: 'h o dias' },
+        { key: 'Rodamientos (lista)', unit: '' },
+        { key: 'Retenes (entrada/salida)', unit: '' },
+        { key: 'Grado proteccion', unit: '' },
+        { key: 'Peso', unit: 'kg' },
+    ],
+};
+
+window.applySpecTemplate = async function(category) {
+    const tpl = SPEC_TEMPLATES[category];
+    if (!tpl) return alert('Plantilla no encontrada.');
+    const assetId = rQ('specAssetId').value;
+    if (!assetId) return alert('Selecciona un activo primero.');
+
+    if (!confirm(`Aplicar plantilla "${category.replace('_',' ')}"?\nSe agregaran ${tpl.length} caracteristicas vacias para que las completes.\nLas que ya tengas no se duplicaran.`)) return;
+
+    // Cargar specs existentes para no duplicar
+    let existing = [];
+    try {
+        existing = await rFetch(`/api/rotative-assets/${assetId}/specs`);
+    } catch (e) { existing = []; }
+    const existingKeys = new Set((existing || []).map(s => (s.key_name || '').toLowerCase().trim()));
+
+    let added = 0, skipped = 0;
+    for (const row of tpl) {
+        if (existingKeys.has(row.key.toLowerCase().trim())) {
+            skipped++;
+            continue;
+        }
+        try {
+            await rFetch(`/api/rotative-assets/${assetId}/specs`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    key_name: row.key,
+                    value_text: '—',  // placeholder, el usuario lo edita despues
+                    unit: row.unit || null,
+                })
+            });
+            added++;
+        } catch (e) {
+            console.warn('Error agregando spec:', row.key, e);
+        }
+    }
+    await loadSpecs(assetId);
+    alert(`✓ Plantilla aplicada: ${added} caracteristicas agregadas${skipped ? `, ${skipped} ya existian (omitidas)` : ''}.\nAhora completa los valores haciendo click en "Editar" en cada fila.`);
+};
+
 // ── Document Links for Rotative Assets ────────────────────────────────────
 
 async function loadRADocLinks(assetId) {

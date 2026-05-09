@@ -693,18 +693,23 @@ def _build_cmms_context_real(app):
             for e in equips:
                 ctx.append(f"  {e[1]} [{e[2]}] | Crit: {e[3] or '-'} | Linea: {e[4] or '-'} | id:{e[0]}")
 
-            # Work Orders (last 50)
+            # Work Orders (last 50) — ahora incluye report_required, report_status,
+            # report_due_date y nombre del proveedor para preguntas tipo
+            # "que OTs les falta informe" o "OTs de FAPMETAL sin informe".
             ots = _db.session.execute(text("""
                 SELECT w.id, w.code, w.maintenance_type, w.status, w.description,
                        w.scheduled_date, w.failure_mode, w.real_start_date, w.real_end_date,
                        e.name, e.tag, c.name, s.name, l.name, w.notice_id,
-                       t.name as tech_name, w.technician_id, w.report_url
+                       t.name as tech_name, w.technician_id, w.report_url,
+                       w.report_required, w.report_status, w.report_due_date,
+                       p.name as provider_name
                 FROM work_orders w
                 LEFT JOIN equipments e ON w.equipment_id = e.id
                 LEFT JOIN components c ON w.component_id = c.id
                 LEFT JOIN systems s ON w.system_id = s.id
                 LEFT JOIN lines l ON w.line_id = l.id
                 LEFT JOIN technicians t ON CAST(w.technician_id AS INTEGER) = t.id
+                LEFT JOIN providers p ON w.provider_id = p.id
                 ORDER BY w.id DESC LIMIT 50
             """)).fetchall()
             ctx.append(f"\n=== ULTIMAS {len(ots)} OTs ===")
@@ -712,7 +717,66 @@ def _build_cmms_context_real(app):
                 eq = f"{o[10] or ''} {o[9] or '-'}".strip()
                 tech = o[15] or '-'
                 report_part = f" | Informe: {o[17]}" if o[17] else ""
-                ctx.append(f"  {o[1]} | {o[2] or '-'} | {o[3]} | {eq} | {o[12] or ''}/{o[11] or ''} | {o[4] or '-'} | Falla: {o[6] or '-'} | Tec: {tech} | Prog: {o[5] or '-'} | id:{o[0]}{report_part}")
+                # Marca explicita del estado del informe — clave para
+                # responder "OTs sin informe".
+                if o[18]:  # report_required
+                    if o[17]:
+                        report_status_part = " | InfReq:RECIBIDO"
+                    elif o[19] == 'RECIBIDO':
+                        report_status_part = " | InfReq:RECIBIDO_sin_url"
+                    else:
+                        due = f" venceN{o[20]}" if o[20] else ""
+                        report_status_part = f" | InfReq:PENDIENTE{due}"
+                else:
+                    report_status_part = ""
+                prov_part = f" | Prov:{o[21]}" if o[21] else ""
+                ctx.append(f"  {o[1]} | {o[2] or '-'} | {o[3]} | {eq} | {o[12] or ''}/{o[11] or ''} | {o[4] or '-'} | Falla: {o[6] or '-'} | Tec: {tech} | Prog: {o[5] or '-'} | id:{o[0]}{prov_part}{report_part}{report_status_part}")
+
+            # Seccion dedicada: OTs con informe pendiente — el LLM puede
+            # responder rapido "que OTs les falta informe" o filtrarlas
+            # por proveedor sin tener que escanear toda la lista de OTs.
+            try:
+                pendientes_inf = _db.session.execute(text("""
+                    SELECT w.code, w.status, w.real_end_date, w.report_due_date,
+                           e.tag, e.name, p.name as provider, w.description
+                    FROM work_orders w
+                    LEFT JOIN equipments e ON w.equipment_id = e.id
+                    LEFT JOIN providers p ON w.provider_id = p.id
+                    WHERE w.report_required = true
+                      AND (w.report_status IS NULL OR w.report_status != 'RECIBIDO')
+                      AND (w.report_url IS NULL OR w.report_url = '')
+                    ORDER BY
+                      CASE WHEN w.report_due_date IS NULL THEN 1 ELSE 0 END,
+                      w.report_due_date ASC,
+                      w.id DESC
+                    LIMIT 40
+                """)).fetchall()
+                if pendientes_inf:
+                    today_iso = date.today().isoformat()
+                    ctx.append(f"\n=== OTs CON INFORME PENDIENTE ({len(pendientes_inf)}) ===")
+                    ctx.append("INSTRUCCION: si el usuario pregunta 'que OTs les falta informe',")
+                    ctx.append("'OTs sin informe', 'OTs de <PROVEEDOR> sin informe', usa esta lista.")
+                    ctx.append("Filtra por proveedor si el usuario lo pide. Si la fecha de vencimiento")
+                    ctx.append("es anterior a hoy ({}), marca el informe como VENCIDO.".format(today_iso))
+                    for r in pendientes_inf:
+                        eq = f"[{r[4] or '-'}] {r[5] or '-'}".strip()
+                        prov = f"Prov:{r[6]}" if r[6] else "Prov:-"
+                        if r[3] and r[3] < today_iso:
+                            estado = f"VENCIDO desde {r[3]}"
+                        elif r[3]:
+                            delta = 0
+                            try:
+                                delta = (date.fromisoformat(r[3]) - date.today()).days
+                            except Exception:
+                                pass
+                            estado = f"vence {r[3]} (en {delta}d)"
+                        else:
+                            estado = "sin fecha limite"
+                        cierre = f"cerrada {r[2]}" if r[2] else f"estado {r[1]}"
+                        desc = (r[7] or '')[:80]
+                        ctx.append(f"  {r[0]} | {prov} | {eq} | {cierre} | informe: {estado} | {desc}")
+            except Exception as e:
+                ctx.append(f"(error informes pendientes: {e})")
 
             # Bitacora / Log entries — relevantes para responder "muestrame el informe / bitacora"
             # Trae las ultimas 80 entradas de las OTs visibles en contexto. Si una entrada
