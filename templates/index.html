@@ -303,6 +303,10 @@
                 <div style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:10px;margin-bottom:14px">
                     <h2 style="color:rgba(255,255,255,.92);font-size:1.2rem;margin:0"><i class="fas fa-industry" style="color:var(--sys-teal,#5AC8FA);margin-right:8px"></i>Indicadores Industriales</h2>
                     <button onclick="withLoading(this, generatePreventiveOTs)" style="height:34px;background:linear-gradient(145deg,#1d6b35,#217a3e);border:1px solid #2a9d4e;border-radius:8px;color:#c8ffd4;padding:0 14px;font-size:.82rem;font-weight:600;cursor:pointer;white-space:nowrap"><i class="fas fa-calendar-plus"></i> Generar Avisos Preventivos</button>
+                    <select id="kpiMode" onchange="drillTo('area')" title="Operativa: cuenta TODO downtime (planificado + averias). Inherente (ISO 14224): solo correctivos en averias — vista de salud del activo." style="height:34px;background:rgba(255,255,255,.06);border:1px solid rgba(255,255,255,.10);border-radius:8px;color:rgba(255,255,255,.80);padding:0 10px;font-size:.82rem">
+                        <option value="operativa" selected>Disp. Operativa</option>
+                        <option value="inherente">Disp. Inherente (ISO)</option>
+                    </select>
                     <select id="kpiDays" onchange="drillTo('area')" style="height:34px;background:rgba(255,255,255,.06);border:1px solid rgba(255,255,255,.10);border-radius:8px;color:rgba(255,255,255,.80);padding:0 10px;font-size:.82rem">
                         <option value="30">30 dias</option>
                         <option value="60">60 dias</option>
@@ -316,7 +320,7 @@
                 <div class="dashboard-grid" style="grid-template-columns:repeat(auto-fit,minmax(150px,1fr))">
                     <div class="kpi-card-dash" style="border-left:3px solid #5AC8FA"><div class="kpi-info"><h3 id="gMtbf">-</h3><p>MTBF (h)</p></div><i class="fas fa-clock kpi-icon" style="color:#5AC8FA"></i></div>
                     <div class="kpi-card-dash" style="border-left:3px solid #FF9F0A"><div class="kpi-info"><h3 id="gMttr">-</h3><p>MTTR (h)</p></div><i class="fas fa-wrench kpi-icon" style="color:#FF9F0A"></i></div>
-                    <div class="kpi-card-dash" style="border-left:3px solid #30D158"><div class="kpi-info"><h3 id="gAvail">-</h3><p>Disponibilidad</p></div><i class="fas fa-signal kpi-icon" style="color:#30D158"></i></div>
+                    <div class="kpi-card-dash" style="border-left:3px solid #30D158"><div class="kpi-info"><h3 id="gAvail">-</h3><p id="gAvailLabel">Disp. Operativa</p></div><i class="fas fa-signal kpi-icon" style="color:#30D158"></i></div>
                     <div class="kpi-card-dash" style="border-left:3px solid #BF5AF2"><div class="kpi-info"><h3 id="gRatio">-</h3><p>Ratio P/C</p></div><i class="fas fa-balance-scale kpi-icon" style="color:#BF5AF2"></i></div>
                     <div class="kpi-card-dash" style="border-left:3px solid #FF453A"><div class="kpi-info"><h3 id="gDown">-</h3><p>Parada (h)</p></div><i class="fas fa-power-off kpi-icon" style="color:#FF453A"></i></div>
                     <div class="kpi-card-dash" style="border-left:3px solid #FFD60A"><div class="kpi-info"><h3 id="gFails">-</h3><p>Fallas</p></div><i class="fas fa-bolt kpi-icon" style="color:#FFD60A"></i></div>

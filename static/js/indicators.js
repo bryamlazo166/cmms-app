@@ -31,9 +31,18 @@ function getIndDates() {
     return { start: s.toISOString().slice(0, 10), end: e.toISOString().slice(0, 10) };
 }
 
+function getIndMode() {
+    const el = document.getElementById('indMode');
+    return (el && el.value) || 'operativa';
+}
+
 function dateParams() {
     const { start, end } = getIndDates();
-    return `start_date=${start}&end_date=${end}`;
+    return `start_date=${start}&end_date=${end}&mode=${getIndMode()}`;
+}
+
+function availLabel() {
+    return getIndMode() === 'inherente' ? 'Disp. Inherente' : 'Disp. Operativa';
 }
 
 async function loadIndicators() {
@@ -94,7 +103,7 @@ function renderBreadcrumb() {
 
 function renderKpiStrip(ind) {
     document.getElementById('kpiStrip').innerHTML = `
-        <div class="kpi-item avail"><div class="label">Disponibilidad</div><div class="value">${ind.availability}<span class="unit">%</span></div></div>
+        <div class="kpi-item avail"><div class="label">${availLabel()}</div><div class="value">${ind.availability}<span class="unit">%</span></div></div>
         <div class="kpi-item mtbf"><div class="label">MTBF</div><div class="value">${ind.mtbf}<span class="unit">h</span></div></div>
         <div class="kpi-item mttr"><div class="label">MTTR</div><div class="value">${ind.mttr}<span class="unit">h</span></div></div>
         <div class="kpi-item rel"><div class="label">Confiabilidad</div><div class="value">${ind.reliability}<span class="unit">%</span></div></div>
@@ -134,12 +143,15 @@ function renderAreasChart(data) {
     const globalMttr = totalFail > 0 ? round2(totalDown / totalFail) : 0;
     renderKpiStrip({ availability: round2(avgAvail), mtbf: globalMtbf, mttr: globalMttr, reliability: round2(Math.exp(-data.period.hours / Math.max(globalMtbf, 1)) * 100) });
 
+    const modeNote = getIndMode() === 'inherente'
+        ? '🔬 Modo INHERENTE (ISO 14224): solo correctivos sobre averias cuentan como falla — KPI de salud del activo.'
+        : '⚙️ Modo OPERATIVA: cuenta TODO downtime (planificado + averias) — KPI de utilizacion.';
     document.getElementById('chartTitle').textContent = `Indicadores por Área — ${start} a ${end}`;
-    document.getElementById('chartMethod').textContent = 'Click en una barra para ver detalle del área. Cocción/Secado: ponderado por capacidad. Molino: cálculo en serie.';
+    document.getElementById('chartMethod').textContent = modeNote + ' Click en una barra para ver detalle. Cocción/Secado: ponderado por capacidad. Molino: cálculo en serie.';
 
     const names = areas.map(a => a.area_name);
     const metrics = [
-        { name: 'Disponibilidad %', key: 'availability', color: '#30D158' },
+        { name: availLabel() + ' %', key: 'availability', color: '#30D158' },
         { name: 'Confiabilidad %', key: 'reliability', color: '#5ac8fa' },
         { name: 'MTBF (h)', key: 'mtbf', color: '#BF5AF2' },
         { name: 'MTTR (h)', key: 'mttr', color: '#FF9F0A' },
@@ -225,7 +237,7 @@ function renderEquipmentsChart(data) {
                 return tip;
             }
         },
-        legend: { data: ['Disponibilidad %', 'MTBF (h)', 'MTTR (h)'], textStyle: { color: '#bfd2ec' } },
+        legend: { data: [availLabel() + ' %', 'MTBF (h)', 'MTTR (h)'], textStyle: { color: '#bfd2ec' } },
         grid: { top: 60, right: 20, bottom: names.length > 8 ? 90 : 60, left: 60 },
         xAxis: {
             type: 'category', data: names,
@@ -244,7 +256,7 @@ function renderEquipmentsChart(data) {
         ],
         series: [
             {
-                name: 'Disponibilidad %', type: 'bar', yAxisIndex: 0,
+                name: availLabel() + ' %', type: 'bar', yAxisIndex: 0,
                 data: equips.map(e => ({ value: e.availability, itemStyle: { color: barColor(e.availability, 'availability') } })),
                 label: { show: true, position: 'top', color: '#d5e2f5', fontSize: 11, fontWeight: 700, formatter: p => p.value + '%' },
             },

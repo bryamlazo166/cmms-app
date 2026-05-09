@@ -2371,16 +2371,26 @@ def _replicate_specs(app, data):
             overwrite = bool(data.get('overwrite', False))
 
             def resolve(prefix):
+                """Resuelve (eq_id, comp_id) para origen o destino.
+                CRITICAL: si el usuario/LLM proveyo un tag explicito y NO existe
+                en BD, devolvemos eq_id=None SIN fallback fuzzy. Esto evita que
+                copiemos specs al equipo equivocado por similitud de nombre
+                (caso: usuario pide TH6, LLM substituye por TH5)."""
                 tag = (data.get(f'{prefix}_equipment_tag') or '').strip()
                 comp_name = (data.get(f'{prefix}_component_name') or '').strip()
                 eq_id = comp_id = None
+                tag_provided = bool(tag)
                 if tag:
+                    # Match exacto y case-insensitive (proteccion contra TH3 vs th3).
                     r = _db.session.execute(
-                        text("SELECT id FROM equipments WHERE tag = :t"), {"t": tag}
+                        text("SELECT id FROM equipments WHERE UPPER(tag) = UPPER(:t)"),
+                        {"t": tag}
                     ).fetchone()
                     if r:
                         eq_id = r[0]
-                if not eq_id and data.get(f'{prefix}_equipment_name'):
+                # Fuzzy fallback SOLO si el LLM NO mando tag — replicate es
+                # destructivo y no admite "adivinacion" cuando hay tag.
+                if not eq_id and not tag_provided and data.get(f'{prefix}_equipment_name'):
                     r = _db.session.execute(
                         text("SELECT id FROM equipments WHERE LOWER(name) LIKE :n LIMIT 1"),
                         {"n": f"%{data[f'{prefix}_equipment_name'].lower()}%"}
@@ -2391,10 +2401,27 @@ def _replicate_specs(app, data):
                     res = _smart_component_match(_db, text, eq_id, comp_name)
                     if res:
                         comp_id = res[0]
-                return eq_id, comp_id
+                return eq_id, comp_id, tag
 
-            src_eq, src_comp = resolve('source')
-            tgt_eq, tgt_comp = resolve('target')
+            src_eq, src_comp, src_tag = resolve('source')
+            tgt_eq, tgt_comp, tgt_tag = resolve('target')
+
+            # Defensa: si el usuario indico tag explicito pero no existe en BD,
+            # falla con mensaje claro listando tags cercanos.
+            if src_tag and not src_eq:
+                near = _db.session.execute(
+                    text("SELECT tag FROM equipments WHERE UPPER(tag) LIKE UPPER(:t) ORDER BY tag LIMIT 5"),
+                    {"t": f"%{src_tag}%"}
+                ).fetchall()
+                hint = (' Tags similares: ' + ', '.join(r[0] for r in near)) if near else ''
+                return None, f"Equipo origen '{src_tag}' no existe.{hint}"
+            if tgt_tag and not tgt_eq:
+                near = _db.session.execute(
+                    text("SELECT tag FROM equipments WHERE UPPER(tag) LIKE UPPER(:t) ORDER BY tag LIMIT 5"),
+                    {"t": f"%{tgt_tag}%"}
+                ).fetchall()
+                hint = (' Tags similares: ' + ', '.join(r[0] for r in near)) if near else ''
+                return None, f"Equipo destino '{tgt_tag}' no existe.{hint}"
 
             if entity_type == 'component':
                 if not src_comp:
@@ -3409,6 +3436,13 @@ Ejemplos:
 - overwrite: solo aplica con merge. true si el usuario dice "actualiza los valores aunque ya existan", "sobreescribe los valores que coincidan".
 - Para componentes incluye SIEMPRE source_equipment_tag y source_component_name (ambos), y lo mismo para target_*. El sistema usa el matcher inteligente con sinonimos (chumacera motriz/conducida, motor electrico/mtr, etc).
 - Si el origen y destino son del mismo equipo, repite el mismo equipment_tag en source_* y target_*.
+
+REGLA CRITICA #X PARA replicate_specs (NO IGNORAR — caso real de bug):
+- Usa LITERALMENTE los tags que el usuario menciona. Si el usuario dice "TH6", source_equipment_tag DEBE ser "TH6" — NO "TH5", NO "TH3", NO ningun otro tag aunque el TH6 no aparezca en el contexto.
+- NUNCA substituyas, aproximes o "redondees" el tag a otro equipo similar. La accion es DESTRUCTIVA y copiar al equipo equivocado es peor que fallar.
+- Si el tag que pidio el usuario NO esta en la lista EQUIPOS del contexto, NO inventes otro tag. Devuelve action:"none" con reply pidiendo confirmacion: ej. "No encuentro 'TH6' en el arbol. Tags disponibles que se parecen: TH1, TH2, TH3, TH5. ¿Cual es el correcto?".
+- Una sola accion replicate_specs por mensaje. Si el usuario menciona varias copias en un solo mensaje, ejecuta SOLO la primera y deja un reply mencionando las pendientes. NUNCA inventes restricciones tipo "no puedo procesar multiples solicitudes" — eso no existe en el sistema.
+
 - Ejemplos:
   * "replica las specs de la chumacera conducida del molino 1 a la chumacera motriz del molino 1" → {"action":"replicate_specs","data":{"entity_type":"component","source_equipment_tag":"MOLI1-LINE","source_component_name":"chumacera conducida","target_equipment_tag":"MOLI1-LINE","target_component_name":"chumacera motriz"}}
   * "copia las especificaciones del motor del D8 al motor del D9" → {"action":"replicate_specs","data":{"entity_type":"component","source_equipment_tag":"D8","source_component_name":"motor electrico","target_equipment_tag":"D9","target_component_name":"motor electrico"}}

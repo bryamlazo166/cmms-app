@@ -467,6 +467,24 @@ def register_core_routes(app, db, logger, app_build_tag,
             level = request.args.get('level', 'equipment')  # equipment | line | area
             area_id = request.args.get('area_id', type=int)
             line_id = request.args.get('line_id', type=int)
+            # Modo de disponibilidad ISO 14224:
+            #  - 'operativa' (default): cuenta TODO downtime (planificado + averias).
+            #  - 'inherente': solo correctivos en averias (paradas no planificadas
+            #    o sin parada). KPI de salud del activo.
+            mode_raw = (request.args.get('mode') or 'operativa').strip().lower()
+            mode = mode_raw if mode_raw in ('operativa', 'inherente') else 'operativa'
+
+            # Pre-cargar IDs de paradas NO planificadas para filtro inherente.
+            unplanned_shutdown_ids = set()
+            if mode == 'inherente':
+                try:
+                    from models import Shutdown
+                    unplanned_shutdown_ids = {
+                        r[0] for r in Shutdown.query.filter_by(is_planned=False)
+                            .with_entities(Shutdown.id).all()
+                    }
+                except Exception as _e:
+                    logger.warning(f"Shutdown.is_planned no disponible: {_e}")
 
             cutoff = (dt.date.today() - dt.timedelta(days=days)).isoformat()
             calendar_hours = days * 24
@@ -534,9 +552,19 @@ def register_core_routes(app, db, logger, app_build_tag,
                 mtype = (ot.maintenance_type or '').lower()
                 is_corrective = 'correct' in mtype
 
+                # En modo INHERENTE: solo correctivos en averias cuentan como
+                # falla y aportan downtime. Los preventivos se contabilizan
+                # para ratio P/C pero no afectan disponibilidad inherente.
+                shutdown_id = getattr(ot, 'shutdown_id', None)
+                qualifies_inherent = (
+                    is_corrective and
+                    (not shutdown_id or shutdown_id in unplanned_shutdown_ids)
+                )
+
                 if is_corrective:
                     g['corrective'] += 1
-                    g['failures'] += 1
+                    if mode == 'operativa' or qualifies_inherent:
+                        g['failures'] += 1
                 else:
                     g['preventive'] += 1
 
@@ -549,15 +577,16 @@ def register_core_routes(app, db, logger, app_build_tag,
                         repair_h = round((re - rs).total_seconds() / 3600, 2)
                 g['total_repair_h'] += (repair_h or 0)
 
-                # Downtime
+                # Downtime — en modo inherente solo cuentan correctivos en averias.
+                count_downtime = (mode == 'operativa') or qualifies_inherent
                 dh = getattr(ot, 'downtime_hours', None)
-                if dh:
+                if dh and count_downtime:
                     g['downtime_h'] += dh
                     g['downtime_events'] += 1
-                elif getattr(ot, 'caused_downtime', False) and repair_h:
+                elif getattr(ot, 'caused_downtime', False) and repair_h and count_downtime:
                     g['downtime_h'] += repair_h
                     g['downtime_events'] += 1
-                elif is_corrective and repair_h:
+                elif is_corrective and repair_h and count_downtime:
                     # Default: corrective OTs count as downtime
                     g['downtime_h'] += repair_h
                     g['downtime_events'] += 1
@@ -651,6 +680,7 @@ def register_core_routes(app, db, logger, app_build_tag,
 
             return jsonify({
                 'kpis': global_kpis,
+                'mode': mode,
                 'items': result,
                 'areas': areas_list,
                 'lines': lines_list,

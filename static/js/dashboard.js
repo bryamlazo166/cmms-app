@@ -178,6 +178,11 @@ function availColor(v) {
     return '#FF453A';
 }
 
+function getKpiMode() {
+    const el = document.getElementById('kpiMode');
+    return (el && el.value) || 'operativa';
+}
+
 function renderGlobalKPIs(k) {
     document.getElementById('gMtbf').textContent = k.global_mtbf != null ? k.global_mtbf : '-';
     document.getElementById('gMttr').textContent = k.global_mttr != null ? k.global_mttr : '-';
@@ -185,11 +190,14 @@ function renderGlobalKPIs(k) {
     document.getElementById('gRatio').textContent = k.ratio_preventive != null ? k.ratio_preventive + '%' : '-';
     document.getElementById('gDown').textContent = k.global_downtime_h != null ? k.global_downtime_h : '-';
     document.getElementById('gFails').textContent = k.total_failures || 0;
+    const lab = document.getElementById('gAvailLabel');
+    if (lab) lab.textContent = getKpiMode() === 'inherente' ? 'Disp. Inherente' : 'Disp. Operativa';
 }
 
 async function fetchKPIs(level, areaId, lineId) {
     const days = document.getElementById('kpiDays').value;
-    let url = `/api/dashboard-kpis?days=${days}&level=${level}`;
+    const mode = getKpiMode();
+    let url = `/api/dashboard-kpis?days=${days}&level=${level}&mode=${mode}`;
     if (areaId) url += `&area_id=${areaId}`;
     if (lineId) url += `&line_id=${lineId}`;
     const res = await fetch(url);
@@ -229,11 +237,12 @@ function buildKpiTable(items, level, title) {
     });
 
     html += '<div style="overflow-x:auto;max-height:350px;border-radius:8px"><table style="width:100%;border-collapse:collapse;min-width:850px">';
+    const dispLabel = getKpiMode() === 'inherente' ? 'Disp. Inh' : 'Disp. Op';
     html += `<thead><tr style="background:#2C2C2E">
         <th style="${TH};text-align:left">${levelLabels[level] || 'Nombre'}</th>
         <th style="${TH};text-align:right">OTs</th><th style="${TH};text-align:right">Fallas</th>
         <th style="${TH};text-align:right">MTBF</th><th style="${TH};text-align:right">MTTR</th>
-        <th style="${TH};text-align:right">Disp %</th><th style="${TH};text-align:right">Conf %</th>
+        <th style="${TH};text-align:right" title="Disponibilidad ${getKpiMode() === 'inherente' ? 'Inherente (ISO 14224): solo correctivos en averias' : 'Operativa: incluye TODO downtime'}">${dispLabel} %</th><th style="${TH};text-align:right">Conf %</th>
         <th style="${TH};text-align:right">Parada h</th><th style="${TH};text-align:right">P/C %</th>
     </tr></thead><tbody>`;
 
