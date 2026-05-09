@@ -3213,6 +3213,28 @@ REGISTRAR LINK DE INFORME — Si el usuario dice "el informe de la OT-XXXX esta 
 "agrega el link del informe a la OT-XXXX: <url>", "guarda el informe de la OT-XXXX en <url>", usa:
 {"action": "edit_ot", "data": {"ot_code": "OT-XXXX", "fields": {"report_url": "https://..."}}}
 
+REGISTRAR RECORDATORIO / PENDIENTE FUTURO — Cuando el usuario dice "recordame", "agendame",
+"avisame", "no me olvides", "en X dias/semanas/meses", "para el dia DD/MM" y refiere una OT,
+crea una entrada de bitacora con tipo PENDIENTE y log_date en el futuro:
+{"action": "add_log", "data": {"ot_code": "OT-XXXX", "log_date": "YYYY-MM-DD",
+                                "comment": "lo que hay que hacer", "entry_type": "PENDIENTE"}}
+
+REGLAS PARA INTERPRETAR DURACIONES (calcula tu mismo la fecha futura usando la fecha de hoy):
+- "en 1 mes" / "en un mes" → +30 dias
+- "en mes y medio" / "en 1.5 meses" → +45 dias
+- "en 2 meses" → +60 dias
+- "en 15 dias" / "en dos semanas" → +14/15 dias
+- "el viernes proximo" → calcula la fecha del proximo viernes
+- "para el 15 de junio" → 2026-06-15 (interpreta el año actual si no se aclara)
+
+EJEMPLOS:
+- "recordame en 1 mes fabricar el tripode para D3 (OT-0034)"
+  → {"action":"add_log","data":{"ot_code":"OT-0034","log_date":"2026-06-08","comment":"Fabricar tripode para D3","entry_type":"PENDIENTE"}}
+- "agenda en la OT-0028 que en 45 dias hay que reingresar a inspeccionar el D7"
+  → {"action":"add_log","data":{"ot_code":"OT-0028","log_date":"2026-06-22","comment":"Reingresar a inspeccionar el D7","entry_type":"PENDIENTE"}}
+- "no me olvides que el 2026-07-01 vence la garantia del motor de la OT-0050"
+  → {"action":"add_log","data":{"ot_code":"OT-0050","log_date":"2026-07-01","comment":"Vence garantia del motor","entry_type":"PENDIENTE"}}
+
 5. REPROGRAMAR OT (cambiar fecha):
 {"action": "reschedule_ot", "data": {"ot_code": "OT-0034", "new_date": "2026-04-10"}}
 Convierte fechas relativas: "lunes" = proximo lunes, "mañana" = fecha de mañana. Hoy es """ + date.today().isoformat() + """.
@@ -3465,6 +3487,24 @@ def _generate_daily_summary(app):
             except Exception:
                 pass
 
+            # Recordatorios PENDIENTES — entradas de bitacora con tipo
+            # PENDIENTE cuya fecha es hoy o pasada (vencida).
+            try:
+                today_iso = date.today().isoformat()
+                pendientes_due = _db.session.execute(text("""
+                    SELECT le.id, le.log_date, le.comment, le.author, w.code,
+                           e.tag, e.name
+                    FROM ot_log_entries le
+                    JOIN work_orders w ON le.work_order_id = w.id
+                    LEFT JOIN equipments e ON w.equipment_id = e.id
+                    WHERE le.log_type = 'PENDIENTE'
+                      AND le.log_date <= :today
+                    ORDER BY le.log_date ASC LIMIT 20
+                """), {"today": today_iso}).fetchall()
+            except Exception as e:
+                logger.warning(f"pendientes_due fetch error: {e}")
+                pendientes_due = []
+
             _db.session.remove()
 
             # Build message
@@ -3498,6 +3538,16 @@ def _generate_daily_summary(app):
                     msg += f"\n  {status_icon} {item[0]} {item[1][:35]} → *{stock_val}* / min: {min_val} {item[4] or 'und'}"
                 if low_stock > 15:
                     msg += f"\n  _...y {low_stock - 15} items más_"
+
+            if pendientes_due:
+                msg += f"\n\n⏰ *Recordatorios / Pendientes ({len(pendientes_due)}):*"
+                today_iso = date.today().isoformat()
+                for p in pendientes_due:
+                    icon = '⚠️' if p[1] < today_iso else '📅'
+                    eq = f" · {p[5] or ''}".strip(' ·') if p[5] else ''
+                    when = 'HOY' if p[1] == today_iso else f"vencio {p[1]}"
+                    cmt = (p[2] or '')[:90]
+                    msg += f"\n  {icon} {p[4]}{eq} ({when}): {cmt}"
 
             msg += "\n\n_Escribe cualquier pregunta para mas detalles._"
 
@@ -3869,6 +3919,122 @@ def _process_message(app, chat_id, text, photos=None):
             _send(chat_id, f"❌ Error: {e}")
         return
 
+    # Comando: crear recordatorio en la bitacora de una OT.
+    # Sintaxis: /recordar OT-XXXX <duracion|fecha> <mensaje>
+    # Ejemplos:
+    #   /recordar OT-0034 30d fabricar tripode para D3
+    #   /recordar OT-0034 1m revisar progreso del proveedor
+    #   /recordar OT-0034 1.5m reingresar a inspeccion D7
+    #   /recordar OT-0034 2026-06-15 recibir entrega del eje
+    if text.lower().startswith('/recordar'):
+        import re as _re_rem
+        parts = text.split(maxsplit=3)
+        if len(parts) < 4:
+            _send(chat_id,
+                "Formato: `/recordar OT-XXXX <duracion> <mensaje>`\n"
+                "Duracion: `30d` (dias), `2w` (semanas), `1m` (meses), `1.5m` (1 mes y medio), o fecha `YYYY-MM-DD`.\n\n"
+                "Ejemplos:\n"
+                "• `/recordar OT-0034 1m fabricar tripode para D3`\n"
+                "• `/recordar OT-0028 45d reingresar a inspeccionar D7`\n"
+                "• `/recordar OT-0050 2026-06-15 recibir entrega del proveedor`")
+            return
+        ot_code = parts[1].upper().strip()
+        if not ot_code.startswith('OT-'):
+            _send(chat_id, "El primer argumento debe ser una OT, ej: OT-0034")
+            return
+        duration_raw = parts[2].strip().lower()
+        message_text = parts[3].strip()
+
+        # Parsear duracion → fecha futura
+        target_date = None
+        try:
+            if _re_rem.match(r'^\d{4}-\d{2}-\d{2}$', duration_raw):
+                target_date = date.fromisoformat(duration_raw)
+            else:
+                m = _re_rem.match(r'^(\d+(?:[.,]\d+)?)\s*([dwm])$', duration_raw)
+                if not m:
+                    _send(chat_id, f"Duracion '{duration_raw}' no reconocida. Usa Nd / Nw / Nm o YYYY-MM-DD.")
+                    return
+                val = float(m.group(1).replace(',', '.'))
+                unit = m.group(2)
+                days = {'d': 1, 'w': 7, 'm': 30}[unit] * val
+                target_date = date.today() + timedelta(days=int(round(days)))
+        except Exception as e:
+            _send(chat_id, f"No pude interpretar la fecha: {e}")
+            return
+
+        # Persistir en ot_log_entries con tipo PENDIENTE
+        try:
+            with app.app_context():
+                from database import db as _db
+                from sqlalchemy import text as _t
+                row = _db.session.execute(_t("SELECT id FROM work_orders WHERE code = :c"),
+                                          {"c": ot_code}).fetchone()
+                if not row:
+                    _db.session.remove()
+                    _send(chat_id, f"❌ {ot_code} no encontrada.")
+                    return
+                ot_id = row[0]
+                author = f"Telegram:{chat_id}"
+                _db.session.execute(_t("""
+                    INSERT INTO ot_log_entries (work_order_id, log_date, log_type,
+                                                 author, comment, created_at)
+                    VALUES (:wid, :d, 'PENDIENTE', :a, :c, NOW())
+                """), {"wid": ot_id, "d": target_date.isoformat(),
+                       "a": author, "c": message_text})
+                _db.session.commit()
+                _db.session.remove()
+            days_left = (target_date - date.today()).days
+            _send(chat_id,
+                f"⏰ *Recordatorio agendado*\n"
+                f"OT: `{ot_code}`\n"
+                f"Fecha: *{target_date.isoformat()}* (en {days_left} dia{'s' if days_left != 1 else ''})\n"
+                f"Tarea: _{message_text}_\n\n"
+                f"Aparecera en el resumen diario cuando llegue la fecha.")
+        except Exception as e:
+            logger.error(f"/recordar error: {e}")
+            _send(chat_id, f"❌ Error guardando recordatorio: {e}")
+        return
+
+    # Comando: listar recordatorios pendientes (vencidos + proximos 7 dias)
+    if text.lower().startswith('/recordatorios') or text.lower().startswith('/pendientes'):
+        try:
+            with app.app_context():
+                from database import db as _db
+                from sqlalchemy import text as _t
+                today_iso = date.today().isoformat()
+                week_iso = (date.today() + timedelta(days=7)).isoformat()
+                rows = _db.session.execute(_t("""
+                    SELECT le.log_date, le.comment, le.author, w.code, e.tag
+                    FROM ot_log_entries le
+                    JOIN work_orders w ON le.work_order_id = w.id
+                    LEFT JOIN equipments e ON w.equipment_id = e.id
+                    WHERE le.log_type = 'PENDIENTE'
+                      AND le.log_date <= :w
+                    ORDER BY le.log_date ASC LIMIT 30
+                """), {"w": week_iso}).fetchall()
+                _db.session.remove()
+            if not rows:
+                _send(chat_id, "✅ Sin recordatorios vencidos ni proximos 7 dias.")
+                return
+            msg = "⏰ *Recordatorios — vencidos + proximos 7 dias*\n"
+            for r in rows:
+                d = r[0]
+                if d < today_iso:
+                    icon = '⚠️'; when = f"VENCIO {d}"
+                elif d == today_iso:
+                    icon = '🔴'; when = "HOY"
+                else:
+                    delta = (date.fromisoformat(d) - date.today()).days
+                    icon = '📅'; when = f"en {delta}d ({d})"
+                eq = f" [{r[4]}]" if r[4] else ''
+                msg += f"\n{icon} *{r[3]}*{eq} ({when})\n   _{(r[1] or '')[:120]}_"
+            _send(chat_id, msg)
+        except Exception as e:
+            logger.error(f"/recordatorios error: {e}")
+            _send(chat_id, f"❌ Error: {e}")
+        return
+
     # Comando: subir foto del formato UT a la última inspección
     # Uso: /ut_foto D7  → luego enviar la foto
     if text.lower().startswith('/ut_foto'):
@@ -3943,6 +4109,12 @@ def _process_message(app, chat_id, text, photos=None):
 • `/reporte_contratista` — resumen mensual de todos los contratistas
 • `/reporte_contratista FAPMETAL` — solo un contratista
 • _Items con stock bajo?_ — lista de repuestos bajo minimo
+
+*Recordatorios / Pendientes:*
+• `/recordar OT-0034 1m fabricar tripode` — agenda un recordatorio
+• `/recordar OT-0050 2026-06-15 recibir entrega` — fecha absoluta
+• `/recordatorios` — lista pendientes (vencidos + proximos 7 dias)
+• Tambien lenguaje natural: _"recordame en 30 dias inspeccionar D7 (OT-0028)"_
 
 *Analisis:*
 • _% correctivo vs preventivo_

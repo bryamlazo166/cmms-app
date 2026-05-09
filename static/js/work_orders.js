@@ -487,7 +487,76 @@ window.clearShutdownFilter = () => {
     window.applyFilters();
 };
 
+// Cascada Area → Linea → Equipo: oculta los checkboxes de linea que no
+// pertenecen a las areas seleccionadas, y los de equipo que no pertenecen
+// a las lineas seleccionadas. Si un checkbox oculto estaba marcado, lo
+// desmarca para que no contamine el filtro. Visual: el label se oculta
+// totalmente (display:none) — no aparece "tachado" sino que desaparece.
+function applyCascadeVisibility() {
+    if (!Array.isArray(allWorkOrders) || allWorkOrders.length === 0) return;
+
+    const getCheckedNonHidden = (type) => {
+        const container = document.getElementById(`list-${type}`);
+        if (!container) return [];
+        return Array.from(container.querySelectorAll('input:not([value="ALL"]):checked'))
+            .filter(cb => cb.closest('label').style.display !== 'none')
+            .map(cb => cb.value);
+    };
+
+    const selectedAreas = getCheckedNonHidden('area');
+    // Lineas validas: las que aparecen en al menos 1 OT con area seleccionada
+    // (o todas si no hay seleccion explicita de area)
+    const linesContainer = document.getElementById('list-line');
+    if (linesContainer && selectedAreas.length > 0) {
+        const validLines = new Set(
+            allWorkOrders
+                .filter(ot => selectedAreas.includes(ot.area_name || '(Sin Area)'))
+                .map(ot => ot.line_name || '(Sin Linea)')
+        );
+        linesContainer.querySelectorAll('input:not([value="ALL"])').forEach(cb => {
+            const label = cb.closest('label');
+            if (validLines.has(cb.value)) {
+                label.style.display = '';
+            } else {
+                label.style.display = 'none';
+                if (cb.checked) cb.checked = false;
+            }
+        });
+    } else if (linesContainer) {
+        // Sin filtro de area: mostrar todas las lineas
+        linesContainer.querySelectorAll('label').forEach(l => l.style.display = '');
+    }
+
+    // Equipos: validos los que estan en OTs con linea visible Y seleccionada
+    const visibleSelectedLines = getCheckedNonHidden('line');
+    const equipsContainer = document.getElementById('list-equip');
+    if (equipsContainer && (selectedAreas.length > 0 || visibleSelectedLines.length > 0)) {
+        const validEquips = new Set(
+            allWorkOrders.filter(ot => {
+                const okArea = selectedAreas.length === 0 || selectedAreas.includes(ot.area_name || '(Sin Area)');
+                const okLine = visibleSelectedLines.length === 0 || visibleSelectedLines.includes(ot.line_name || '(Sin Linea)');
+                return okArea && okLine;
+            }).map(ot => ot.equipment_name || '(Sin Equipo)')
+        );
+        equipsContainer.querySelectorAll('input:not([value="ALL"])').forEach(cb => {
+            const label = cb.closest('label');
+            if (validEquips.has(cb.value)) {
+                label.style.display = '';
+            } else {
+                label.style.display = 'none';
+                if (cb.checked) cb.checked = false;
+            }
+        });
+    } else if (equipsContainer) {
+        equipsContainer.querySelectorAll('label').forEach(l => l.style.display = '');
+    }
+}
+window.applyCascadeVisibility = applyCascadeVisibility;
+
 window.applyFilters = () => {
+    // Refrescar visibilidad en cascada antes de leer los seleccionados
+    applyCascadeVisibility();
+
     const getSelected = (type) => {
         const container = document.getElementById(`list-${type}`);
         if (!container) return [];
@@ -1804,11 +1873,61 @@ async function openCloseModal() {
     }));
     renderClosePersonnelTable();
 
+    // Banner de referencia: mostrar la hora del aviso para que el usuario
+    // sepa desde donde buscar en el grupo de WhatsApp / radio / etc.
+    try {
+        const ot = activeExecutionOT;
+        const ref = ot.notice_reported_at || ot.notice_request_date;
+        const banner = document.getElementById('closeNoticeRef');
+        const txt = document.getElementById('closeNoticeRefText');
+        if (banner && txt && ref) {
+            const channel = ot.notice_report_channel || 'SISTEMA';
+            const channelEmoji = { WHATSAPP: '💬', RADIO: '📻', VERBAL: '🗣️',
+                                   CORREO: '📧', SISTEMA: '💻' }[channel] || '📌';
+            const noticeCode = ot.notice_code || (ot.notice_id ? `AV-${ot.notice_id}` : null);
+            const noticeRef = noticeCode ? ` (${noticeCode})` : '';
+            // Formato amigable de la fecha
+            let when = ref;
+            try {
+                const d = new Date(ref);
+                if (!isNaN(d)) {
+                    when = d.toLocaleString('es-PE', {
+                        weekday: 'short', day: '2-digit', month: 'short',
+                        hour: '2-digit', minute: '2-digit', hour12: true
+                    });
+                }
+            } catch (e) {}
+            txt.innerHTML = `<strong>${channelEmoji} ${channel}</strong> · ${when}${noticeRef}`;
+            banner.style.display = 'block';
+        } else if (banner) {
+            banner.style.display = 'none';
+        }
+    } catch (e) { console.warn('closeNoticeRef:', e); }
+
     document.getElementById('closeOTModal').showModal();
 
     // Refrescar el bloque resumen de los 3 tiempos (respuesta/intervención/downtime)
     try { recalcCloseTimes(); } catch (e) { /* noop */ }
 }
+
+// Botón "Usar como inicio" — atención inmediata, copia la hora del aviso al
+// campo de inicio real. Conserva la zona horaria local del navegador.
+window.useNoticeAsStart = function () {
+    const ot = window.activeExecutionOT;
+    if (!ot) return;
+    const ref = ot.notice_reported_at || ot.notice_request_date;
+    if (!ref) return;
+    try {
+        const d = new Date(ref);
+        if (isNaN(d)) return;
+        // Convertir a YYYY-MM-DDTHH:MM en hora local
+        const pad = (n) => String(n).padStart(2, '0');
+        const local = `${d.getFullYear()}-${pad(d.getMonth()+1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`;
+        document.getElementById('realStart').value = local;
+        recalcCloseTimes();
+        if (typeof checkDowntimeVsDuration === 'function') checkDowntimeVsDuration();
+    } catch (e) { console.warn('useNoticeAsStart:', e); }
+};
 
 function renderClosePersonnelTable() {
     const tbody = document.getElementById('closePersonnelBody');
@@ -2599,6 +2718,7 @@ window.openAddPersonnelModal = function () {
 const LOG_TYPE_COLORS = {
     NOTA: '#888', AVANCE: '#30D158', MATERIAL: '#FF9F0A',
     PROVEEDOR: '#BF5AF2', INFORME: '#0A84FF', CIERRE: '#FF453A',
+    HALLAZGO: '#FF9F0A', PENDIENTE: '#5AC8FA',
 };
 
 async function loadOTLog(otId) {
@@ -2610,14 +2730,29 @@ async function loadOTLog(otId) {
             container.innerHTML = '<p style="color:#888;font-style:italic;text-align:center;padding:8px">Sin registros en la bitacora.</p>';
             return;
         }
+        const todayStr = new Date().toISOString().slice(0, 10);
         container.innerHTML = entries.map(e => {
             const c = LOG_TYPE_COLORS[e.log_type] || '#888';
-            return `<div style="display:flex;gap:8px;padding:6px 0;border-bottom:1px solid rgba(255,255,255,.06)">
+            // Pendientes futuros — destacarlos con borde y fondo
+            const isPending = e.log_type === 'PENDIENTE';
+            const isFuture = isPending && e.log_date && e.log_date > todayStr;
+            const isOverdue = isPending && e.log_date && e.log_date < todayStr;
+            const wrapStyle = isFuture
+                ? 'background:rgba(90,200,250,0.06);border-left:3px solid #5AC8FA;padding-left:8px;border-radius:4px;margin-bottom:3px;'
+                : (isOverdue
+                    ? 'background:rgba(255,69,58,0.08);border-left:3px solid #FF453A;padding-left:8px;border-radius:4px;margin-bottom:3px;'
+                    : '');
+            const dateLabel = isFuture
+                ? `📅 ${e.log_date} <span style="color:#5AC8FA;font-weight:700;">(en ${Math.ceil((new Date(e.log_date) - new Date(todayStr)) / 86400000)}d)</span>`
+                : (isOverdue
+                    ? `⚠️ ${e.log_date} <span style="color:#FF453A;font-weight:700;">(VENCIDO)</span>`
+                    : e.log_date);
+            return `<div style="display:flex;gap:8px;padding:6px 0;border-bottom:1px solid rgba(255,255,255,.06);${wrapStyle}">
                 <div style="width:8px;height:8px;border-radius:50%;background:${c};margin-top:6px;flex-shrink:0"></div>
                 <div style="flex:1;min-width:0">
                     <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">
-                        <span style="font-size:.75rem;color:${c};font-weight:700;text-transform:uppercase">${e.log_type}</span>
-                        <span style="font-size:.75rem;color:rgba(255,255,255,.40)">${e.log_date}</span>
+                        <span style="font-size:.75rem;color:${c};font-weight:700;text-transform:uppercase">${isPending ? '⏰ ' : ''}${e.log_type}</span>
+                        <span style="font-size:.75rem;color:rgba(255,255,255,.55)">${dateLabel}</span>
                         ${e.author ? `<span style="font-size:.72rem;color:rgba(255,255,255,.35)">por ${e.author}</span>` : ''}
                     </div>
                     <div style="font-size:.84rem;color:rgba(255,255,255,.78);margin-top:2px">${e.comment}</div>

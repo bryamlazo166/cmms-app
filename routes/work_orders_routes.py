@@ -212,6 +212,66 @@ def register_work_orders_routes(
         db.session.commit()
         return jsonify({"ok": True})
 
+    @app.route('/api/pending-reminders', methods=['GET'])
+    def list_pending_reminders():
+        """Lista todas las entradas tipo PENDIENTE de la bitacora con su OT.
+
+        Query params:
+          - window: 'today' | 'week' | 'overdue' | 'all' (default: 'all')
+            today    → log_date = hoy
+            week     → log_date entre hoy y hoy+7
+            overdue  → log_date < hoy (vencidos)
+            all      → todos los pendientes (incluye futuros lejanos)
+        """
+        if not OTLogEntry:
+            return jsonify([])
+        try:
+            window = (request.args.get('window') or 'all').lower()
+            today = datetime.now().strftime('%Y-%m-%d')
+            week = (datetime.now() + timedelta(days=7)).strftime('%Y-%m-%d')
+
+            q = OTLogEntry.query.filter(OTLogEntry.log_type == 'PENDIENTE')
+            if window == 'today':
+                q = q.filter(OTLogEntry.log_date == today)
+            elif window == 'week':
+                q = q.filter(OTLogEntry.log_date >= today, OTLogEntry.log_date <= week)
+            elif window == 'overdue':
+                q = q.filter(OTLogEntry.log_date < today)
+            entries = q.order_by(OTLogEntry.log_date.asc(), OTLogEntry.id.asc()).all()
+
+            ot_ids = list({e.work_order_id for e in entries})
+            ots_map = {w.id: w for w in WorkOrder.query.filter(WorkOrder.id.in_(ot_ids)).all()} if ot_ids else {}
+            eq_ids = {w.equipment_id for w in ots_map.values() if w.equipment_id}
+            eqs_map = {e.id: e for e in Equipment.query.filter(Equipment.id.in_(eq_ids)).all()} if eq_ids else {}
+
+            result = []
+            for e in entries:
+                w = ots_map.get(e.work_order_id)
+                eq = eqs_map.get(w.equipment_id) if w and w.equipment_id else None
+                days_until = None
+                try:
+                    delta = (datetime.strptime(e.log_date, '%Y-%m-%d') - datetime.strptime(today, '%Y-%m-%d')).days
+                    days_until = delta
+                except Exception:
+                    pass
+                result.append({
+                    'id': e.id,
+                    'log_date': e.log_date,
+                    'comment': e.comment,
+                    'author': e.author,
+                    'work_order_id': e.work_order_id,
+                    'ot_code': w.code if w else None,
+                    'equipment_tag': eq.tag if eq else None,
+                    'equipment_name': eq.name if eq else None,
+                    'days_until': days_until,
+                    'is_overdue': days_until is not None and days_until < 0,
+                    'is_today': days_until == 0,
+                })
+            return jsonify(result)
+        except Exception as e:
+            logger.exception(f"list_pending_reminders error: {e}")
+            return jsonify({"error": str(e)}), 500
+
     # ── OT Report Tracking ─────────────────────────────────────────────────
 
     @app.route('/api/work_orders/<int:ot_id>/report', methods=['PUT'])
