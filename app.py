@@ -65,7 +65,16 @@ from routes.production_routes import register_production_routes
 from routes.weekly_plan_routes import register_weekly_plan_routes
 from routes.insights_routes import register_insights_routes
 
-logging.basicConfig(level=logging.DEBUG)
+# Nivel configurable via env. En produccion default = INFO (NUNCA DEBUG)
+# porque urllib3.connectionpool en DEBUG loguea cada URL que peticionamos,
+# incluyendo las llamadas a https://api.telegram.org/bot<TOKEN>/getUpdates
+# — eso filtra el TELEGRAM_TOKEN a los logs de Render.
+_LOG_LEVEL = (os.getenv('LOG_LEVEL') or 'INFO').strip().upper()
+logging.basicConfig(level=getattr(logging, _LOG_LEVEL, logging.INFO))
+# Defensa adicional: aunque alguien fuerce DEBUG en el root logger, mantener
+# urllib3.connectionpool silencioso para que nunca filtre URLs con tokens.
+logging.getLogger('urllib3.connectionpool').setLevel(logging.WARNING)
+logging.getLogger('urllib3').setLevel(logging.WARNING)
 logger = logging.getLogger(__name__)
 
 app = Flask(__name__)
