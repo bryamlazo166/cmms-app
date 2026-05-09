@@ -8,6 +8,19 @@ let currentScopeFilter = 'ALL';
 let _treeSelectionCallback = null; // when set, tree node clicks call this instead of selectHierarchy
 let _promotingNoticeId = null;
 
+// ── Normalizacion de codigo OT ────────────────────────────────────────────
+// Acepta valores sucios como "OT-OT-OT-0007", "0007", "OT-0007", "ot-7"
+// y devuelve siempre el formato canonico "OT-0007", o "" si esta vacio.
+// Origen del bug: el modal de edicion del aviso prependia "OT-" cada vez
+// que se abria, generando "OT-OT-..." al guardar. Esta funcion repara
+// los datos viejos ya guardados y previene futuros casos.
+function normalizeOTCode(raw) {
+    if (raw == null) return '';
+    const s = String(raw).trim().toUpperCase().replace(/^(OT-)+/, '');
+    if (!s) return '';
+    return 'OT-' + s;
+}
+
 // ── Datos del reporte (helpers) ───────────────────────────────────────────
 // Devuelve "YYYY-MM-DDTHH:MM" en hora local (compatible con <input type=datetime-local>).
 function getNowLocalDatetime() {
@@ -200,7 +213,7 @@ function renderNotices() {
             <td style="color:${n.closed_date ? '#30D158' : '#666'};">${n.closed_date || '-'}</td>
             <td>${n.failure_mode || '-'}</td>
             <td>${n.maintenance_type || '-'}</td>
-            <td>${n.ot_number ? `<a href="/ordenes?ot_code=${encodeURIComponent(n.ot_number)}" style="color:#5AC8FA;text-decoration:underline;font-weight:600;" title="Abrir OT vinculada">${n.ot_number}</a>` : '-'}</td>
+            <td>${(() => { const c = normalizeOTCode(n.ot_number); return c ? `<a href="/ordenes?ot_code=${encodeURIComponent(c)}" style="color:#5AC8FA;text-decoration:underline;font-weight:600;" title="Abrir OT vinculada">${c}</a>` : '-'; })()}</td>
             <td>${scopeBadge(scope)}</td>
             <td>${statusBadge}</td>
             <td style="white-space:nowrap;">
@@ -344,7 +357,7 @@ async function saveNotice(e) {
         report_channel: val('reportChannel'),
         planning_date: val('planningDate'),
         maintenance_type: val('maintType'),
-        ot_number: val('otNumber'),
+        ot_number: normalizeOTCode(val('otNumber')) || null,
         status: val('status') || 'Pendiente'
     };
 
@@ -532,7 +545,8 @@ window.editNotice = async (id) => {
         // Advanced
         document.getElementById('advancedFields').style.display = 'block';
         document.getElementById('maintType').value = n.maintenance_type || '';
-        document.getElementById('otNumber').value = n.ot_number ? 'OT-' + n.ot_number : ''; // Assuming we might want to show formatted
+        // Mostrar el codigo OT normalizado (sin acumular prefijos en cada apertura).
+        document.getElementById('otNumber').value = normalizeOTCode(n.ot_number);
 
         // Hierarchy
         document.getElementById('areaId').value = n.area_id || '';

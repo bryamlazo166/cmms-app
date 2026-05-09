@@ -27,8 +27,12 @@ document.addEventListener('DOMContentLoaded', () => {
     loadShutdownsForOT();
 
     // Deep-link: /ordenes?ot_code=OT-XXXX → abrir el modal de la OT en ejecucion.
+    // Normaliza por si llega con prefijo duplicado (bug viejo en avisos: "OT-OT-0007").
     const __qp = new URLSearchParams(window.location.search);
-    const __otCode = __qp.get('ot_code');
+    const __otCodeRaw = __qp.get('ot_code');
+    const __otCode = __otCodeRaw
+        ? 'OT-' + String(__otCodeRaw).trim().toUpperCase().replace(/^(OT-)+/, '')
+        : '';
     if (__otCode) {
         const __wait = setInterval(() => {
             if (Array.isArray(allWorkOrders) && allWorkOrders.length) {
@@ -1551,7 +1555,7 @@ function renderIndicatorsBlock(ot, personnel) {
 }
 
 function populateExecutionOperationalInfo(ot) {
-    const noticeText = ot.notice_id ? `AV-${String(ot.notice_id).padStart(4, '0')}` : '-';
+    const noticeCode = ot.notice_code || (ot.notice_id ? `AV-${String(ot.notice_id).padStart(4, '0')}` : '');
     const area = ot.area_name || '-';
     const line = ot.line_name || '-';
     const equipment = ot.equipment_name || '-';
@@ -1565,7 +1569,15 @@ function populateExecutionOperationalInfo(ot) {
         if (el) el.innerText = value || '-';
     };
 
-    setText('exec-notice', noticeText);
+    // Hipervinculo al aviso vinculado (mismo patron que la columna Aviso en la tabla de OTs)
+    const noticeEl = document.getElementById('exec-notice');
+    if (noticeEl) {
+        if (noticeCode) {
+            noticeEl.innerHTML = `<a href="/avisos?notice_code=${encodeURIComponent(noticeCode)}" style="color:#5AC8FA;text-decoration:underline;font-weight:600;" title="Abrir aviso vinculado">${noticeCode}</a>`;
+        } else {
+            noticeEl.innerText = '-';
+        }
+    }
     setText('exec-criticality', ot.criticality || '-');
     setText('exec-area', area);
     setText('exec-line', line);

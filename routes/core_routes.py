@@ -967,9 +967,19 @@ def register_core_routes(app, db, logger, app_build_tag,
         # Antes el filtro requeria component_id no nulo, lo que escondia
         # correctivas registradas a nivel de equipo o sistema (la mayoria en
         # la practica).
+        # NOTA: WorkOrder no tiene columna created_at. Usamos real_end_date
+        # (cuando se cerro el correctivo) y, si esta vacio, scheduled_date
+        # (cuando se planeo). Mismo patron usado en insights_routes.
+        cutoff_str = cutoff.strftime('%Y-%m-%d')
         all_corr = WorkOrder.query.filter(
             WorkOrder.maintenance_type == 'Correctivo',
-            WorkOrder.created_at >= cutoff,
+            db.or_(
+                WorkOrder.real_end_date >= cutoff_str,
+                db.and_(
+                    WorkOrder.real_end_date.is_(None),
+                    WorkOrder.scheduled_date >= cutoff_str,
+                ),
+            ),
         ).all()
 
         days_span = max(1, (dt.datetime.utcnow() - cutoff).days)
