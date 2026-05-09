@@ -192,10 +192,25 @@ final_db_url, resolved_db_mode = _resolve_database_url()
 
 app.config['SQLALCHEMY_DATABASE_URI'] = final_db_url
 app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
-app.config['SQLALCHEMY_ENGINE_OPTIONS'] = {
+
+# Engine options: pool_pre_ping previene "stale connection" tras inactividad,
+# pool_recycle obliga reciclar conexiones cada 280s.
+#
+# IMPORTANTE: connect_args.options="-c default_transaction_read_only=off"
+# fuerza a que cada nueva conexion al servidor arranque en modo READ WRITE,
+# aunque el pgbouncer transaction-mode pool de Supabase nos entregue una
+# conexion contaminada (alguien hizo SET SESSION CHARACTERISTICS AS TRANSACTION
+# READ ONLY y la solto al pool sin RESET). Ver tambien el evento "checkout"
+# mas abajo como segunda capa de defensa.
+_engine_opts = {
     'pool_pre_ping': True,
     'pool_recycle': 280,
 }
+if resolved_db_mode == 'supabase':
+    _engine_opts['connect_args'] = {
+        'options': '-c default_transaction_read_only=off',
+    }
+app.config['SQLALCHEMY_ENGINE_OPTIONS'] = _engine_opts
 app.config['CMMS_DB_MODE'] = resolved_db_mode
 app.config['CMMS_DB_URI_MASKED'] = _mask_db_url(final_db_url)
 print(f"----> APPLICATION STARTING ON PORT 5009 <----")
