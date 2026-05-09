@@ -958,9 +958,14 @@ def register_work_orders_routes(
                 data['shutdown_name'] = sh.name
                 data['shutdown_date'] = sh.shutdown_date
                 data['shutdown_status'] = sh.status
+                # is_planned permite a la UI mostrar "Planificada" vs "Averia"
+                # como hipervinculo a la parada. Default True para registros
+                # antiguos sin la columna.
+                data['shutdown_is_planned'] = bool(getattr(sh, 'is_planned', True))
             else:
                 data['shutdown_code'] = None
                 data['shutdown_name'] = None
+                data['shutdown_is_planned'] = None
 
             reqs_for_ot = purchase_by_ot.get(wo.id, [])
             status_count = {

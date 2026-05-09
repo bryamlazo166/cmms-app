@@ -36,6 +36,15 @@ async function loadShutdowns() {
         const res = await fetch(url);
         _allShutdowns = await res.json();
         renderList();
+
+        // Deep-link: /paradas?id=X abre directamente el detalle.
+        // Si la parada no esta en la pagina actual (filtro de anio diferente),
+        // igual hacemos openDetail por id — el endpoint trae todos los datos.
+        const params = new URLSearchParams(window.location.search);
+        const deepId = params.get('id');
+        if (deepId && /^\d+$/.test(deepId)) {
+            openDetail(parseInt(deepId, 10));
+        }
     } catch (e) { console.error(e); }
 }
 
@@ -50,10 +59,16 @@ function renderList() {
         const codeBadge = s.code
             ? `<span style="background:rgba(10,132,255,.18);color:#5ac8fa;padding:2px 10px;border-radius:10px;font-size:.72rem;font-weight:700;letter-spacing:.5px;margin-right:8px;">${s.code}</span>`
             : '';
+        // Para paradas por averia: badge con los equipos afectados al lado del titulo,
+        // para identificarlas de un vistazo (ej: "⚠ D9 + 1 mas").
+        const affTags = s.affected_equipment_tags || [];
+        const affBadge = (s.is_planned === false && affTags.length)
+            ? ` <span style="background:rgba(255,69,58,.15);color:#ff6b63;border:1px solid rgba(255,69,58,.4);padding:2px 8px;border-radius:10px;font-size:.72rem;font-weight:700;margin-left:6px;" title="Equipo(s) que causaron la averia">⚠ ${affTags.slice(0,2).join(', ')}${affTags.length > 2 ? ` +${affTags.length - 2}` : ''}</span>`
+            : '';
         return `
         <div class="shutdown-card" onclick="openDetail(${s.id})">
             <div style="display:flex;justify-content:space-between;align-items:center;">
-                <div class="title">${codeBadge}${s.name || 'Sin nombre'}</div>
+                <div class="title">${codeBadge}${s.name || 'Sin nombre'}${affBadge}</div>
                 <span class="pill ${s.status}">${s.status}</span>
             </div>
             <div class="meta">
@@ -164,9 +179,10 @@ function renderDetail() {
                             <i class="fas fa-box"></i> ${ot.materials.length}${hasShortage ? ' ⚠' : ''}
                         </button>`
                         : '';
+                    const otCode = ot.code || ('OT-' + ot.id);
                     return `
                     <div class="ot-row" style="grid-template-columns: 0.9fr 1fr 1.2fr 2.2fr 0.8fr 0.6fr 0.8fr 0.5fr;">
-                        <div style="font-weight:700;color:#5ac8fa;">${ot.code || 'OT-' + ot.id}${matBadge}</div>
+                        <div style="font-weight:700;"><a href="/ordenes?ot_code=${encodeURIComponent(otCode)}" style="color:#5ac8fa;text-decoration:underline;" title="Abrir OT en ejecucion/cierre">${otCode}</a>${matBadge}</div>
                         <div style="color:#d5e2f5;font-size:.84rem;">${ot.line_name || '-'}</div>
                         <div style="color:#FF9F0A;">${ot.equipment_tag || '-'} <span style="color:#9ab0cb;font-size:.78rem;">${ot.equipment_name && ot.equipment_name !== '-' ? '— ' + ot.equipment_name : ''}</span></div>
                         <div style="color:#d5e2f5;">${ot.description || '-'}</div>

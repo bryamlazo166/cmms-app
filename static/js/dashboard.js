@@ -219,6 +219,15 @@ function buildKpiTable(items, level, title) {
         return html + '<p style="color:rgba(255,255,255,.30);text-align:center;padding:16px">Sin datos para este periodo.</p>';
     }
 
+    // Orden alfabetico por etiqueta. La fila seleccionada (drill-down activo)
+    // se mantiene al tope para que el usuario no la pierda al expandir.
+    items = [...items].sort((a, b) => {
+        const selA = selectedIds[level] === a.id ? 0 : 1;
+        const selB = selectedIds[level] === b.id ? 0 : 1;
+        if (selA !== selB) return selA - selB;
+        return String(a.label || '').localeCompare(String(b.label || ''), 'es', {sensitivity: 'base'});
+    });
+
     html += '<div style="overflow-x:auto;max-height:350px;border-radius:8px"><table style="width:100%;border-collapse:collapse;min-width:850px">';
     html += `<thead><tr style="background:#2C2C2E">
         <th style="${TH};text-align:left">${levelLabels[level] || 'Nombre'}</th>

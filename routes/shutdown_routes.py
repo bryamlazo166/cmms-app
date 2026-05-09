@@ -87,8 +87,10 @@ def register_shutdown_routes(
         if status:
             q = q.filter_by(status=status)
         shutdowns = q.order_by(Shutdown.shutdown_date.desc()).limit(50).all()
-        # Enriquecer con conteo de OTs
+        # Enriquecer con conteo de OTs y, para paradas por averia, los equipos
+        # que la causaron (tag) para que el usuario los identifique de un vistazo.
         result = []
+        from sqlalchemy import func
         for s in shutdowns:
             d = s.to_dict()
             ot_count = WorkOrder.query.filter_by(shutdown_id=s.id).count()
@@ -96,11 +98,26 @@ def register_shutdown_routes(
             d['ot_count'] = ot_count
             d['ot_closed'] = ot_closed
             d['compliance'] = round((ot_closed / ot_count * 100) if ot_count else 0, 1)
-            # Horas estimadas
-            from sqlalchemy import func
             total_hrs = db.session.query(func.coalesce(func.sum(WorkOrder.estimated_duration), 0)) \
                 .filter(WorkOrder.shutdown_id == s.id).scalar()
             d['total_hours'] = float(total_hrs or 0)
+
+            # affected_equipment_tags: para identificar rapidamente paradas
+            # por averia. Tomamos tags unicos de equipos de las OTs vinculadas
+            # con caused_downtime=True (las que realmente causaron el paro).
+            # Se ordenan por mayor downtime primero — el equipo "estrella" de
+            # la averia queda al frente.
+            affected = (db.session.query(
+                    Equipment.tag,
+                    func.coalesce(func.sum(WorkOrder.downtime_hours), 0).label('dh')
+                )
+                .join(WorkOrder, WorkOrder.equipment_id == Equipment.id)
+                .filter(WorkOrder.shutdown_id == s.id,
+                        WorkOrder.caused_downtime == True)  # noqa: E712
+                .group_by(Equipment.tag)
+                .order_by(func.coalesce(func.sum(WorkOrder.downtime_hours), 0).desc())
+                .all())
+            d['affected_equipment_tags'] = [row[0] for row in affected if row[0]]
             result.append(d)
         return jsonify(result)
 

@@ -1586,6 +1586,24 @@ function populateExecutionOperationalInfo(ot) {
     setText('exec-component', component);
     setText('exec-tag', tag);
     setText('exec-shift', shift);
+
+    // Parada asociada — hipervinculo a la parada con badge planificada/averia.
+    // Asume que el endpoint enriquece la OT con shutdown_id, shutdown_code,
+    // shutdown_name y shutdown_is_planned (ver work_orders_routes.py).
+    const shutdownEl = document.getElementById('exec-shutdown');
+    if (shutdownEl) {
+        if (ot.shutdown_id) {
+            const code = ot.shutdown_code || `PP-${ot.shutdown_id}`;
+            const isPlan = ot.shutdown_is_planned;
+            const badge = (isPlan === false)
+                ? `<span style="color:#FF453A;font-weight:600;margin-left:6px;" title="Parada por averia: penaliza disponibilidad inherente">⚠ Avería</span>`
+                : `<span style="color:#9ab0cb;margin-left:6px;" title="Parada planificada">📅 Planificada</span>`;
+            shutdownEl.innerHTML =
+                `<a href="/paradas?id=${ot.shutdown_id}" style="color:#5AC8FA;text-decoration:underline;font-weight:600;" title="Abrir parada para ver todas las OTs vinculadas">${code}</a>${badge}`;
+        } else {
+            shutdownEl.innerText = '-';
+        }
+    }
 }
 
 function renderExecutionPersonnel(personnel) {
