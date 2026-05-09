@@ -3,7 +3,10 @@ from io import BytesIO
 
 import pandas as pd
 from flask import jsonify, request, send_file
+from flask_login import login_required
 
+from utils.audit import audit_log
+from utils.rate_limit import limit_export
 from utils.specialty_helpers import specialty_for_ot, infer_discipline_from_text
 
 
@@ -1002,6 +1005,8 @@ def register_work_orders_routes(
         return jsonify(results)
 
     @app.route('/api/export-ots', methods=['GET'])
+    @login_required
+    @limit_export
     def export_work_orders_excel():
         try:
             entries = WorkOrder.query.all()
@@ -1327,6 +1332,11 @@ def register_work_orders_routes(
 
                 return jsonify(wo.to_dict())
 
+            # DELETE — registrar en auditoria antes de borrar
+            wo_to_delete = WorkOrder.query.get(id)
+            if wo_to_delete:
+                audit_log('OT_DELETE', module='work_orders', entity_id=id,
+                          detail=f"code={wo_to_delete.code} status={wo_to_delete.status}")
             return delete_entry(WorkOrder, id)
         except Exception as e:
             db.session.rollback()

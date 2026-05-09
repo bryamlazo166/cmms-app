@@ -2,6 +2,8 @@
 __pycache__/
 instance/
 .env
+.env.production
+.env.local
 .DS_Store
 *.pyc
 venv/

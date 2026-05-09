@@ -5,6 +5,10 @@ from io import BytesIO
 
 import pandas as pd
 from flask import jsonify, request, send_file
+from flask_login import login_required
+
+from utils.audit import audit_log
+from utils.rate_limit import limit_export
 
 
 def register_reports_routes(
@@ -879,6 +883,8 @@ def register_reports_routes(
             return jsonify({"error": str(e)}), 500
 
     @app.route('/api/reports/weekly-plan/export', methods=['GET'])
+    @login_required
+    @limit_export
     def export_weekly_plan_excel():
         try:
             payload = _collect_weekly_plan_payload()
@@ -998,6 +1004,8 @@ def register_reports_routes(
         return eq.tag if eq else None
 
     @app.route('/api/reports/powerbi-export', methods=['GET'])
+    @login_required
+    @limit_export
     def export_powerbi_excel():
         """Excel master multi-hoja con todos los datos del CMMS para Power BI.
         La logica vive en utils/powerbi_export.build_workbook() — esta ruta
@@ -1006,6 +1014,8 @@ def register_reports_routes(
             from utils.powerbi_export import build_workbook
             output = build_workbook()
             today = dt.date.today().isoformat()
+            audit_log('EXPORT_MASS', module='reports',
+                      detail=f"target=powerbi_workbook date={today}")
             return send_file(
                 output,
                 as_attachment=True,

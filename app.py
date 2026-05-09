@@ -20,6 +20,7 @@ from models import (
     RotativeAsset, RotativeAssetHistory, RotativeAssetSpec, RotativeAssetBOM,
     InspectionRoute, InspectionItem, InspectionExecution, InspectionResult,
     Activity, Milestone, Notification, RolePermission,
+    AuditLog,
     FailureCatalog,
     ThicknessPoint, ThicknessInspection, ThicknessReading,
     Shutdown, ShutdownArea,
@@ -71,7 +72,34 @@ app = Flask(__name__)
 APP_BUILD_TAG = "cmms-auth-2026-03-28-01"
 
 # ── Secret key (required for Flask sessions / Flask-Login) ────────────────────
-app.config['SECRET_KEY'] = os.getenv('SECRET_KEY', 'cmms-dev-secret-change-in-production')
+# En produccion exigimos una clave fuerte (>=32 chars) y rechazamos el valor
+# por defecto. En dev se permite con un warning.
+_DEFAULT_DEV_SECRET = 'cmms-dev-secret-change-in-production'
+_FLASK_ENV = (os.getenv('FLASK_ENV') or 'production').strip().lower()
+_IS_PROD = _FLASK_ENV == 'production'
+_SECRET_KEY = (os.getenv('SECRET_KEY') or '').strip()
+
+if not _SECRET_KEY or _SECRET_KEY == _DEFAULT_DEV_SECRET:
+    if _IS_PROD:
+        raise RuntimeError(
+            "SECRET_KEY no configurada o usando el valor por defecto en produccion. "
+            "Defina una cadena aleatoria de al menos 32 caracteres en la variable "
+            "de entorno SECRET_KEY (ej: usar `python -c \"import secrets; "
+            "print(secrets.token_urlsafe(48))\"`)."
+        )
+    logger.warning("Usando SECRET_KEY por defecto (modo dev). NO USAR EN PRODUCCION.")
+    _SECRET_KEY = _DEFAULT_DEV_SECRET
+elif len(_SECRET_KEY) < 32:
+    if _IS_PROD:
+        raise RuntimeError(
+            f"SECRET_KEY tiene solo {len(_SECRET_KEY)} caracteres; en produccion "
+            f"se requieren al menos 32."
+        )
+    logger.warning(
+        f"SECRET_KEY tiene solo {len(_SECRET_KEY)} caracteres; se recomiendan >=32."
+    )
+
+app.config['SECRET_KEY'] = _SECRET_KEY
 
 
 def _normalize_db_url(raw_url):
@@ -492,6 +520,74 @@ def add_build_header(response):
     response.headers['Pragma'] = 'no-cache'
     response.headers['Expires'] = '0'
     return response
+
+
+# ── Global error handlers ─────────────────────────────────────────────────────
+# Evita filtrar stacktraces, nombres de columnas o detalles de SQLAlchemy a
+# clientes API. Las rutas que ya devuelven mensajes intencionales (jsonify(
+# {"error": "Acceso denegado"}, 403)) NO entran aqui porque Flask solo invoca
+# estos handlers ante excepciones no capturadas.
+from werkzeug.exceptions import HTTPException
+
+
+@app.errorhandler(HTTPException)
+def _handle_http_exception(e):
+    if request.path.startswith('/api/'):
+        return jsonify({"error": e.description or e.name}), e.code
+    return e
+
+
+@app.errorhandler(Exception)
+def _handle_unexpected_exception(e):
+    # Log completo en servidor (incluye stacktrace), respuesta generica al cliente.
+    logger.exception(f"Unhandled exception on {request.method} {request.path}")
+    try:
+        db.session.rollback()
+    except Exception:
+        pass
+    if request.path.startswith('/api/'):
+        return jsonify({"error": "Error interno del servidor."}), 500
+    return ("Error interno del servidor.", 500)
+
+
+# ── Rate Limiting ─────────────────────────────────────────────────────────────
+# Flask-Limiter es opcional: si no esta instalado, se expone un objeto stub
+# cuyo decorador es no-op para que las rutas sigan registrandose. En produccion
+# se debe instalar (`pip install Flask-Limiter`) para que el limite tenga efecto.
+try:
+    from flask_limiter import Limiter
+    from flask_limiter.util import get_remote_address
+
+    limiter = Limiter(
+        key_func=get_remote_address,
+        app=app,
+        # Limite default global: protege contra abuso generalizado sin afectar
+        # el uso normal. Las rutas individuales pueden ser mas estrictas.
+        default_limits=["300 per minute"],
+        storage_uri="memory://",
+        # No aplicar el default en rutas estaticas o healthcheck
+        default_limits_exempt_when=lambda: request.path.startswith('/static/') or request.path == '/health',
+    )
+    _LIMITER_AVAILABLE = True
+    logger.info("Flask-Limiter activo (memory storage).")
+except ImportError:
+    _LIMITER_AVAILABLE = False
+    logger.warning(
+        "Flask-Limiter no esta instalado. Rate limiting DESACTIVADO. "
+        "Instalar con `pip install Flask-Limiter` para habilitar."
+    )
+
+    class _NoopLimiter:
+        """Stub: si Flask-Limiter no esta disponible, los decoradores son no-op."""
+        def limit(self, *_a, **_kw):
+            def deco(fn):
+                return fn
+            return deco
+
+        def exempt(self, fn):
+            return fn
+
+    limiter = _NoopLimiter()
 
 
 # ── Register all route modules ────────────────────────────────────────────────

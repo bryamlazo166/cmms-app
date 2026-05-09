@@ -18,9 +18,48 @@ DEEPSEEK_URL = 'https://api.deepseek.com/chat/completions'
 OPENAI_API_KEY = os.getenv('OPENAI_API_KEY')
 POLL_INTERVAL = 2
 
-# Authorized chat_ids — only these can use the bot
-OWNER_CHAT_ID = 1853592586
-_allowed_chats = {OWNER_CHAT_ID}
+
+def _parse_int_env(name, default=None):
+    raw = (os.getenv(name) or '').strip()
+    if not raw:
+        return default
+    try:
+        return int(raw)
+    except ValueError:
+        logger.warning(f"{name} no es un entero valido: {raw!r}; usando default {default}")
+        return default
+
+
+def _parse_id_list_env(name):
+    raw = (os.getenv(name) or '').strip()
+    ids = set()
+    if not raw:
+        return ids
+    for chunk in raw.replace(';', ',').split(','):
+        chunk = chunk.strip()
+        if not chunk:
+            continue
+        try:
+            ids.add(int(chunk))
+        except ValueError:
+            logger.warning(f"Ignorando ID invalido en {name}: {chunk!r}")
+    return ids
+
+
+# Authorized chat_ids — solo estos pueden usar el bot.
+# OWNER_CHAT_ID se lee de TELEGRAM_OWNER_CHAT_ID (variable de entorno).
+# La whitelist inicial sale de TELEGRAM_ALLOWED_CHAT_IDS (lista separada por comas).
+# El owner SIEMPRE queda autorizado, aunque no aparezca en la lista.
+OWNER_CHAT_ID = _parse_int_env('TELEGRAM_OWNER_CHAT_ID')
+_allowed_chats = _parse_id_list_env('TELEGRAM_ALLOWED_CHAT_IDS')
+if OWNER_CHAT_ID is not None:
+    _allowed_chats.add(OWNER_CHAT_ID)
+
+if not _allowed_chats:
+    logger.warning(
+        "TELEGRAM_ALLOWED_CHAT_IDS y TELEGRAM_OWNER_CHAT_ID estan vacias. "
+        "El bot rechazara TODOS los mensajes hasta que se configure al menos un ID."
+    )
 
 # Store admin chat_ids for daily alerts
 _admin_chats = set()

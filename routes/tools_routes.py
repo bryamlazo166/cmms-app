@@ -2,6 +2,7 @@ from io import BytesIO
 
 import pandas as pd
 from flask import jsonify, request, send_file
+from flask_login import login_required
 
 
 def register_tools_routes(app, db, Tool):
@@ -51,6 +52,7 @@ def register_tools_routes(app, db, Tool):
         return jsonify({"message": f"Tool {'activated' if tool.is_active else 'deactivated'}"})
 
     @app.route('/api/tools/export', methods=['GET'])
+    @login_required
     def export_tools_excel():
         try:
             tools = Tool.query.order_by(Tool.id.asc()).all()
@@ -84,6 +86,7 @@ def register_tools_routes(app, db, Tool):
             return jsonify({'error': str(e)}), 500
 
     @app.route('/api/tools/template', methods=['GET'])
+    @login_required
     def download_tools_template():
         try:
             template_rows = [

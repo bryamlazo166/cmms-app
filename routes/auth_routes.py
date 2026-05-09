@@ -1,5 +1,21 @@
+from urllib.parse import urlparse
+
 from flask import jsonify, redirect, render_template, request, url_for
 from flask_login import current_user, login_required, login_user, logout_user
+
+from utils.audit import audit_log
+from utils.rate_limit import limit_login
+
+
+def _is_safe_redirect(target):
+    """Acepta solo URLs relativas al propio host (sin scheme/netloc).
+    Bloquea redirecciones a dominios externos (Open Redirect)."""
+    if not target:
+        return False
+    parsed = urlparse(target)
+    if parsed.scheme or parsed.netloc:
+        return False
+    return target.startswith('/') and not target.startswith('//')
 
 
 def register_auth_routes(app, db, logger, User, RolePermission=None):
@@ -7,6 +23,7 @@ def register_auth_routes(app, db, logger, User, RolePermission=None):
     # ── Pages ──────────────────────────────────────────────────────────────────
 
     @app.route('/login', methods=['GET', 'POST'])
+    @limit_login
     def login():
         if current_user.is_authenticated:
             return redirect(url_for('index'))
@@ -19,14 +36,29 @@ def register_auth_routes(app, db, logger, User, RolePermission=None):
             user = User.query.filter_by(username=username).first()
             if user and user.active and user.check_password(password):
                 login_user(user, remember=True)
-                next_url = request.args.get('next') or url_for('index')
+                audit_log('LOGIN_OK', module='auth', user_id=user.id,
+                          username=user.username, success=True)
+                next_url = request.args.get('next')
+                if not _is_safe_redirect(next_url):
+                    next_url = url_for('index')
                 return redirect(next_url)
+            # Login fallido: registrar el intento (sin password en detail).
+            reason = 'user_not_found' if not user else (
+                'inactive' if not user.active else 'bad_password'
+            )
+            audit_log('LOGIN_FAIL', module='auth', success=False,
+                      username=username,
+                      detail=f"reason={reason}")
             error = 'Usuario o contraseña incorrectos.'
 
         return render_template('login.html', error=error)
 
     @app.route('/logout')
     def logout():
+        if current_user.is_authenticated:
+            audit_log('LOGOUT', module='auth',
+                      user_id=current_user.id,
+                      username=current_user.username)
         logout_user()
         return redirect(url_for('login'))
 
@@ -79,6 +111,8 @@ def register_auth_routes(app, db, logger, User, RolePermission=None):
         db.session.add(user)
         db.session.commit()
         logger.info(f"User created: {username} ({role}) by {current_user.username}")
+        audit_log('USER_CREATE', module='users', entity_id=user.id,
+                  detail=f"username={username} role={role}")
         return jsonify(user.to_dict()), 201
 
     @app.route('/api/auth/users/<int:user_id>', methods=['PUT'])
@@ -101,6 +135,10 @@ def register_auth_routes(app, db, logger, User, RolePermission=None):
                     return jsonify({"error": "No puedes desactivar o cambiar el rol del único administrador."}), 400
 
         data = request.get_json() or {}
+        old_role = user.role
+        old_active = user.active
+        password_changed = False
+
         if 'full_name' in data:
             user.full_name = (data['full_name'] or '').strip() or None
         if 'role' in data and data['role'] in ('admin', 'supervisor', 'tecnico', 'viewer'):
@@ -111,8 +149,22 @@ def register_auth_routes(app, db, logger, User, RolePermission=None):
             if len(data['password']) < 6:
                 return jsonify({"error": "La contraseña debe tener al menos 6 caracteres."}), 400
             user.set_password(data['password'])
+            password_changed = True
 
         db.session.commit()
+
+        # Audit: discriminar cambios de rol y password como acciones criticas.
+        if user.role != old_role:
+            audit_log('ROLE_CHANGE', module='users', entity_id=user.id,
+                      detail=f"username={user.username} {old_role}->{user.role}")
+        if password_changed:
+            audit_log('PASSWORD_CHANGE', module='users', entity_id=user.id,
+                      detail=f"target={user.username} (admin reset)")
+        # Cambio de active u otros datos: USER_UPDATE generico.
+        if user.active != old_active or 'full_name' in data:
+            audit_log('USER_UPDATE', module='users', entity_id=user.id,
+                      detail=f"username={user.username} active={user.active}")
+
         return jsonify(user.to_dict())
 
     @app.route('/api/auth/users/<int:user_id>', methods=['DELETE'])
@@ -127,6 +179,8 @@ def register_auth_routes(app, db, logger, User, RolePermission=None):
             return jsonify({"error": "Usuario no encontrado."}), 404
         user.active = False
         db.session.commit()
+        audit_log('USER_DELETE', module='users', entity_id=user.id,
+                  detail=f"username={user.username} (deactivated)")
         return jsonify({"ok": True})
 
     @app.route('/api/auth/change-password', methods=['POST'])
@@ -143,6 +197,8 @@ def register_auth_routes(app, db, logger, User, RolePermission=None):
 
         current_user.set_password(new_pwd)
         db.session.commit()
+        audit_log('PASSWORD_CHANGE', module='auth', entity_id=current_user.id,
+                  detail='self-change')
         return jsonify({"ok": True})
 
     # ── Role Permissions ──────────────────────────────────────────────────
@@ -326,6 +382,52 @@ def register_auth_routes(app, db, logger, User, RolePermission=None):
             'roles': ROLES,
         })
 
+    # ── Audit logs (admin only) ─────────────────────────────────────────────
+
+    @app.route('/api/auth/audit-logs', methods=['GET'])
+    @login_required
+    def list_audit_logs():
+        """Lista paginada de eventos de auditoria. Solo admin.
+
+        Query params:
+            limit (int, default 100, max 500)
+            offset (int, default 0)
+            action (str, opcional): filtra por accion exacta (ej LOGIN_FAIL)
+            username (str, opcional): filtra por username
+        """
+        if current_user.role != 'admin':
+            return jsonify({"error": "Acceso denegado."}), 403
+        try:
+            from models import AuditLog
+        except Exception:
+            return jsonify({"error": "Audit logs no disponibles."}), 500
+
+        try:
+            limit = max(1, min(int(request.args.get('limit', 100)), 500))
+        except (TypeError, ValueError):
+            limit = 100
+        try:
+            offset = max(0, int(request.args.get('offset', 0)))
+        except (TypeError, ValueError):
+            offset = 0
+
+        q = AuditLog.query
+        action = (request.args.get('action') or '').strip()
+        if action:
+            q = q.filter(AuditLog.action == action)
+        usr = (request.args.get('username') or '').strip()
+        if usr:
+            q = q.filter(AuditLog.username == usr)
+
+        total = q.count()
+        rows = q.order_by(AuditLog.timestamp.desc()).offset(offset).limit(limit).all()
+        return jsonify({
+            "total": total,
+            "limit": limit,
+            "offset": offset,
+            "items": [r.to_dict() for r in rows],
+        })
+
     @app.route('/api/auth/permissions', methods=['PUT'])
     @login_required
     def update_permissions():
@@ -365,4 +467,6 @@ def register_auth_routes(app, db, logger, User, RolePermission=None):
             _app_mod._perms_cache_ts = 0
         except Exception:
             pass
+        audit_log('PERMISSION_CHANGE', module='users',
+                  detail=f"roles_modified={list(data.keys())}")
         return jsonify({"ok": True})

@@ -4,6 +4,9 @@ from io import BytesIO, StringIO
 
 import pandas as pd
 from flask import jsonify, request, send_file
+from flask_login import login_required
+
+from utils.rate_limit import limit_export
 
 
 def register_data_import_routes(
@@ -404,6 +407,8 @@ def register_data_import_routes(
             return jsonify({"error": str(e)}), 500
 
     @app.route('/api/export-data', methods=['GET'])
+    @login_required
+    @limit_export
     def export_data():
         # Legacy endpoint kept for compatibility.
         try:
@@ -448,6 +453,8 @@ def register_data_import_routes(
             return jsonify({"error": str(e)}), 500
 
     @app.route('/api/export-hierarchy-complete', methods=['GET'])
+    @login_required
+    @limit_export
     def export_hierarchy_complete():
         try:
             data = []
@@ -497,6 +504,7 @@ def register_data_import_routes(
             return jsonify({"error": str(e)}), 500
 
     @app.route('/api/download-template', methods=['GET'])
+    @login_required
     def download_template():
         try:
             template_rows = [

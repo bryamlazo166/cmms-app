@@ -16,6 +16,7 @@ from io import BytesIO
 
 import requests
 from flask import jsonify, request, render_template, send_file
+from flask_login import login_required
 
 
 SACK_KG = 50  # 1 saco de harina procesada = 50 kg
@@ -581,6 +582,7 @@ def register_production_routes(app, db, logger, ProductionGoal, WorkOrder, Area,
     # ── Export a Excel ───────────────────────────────────────────────────────
 
     @app.route('/api/production/export', methods=['GET'])
+    @login_required
     def export_production_report():
         try:
             import pandas as pd

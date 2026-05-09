@@ -3,6 +3,21 @@ from io import BytesIO
 
 import pandas as pd
 from flask import jsonify, request, send_file
+from flask_login import login_required
+
+from utils.rate_limit import limit_export
+
+
+# Whitelist explicita de campos editables via API.
+# Excluye id, code (autogenerado), y cualquier futura columna interna.
+# Si se agrega un campo nuevo al modelo y debe ser editable, hay que
+# agregarlo aqui de forma explicita.
+_WAREHOUSE_EDITABLE_FIELDS = frozenset({
+    'name', 'category', 'description', 'stock', 'min_stock', 'unit',
+    'location', 'unit_cost', 'family', 'brand', 'manufacturer_code',
+    'criticality', 'average_cost', 'lead_time', 'abc_class', 'xyz_class',
+    'safety_stock', 'rop', 'max_stock', 'min_order_qty', 'is_active',
+})
 
 
 def register_warehouse_routes(
@@ -11,17 +26,17 @@ def register_warehouse_routes(
 ):
     # --- WAREHOUSE ENDPOINTS ---
     @app.route('/api/warehouse', methods=['GET', 'POST'])
+    @login_required
     def handle_warehouse():
         if request.method == 'POST':
             try:
-                data = request.json
-                data['code'] = 'REP-TEMP'
+                data = request.json or {}
+                # Whitelist: ignorar cualquier campo no editable que envie el cliente
+                clean_data = {
+                    k: v for k, v in data.items() if k in _WAREHOUSE_EDITABLE_FIELDS
+                }
 
-                # Sanitization for models
-                valid_keys = {c.name for c in WarehouseItem.__table__.columns}
-                clean_data = {k: v for k, v in data.items() if k in valid_keys}
-
-                item = WarehouseItem(**clean_data)
+                item = WarehouseItem(code='REP-TEMP', **clean_data)
                 db.session.add(item)
                 db.session.flush()
                 item.code = f"REP-{item.id:04d}"
@@ -29,7 +44,8 @@ def register_warehouse_routes(
                 return jsonify(item.to_dict()), 201
             except Exception as e:
                 db.session.rollback()
-                return jsonify({"error": str(e)}), 500
+                logger.exception("Warehouse create failed")
+                return jsonify({"error": "No se pudo crear el item de almacen."}), 500
 
         # GET
         show_all = request.args.get('all')
@@ -41,6 +57,7 @@ def register_warehouse_routes(
         return jsonify([i.to_dict() for i in items])
 
     @app.route('/api/warehouse/<int:id>', methods=['PUT', 'DELETE'])
+    @login_required
     def handle_warehouse_id(id):
         try:
             item = WarehouseItem.query.get(id)
@@ -53,17 +70,22 @@ def register_warehouse_routes(
                 return jsonify({"message": "Status toggled"}), 200
 
             if request.method == 'PUT':
-                data = request.json
+                data = request.json or {}
+                # Whitelist explicita: bloquea mass assignment de id, code u
+                # otros campos sensibles que el cliente intente sobrescribir.
                 for k, v in data.items():
-                    if hasattr(item, k):
+                    if k in _WAREHOUSE_EDITABLE_FIELDS:
                         setattr(item, k, v)
                 db.session.commit()
                 return jsonify(item.to_dict()), 200
         except Exception as e:
             db.session.rollback()
-            return jsonify({"error": str(e)}), 500
+            logger.exception(f"Warehouse update/delete failed for id={id}")
+            return jsonify({"error": "No se pudo actualizar el item de almacen."}), 500
 
     @app.route('/api/warehouse/export', methods=['GET'])
+    @login_required
+    @limit_export
     def export_warehouse_excel():
         try:
             items = WarehouseItem.query.all()
@@ -115,6 +137,8 @@ def register_warehouse_routes(
             return jsonify({"error": str(e)}), 500
 
     @app.route('/api/warehouse/export-kardex', methods=['GET'])
+    @login_required
+    @limit_export
     def export_kardex_excel():
         try:
             movements = WarehouseMovement.query.order_by(WarehouseMovement.date.desc()).all()
@@ -154,6 +178,7 @@ def register_warehouse_routes(
             return jsonify({"error": str(e)}), 500
 
     @app.route('/api/warehouse/template', methods=['GET'])
+    @login_required
     def download_warehouse_template():
         try:
             template_rows = [

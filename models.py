@@ -78,6 +78,52 @@ class Notification(db.Model):
         }
 
 
+class AuditLog(db.Model):
+    """Registro de acciones criticas (auditoria de seguridad).
+
+    Se guarda en cada evento sensible: login/logout (incluyendo fallos),
+    cambios en usuarios o roles, eliminacion de OTs/avisos, exportaciones
+    masivas, reset de BD, etc. NO se pretende ser un log exhaustivo de
+    toda la actividad — solo eventos relevantes para auditoria.
+    """
+    __tablename__ = 'audit_logs'
+    __table_args__ = (
+        Index('ix_audit_timestamp', 'timestamp'),
+        Index('ix_audit_user_id', 'user_id'),
+        Index('ix_audit_action', 'action'),
+    )
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    timestamp: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, nullable=False)
+    user_id: Mapped[int | None] = mapped_column(Integer, nullable=True)  # null si login fallido
+    username: Mapped[str | None] = mapped_column(String(80), nullable=True)
+    action: Mapped[str] = mapped_column(String(50), nullable=False)
+    # ej: LOGIN_OK, LOGIN_FAIL, LOGOUT, USER_CREATE, USER_UPDATE, USER_DELETE,
+    # ROLE_CHANGE, PASSWORD_CHANGE, OT_DELETE, NOTICE_DELETE, EXPORT_MASS,
+    # IMPORT_EXCEL, DB_RESET, PERMISSION_CHANGE, etc.
+    module: Mapped[str | None] = mapped_column(String(50), nullable=True)
+    entity_id: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    detail: Mapped[str | None] = mapped_column(Text, nullable=True)
+    ip_address: Mapped[str | None] = mapped_column(String(45), nullable=True)  # IPv4 / IPv6
+    user_agent: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    success: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
+
+    def to_dict(self):
+        return {
+            "id": self.id,
+            "timestamp": self.timestamp.isoformat() if self.timestamp else None,
+            "user_id": self.user_id,
+            "username": self.username,
+            "action": self.action,
+            "module": self.module,
+            "entity_id": self.entity_id,
+            "detail": self.detail,
+            "ip_address": self.ip_address,
+            "user_agent": self.user_agent,
+            "success": self.success,
+        }
+
+
 class RolePermission(db.Model):
     """Configurable permissions per role per module — 8 flags granulares."""
     __tablename__ = 'role_permissions'

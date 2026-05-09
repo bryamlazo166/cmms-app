@@ -20,6 +20,7 @@ import secrets
 from io import BytesIO
 
 from flask import jsonify, request, render_template, send_file
+from flask_login import login_required
 
 from utils.specialty_helpers import discipline_for_weekly_item
 
@@ -957,6 +958,7 @@ def register_weekly_plan_routes(
             return jsonify({"error": str(e)}), 500
 
     @app.route('/api/weekly-plans/<int:plan_id>/matrix/excel', methods=['GET'])
+    @login_required
     def wp_matrix_excel(plan_id):
         """Exporta la matriz a XLSX con celdas P/✓ por dia (replica del Excel
         que el usuario envia al proveedor)."""
@@ -1076,6 +1078,7 @@ def register_weekly_plan_routes(
             return jsonify({"error": str(e)}), 500
 
     @app.route('/api/weekly-plans/<int:plan_id>/matrix/pdf', methods=['GET'])
+    @login_required
     def wp_matrix_pdf(plan_id):
         """Exporta la matriz a PDF horizontal (apaisado) con celdas P/✓."""
         try:
@@ -1202,6 +1205,7 @@ def register_weekly_plan_routes(
     # ── Export PDF ───────────────────────────────────────────────────────
 
     @app.route('/api/weekly-plans/<int:plan_id>/report/pdf', methods=['GET'])
+    @login_required
     def wp_export_pdf(plan_id):
         """PDF con 7 secciones (una por noche), listo para entregar al proveedor."""
         try:

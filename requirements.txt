@@ -4,6 +4,7 @@ wheel
 Flask
 Flask-SQLAlchemy
 Flask-Login
+Flask-Limiter
 psycopg2-binary
 pandas
 openpyxl
