@@ -26,6 +26,25 @@ document.addEventListener('DOMContentLoaded', () => {
     loadUsersForTechLink();
     loadShutdownsForOT();
 
+    // Deep-link: /ordenes?ot_code=OT-XXXX → abrir el modal de la OT en ejecucion.
+    const __qp = new URLSearchParams(window.location.search);
+    const __otCode = __qp.get('ot_code');
+    if (__otCode) {
+        const __wait = setInterval(() => {
+            if (Array.isArray(allWorkOrders) && allWorkOrders.length) {
+                clearInterval(__wait);
+                const ot = allWorkOrders.find(o =>
+                    (o.code || '').toUpperCase() === __otCode.toUpperCase());
+                if (ot) {
+                    openOTInExecution(ot.id);
+                } else {
+                    console.warn('OT no encontrada:', __otCode);
+                }
+            }
+        }, 250);
+        setTimeout(() => clearInterval(__wait), 10000);
+    }
+
     // Provider Form Submit
     const provForm = document.getElementById('providerForm');
     if (provForm) {
@@ -598,7 +617,7 @@ function renderPlanningTable(data = null) {
         return `
         <tr>
             <td><strong>${ot.code || ot.id}</strong></td>
-            <td>${ot.notice_id ? 'AV-' + ot.notice_id : '-'}</td>
+            <td>${ot.notice_id ? `<a href="/avisos?notice_code=${encodeURIComponent(ot.notice_code || ('AV-' + ot.notice_id))}" style="color:#5AC8FA;text-decoration:underline;font-weight:600;" title="Abrir aviso vinculado">${ot.notice_code || ('AV-' + ot.notice_id)}</a>` : '-'}</td>
             <td>${ot.area_name || '-'}</td>
             <td>${ot.line_name || '-'}</td>
             <td>${ot.equipment_name || '-'}</td>
@@ -2781,6 +2800,22 @@ async function checkFeedback(equipmentId) {
 let modalMaterialCatalog = [];
 let currentMaterialSubtype = 'repuesto';
 
+function _escapeHtmlAttr(s) {
+    return String(s == null ? '' : s)
+        .replace(/&/g, '&amp;')
+        .replace(/"/g, '&quot;')
+        .replace(/'/g, '&#39;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;');
+}
+
+function _escapeHtmlText(s) {
+    return String(s == null ? '' : s)
+        .replace(/&/g, '&amp;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;');
+}
+
 function renderMaterialSearchList(filterText = '') {
     const list = document.getElementById('materialSearchList');
     if (!list) return;
@@ -2795,17 +2830,31 @@ function renderMaterialSearchList(filterText = '') {
         list.style.display = 'block';
         return;
     }
+    // Usar data-* attributes en vez de inline onclick — los nombres con
+    // simbolos (", ', /, ;, <, >, etc.) rompian el atributo onclick.
     list.innerHTML = filtered.map(i => {
         const detail = currentMaterialType === 'tool'
-            ? `(${i.status || 'Disponible'})`
-            : `Stock: ${i.stock ?? 'N/A'}`;
-        return `<div onclick="selectMaterialItem(${i.id},'${(i.code||'').replace(/'/g,"\\'")}','${(i.name||'').replace(/'/g,"\\'")}',${i.stock ?? null})"
+            ? `(${_escapeHtmlText(i.status || 'Disponible')})`
+            : `Stock: ${i.stock == null ? 'N/A' : i.stock}`;
+        const stockAttr = i.stock == null ? '' : i.stock;
+        return `<div class="material-item" data-id="${i.id}" data-code="${_escapeHtmlAttr(i.code || '')}" data-name="${_escapeHtmlAttr(i.name || '')}" data-stock="${_escapeHtmlAttr(stockAttr)}"
             style="padding:8px 12px;cursor:pointer;font-size:.83rem;border-bottom:1px solid #333;"
             onmouseover="this.style.background='#2a3a5a'" onmouseout="this.style.background=''">
-            <strong>${i.code || '-'}</strong> — ${i.name}
+            <strong>${_escapeHtmlText(i.code || '-')}</strong> — ${_escapeHtmlText(i.name || '')}
             <span style="color:#888;font-size:.78rem;margin-left:6px;">${detail}</span>
         </div>`;
     }).join('');
+    // Bind via addEventListener — robusto a cualquier caracter en code/name
+    list.querySelectorAll('.material-item').forEach(el => {
+        el.addEventListener('click', () => {
+            const id = parseInt(el.dataset.id, 10);
+            const code = el.dataset.code || '';
+            const name = el.dataset.name || '';
+            const stockRaw = el.dataset.stock;
+            const stock = (stockRaw === '' || stockRaw == null) ? null : Number(stockRaw);
+            window.selectMaterialItem(id, code, name, stock);
+        });
+    });
     list.style.display = 'block';
 }
 
@@ -3201,14 +3250,15 @@ function renderMaterialsTable() {
             : '<span style="color:#888;font-size:.78rem;">N/A</span>';
 
         const tr = document.createElement('tr');
+        // Escapar code/name/unit — pueden tener simbolos como < > " ' / ;
         tr.innerHTML = `
             <td><span style="display:inline-flex;align-items:center;gap:4px;padding:2px 8px;border-radius:10px;font-size:.78rem;font-weight:600;background:${cfg.bg};color:${cfg.color};border:1px solid ${cfg.color}55;">
                 <i class="fas ${cfg.icon}"></i> ${cfg.label}
             </span></td>
-            <td style="font-family:monospace;font-size:.82rem;">${code}</td>
-            <td style="font-weight:500;">${name}</td>
+            <td style="font-family:monospace;font-size:.82rem;">${_escapeHtmlText(code)}</td>
+            <td style="font-weight:500;">${_escapeHtmlText(name)}</td>
             <td style="text-align:center;">${m.quantity || 1}</td>
-            <td style="text-align:center;color:#aaa;">${m.unit || '-'}</td>
+            <td style="text-align:center;color:#aaa;">${_escapeHtmlText(m.unit || '-')}</td>
             <td style="text-align:center;">${installedBadge}</td>
             <td>
                 <button type="button" onclick="removeMaterial(${m.id})"

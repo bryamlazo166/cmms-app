@@ -741,6 +741,70 @@ def _build_cmms_context_real(app):
             except Exception as e:
                 ctx.append(f"(error bitacora: {e})")
 
+            # Herramientas y materiales usados en OTs — clave para preguntas
+            # tipo "que llave se usa para X", "que herramienta se uso en el
+            # cambio de chumacera del TH3", "que repuestos se cambiaron en
+            # la OT-0034". Une ot_materials con tools/warehouse_items para
+            # traer el nombre legible. Limitado a 200 lineas para no inflar
+            # el contexto del LLM.
+            try:
+                ot_ids_for_mat = [o[0] for o in ots]
+                if ot_ids_for_mat:
+                    mats = _db.session.execute(text("""
+                        SELECT w.code,
+                               COALESCE(om.subtype, om.item_type) AS tipo,
+                               CASE
+                                 WHEN om.item_type = 'tool'      THEN COALESCE(t.code || ' - ' || t.name, om.item_name_free)
+                                 WHEN om.item_type = 'warehouse' THEN COALESCE(wi.code || ' - ' || wi.name, om.item_name_free)
+                                 ELSE om.item_name_free
+                               END AS nombre,
+                               om.quantity, om.unit, om.is_installed,
+                               e.tag, e.name, c.name
+                        FROM ot_materials om
+                        JOIN work_orders w ON om.work_order_id = w.id
+                        LEFT JOIN tools t           ON om.item_type = 'tool'      AND om.item_id = t.id
+                        LEFT JOIN warehouse_items wi ON om.item_type = 'warehouse' AND om.item_id = wi.id
+                        LEFT JOIN equipments e ON w.equipment_id = e.id
+                        LEFT JOIN components c ON w.component_id = c.id
+                        WHERE om.work_order_id = ANY(:ids)
+                        ORDER BY w.id DESC, om.id ASC
+                        LIMIT 200
+                    """), {"ids": ot_ids_for_mat}).fetchall()
+                    if mats:
+                        ctx.append(f"\n=== HERRAMIENTAS Y MATERIALES USADOS EN OTs ({len(mats)} items) ===")
+                        ctx.append("INSTRUCCION: si el usuario pregunta 'que herramienta/llave/repuesto se uso para X',")
+                        ctx.append("busca trabajos similares en esta lista (mismo equipo, componente o tipo de falla)")
+                        ctx.append("y devuelve los items registrados. Si no hay coincidencia exacta, sugiere las OTs")
+                        ctx.append("mas parecidas y los items que se usaron en cada una. Formato por linea:")
+                        ctx.append("  OT | tipo (herramienta/consumible/repuesto/tool/warehouse/free) | nombre | cant unidad | instalado | equipo | componente")
+                        for m in mats:
+                            inst = '' if m[5] is None else (' [instalado]' if m[5] else ' [solo uso]')
+                            qty = f"{m[3] or ''} {m[4] or ''}".strip() or '-'
+                            eq = f"[{m[6] or '-'}] {m[7] or ''}".strip()
+                            comp = m[8] or '-'
+                            ctx.append(f"  {m[0]} | {m[1] or '-'} | {m[2] or '-'} | {qty}{inst} | {eq} | {comp}")
+            except Exception as e:
+                ctx.append(f"(error materiales: {e})")
+
+            # Catalogo maestro de herramientas — preguntas tipo "que llave
+            # mixta hay disponible", "que herramientas tenemos para medir
+            # alineacion", etc.
+            try:
+                tools_master = _db.session.execute(text("""
+                    SELECT id, code, name, category, description, status, location
+                    FROM tools WHERE is_active = true
+                    ORDER BY category NULLS LAST, name
+                    LIMIT 150
+                """)).fetchall()
+                if tools_master:
+                    ctx.append(f"\n=== CATALOGO DE HERRAMIENTAS ({len(tools_master)}) ===")
+                    for h in tools_master:
+                        loc = f" | Ubic: {h[6]}" if h[6] else ""
+                        desc = f" | {h[4][:80]}" if h[4] else ""
+                        ctx.append(f"  id:{h[0]} | {h[1] or '-'} | {h[2]} | {h[3] or '-'} | {h[5] or '-'}{loc}{desc}")
+            except Exception as e:
+                ctx.append(f"(error catalogo herramientas: {e})")
+
             # Notices (last 30) — include scope and free_location for FUERA_PLAN/GENERAL
             try:
                 notices = _db.session.execute(text("""

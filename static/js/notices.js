@@ -200,7 +200,7 @@ function renderNotices() {
             <td style="color:${n.closed_date ? '#30D158' : '#666'};">${n.closed_date || '-'}</td>
             <td>${n.failure_mode || '-'}</td>
             <td>${n.maintenance_type || '-'}</td>
-            <td>${n.ot_number || '-'}</td>
+            <td>${n.ot_number ? `<a href="/ordenes?ot_code=${encodeURIComponent(n.ot_number)}" style="color:#5AC8FA;text-decoration:underline;font-weight:600;" title="Abrir OT vinculada">${n.ot_number}</a>` : '-'}</td>
             <td>${scopeBadge(scope)}</td>
             <td>${statusBadge}</td>
             <td style="white-space:nowrap;">
@@ -416,6 +416,24 @@ document.addEventListener('DOMContentLoaded', async () => {
             document.getElementById('newNoticeBtn').click();
             prefillFromTree(type, id);
         }, 500);
+    }
+
+    // Deep-link: ?notice_code=AV-XXXX → abrir el modal de edicion del aviso
+    const noticeCode = params.get('notice_code');
+    if (noticeCode) {
+        const __wait = setInterval(() => {
+            if (Array.isArray(allNotices) && allNotices.length) {
+                clearInterval(__wait);
+                const target = allNotices.find(n =>
+                    (n.code || '').toUpperCase() === noticeCode.toUpperCase());
+                if (target) {
+                    window.editNotice(target.id);
+                } else {
+                    console.warn('Aviso no encontrado:', noticeCode);
+                }
+            }
+        }, 250);
+        setTimeout(() => clearInterval(__wait), 10000);
     }
 });
 
