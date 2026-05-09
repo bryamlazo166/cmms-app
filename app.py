@@ -827,6 +827,7 @@ register_plant_flow_routes(
     Line=Line,
     WorkOrder=WorkOrder,
     EquipmentFlowEdge=EquipmentFlowEdge,
+    Shutdown=Shutdown,
 )
 
 register_production_routes(
@@ -1028,6 +1029,10 @@ _ENSURE_COLUMNS = [
     ("thickness_inspections", "pdf_url", "VARCHAR(500)"),
     ("work_orders", "shutdown_id", "INTEGER"),
     ("shutdowns", "code", "VARCHAR(30)"),
+    # Bandera para distinguir parada planeada vs parada por averia.
+    # Default true (comportamiento previo) — las paradas existentes quedan
+    # como planificadas hasta que el usuario las edite si fueron averias.
+    ("shutdowns", "is_planned", "BOOLEAN NOT NULL DEFAULT TRUE"),
     # Permisos granulares por accion (ver, crear, editar, eliminar,
     # exportar, importar, cerrar, aprobar). can_view/can_edit/can_export
     # ya existian; las 5 nuevas se inicializan derivando de can_edit

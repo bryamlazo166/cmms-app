@@ -38,6 +38,7 @@ def register_shutdown_routes(
                     name=data.get('name', ''),
                     shutdown_date=data['shutdown_date'],
                     shutdown_type=data.get('shutdown_type', 'TOTAL'),
+                    is_planned=bool(data.get('is_planned', True)),
                     start_time=data.get('start_time', '07:00'),
                     end_time=data.get('end_time', '19:00'),
                     overtime=data.get('overtime', False),
@@ -126,6 +127,8 @@ def register_shutdown_routes(
                             'status', 'production_requirements', 'observations', 'overtime'):
                     if key in data:
                         setattr(shutdown, key, data[key])
+                if 'is_planned' in data:
+                    shutdown.is_planned = bool(data['is_planned'])
                 # Actualizar áreas si vienen
                 if 'area_ids' in data:
                     ShutdownArea.query.filter_by(shutdown_id=shutdown_id).delete()

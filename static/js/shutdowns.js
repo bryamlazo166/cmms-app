@@ -60,6 +60,9 @@ function renderList() {
                 <i class="fas fa-calendar"></i> ${s.shutdown_date} | ${s.start_time} — ${s.end_time}
                 ${s.overtime ? ' <span style="color:#FF9F0A;">(+HE)</span>' : ''}
                 | Tipo: ${s.shutdown_type}
+                ${(s.is_planned === false)
+                    ? ' | <span style="color:#FF453A;font-weight:600;" title="Parada por averia: penaliza disponibilidad inherente">⚠ Avería</span>'
+                    : ' | <span style="color:#9ab0cb;" title="Parada planificada: no penaliza inherente">📅 Planificada</span>'}
             </div>
             <div style="margin-top:6px;">${areas || '<span style="color:#666;">Todas las áreas</span>'}</div>
             <div class="stats" style="color:#9ab0cb;">
@@ -239,6 +242,8 @@ function openCreateModal() {
     document.getElementById('modalEnd').value = '19:00';
     document.getElementById('modalProdReq').value = '';
     document.getElementById('modalObs').value = '';
+    const isPlanned = document.getElementById('modalIsPlanned');
+    if (isPlanned) isPlanned.checked = true;  // Default: parada planificada
     renderAreaCheckboxes([]);
     document.getElementById('shutdownModal').showModal();
 }
@@ -254,6 +259,11 @@ function editCurrentShutdown() {
     document.getElementById('modalEnd').value = s.end_time;
     document.getElementById('modalProdReq').value = s.production_requirements || '';
     document.getElementById('modalObs').value = s.observations || '';
+    const isPlanned = document.getElementById('modalIsPlanned');
+    if (isPlanned) {
+        // Por compatibilidad con paradas viejas sin el campo: default true
+        isPlanned.checked = (s.is_planned === undefined) ? true : !!s.is_planned;
+    }
     const selectedIds = (s.areas || []).map(a => a.area_id);
     renderAreaCheckboxes(selectedIds);
     document.getElementById('shutdownModal').showModal();
@@ -277,9 +287,11 @@ async function saveShutdown() {
     const areaIds = Array.from(areaChecks).map(c => parseInt(c.value));
     const type = document.getElementById('modalType').value;
 
+    const isPlannedEl = document.getElementById('modalIsPlanned');
     const payload = {
         shutdown_date: document.getElementById('modalDate').value,
         shutdown_type: type,
+        is_planned: isPlannedEl ? !!isPlannedEl.checked : true,
         start_time: document.getElementById('modalStart').value,
         end_time: document.getElementById('modalEnd').value,
         area_ids: type === 'TOTAL' ? _allAreas.map(a => a.id) : areaIds,

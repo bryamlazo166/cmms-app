@@ -1650,6 +1650,12 @@ class Shutdown(db.Model):
     overtime: Mapped[bool] = mapped_column(Boolean, default=False)
     status: Mapped[str] = mapped_column(String(20), default='PLANIFICADA')
     # PLANIFICADA, EN_CURSO, COMPLETADA, CANCELADA
+    is_planned: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
+    # True  = Parada planificada (mtto programado, parada mayor planeada).
+    # False = Parada por averia / no planeada (falla obligo a parar y se
+    #         aprovecho para hacer trabajos adicionales).
+    # Esta bandera es la que decide si las OTs Correctivas vinculadas a la
+    # parada cuentan o no en Disponibilidad Inherente del flujo de planta.
     production_requirements: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
     # Requerimientos a producción (equipo limpio, retirar pallets, etc.)
     observations: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
@@ -1665,6 +1671,7 @@ class Shutdown(db.Model):
             "name": self.name,
             "shutdown_date": self.shutdown_date,
             "shutdown_type": self.shutdown_type,
+            "is_planned": self.is_planned,
             "start_time": self.start_time,
             "end_time": self.end_time,
             "overtime": self.overtime,

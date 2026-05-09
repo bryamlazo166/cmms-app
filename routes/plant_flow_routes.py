@@ -28,7 +28,7 @@ from utils.kpi_helpers import (
 )
 
 
-def register_plant_flow_routes(app, db, logger, Equipment, Area, Line, WorkOrder, EquipmentFlowEdge):
+def register_plant_flow_routes(app, db, logger, Equipment, Area, Line, WorkOrder, EquipmentFlowEdge, Shutdown=None):
 
     def _default_period():
         """Desde el primer dia del mes anterior hasta hoy."""
@@ -113,13 +113,17 @@ def register_plant_flow_routes(app, db, logger, Equipment, Area, Line, WorkOrder
 
         return sum((b - a).total_seconds() / 3600.0 for a, b in merged)
 
-    def _calc_equipment_availability(eq, ots_in_period, period_start, period_end):
+    def _calc_equipment_availability(eq, ots_in_period, period_start, period_end,
+                                     unplanned_shutdown_ids=None):
         """Disponibilidad operativa e inherente con fusion de intervalos.
 
         - theoretical: horas en que el equipo DEBIA producir, respetando
           shift_hours_per_day y work_days_per_week (no asume 24/7).
         - downtime_op: paro total (cualquier OT con caused_downtime).
-        - downtime_inh: solo correctivos sin shutdown_id (confiabilidad pura).
+        - downtime_inh: confiabilidad pura — cuenta correctivos que NO esten
+          en parada PLANIFICADA. Una OT correctiva vinculada a una parada
+          marcada como "no planificada" (shutdown.is_planned=False) SI cuenta
+          en inherente, porque la parada misma fue causada por una averia.
         - Aplica cap defensivo: downtime nunca supera theoretical.
 
         Devuelve dict con ambos KPIs.
@@ -134,6 +138,8 @@ def register_plant_flow_routes(app, db, logger, Equipment, Area, Line, WorkOrder
 
         p_start_dt = dt.datetime.combine(period_start, dt.time(0, 0))
         p_end_dt = dt.datetime.combine(period_end, dt.time(23, 59, 59))
+
+        unplanned_shutdown_ids = unplanned_shutdown_ids or set()
 
         intervals_all = []
         intervals_inh = []
@@ -152,9 +158,16 @@ def register_plant_flow_routes(app, db, logger, Equipment, Area, Line, WorkOrder
 
             mt = (ot.maintenance_type or '').strip().lower()
             is_corrective = mt in ('correctivo', 'correctiva', 'corrective')
-            # Inherente: SOLO correctivos no programados (sin parada planificada)
-            if is_corrective and not ot.shutdown_id:
-                intervals_inh.append((ini, fin))
+            # Inherente: la OT correctiva cuenta si:
+            #   - no esta vinculada a parada (averia espontanea), O
+            #   - esta vinculada a una parada NO PLANIFICADA (averia que
+            #     obligo a parar, aunque despues se haya creado un Shutdown
+            #     para gestionar las OTs adicionales).
+            if is_corrective:
+                no_shutdown = not ot.shutdown_id
+                shutdown_unplanned = ot.shutdown_id in unplanned_shutdown_ids
+                if no_shutdown or shutdown_unplanned:
+                    intervals_inh.append((ini, fin))
 
         downtime_op = _merge_and_total_hours(intervals_all, p_start_dt, p_end_dt)
         downtime_inh = _merge_and_total_hours(intervals_inh, p_start_dt, p_end_dt)
@@ -230,6 +243,20 @@ def register_plant_flow_routes(app, db, logger, Equipment, Area, Line, WorkOrder
 
             ots_in_period = [o for o in all_ots if overlaps_window(o)]
 
+            # Pre-cargar IDs de paradas marcadas como NO planificadas (averias).
+            # Las OTs correctivas vinculadas a estas paradas SI cuentan en
+            # disponibilidad inherente (la parada misma fue causada por falla).
+            unplanned_shutdown_ids = set()
+            if Shutdown is not None:
+                try:
+                    rows = Shutdown.query.filter_by(is_planned=False).with_entities(
+                        Shutdown.id).all()
+                    unplanned_shutdown_ids = {r[0] for r in rows}
+                except Exception as _e:
+                    # Si la columna aun no existe (migracion pendiente), tratar
+                    # todas las paradas como planificadas (comportamiento previo).
+                    logger.warning(f"Shutdown.is_planned no disponible: {_e}")
+
             # Bypass: pre-cargar para flag de equipos con redundancia
             bypass_rows = EquipmentFlowEdge.query.filter_by(is_active=True).all()
             bypass_in_ids = {b.to_equipment_id for b in bypass_rows}
@@ -241,7 +268,8 @@ def register_plant_flow_routes(app, db, logger, Equipment, Area, Line, WorkOrder
             for eq in equipments:
                 line = lines.get(eq.line_id)
                 area = areas.get(line.area_id) if line else None
-                kpi = _calc_equipment_availability(eq, ots_in_period, start, end)
+                kpi = _calc_equipment_availability(eq, ots_in_period, start, end,
+                                                   unplanned_shutdown_ids=unplanned_shutdown_ids)
                 avail_op = kpi['availability_op']
                 avail_inh = kpi['availability_inh']
                 # Color semaforo basado en disponibilidad operativa (la mas conservadora)
