@@ -1975,3 +1975,102 @@ class ProductionGoal(db.Model):
             "created_at": self.created_at.isoformat() if self.created_at else None,
             "updated_at": self.updated_at.isoformat() if self.updated_at else None,
         }
+
+
+# ── Hammer Batches / Lotes de Martillos (FAPMETAL) ────────────────────────────
+# Modela los 3 lotes fisicos de martillos que rotan entre los molinos y el
+# proveedor de rellenado (FAPMETAL). En cualquier momento dado: 2 lotes
+# instalados (uno por molino) y 1 lote en transito (en FAPMETAL siendo
+# rellenado, o ya rellenado en stock esperando proximo cambio).
+
+class HammerBatch(db.Model):
+    __tablename__ = 'hammer_batches'
+    __table_args__ = (
+        Index('ix_hb_state', 'state'),
+        Index('ix_hb_is_active', 'is_active'),
+    )
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    code: Mapped[str] = mapped_column(String(30), unique=True, nullable=False)
+    # Estados:
+    #   INSTALADO_M1, INSTALADO_M2, EN_FAPMETAL,
+    #   RELLENADO_EN_STOCK, DESCARTADO
+    state: Mapped[str] = mapped_column(String(30), nullable=False, default='RELLENADO_EN_STOCK')
+    hammers_count: Mapped[int] = mapped_column(Integer, nullable=False, default=72)
+    refill_count: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    purchased_at: Mapped[str | None] = mapped_column(String(20), nullable=True)
+    discarded_at: Mapped[str | None] = mapped_column(String(20), nullable=True)
+    provider_id: Mapped[int | None] = mapped_column(ForeignKey('providers.id'), nullable=True)
+    notes: Mapped[str | None] = mapped_column(Text, nullable=True)
+    is_active: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+    updated_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+    provider = relationship("Provider")
+    movements = relationship(
+        "HammerBatchMovement",
+        back_populates="batch",
+        cascade="all, delete-orphan",
+        order_by="HammerBatchMovement.event_date.desc()",
+    )
+
+    def to_dict(self):
+        return {
+            "id": self.id,
+            "code": self.code,
+            "state": self.state,
+            "hammers_count": self.hammers_count,
+            "refill_count": self.refill_count,
+            "purchased_at": self.purchased_at,
+            "discarded_at": self.discarded_at,
+            "provider_id": self.provider_id,
+            "provider_name": self.provider.name if self.provider else None,
+            "notes": self.notes,
+            "is_active": self.is_active,
+            "created_at": self.created_at.isoformat() if self.created_at else None,
+            "updated_at": self.updated_at.isoformat() if self.updated_at else None,
+        }
+
+
+class HammerBatchMovement(db.Model):
+    __tablename__ = 'hammer_batch_movements'
+    __table_args__ = (
+        Index('ix_hbm_batch_id', 'batch_id'),
+        Index('ix_hbm_event_date', 'event_date'),
+        Index('ix_hbm_event_type', 'event_type'),
+    )
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    batch_id: Mapped[int] = mapped_column(ForeignKey('hammer_batches.id'), nullable=False)
+    # Tipos:
+    #   INSTALAR_M1, RETIRAR_M1, INSTALAR_M2, RETIRAR_M2,
+    #   ENVIAR_FAPMETAL, RECIBIR_RELLENADO, DESCARTAR, ALTA
+    event_type: Mapped[str] = mapped_column(String(30), nullable=False)
+    event_date: Mapped[str] = mapped_column(String(20), nullable=False)
+    state_from: Mapped[str | None] = mapped_column(String(30), nullable=True)
+    state_to: Mapped[str | None] = mapped_column(String(30), nullable=True)
+    work_order_id: Mapped[int | None] = mapped_column(ForeignKey('work_orders.id'), nullable=True)
+    hammers_count: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    notes: Mapped[str | None] = mapped_column(Text, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+    created_by: Mapped[str | None] = mapped_column(String(80), nullable=True)
+
+    batch = relationship("HammerBatch", back_populates="movements")
+    work_order = relationship("WorkOrder")
+
+    def to_dict(self):
+        return {
+            "id": self.id,
+            "batch_id": self.batch_id,
+            "batch_code": self.batch.code if self.batch else None,
+            "event_type": self.event_type,
+            "event_date": self.event_date,
+            "state_from": self.state_from,
+            "state_to": self.state_to,
+            "work_order_id": self.work_order_id,
+            "work_order_code": self.work_order.code if self.work_order else None,
+            "hammers_count": self.hammers_count,
+            "notes": self.notes,
+            "created_at": self.created_at.isoformat() if self.created_at else None,
+            "created_by": self.created_by,
+        }

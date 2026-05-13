@@ -1,0 +1,558 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <link rel="icon" type="image/svg+xml" href="/static/favicon.svg">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Lotes de Martillos — CMMS</title>
+    <script>(function(){try{var t=localStorage.getItem('cmms.theme');if(t=='management'||t=='developer'){document.documentElement.setAttribute('data-theme',t);}}catch(e){}})();</script>
+    <link rel="stylesheet" href="/static/css/style.css?v={{ v }}">
+    <link rel="stylesheet" href="/static/css/sidebar.css?v={{ v }}">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css">
+    <style>
+        .slot-grid { display:grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap:14px; margin-bottom:18px; }
+        .slot-card { background:var(--bg-primary, #1C1C1E); border:1px solid #2b3342; border-radius:14px; padding:14px 16px; min-height:120px; }
+        .slot-card.m1 { border-left:4px solid #5ac8fa; }
+        .slot-card.m2 { border-left:4px solid #ffb86c; }
+        .slot-card.fap { border-left:4px solid #ff9d95; }
+        .slot-card.stk { border-left:4px solid #9de4a1; }
+        .slot-card .slot-title { color:#9ab0cb; font-size:.78rem; text-transform:uppercase; letter-spacing:.4px; }
+        .slot-card .slot-batch-code { font-size:1.5rem; font-weight:800; margin-top:4px; color:#eff6ff; }
+        .slot-card .slot-meta { font-size:.82rem; color:#bfd2ec; margin-top:6px; }
+        .slot-card.empty .slot-batch-code { color:#6b7c95; font-style:italic; }
+        .alerts-box { background:rgba(244,67,54,.10); border:1px solid rgba(244,67,54,.45); color:#ffb1ab; border-radius:10px; padding:10px 14px; margin-bottom:16px; }
+        .alerts-box ul { margin:4px 0 0 16px; }
+        .toolbar-row { display:flex; gap:8px; flex-wrap:wrap; margin-bottom:14px; }
+        .pill { padding:3px 8px; border-radius:12px; font-size:.74rem; font-weight:600; border:1px solid transparent; }
+        .pill-m1 { background:rgba(90,200,250,.17); color:#9ad9fa; border-color:rgba(90,200,250,.45); }
+        .pill-m2 { background:rgba(255,184,108,.17); color:#ffd29c; border-color:rgba(255,184,108,.45); }
+        .pill-fap { background:rgba(255,157,149,.17); color:#ffb1ab; border-color:rgba(255,157,149,.45); }
+        .pill-stk { background:rgba(157,228,161,.17); color:#9de4a1; border-color:rgba(157,228,161,.45); }
+        .pill-baja { background:rgba(120,120,120,.17); color:#9aa6b4; border-color:rgba(120,120,120,.45); }
+        .form-grid { display:grid; grid-template-columns: 1fr 1fr; gap:10px; }
+        .form-grid .full { grid-column: 1/-1; }
+        .modal { padding: 22px; border:1px solid #344964; background:#101820; color:#eff6ff; }
+        dialog::backdrop { background: rgba(0,0,0,.65); }
+        .summary-table th, .summary-table td { padding:7px 10px; text-align:left; font-size:.88rem; }
+        .summary-table tr { border-bottom:1px solid rgba(255,255,255,.05); }
+        .summary-table th { color:#9ab0cb; text-transform:uppercase; font-size:.72rem; }
+        .totals-grid { display:grid; grid-template-columns: repeat(auto-fit, minmax(170px, 1fr)); gap:10px; margin-bottom:14px; }
+        .total-card { background:rgba(255,255,255,.03); border:1px solid #2b3342; border-radius:10px; padding:10px 12px; }
+        .total-card .label { color:#9ab0cb; font-size:.72rem; text-transform:uppercase; }
+        .total-card .value { font-size:1.4rem; font-weight:700; }
+        .info-banner { background:rgba(33,150,243,.07); border:1px solid rgba(33,150,243,.3); color:#9ad9fa; padding:8px 12px; border-radius:8px; font-size:.85rem; margin-bottom:10px; }
+    </style>
+</head>
+<body>
+    <nav class="sidebar">
+        <div class="logo-details">
+            <i class="fas fa-industry icon"></i>
+            <div class="logo_name">CMMS Pro</div>
+            <i class="fas fa-bars" id="btn_toggle"></i>
+        </div>
+        <ul class="nav-list">
+            <li><a href="/"><i class="fas fa-chart-line"></i><span class="links_name">Dashboard</span></a><span class="tooltip">Dashboard</span></li>
+            <li><a href="/avisos"><i class="fas fa-bell"></i><span class="links_name">Avisos</span></a><span class="tooltip">Avisos</span></li>
+            <li><a href="/ordenes"><i class="fas fa-tools"></i><span class="links_name">Ordenes</span></a><span class="tooltip">Ordenes</span></li>
+            <li><a href="/activos-rotativos"><i class="fas fa-sync-alt"></i><span class="links_name">Act. Rotativos</span></a><span class="tooltip">Act. Rotativos</span></li>
+            <li><a href="/martillos" class="active"><i class="fas fa-gavel"></i><span class="links_name">Martillos</span></a><span class="tooltip">Martillos</span></li>
+            <li><a href="/configuracion"><i class="fas fa-sitemap"></i><span class="links_name">Activos</span></a><span class="tooltip">Activos</span></li>
+            <li><a href="/lubricacion"><i class="fas fa-oil-can"></i><span class="links_name">Lubricacion</span></a><span class="tooltip">Lubricacion</span></li>
+            <li><a href="/reportes"><i class="fas fa-file-contract"></i><span class="links_name">Reportes</span></a><span class="tooltip">Reportes</span></li>
+        </ul>
+    </nav>
+
+    <section class="home-section">
+        <div class="top-bar">
+            <h1><i class="fas fa-gavel"></i> Lotes de Martillos — FAPMETAL</h1>
+        </div>
+        <div class="main-container">
+
+            <div class="info-banner">
+                <i class="fas fa-info-circle"></i>
+                Modelo: <strong>3 lotes</strong> rotando &mdash; 2 instalados (Molino #1 y #2) y 1 en transito (FAPMETAL o stock rellenado).
+                Cada cambio genera una OT preventiva con duracion ~1h.
+            </div>
+
+            <div id="alertsBox" style="display:none;" class="alerts-box">
+                <strong><i class="fas fa-triangle-exclamation"></i> Alertas:</strong>
+                <ul id="alertsList"></ul>
+            </div>
+
+            <div class="slot-grid" id="slotGrid">
+                <div class="slot-card empty"><div class="slot-title">Cargando…</div></div>
+            </div>
+
+            <div class="toolbar-row">
+                <button class="btn-primary" data-perm="martillos.edit" onclick="openChangeModal('M1')"><i class="fas fa-exchange-alt"></i> Cambio en Molino #1</button>
+                <button class="btn-primary" data-perm="martillos.edit" onclick="openChangeModal('M2')"><i class="fas fa-exchange-alt"></i> Cambio en Molino #2</button>
+                <button class="btn-secondary" data-perm="martillos.edit" onclick="openReceiveModal()"><i class="fas fa-truck-loading"></i> Recibir Rellenado</button>
+                <button class="btn-secondary" data-perm="martillos.edit" onclick="openNewBatchModal()"><i class="fas fa-plus"></i> Nuevo Lote</button>
+                <button class="btn-secondary" onclick="openConciliationModal()"><i class="fas fa-balance-scale"></i> Conciliacion FAPMETAL</button>
+                <button class="btn-secondary" onclick="loadState()"><i class="fas fa-sync"></i> Actualizar</button>
+            </div>
+
+            <h3 style="margin-top:18px;">Historico de movimientos (ultimos 100)</h3>
+            <div class="table-wrap">
+                <table class="table-sm">
+                    <thead>
+                        <tr>
+                            <th>Fecha</th><th>Lote</th><th>Evento</th><th>De → A</th><th>Martillos</th><th>OT</th><th>Notas</th>
+                        </tr>
+                    </thead>
+                    <tbody id="movementsBody">
+                        <tr><td colspan="7">Cargando…</td></tr>
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    </section>
+
+    <!-- ── Modal: Cambio de Lote ───────────────────────────────────────── -->
+    <dialog id="changeModal" class="modal" style="max-width: 640px; border-radius:12px;">
+        <h3 id="changeModalTitle"><i class="fas fa-exchange-alt"></i> Cambio en Molino</h3>
+        <form id="changeForm">
+            <input id="chgMill" type="hidden">
+            <div class="form-grid">
+                <div class="form-group full" id="chgInferenceInfo" style="background:rgba(33,150,243,.07); padding:8px 12px; border-radius:8px; font-size:.85rem; color:#9ad9fa;"></div>
+                <div class="form-group"><label>Hora inicio *</label><input id="chgStart" type="datetime-local" required></div>
+                <div class="form-group"><label>Hora fin *</label><input id="chgEnd" type="datetime-local" required></div>
+                <div class="form-group"><label>Lote saliente (override)</label><select id="chgBatchOut"><option value="">Auto (inferir)</option></select></div>
+                <div class="form-group"><label>Lote entrante (override)</label><select id="chgBatchIn"><option value="">Auto (inferir)</option></select></div>
+                <div class="form-group"><label>Martillos cambiados</label><input id="chgCount" type="number" min="1" placeholder="default = lote completo"></div>
+                <div class="form-group">
+                    <label>Lubricacion chumaceras</label>
+                    <select id="chgLub"><option value="true" selected>Realizada (motriz + conducida)</option><option value="false">No realizada</option></select>
+                </div>
+                <div class="form-group full"><label>Notas</label><textarea id="chgNotes" rows="2"></textarea></div>
+            </div>
+            <div style="display:flex; justify-content:flex-end; gap:8px; margin-top:14px;">
+                <button type="button" class="btn-secondary" onclick="document.getElementById('changeModal').close()">Cancelar</button>
+                <button type="submit" class="btn-primary">Registrar Cambio + OT</button>
+            </div>
+        </form>
+    </dialog>
+
+    <!-- ── Modal: Recibir Rellenado ───────────────────────────────────── -->
+    <dialog id="receiveModal" class="modal" style="max-width: 480px; border-radius:12px;">
+        <h3><i class="fas fa-truck-loading"></i> Recibir Lote Rellenado</h3>
+        <form id="receiveForm">
+            <div class="form-grid">
+                <div class="form-group full"><label>Lote a recibir *</label><select id="rcvBatch" required></select></div>
+                <div class="form-group"><label>Fecha de recepcion</label><input id="rcvDate" type="date"></div>
+                <div class="form-group full"><label>Notas</label><textarea id="rcvNotes" rows="2"></textarea></div>
+            </div>
+            <div style="display:flex; justify-content:flex-end; gap:8px; margin-top:14px;">
+                <button type="button" class="btn-secondary" onclick="document.getElementById('receiveModal').close()">Cancelar</button>
+                <button type="submit" class="btn-primary">Marcar Rellenado en Stock</button>
+            </div>
+        </form>
+    </dialog>
+
+    <!-- ── Modal: Nuevo Lote ──────────────────────────────────────────── -->
+    <dialog id="newBatchModal" class="modal" style="max-width: 520px; border-radius:12px;">
+        <h3><i class="fas fa-plus"></i> Alta de Nuevo Lote</h3>
+        <form id="newBatchForm">
+            <div class="form-grid">
+                <div class="form-group"><label>Codigo del lote *</label><input id="nbCode" required placeholder="LOTE-D"></div>
+                <div class="form-group"><label>Martillos por lote</label><input id="nbCount" type="number" value="72" min="1"></div>
+                <div class="form-group"><label>Fecha de compra</label><input id="nbDate" type="date"></div>
+                <div class="form-group"><label>Estado inicial</label>
+                    <select id="nbState">
+                        <option value="RELLENADO_EN_STOCK" selected>Rellenado en stock (nuevo, listo para usar)</option>
+                        <option value="INSTALADO_M1">Instalado en Molino #1</option>
+                        <option value="INSTALADO_M2">Instalado en Molino #2</option>
+                        <option value="EN_FAPMETAL">En FAPMETAL</option>
+                    </select>
+                </div>
+                <div class="form-group full"><label>Notas</label><textarea id="nbNotes" rows="2"></textarea></div>
+            </div>
+            <div style="display:flex; justify-content:flex-end; gap:8px; margin-top:14px;">
+                <button type="button" class="btn-secondary" onclick="document.getElementById('newBatchModal').close()">Cancelar</button>
+                <button type="submit" class="btn-primary">Crear Lote</button>
+            </div>
+        </form>
+    </dialog>
+
+    <!-- ── Modal: Conciliacion ────────────────────────────────────────── -->
+    <dialog id="conciliationModal" class="modal" style="max-width: 880px; border-radius:12px;">
+        <h3><i class="fas fa-balance-scale"></i> Conciliacion con FAPMETAL</h3>
+        <div style="display:flex; gap:10px; align-items:end; margin-bottom:12px; flex-wrap:wrap;">
+            <div class="form-group"><label>Desde</label><input id="conStart" type="date"></div>
+            <div class="form-group"><label>Hasta</label><input id="conEnd" type="date"></div>
+            <button class="btn-primary" onclick="loadConciliation()"><i class="fas fa-search"></i> Recalcular</button>
+            <button class="btn-secondary" onclick="exportConciliationCSV()"><i class="fas fa-download"></i> Exportar CSV</button>
+        </div>
+        <div id="conciliationContent">Cargando…</div>
+        <div style="display:flex; justify-content:flex-end; margin-top:14px;">
+            <button class="btn-secondary" onclick="document.getElementById('conciliationModal').close()">Cerrar</button>
+        </div>
+    </dialog>
+
+    <script>
+        // ── State ────────────────────────────────────────────────────────
+        let _state = null;
+        let _allBatches = [];
+
+        const STATE_LABEL = {
+            INSTALADO_M1: 'Molino #1',
+            INSTALADO_M2: 'Molino #2',
+            EN_FAPMETAL: 'En FAPMETAL',
+            RELLENADO_EN_STOCK: 'Rellenado en stock',
+            DESCARTADO: 'Descartado',
+        };
+        const PILL_CLASS = {
+            INSTALADO_M1: 'pill-m1',
+            INSTALADO_M2: 'pill-m2',
+            EN_FAPMETAL: 'pill-fap',
+            RELLENADO_EN_STOCK: 'pill-stk',
+            DESCARTADO: 'pill-baja',
+        };
+        const EVENT_LABEL = {
+            INSTALAR_M1: 'Instalacion en M1',
+            RETIRAR_M1: 'Retiro de M1',
+            INSTALAR_M2: 'Instalacion en M2',
+            RETIRAR_M2: 'Retiro de M2',
+            ENVIAR_FAPMETAL: 'Envio a FAPMETAL',
+            RECIBIR_RELLENADO: 'Recibido rellenado',
+            DESCARTAR: 'Descartado',
+            ALTA: 'Alta',
+        };
+
+        // ── Load state ───────────────────────────────────────────────────
+        async function loadState() {
+            try {
+                const [stRes, listRes] = await Promise.all([
+                    fetch('/api/hammer-batches/state'),
+                    fetch('/api/hammer-batches?include_discarded=1'),
+                ]);
+                _state = await stRes.json();
+                _allBatches = await listRes.json();
+                renderSlots();
+                renderAlerts();
+                renderMovements();
+            } catch (e) {
+                console.error('loadState error', e);
+            }
+        }
+
+        function renderSlots() {
+            const grid = document.getElementById('slotGrid');
+            const m1 = (_state.molino_1 || [])[0];
+            const m2 = (_state.molino_2 || [])[0];
+            const fap = _state.en_fapmetal || [];
+            const stk = _state.rellenado_stock || [];
+
+            const cardHtml = (cls, title, batch, extra) => {
+                if (!batch) {
+                    return `<div class="slot-card empty ${cls}"><div class="slot-title">${title}</div><div class="slot-batch-code">— sin lote —</div></div>`;
+                }
+                return `<div class="slot-card ${cls}">
+                    <div class="slot-title">${title}</div>
+                    <div class="slot-batch-code">${batch.code}</div>
+                    <div class="slot-meta">${batch.hammers_count} martillos · ${batch.refill_count} rellenados</div>
+                    ${extra || ''}
+                </div>`;
+            };
+
+            const fapHtml = fap.length
+                ? fap.map(b => cardHtml('fap', 'En FAPMETAL', b, '<div class="slot-meta" style="color:#ffb1ab;">Pendiente de retorno</div>')).join('')
+                : `<div class="slot-card fap empty"><div class="slot-title">En FAPMETAL</div><div class="slot-batch-code">— vacio —</div></div>`;
+            const stkHtml = stk.length
+                ? stk.map(b => cardHtml('stk', 'Rellenado en stock', b, '<div class="slot-meta" style="color:#9de4a1;">Listo para proximo cambio</div>')).join('')
+                : `<div class="slot-card stk empty"><div class="slot-title">Rellenado en stock</div><div class="slot-batch-code">— vacio —</div></div>`;
+
+            grid.innerHTML = [
+                cardHtml('m1', 'Molino #1', m1),
+                cardHtml('m2', 'Molino #2', m2),
+                fapHtml,
+                stkHtml,
+            ].join('');
+        }
+
+        function renderAlerts() {
+            const box = document.getElementById('alertsBox');
+            const list = document.getElementById('alertsList');
+            const alerts = (_state.alertas || []);
+            if (alerts.length === 0) { box.style.display = 'none'; return; }
+            box.style.display = 'block';
+            list.innerHTML = alerts.map(a => `<li>${a}</li>`).join('');
+        }
+
+        // ── Movements ────────────────────────────────────────────────────
+        async function renderMovements() {
+            const tbody = document.getElementById('movementsBody');
+            try {
+                // Trae detalle de cada lote (movimientos vienen embebidos)
+                const all = [];
+                for (const b of _allBatches) {
+                    const r = await fetch(`/api/hammer-batches/${b.id}`);
+                    const detail = await r.json();
+                    (detail.movements || []).forEach(m => all.push(m));
+                }
+                all.sort((a, b) => (b.event_date || '').localeCompare(a.event_date || ''));
+                const top = all.slice(0, 100);
+                if (top.length === 0) {
+                    tbody.innerHTML = '<tr><td colspan="7">Sin movimientos.</td></tr>';
+                    return;
+                }
+                tbody.innerHTML = top.map(m => {
+                    const otLink = m.work_order_code ? `<a href="/ordenes?q=${encodeURIComponent(m.work_order_code)}">${m.work_order_code}</a>` : '—';
+                    const dirArrow = m.state_from && m.state_to && m.state_from !== m.state_to
+                        ? `${STATE_LABEL[m.state_from] || m.state_from} → ${STATE_LABEL[m.state_to] || m.state_to}`
+                        : '—';
+                    return `<tr>
+                        <td>${m.event_date || '—'}</td>
+                        <td><strong>${m.batch_code || ''}</strong></td>
+                        <td>${EVENT_LABEL[m.event_type] || m.event_type}</td>
+                        <td>${dirArrow}</td>
+                        <td>${m.hammers_count ?? '—'}</td>
+                        <td>${otLink}</td>
+                        <td>${m.notes || ''}</td>
+                    </tr>`;
+                }).join('');
+            } catch (e) {
+                tbody.innerHTML = `<tr><td colspan="7">Error: ${e.message}</td></tr>`;
+            }
+        }
+
+        // ── Cambio en molino ─────────────────────────────────────────────
+        function openChangeModal(mill) {
+            document.getElementById('chgMill').value = mill;
+            document.getElementById('changeModalTitle').innerHTML = `<i class="fas fa-exchange-alt"></i> Cambio en Molino #${mill === 'M1' ? '1' : '2'}`;
+            // Inferencia de candidatos
+            const installedKey = mill === 'M1' ? 'molino_1' : 'molino_2';
+            const outCand = (_state[installedKey] || [])[0];
+            const inCand = (_state.rellenado_stock || [])[0];
+            let info = '';
+            if (outCand) info += `Sale automatico: <strong>${outCand.code}</strong>. `;
+            else info += `<span style="color:#ffb1ab;">⚠ No hay lote en Molino #${mill === 'M1' ? '1' : '2'}.</span> `;
+            if (inCand) info += `Entra automatico: <strong>${inCand.code}</strong> (rellenado #${inCand.refill_count + 1}).`;
+            else info += `<span style="color:#ffb1ab;">⚠ No hay lote rellenado en stock.</span>`;
+            document.getElementById('chgInferenceInfo').innerHTML = info;
+
+            // Poblar selects de override
+            const targetState = mill === 'M1' ? 'INSTALADO_M1' : 'INSTALADO_M2';
+            const fillSelect = (id, predicate, defaultLabel) => {
+                const sel = document.getElementById(id);
+                sel.innerHTML = `<option value="">${defaultLabel}</option>`;
+                _allBatches.filter(predicate).forEach(b => {
+                    sel.innerHTML += `<option value="${b.id}">${b.code} (${STATE_LABEL[b.state] || b.state}, ${b.hammers_count} martillos)</option>`;
+                });
+            };
+            fillSelect('chgBatchOut', b => b.state === targetState, 'Auto (inferir)');
+            fillSelect('chgBatchIn', b => b.state === 'RELLENADO_EN_STOCK', 'Auto (inferir)');
+
+            // Default hora actual
+            const now = new Date();
+            const pad = n => String(n).padStart(2, '0');
+            const nowStr = `${now.getFullYear()}-${pad(now.getMonth()+1)}-${pad(now.getDate())}T${pad(now.getHours())}:${pad(now.getMinutes())}`;
+            document.getElementById('chgStart').value = nowStr;
+            document.getElementById('chgEnd').value = nowStr;
+            document.getElementById('chgCount').value = '';
+            document.getElementById('chgNotes').value = '';
+            document.getElementById('chgLub').value = 'true';
+
+            document.getElementById('changeModal').showModal();
+        }
+
+        document.getElementById('changeForm').addEventListener('submit', async e => {
+            e.preventDefault();
+            const body = {
+                mill: document.getElementById('chgMill').value,
+                start_time: document.getElementById('chgStart').value,
+                end_time: document.getElementById('chgEnd').value,
+                batch_out_id: document.getElementById('chgBatchOut').value || null,
+                batch_in_id: document.getElementById('chgBatchIn').value || null,
+                hammers_changed_count: document.getElementById('chgCount').value || null,
+                lubrication_done: document.getElementById('chgLub').value === 'true',
+                notes: document.getElementById('chgNotes').value || null,
+            };
+            try {
+                const r = await fetch('/api/hammer-batches/change', {
+                    method: 'POST', headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify(body),
+                });
+                const data = await r.json();
+                if (!r.ok) { alert('Error: ' + (data.error || 'desconocido')); return; }
+                alert(`✅ Cambio registrado.\nOT generada: ${data.work_order.code}\nLote saliente: ${data.batch_out.code} → EN FAPMETAL\nLote entrante: ${data.batch_in.code} → ${STATE_LABEL[data.batch_in.state]}`);
+                document.getElementById('changeModal').close();
+                loadState();
+            } catch (err) {
+                alert('Error: ' + err.message);
+            }
+        });
+
+        // ── Recibir rellenado ────────────────────────────────────────────
+        function openReceiveModal() {
+            const sel = document.getElementById('rcvBatch');
+            sel.innerHTML = '';
+            const candidates = _allBatches.filter(b => b.state === 'EN_FAPMETAL');
+            if (candidates.length === 0) {
+                alert('No hay lotes en FAPMETAL para recibir.');
+                return;
+            }
+            candidates.forEach(b => {
+                sel.innerHTML += `<option value="${b.id}">${b.code} — ${b.hammers_count} martillos (${b.refill_count} rellenados previos)</option>`;
+            });
+            document.getElementById('rcvDate').value = new Date().toISOString().slice(0, 10);
+            document.getElementById('rcvNotes').value = '';
+            document.getElementById('receiveModal').showModal();
+        }
+
+        document.getElementById('receiveForm').addEventListener('submit', async e => {
+            e.preventDefault();
+            const id = document.getElementById('rcvBatch').value;
+            const body = {
+                event_date: document.getElementById('rcvDate').value || null,
+                notes: document.getElementById('rcvNotes').value || null,
+            };
+            const r = await fetch(`/api/hammer-batches/${id}/receive`, {
+                method: 'POST', headers: {'Content-Type': 'application/json'},
+                body: JSON.stringify(body),
+            });
+            const data = await r.json();
+            if (!r.ok) { alert('Error: ' + (data.error || 'desconocido')); return; }
+            alert(`✅ Lote ${data.code} ahora en RELLENADO_EN_STOCK.`);
+            document.getElementById('receiveModal').close();
+            loadState();
+        });
+
+        // ── Nuevo lote ───────────────────────────────────────────────────
+        function openNewBatchModal() {
+            document.getElementById('nbCode').value = '';
+            document.getElementById('nbCount').value = 72;
+            document.getElementById('nbDate').value = new Date().toISOString().slice(0, 10);
+            document.getElementById('nbState').value = 'RELLENADO_EN_STOCK';
+            document.getElementById('nbNotes').value = '';
+            document.getElementById('newBatchModal').showModal();
+        }
+
+        document.getElementById('newBatchForm').addEventListener('submit', async e => {
+            e.preventDefault();
+            const body = {
+                code: document.getElementById('nbCode').value.trim(),
+                hammers_count: parseInt(document.getElementById('nbCount').value) || 72,
+                purchased_at: document.getElementById('nbDate').value || null,
+                state: document.getElementById('nbState').value,
+                notes: document.getElementById('nbNotes').value || null,
+            };
+            const r = await fetch('/api/hammer-batches', {
+                method: 'POST', headers: {'Content-Type': 'application/json'},
+                body: JSON.stringify(body),
+            });
+            const data = await r.json();
+            if (!r.ok) { alert('Error: ' + (data.error || 'desconocido')); return; }
+            alert(`✅ Lote ${data.code} creado.`);
+            document.getElementById('newBatchModal').close();
+            loadState();
+        });
+
+        // ── Conciliacion ─────────────────────────────────────────────────
+        let _lastConciliation = null;
+        function openConciliationModal() {
+            const today = new Date();
+            const start = new Date(today); start.setDate(start.getDate() - 90);
+            const iso = d => d.toISOString().slice(0, 10);
+            document.getElementById('conStart').value = iso(start);
+            document.getElementById('conEnd').value = iso(today);
+            document.getElementById('conciliationModal').showModal();
+            loadConciliation();
+        }
+
+        async function loadConciliation() {
+            const start = document.getElementById('conStart').value;
+            const end = document.getElementById('conEnd').value;
+            const div = document.getElementById('conciliationContent');
+            div.innerHTML = 'Calculando…';
+            try {
+                const r = await fetch(`/api/hammer-batches/conciliation?start=${start}&end=${end}`);
+                const data = await r.json();
+                if (!r.ok) { div.innerHTML = `<span style="color:#ffb1ab;">Error: ${data.error}</span>`; return; }
+                _lastConciliation = data;
+
+                const t = data.totals;
+                const byBatch = data.by_batch || [];
+                const pending = data.in_fapmetal_now || [];
+
+                div.innerHTML = `
+                    <div class="totals-grid">
+                        <div class="total-card"><div class="label">Cambios M1</div><div class="value">${t.cambios_molino_1}</div></div>
+                        <div class="total-card"><div class="label">Cambios M2</div><div class="value">${t.cambios_molino_2}</div></div>
+                        <div class="total-card"><div class="label">Total cambios</div><div class="value">${t.cambios_total}</div></div>
+                        <div class="total-card"><div class="label">Martillos enviados</div><div class="value">${t.martillos_enviados}</div></div>
+                        <div class="total-card"><div class="label">Martillos recibidos</div><div class="value">${t.martillos_recibidos}</div></div>
+                        <div class="total-card"><div class="label">Saldo pendiente</div><div class="value" style="color:${t.saldo_pendiente_hammers > 0 ? '#ffb1ab' : '#9de4a1'};">${t.saldo_pendiente_hammers}</div></div>
+                    </div>
+
+                    <h4 style="margin:14px 0 6px;">Detalle por lote</h4>
+                    <table class="summary-table" style="width:100%;">
+                        <thead><tr><th>Lote</th><th>Envios</th><th>Martillos enviados</th><th>Recepciones</th><th>Martillos recibidos</th><th>Δ</th></tr></thead>
+                        <tbody>
+                        ${byBatch.length === 0 ? '<tr><td colspan="6" style="color:#9ab0cb;">Sin movimientos en el periodo.</td></tr>' :
+                            byBatch.map(b => `
+                                <tr>
+                                    <td><strong>${b.code}</strong></td>
+                                    <td>${b.enviados}</td>
+                                    <td>${b.hammers_enviados}</td>
+                                    <td>${b.recibidos}</td>
+                                    <td>${b.hammers_recibidos}</td>
+                                    <td style="color:${(b.hammers_enviados - b.hammers_recibidos) > 0 ? '#ffb1ab' : '#9de4a1'};">
+                                        ${b.hammers_enviados - b.hammers_recibidos}
+                                    </td>
+                                </tr>`).join('')}
+                        </tbody>
+                    </table>
+
+                    ${pending.length > 0 ? `
+                        <h4 style="margin:14px 0 6px;">Pendientes en FAPMETAL ahora</h4>
+                        <table class="summary-table" style="width:100%;">
+                            <thead><tr><th>Lote</th><th>Martillos</th><th>Dias desde envio</th></tr></thead>
+                            <tbody>
+                                ${pending.map(p => `
+                                    <tr>
+                                        <td><strong>${p.code}</strong></td>
+                                        <td>${p.hammers_count}</td>
+                                        <td style="color:${(p.days_pending || 0) > 14 ? '#ffb1ab' : '#bfd2ec'};">${p.days_pending ?? '—'} dias</td>
+                                    </tr>`).join('')}
+                            </tbody>
+                        </table>` : ''}
+                `;
+            } catch (e) {
+                div.innerHTML = `<span style="color:#ffb1ab;">Error: ${e.message}</span>`;
+            }
+        }
+
+        function exportConciliationCSV() {
+            if (!_lastConciliation) { alert('Primero calcula la conciliacion.'); return; }
+            const t = _lastConciliation.totals;
+            const period = _lastConciliation.period;
+            const rows = [
+                ['Periodo', `${period.start} → ${period.end}`],
+                ['Cambios Molino 1', t.cambios_molino_1],
+                ['Cambios Molino 2', t.cambios_molino_2],
+                ['Cambios totales', t.cambios_total],
+                ['Martillos enviados', t.martillos_enviados],
+                ['Martillos recibidos', t.martillos_recibidos],
+                ['Saldo pendiente (martillos)', t.saldo_pendiente_hammers],
+                [],
+                ['Lote', 'Envios', 'Martillos enviados', 'Recepciones', 'Martillos recibidos', 'Delta'],
+                ..._lastConciliation.by_batch.map(b => [
+                    b.code, b.enviados, b.hammers_enviados, b.recibidos, b.hammers_recibidos,
+                    b.hammers_enviados - b.hammers_recibidos,
+                ]),
+            ];
+            const csv = rows.map(r => r.map(v => `"${String(v ?? '').replace(/"/g, '""')}"`).join(',')).join('\n');
+            const blob = new Blob([csv], {type: 'text/csv;charset=utf-8'});
+            const a = document.createElement('a');
+            a.href = URL.createObjectURL(blob);
+            a.download = `conciliacion_fapmetal_${period.start}_${period.end}.csv`;
+            a.click();
+        }
+
+        // ── Initial load ────────────────────────────────────────────────
+        document.addEventListener('DOMContentLoaded', loadState);
+    </script>
+    <script src="/static/js/sidebar.js?v={{ v }}"></script>
+</body>
+</html>

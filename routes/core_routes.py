@@ -305,6 +305,10 @@ def register_core_routes(app, db, logger, app_build_tag,
     def rotative_assets_page():
         return render_template('rotative_assets.html')
 
+    @app.route('/martillos')
+    def hammer_batches_page():
+        return render_template('hammer_batches.html')
+
     @app.route('/herramientas')
     def tools_page():
         return render_template('tools.html')

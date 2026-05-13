@@ -27,6 +27,7 @@ from models import (
     ProductionGoal,
     WeeklyPlan, WeeklyPlanItem,
     EquipmentFlowEdge,
+    HammerBatch, HammerBatchMovement,
 )
 from utils.crud_helpers import create_entry, get_entries, update_entry, delete_entry
 from utils.reporting_helpers import (
@@ -57,6 +58,7 @@ from routes.plant_flow_routes import register_plant_flow_routes
 from routes.notices_routes import register_notices_routes
 from routes.reports_routes import register_reports_routes
 from routes.rotative_assets_routes import register_rotative_assets_routes
+from routes.hammer_batches_routes import register_hammer_batches_routes
 from routes.tools_routes import register_tools_routes
 from routes.purchasing_routes import register_purchasing_routes
 from routes.warehouse_routes import register_warehouse_routes
@@ -256,6 +258,7 @@ _MODULE_ROUTES = {
     'almacen':          {'pages': ['/almacen'], 'api': ['/api/warehouse']},
     'herramientas':     {'pages': ['/herramientas'], 'api': ['/api/tools']},
     'activos_rotativos':{'pages': ['/activos-rotativos'], 'api': ['/api/rotative-assets']},
+    'martillos':       {'pages': ['/martillos'], 'api': ['/api/hammer-batches']},
     'activos_config':   {'pages': ['/configuracion'], 'api': ['/api/areas', '/api/lines', '/api/equipments', '/api/systems', '/api/components', '/api/spare-parts', '/api/upload-excel', '/api/bulk-paste']},
     'monitoreo':        {'pages': ['/monitoreo'], 'api': ['/api/monitoring']},
     'lubricacion':      {'pages': ['/lubricacion'], 'api': ['/api/lubrication']},
@@ -290,6 +293,7 @@ _DEFAULT_PERMS = {
         'insights': {'view': True, 'edit': False},
         'seguimiento': {'view': True, 'edit': True}, 'reportes': {'view': True, 'edit': True},
         'activos_rotativos': {'view': True, 'edit': True}, 'activos_config': {'view': True, 'edit': False},
+        'martillos': {'view': True, 'edit': True},
         'historial_equipo': {'view': True, 'edit': False}, 'exportar': {'view': False, 'edit': False},
         'usuarios': {'view': False, 'edit': False},
     },
@@ -305,6 +309,7 @@ _DEFAULT_PERMS = {
         'insights': {'view': True, 'edit': False},
         'seguimiento': {'view': True, 'edit': True}, 'reportes': {'view': True, 'edit': False},
         'activos_rotativos': {'view': True, 'edit': False}, 'activos_config': {'view': True, 'edit': False},
+        'martillos': {'view': True, 'edit': True},
         'historial_equipo': {'view': True, 'edit': False}, 'exportar': {'view': False, 'edit': False},
         'usuarios': {'view': False, 'edit': False},
     },
@@ -317,6 +322,7 @@ _DEFAULT_PERMS = {
         'paradas': {'view': True, 'edit': True},
         'seguimiento': {'view': True, 'edit': True}, 'reportes': {'view': True, 'edit': False},
         'activos_rotativos': {'view': True, 'edit': False}, 'activos_config': {'view': True, 'edit': False},
+        'martillos': {'view': True, 'edit': True},
         'historial_equipo': {'view': True, 'edit': False}, 'exportar': {'view': False, 'edit': False},
         'usuarios': {'view': False, 'edit': False},
     },
@@ -369,6 +375,7 @@ _DEFAULT_PERMS = {
         'paradas': {'view': True, 'edit': False},
         'seguimiento': {'view': True, 'edit': False}, 'reportes': {'view': True, 'edit': False},
         'activos_rotativos': {'view': True, 'edit': False}, 'activos_config': {'view': True, 'edit': False},
+        'martillos': {'view': True, 'edit': False},
         'historial_equipo': {'view': True, 'edit': False}, 'exportar': {'view': False, 'edit': False},
         'usuarios': {'view': False, 'edit': False},
     },
@@ -888,6 +895,17 @@ register_rotative_assets_routes(
     WorkOrder=WorkOrder,
     LubricationExecution=LubricationExecution,
     LubricationPoint=LubricationPoint,
+)
+
+register_hammer_batches_routes(
+    app=app,
+    db=db,
+    logger=logger,
+    HammerBatch=HammerBatch,
+    HammerBatchMovement=HammerBatchMovement,
+    WorkOrder=WorkOrder,
+    Provider=Provider,
+    Equipment=Equipment,
 )
 
 register_tools_routes(
