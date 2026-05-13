@@ -65,23 +65,99 @@ if not _allowed_chats:
 _admin_chats = set()
 
 # Idempotencia: evita procesar el mismo update_id de Telegram dos veces.
-# Caso comun: durante un re-deploy en Render, dos instancias del bot pueden
-# polear Telegram a la vez y procesar el mismo mensaje, generando respuestas
-# duplicadas (a veces con redaccion ligeramente distinta porque DeepSeek se
-# ejecuta dos veces).
+# Caso comun: durante un re-deploy en Render, o cuando hay una instancia local
+# corriendo en paralelo con la remota, dos procesos polean el mismo token y
+# ambos procesan el mismo update (dos transcripciones, dos llamadas a DeepSeek,
+# dos respuestas).
+#
+# Estrategia: dedup persistente en DB (tabla bot_processed_updates) con
+# INSERT ... ON CONFLICT DO NOTHING. Solo el primer proceso que inserta gana
+# la carrera; el segundo ve rowcount=0 y descarta el update. El deque local
+# es un cache LRU para evitar pegarle a la DB en cada poll del MISMO proceso.
 _processed_updates = collections.deque(maxlen=500)
 _processed_lock = threading.Lock()
+_processed_table_ready = False
 
 
-def _seen_update(update_id):
-    """Devuelve True si ya procesamos este update_id antes (y lo marca si no)."""
+def _ensure_processed_updates_table(app):
+    """Crea la tabla bot_processed_updates si no existe (idempotente)."""
+    global _processed_table_ready
+    if _processed_table_ready:
+        return True
+    try:
+        from sqlalchemy import text
+        from database import db as _db
+        with app.app_context():
+            _db.session.execute(text(
+                "CREATE TABLE IF NOT EXISTS bot_processed_updates ("
+                "update_id BIGINT PRIMARY KEY, "
+                "processed_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP)"
+            ))
+            _db.session.commit()
+        _processed_table_ready = True
+        return True
+    except Exception as e:
+        logger.warning(f"No se pudo crear bot_processed_updates: {e}. "
+                       f"Dedup persistente deshabilitado; se usa solo dedup en memoria.")
+        return False
+
+
+def _seen_update(update_id, app=None):
+    """Devuelve True si ya procesamos este update_id antes (y lo marca si no).
+
+    Si `app` viene, usa dedup persistente en DB para coordinar entre procesos.
+    Si no viene o falla la DB, cae al dedup en memoria (per-process).
+    """
     if update_id is None:
         return False
     with _processed_lock:
         if update_id in _processed_updates:
             return True
+
+    if app is not None and _ensure_processed_updates_table(app):
+        try:
+            from sqlalchemy import text
+            from database import db as _db
+            with app.app_context():
+                # ON CONFLICT DO NOTHING funciona en Postgres >=9.5 y SQLite >=3.24.
+                res = _db.session.execute(
+                    text("INSERT INTO bot_processed_updates (update_id) "
+                         "VALUES (:uid) ON CONFLICT (update_id) DO NOTHING"),
+                    {"uid": int(update_id)},
+                )
+                inserted = (res.rowcount or 0) > 0
+                _db.session.commit()
+            with _processed_lock:
+                _processed_updates.append(update_id)
+            if not inserted:
+                logger.info(f"update_id {update_id} ya procesado por otra instancia; descartando.")
+            return not inserted
+        except Exception as e:
+            logger.warning(f"Dedup persistente fallo para {update_id}: {e}. Cayendo a memoria.")
+
+    with _processed_lock:
         _processed_updates.append(update_id)
         return False
+
+
+def _cleanup_processed_updates(app, days=2):
+    """Borra entradas de bot_processed_updates mas viejas que `days`."""
+    if not _processed_table_ready:
+        return
+    try:
+        from sqlalchemy import text
+        from database import db as _db
+        with app.app_context():
+            _db.session.execute(
+                text("DELETE FROM bot_processed_updates "
+                     "WHERE processed_at < CURRENT_TIMESTAMP - INTERVAL '%d days'" % days)
+                if _db.engine.dialect.name == 'postgresql' else
+                text("DELETE FROM bot_processed_updates "
+                     "WHERE processed_at < datetime('now', '-%d days')" % days)
+            )
+            _db.session.commit()
+    except Exception as e:
+        logger.warning(f"Cleanup bot_processed_updates fallo: {e}")
 
 
 def _send_typing(chat_id):
@@ -4656,7 +4732,8 @@ def start_telegram_bot(app):
                         offset = update_id + 1
                         # Idempotencia: si ya procesamos este update, saltarlo
                         # (evita duplicados cuando hay 2 instancias del bot).
-                        if _seen_update(update_id):
+                        # Pasamos `app` para que coordine via DB entre procesos.
+                        if _seen_update(update_id, app=app):
                             logger.info(f"Skipping duplicate update_id {update_id}")
                             continue
                         msg = update.get('message', {})
@@ -4710,6 +4787,8 @@ def start_telegram_bot(app):
                     if now.weekday() == 0 and last_weekly != today_key:
                         _generate_weekly_report(app)
                         last_weekly = today_key
+                    # Purga de update_ids viejos para que la tabla no crezca.
+                    _cleanup_processed_updates(app, days=2)
                     last_sent = today_key
                     logger.info("Daily summary sent.")
                 except Exception as e:
