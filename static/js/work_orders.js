@@ -1762,12 +1762,22 @@ function bindExecutionSafetyState(otId) {
 }
 
 
-// Helper for Local ISO String (YYYY-MM-DDTHH:mm)
+// Hora actual SIEMPRE en Lima (America/Lima, UTC-5), independiente del
+// browser. Devuelve 'YYYY-MM-DDTHH:MM' apto para <input type="datetime-local">.
 function getLocalISOString() {
     const now = new Date();
-    const tzOffset = now.getTimezoneOffset() * 60000; // offset in milliseconds
-    const localISOTime = (new Date(now - tzOffset)).toISOString().slice(0, 16);
-    return localISOTime;
+    // Intl.DateTimeFormat con timeZone Lima nos da los componentes locales
+    // de Lima sin importar donde este el navegador. Usamos en-CA para que
+    // el formato sea 'YYYY-MM-DD, HH:MM:SS' (ISO friendly).
+    const fmt = new Intl.DateTimeFormat('en-CA', {
+        timeZone: 'America/Lima',
+        year: 'numeric', month: '2-digit', day: '2-digit',
+        hour: '2-digit', minute: '2-digit', hour12: false,
+    });
+    const parts = Object.fromEntries(
+        fmt.formatToParts(now).map(p => [p.type, p.value])
+    );
+    return `${parts.year}-${parts.month}-${parts.day}T${parts.hour}:${parts.minute}`;
 }
 
 function startJob() {

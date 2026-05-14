@@ -1,4 +1,5 @@
 import os
+import time
 import logging
 from datetime import datetime
 from flask import Flask, jsonify, redirect, url_for, request
@@ -9,6 +10,16 @@ from database import db
 from dotenv import load_dotenv
 
 load_dotenv()
+
+# ── Timezone: TODO el CMMS opera en hora local de Lima (America/Lima) ────
+# En Linux/Mac, setear TZ + tzset() hace que datetime.now() y date.today()
+# devuelvan hora de Lima automaticamente, sin tener que cambiar 130+ usos.
+# En Windows tzset() no existe; en ese caso ver utils/tz.py para los helpers.
+os.environ.setdefault('TZ', 'America/Lima')
+try:
+    time.tzset()  # Linux/Mac only
+except AttributeError:
+    pass  # Windows: no soporta tzset, los helpers de utils/tz.py cubren los casos criticos
 
 from models import (
     User,
