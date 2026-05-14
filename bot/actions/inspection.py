@@ -12,9 +12,12 @@ def register_inspection(app, data):
 
     Returns: (rcode, rname, notice_code, error_str | None).
     """
-    # Late imports: helpers de fuzzy matching aun viven en bot.telegram_bot.
-    # En tiempo de ejecucion el modulo ya esta totalmente cargado.
-    from bot.telegram_bot import _fuzzy_tokens, _build_fuzzy_where, _score_fuzzy_candidates, _normalize_token
+    from bot.resolvers import (
+        fuzzy_tokens as _fuzzy_tokens,
+        build_fuzzy_where as _build_fuzzy_where,
+        score_fuzzy_candidates as _score_fuzzy_candidates,
+        normalize_token as _normalize_token,
+    )
 
     with app.app_context():
         from database import db as _db

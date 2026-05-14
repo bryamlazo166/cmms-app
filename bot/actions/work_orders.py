@@ -153,8 +153,7 @@ def edit_ot(app, data):
 
     Returns: (ot_code, changed_fields_list, error | None).
     """
-    # Late import: _resolve_taxonomy aun vive en bot/telegram_bot.py
-    from bot.telegram_bot import _resolve_taxonomy
+    from bot.resolvers import resolve_taxonomy as _resolve_taxonomy
     with app.app_context():
         from database import db as _db
         from sqlalchemy import text

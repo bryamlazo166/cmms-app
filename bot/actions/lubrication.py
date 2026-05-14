@@ -76,7 +76,11 @@ def resolve_lub_point_fuzzy(_db, text, point_query):
 
     Returns: (row6tuple | None, err_msg | None).
     """
-    from bot.telegram_bot import _fuzzy_tokens, _build_fuzzy_where, _COMPONENT_SYNONYMS
+    from bot.resolvers import (
+        fuzzy_tokens as _fuzzy_tokens,
+        build_fuzzy_where as _build_fuzzy_where,
+        COMPONENT_SYNONYMS as _COMPONENT_SYNONYMS,
+    )
 
     tokens = _fuzzy_tokens(point_query)
     if not tokens:

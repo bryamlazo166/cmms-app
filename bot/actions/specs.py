@@ -17,10 +17,7 @@ def replicate_specs(app, data):
 
     Returns: (resumen_str, error_str | None).
     """
-    # Late import del helper de matching que sigue en bot/telegram_bot.py.
-    # Cuando esta funcion se ejecuta, telegram_bot ya esta totalmente cargado
-    # (la importacion modular del bot ocurre en startup, no en cada accion).
-    from bot.telegram_bot import _smart_component_match
+    from bot.resolvers import smart_component_match as _smart_component_match
     with app.app_context():
         from database import db as _db
         from sqlalchemy import text

@@ -21,7 +21,7 @@ def create_notice(app, data):
     `data['_resolved_scope']` y `data['_resolved_event_date']` para que
     el dispatcher arme el mensaje de respuesta.
     """
-    from bot.telegram_bot import _resolve_equipment
+    from bot.resolvers import resolve_equipment as _resolve_equipment
     with app.app_context():
         from database import db as _db
         from sqlalchemy import text
@@ -91,7 +91,7 @@ def promote_notice(app, data):
 
     Returns: (code, (current_scope, target_scope, n_ots), error | None).
     """
-    from bot.telegram_bot import _resolve_equipment
+    from bot.resolvers import resolve_equipment as _resolve_equipment
     with app.app_context():
         from database import db as _db
         from sqlalchemy import text
@@ -168,7 +168,7 @@ def edit_notice(app, data):
 
     Returns: (code, changed_fields_list, error | None).
     """
-    from bot.telegram_bot import _resolve_taxonomy
+    from bot.resolvers import resolve_taxonomy as _resolve_taxonomy
     with app.app_context():
         from database import db as _db
         from sqlalchemy import text
