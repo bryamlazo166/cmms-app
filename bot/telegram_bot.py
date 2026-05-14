@@ -1796,117 +1796,15 @@ def _promote_notice(app, data):
             return None, None, str(e)
 
 
-def _close_ot(app, data):
-    with app.app_context():
-        from database import db as _db
-        from sqlalchemy import text
-        try:
-            ot_code = data.get('ot_code', '').upper()
-            row = _db.session.execute(text("SELECT id, status, notice_id FROM work_orders WHERE code = :c"), {"c": ot_code}).fetchone()
-            if not row:
-                return None, f"OT {ot_code} no encontrada"
-            if row[1] == 'Cerrada':
-                return None, f"OT {ot_code} ya esta cerrada"
-
-            # Fecha del cierre: si el usuario regulariza "ayer cerre la OT-0034",
-            # el extractor manda event_date en ISO. Si no, usa la marca actual.
-            event_date = (data.get('event_date') or '').strip()
-            if event_date:
-                # real_end_date es timestamp - usamos 17:00 como hora cierre tipica
-                end_ts = f"{event_date}T17:00:00"
-                closed_date = event_date
-            else:
-                end_ts = datetime.utcnow().isoformat()[:19]
-                closed_date = date.today().isoformat()
-            data['_resolved_event_date'] = closed_date
-
-            comments = data.get('comments', 'Cerrada desde Telegram')
-            _db.session.execute(text("""
-                UPDATE work_orders SET status = 'Cerrada', real_end_date = :now, execution_comments = :c WHERE code = :code
-            """), {"now": end_ts, "c": comments, "code": ot_code})
-
-            # Close linked notice
-            if row[2]:
-                _db.session.execute(text(
-                    "UPDATE maintenance_notices SET status = 'Cerrado', closed_date = :d WHERE id = :id"
-                ), {"id": row[2], "d": closed_date})
-
-            _db.session.commit()
-            _db.session.remove()
-            return ot_code, None
-        except Exception as e:
-            _db.session.rollback()
-            _db.session.remove()
-            return None, str(e)
-
-
-def _add_log_entry(app, data):
-    with app.app_context():
-        from database import db as _db
-        from sqlalchemy import text
-        try:
-            ot_code = data.get('ot_code', '').upper()
-            row = _db.session.execute(text("SELECT id FROM work_orders WHERE code = :c"), {"c": ot_code}).fetchone()
-            if not row:
-                return None, f"OT {ot_code} no encontrada"
-            ot_id = row[0]
-            _db.session.execute(text("""
-                INSERT INTO ot_log_entries (work_order_id, log_date, comment, log_type, created_at)
-                VALUES (:wid, :d, :c, :t, NOW())
-            """), {
-                "wid": ot_id, "d": date.today().isoformat(),
-                "c": data.get('comment', ''), "t": data.get('entry_type', 'NOTA'),
-            })
-            _db.session.commit()
-            _db.session.remove()
-            return ot_code, None
-        except Exception as e:
-            _db.session.rollback()
-            _db.session.remove()
-            return None, str(e)
-
-
-def _start_ot(app, data):
-    with app.app_context():
-        from database import db as _db
-        from sqlalchemy import text
-        try:
-            ot_code = data.get('ot_code', '').upper()
-            row = _db.session.execute(text("SELECT id, notice_id FROM work_orders WHERE code = :c"), {"c": ot_code}).fetchone()
-            if not row:
-                return None, f"OT {ot_code} no encontrada"
-            now = datetime.utcnow().isoformat()[:19]
-            _db.session.execute(text("UPDATE work_orders SET status = 'En Progreso', real_start_date = :now WHERE code = :c"), {"now": now, "c": ot_code})
-            if row[1]:
-                _db.session.execute(text("UPDATE maintenance_notices SET status = 'En Progreso', treatment_date = :d WHERE id = :id"), {"d": date.today().isoformat(), "id": row[1]})
-            _db.session.commit()
-            _db.session.remove()
-            return ot_code, None
-        except Exception as e:
-            _db.session.rollback()
-            _db.session.remove()
-            return None, str(e)
-
-
-def _reschedule_ot(app, data):
-    with app.app_context():
-        from database import db as _db
-        from sqlalchemy import text
-        try:
-            ot_code = data.get('ot_code', '').upper()
-            new_date = data.get('new_date', '')
-            row = _db.session.execute(text("SELECT id FROM work_orders WHERE code = :c"), {"c": ot_code}).fetchone()
-            if not row:
-                return None, f"OT {ot_code} no encontrada"
-            _db.session.execute(text("UPDATE work_orders SET scheduled_date = :d, status = 'Programada' WHERE code = :c"), {"d": new_date, "c": ot_code})
-            _db.session.commit()
-            _db.session.remove()
-            return ot_code, None
-        except Exception as e:
-            _db.session.rollback()
-            _db.session.remove()
-            return None, str(e)
-
+# ── Acciones de OT extraidas a bot/actions/work_orders.py ─────────────
+# Re-export con prefijo _ para mantener compatibilidad del dispatcher.
+from bot.actions.work_orders import (  # noqa: E402
+    close_ot as _close_ot,
+    add_log_entry as _add_log_entry,
+    start_ot as _start_ot,
+    reschedule_ot as _reschedule_ot,
+    edit_ot as _edit_ot,
+)
 
 # Whitelist of editable fields per entity
 _NOTICE_EDITABLE = {'description', 'criticality', 'priority', 'maintenance_type',
@@ -2477,56 +2375,6 @@ def _delete_lubrication(app, data):
 # Se reexponen aca con prefijo _ para no romper el dispatcher.
 from bot.actions.specs import replicate_specs as _replicate_specs  # noqa: E402
 from bot.actions.inspection import register_inspection as _register_inspection  # noqa: E402
-
-def _edit_ot(app, data):
-    """Edit whitelisted fields of an existing work order."""
-    with app.app_context():
-        from database import db as _db
-        from sqlalchemy import text
-        try:
-            code = (data.get('ot_code') or data.get('code') or '').upper()
-            if not code:
-                return None, None, "Falta ot_code"
-            row = _db.session.execute(text("SELECT id, notice_id FROM work_orders WHERE code = :c"), {"c": code}).fetchone()
-            if not row:
-                return None, None, f"OT {code} no encontrada"
-            ot_id, notice_id = row[0], row[1]
-
-            fields = data.get('fields') or {}
-
-            # Resolve taxonomy virtual fields (equipment_tag → equipment_id, etc.)
-            tax_resolved, tax_names, tax_err = _resolve_taxonomy(_db.session, fields)
-            if tax_err:
-                return None, None, tax_err
-            fields.update(tax_resolved)
-
-            updates = {k: v for k, v in fields.items() if k in _OT_EDITABLE and v is not None}
-            if not updates:
-                return None, None, "No hay campos validos para actualizar"
-
-            set_clause = ', '.join(f"{k} = :{k}" for k in updates)
-            params = dict(updates)
-            params['c'] = code
-            _db.session.execute(text(f"UPDATE work_orders SET {set_clause} WHERE code = :c"), params)
-
-            # Propagate taxonomy changes to linked notice
-            tax_keys = {'equipment_id', 'system_id', 'component_id', 'line_id', 'area_id'}
-            tax_updates = {k: v for k, v in updates.items() if k in tax_keys}
-            if tax_updates and notice_id:
-                n_set = ', '.join(f"{k} = :{k}" for k in tax_updates)
-                tax_params = dict(tax_updates)
-                tax_params['nid'] = notice_id
-                _db.session.execute(text(f"UPDATE maintenance_notices SET {n_set} WHERE id = :nid"), tax_params)
-
-            _db.session.commit()
-            _db.session.remove()
-            changed = [k for k in updates if k not in tax_keys] + tax_names
-            return code, changed, None
-        except Exception as e:
-            _db.session.rollback()
-            _db.session.remove()
-            return None, None, str(e)
-
 
 # ── Hammer batches / cambio de martillos FAPMETAL ─────────────────────────
 # Las funciones reales viven en bot/actions/hammer_batches.py; las
