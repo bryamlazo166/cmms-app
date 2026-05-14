@@ -2074,3 +2074,50 @@ class HammerBatchMovement(db.Model):
             "created_at": self.created_at.isoformat() if self.created_at else None,
             "created_by": self.created_by,
         }
+
+
+# ── Bot Usage / Telemetria del bot Telegram ───────────────────────────────────
+# Cada llamada a Whisper (transcripcion) o DeepSeek (chat) se registra acá con
+# tokens, latencia y costo estimado USD. Sirve para detectar abuso, anomalias,
+# y darle visibilidad real al gasto en IA (que de otro modo es invisible).
+
+class BotUsage(db.Model):
+    __tablename__ = 'bot_usage'
+    __table_args__ = (
+        Index('ix_bu_created_at', 'created_at'),
+        Index('ix_bu_chat_id', 'chat_id'),
+        Index('ix_bu_service', 'service'),
+    )
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    chat_id: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    service: Mapped[str] = mapped_column(String(20), nullable=False)  # whisper | deepseek
+    model_name: Mapped[str | None] = mapped_column(String(50), nullable=True)
+    tokens_in: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    tokens_out: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    tokens_cached: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    audio_bytes: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    audio_duration_s: Mapped[float | None] = mapped_column(Float, nullable=True)
+    latency_ms: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    cost_usd: Mapped[float | None] = mapped_column(Float, nullable=True)
+    status: Mapped[str] = mapped_column(String(20), nullable=False, default='success')  # success | error | timeout
+    error_msg: Mapped[str | None] = mapped_column(String(500), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+
+    def to_dict(self):
+        return {
+            "id": self.id,
+            "chat_id": self.chat_id,
+            "service": self.service,
+            "model_name": self.model_name,
+            "tokens_in": self.tokens_in,
+            "tokens_out": self.tokens_out,
+            "tokens_cached": self.tokens_cached,
+            "audio_bytes": self.audio_bytes,
+            "audio_duration_s": self.audio_duration_s,
+            "latency_ms": self.latency_ms,
+            "cost_usd": self.cost_usd,
+            "status": self.status,
+            "error_msg": self.error_msg,
+            "created_at": self.created_at.isoformat() if self.created_at else None,
+        }

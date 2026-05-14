@@ -3486,19 +3486,20 @@ def _download_telegram_file(file_id):
         return None, None
 
 
-def _transcribe_voice(file_id):
+def _transcribe_voice(file_id, app=None, chat_id=None):
     """Transcribe un mensaje de voz de Telegram usando Whisper API.
 
     Devuelve el texto transcrito o None si falla. Requiere OPENAI_API_KEY.
     Telegram envia voz en formato OGG/Opus que Whisper acepta nativamente.
     """
+    from bot.metrics import track_whisper, Stopwatch
     if not OPENAI_API_KEY:
         return None
     audio_bytes, fp = _download_telegram_file(file_id)
     if not audio_bytes:
         return None
+    audio_len = len(audio_bytes)
     try:
-        # Determinar nombre de archivo segun extension original
         ext = (fp or 'voice.ogg').rsplit('.', 1)[-1] if fp and '.' in fp else 'ogg'
         filename = f"voice.{ext}"
         files = {
@@ -3508,17 +3509,22 @@ def _transcribe_voice(file_id):
             'response_format': (None, 'text'),
         }
         headers = {'Authorization': f'Bearer {OPENAI_API_KEY}'}
-        r = requests.post(
-            'https://api.openai.com/v1/audio/transcriptions',
-            headers=headers, files=files, timeout=60,
-        )
+        with Stopwatch() as sw:
+            r = requests.post(
+                'https://api.openai.com/v1/audio/transcriptions',
+                headers=headers, files=files, timeout=60,
+            )
         if r.status_code != 200:
             logger.warning(f"Whisper API error {r.status_code}: {r.text[:200]}")
+            track_whisper(app, chat_id, audio_len, sw.elapsed_ms,
+                          status='error', error_msg=f"HTTP {r.status_code}")
             return None
         text = r.text.strip()
+        track_whisper(app, chat_id, audio_len, sw.elapsed_ms, status='success')
         return text or None
     except Exception as e:
         logger.warning(f"_transcribe_voice error: {e}")
+        track_whisper(app, chat_id, audio_len, 0, status='error', error_msg=str(e)[:200])
         return None
 
 
@@ -3561,7 +3567,7 @@ def _upload_telegram_photo(app, file_id, entity_type, entity_id):
 
 # ── DeepSeek AI ──────────────────────────────────────────────────────────────
 
-def _ask_deepseek(question, cmms_context, is_action=False, history=None):
+def _ask_deepseek(question, cmms_context, is_action=False, history=None, app=None, chat_id=None):
     headers = {'Authorization': f'Bearer {DEEPSEEK_API_KEY}', 'Content-Type': 'application/json'}
 
     action_instructions = """
@@ -3927,12 +3933,21 @@ DATOS ACTUALES:
         'response_format': {'type': 'json_object'},
     }
 
+    from bot.metrics import track_deepseek, Stopwatch
     try:
-        r = requests.post(DEEPSEEK_URL, headers=headers, json=payload, timeout=60)
+        with Stopwatch() as sw:
+            r = requests.post(DEEPSEEK_URL, headers=headers, json=payload, timeout=60)
         if r.status_code != 200:
+            track_deepseek(app, chat_id, 'deepseek-chat', None, sw.elapsed_ms,
+                           status='error', error_msg=f"HTTP {r.status_code}")
             return f"Error DeepSeek: {r.status_code} {r.text[:200]}"
-        return r.json()['choices'][0]['message']['content']
+        body = r.json()
+        track_deepseek(app, chat_id, 'deepseek-chat',
+                       body.get('usage') or {}, sw.elapsed_ms, status='success')
+        return body['choices'][0]['message']['content']
     except Exception as e:
+        track_deepseek(app, chat_id, 'deepseek-chat', None, 0,
+                       status='error', error_msg=str(e)[:200])
         return f"Error consultando IA: {e}"
 
 
@@ -4701,7 +4716,7 @@ pasados automaticamente y los usa como referencia. Pregunta cosas como
 
     # Memoria de conversacion: trae los ultimos turnos del chat (TTL 10 min)
     history = _get_chat_history(chat_id)
-    answer = _ask_deepseek(text, context, is_action=True, history=history)
+    answer = _ask_deepseek(text, context, is_action=True, history=history, app=app, chat_id=chat_id)
 
     # Guardar el turno actual en el historial para futuros mensajes
     _append_chat_history(chat_id, 'user', text)
@@ -4730,7 +4745,7 @@ pasados automaticamente y los usa como referencia. Pregunta cosas como
                 {"role": "assistant", "content": answer[:1000]},
                 {"role": "user", "content": retry_prompt},
             ]
-            retry_answer = _ask_deepseek(retry_prompt, context, is_action=True, history=retry_history)
+            retry_answer = _ask_deepseek(retry_prompt, context, is_action=True, history=retry_history, app=app, chat_id=chat_id)
             action_data = _extract_json(retry_answer)
         except Exception as _re_err:
             logger.warning(f"Bot retry failed: {_re_err}")
@@ -5072,7 +5087,7 @@ def start_telegram_bot(app):
                                                    "Pide al admin que setee OPENAI_API_KEY.")
                                 else:
                                     _send(chat_id, "🎤 Transcribiendo mensaje de voz...")
-                                    transcribed = _transcribe_voice(file_id)
+                                    transcribed = _transcribe_voice(file_id, app=app, chat_id=chat_id)
                                     if not transcribed:
                                         _send(chat_id, "❌ No pude transcribir el audio. Intenta de nuevo o escribelo.")
                                     else:

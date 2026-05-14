@@ -399,3 +399,126 @@ def register_admin_routes(app, db, logger):
             db.session.rollback()
             logger.exception('apply_kpi_default_exclusions error')
             return jsonify({"error": str(e)}), 500
+
+    # ── BOT USAGE / TELEMETRIA DEL BOT TELEGRAM ──────────────────────────────
+    @app.route('/api/admin/bot-usage', methods=['GET'])
+    @login_required
+    def bot_usage_summary():
+        """Resumen de uso del bot. Query: ?days=7 (default).
+
+        Devuelve totales por dia, por servicio (whisper/deepseek), por chat,
+        y top errores. Util para auditar gasto y detectar abuso.
+        """
+        if not _is_admin():
+            return jsonify({"error": "Solo admin"}), 403
+        try:
+            days = int(request.args.get('days') or 7)
+            days = max(1, min(days, 365))
+
+            base_filter = "created_at >= CURRENT_TIMESTAMP - INTERVAL ':d days'" \
+                if db.engine.dialect.name == 'postgresql' \
+                else f"created_at >= datetime('now', '-{days} days')"
+            params = {"d": days} if db.engine.dialect.name == 'postgresql' else {}
+
+            # Totales globales
+            totals = db.session.execute(text(f"""
+                SELECT service,
+                       COUNT(*) AS calls,
+                       SUM(COALESCE(tokens_in, 0)) AS tokens_in,
+                       SUM(COALESCE(tokens_out, 0)) AS tokens_out,
+                       SUM(COALESCE(tokens_cached, 0)) AS tokens_cached,
+                       SUM(COALESCE(audio_duration_s, 0)) AS audio_seconds,
+                       SUM(COALESCE(cost_usd, 0)) AS cost_usd,
+                       AVG(latency_ms) AS avg_latency_ms,
+                       SUM(CASE WHEN status='error' THEN 1 ELSE 0 END) AS errors
+                FROM bot_usage
+                WHERE {base_filter.replace(':d days', f"{days} days")}
+                GROUP BY service
+            """), params).fetchall()
+
+            by_service = []
+            grand_cost = 0.0
+            grand_calls = 0
+            for r in totals:
+                cost = float(r[6] or 0)
+                grand_cost += cost
+                grand_calls += int(r[1] or 0)
+                by_service.append({
+                    'service': r[0],
+                    'calls': int(r[1] or 0),
+                    'tokens_in': int(r[2] or 0),
+                    'tokens_out': int(r[3] or 0),
+                    'tokens_cached': int(r[4] or 0),
+                    'audio_seconds': float(r[5] or 0),
+                    'cost_usd': round(cost, 4),
+                    'avg_latency_ms': int(r[7] or 0),
+                    'errors': int(r[8] or 0),
+                })
+
+            # Por dia (ultimos N dias)
+            if db.engine.dialect.name == 'postgresql':
+                daily_q = """
+                    SELECT TO_CHAR(created_at, 'YYYY-MM-DD') AS day,
+                           service,
+                           COUNT(*) AS calls,
+                           SUM(COALESCE(cost_usd, 0)) AS cost_usd
+                    FROM bot_usage
+                    WHERE created_at >= CURRENT_TIMESTAMP - INTERVAL :i
+                    GROUP BY day, service
+                    ORDER BY day DESC, service
+                """
+                daily_rows = db.session.execute(text(daily_q), {"i": f"{days} days"}).fetchall()
+            else:
+                daily_q = f"""
+                    SELECT strftime('%Y-%m-%d', created_at) AS day,
+                           service,
+                           COUNT(*) AS calls,
+                           SUM(COALESCE(cost_usd, 0)) AS cost_usd
+                    FROM bot_usage
+                    WHERE created_at >= datetime('now', '-{days} days')
+                    GROUP BY day, service
+                    ORDER BY day DESC, service
+                """
+                daily_rows = db.session.execute(text(daily_q)).fetchall()
+            by_day = [{'day': r[0], 'service': r[1], 'calls': int(r[2]), 'cost_usd': round(float(r[3] or 0), 4)} for r in daily_rows]
+
+            # Por chat
+            chat_q = f"""
+                SELECT chat_id,
+                       COUNT(*) AS calls,
+                       SUM(COALESCE(cost_usd, 0)) AS cost_usd
+                FROM bot_usage
+                WHERE chat_id IS NOT NULL
+                  AND { 'created_at >= CURRENT_TIMESTAMP - INTERVAL :i' if db.engine.dialect.name == 'postgresql' else f"created_at >= datetime('now', '-{days} days')" }
+                GROUP BY chat_id
+                ORDER BY cost_usd DESC
+                LIMIT 20
+            """
+            chat_params = {"i": f"{days} days"} if db.engine.dialect.name == 'postgresql' else {}
+            by_chat = [
+                {'chat_id': r[0], 'calls': int(r[1]), 'cost_usd': round(float(r[2] or 0), 4)}
+                for r in db.session.execute(text(chat_q), chat_params).fetchall()
+            ]
+
+            return jsonify({
+                'period_days': days,
+                'grand_totals': {
+                    'calls': grand_calls,
+                    'cost_usd': round(grand_cost, 4),
+                },
+                'by_service': by_service,
+                'by_day': by_day,
+                'by_chat': by_chat,
+            })
+        except Exception as e:
+            logger.exception('bot_usage_summary error')
+            return jsonify({"error": str(e)}), 500
+
+    @app.route('/admin/bot-usage', methods=['GET'])
+    @login_required
+    def bot_usage_page():
+        if not _is_admin():
+            from flask import redirect, url_for
+            return redirect(url_for('index'))
+        from flask import render_template
+        return render_template('bot_usage.html')

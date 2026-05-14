@@ -1,0 +1,196 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <link rel="icon" type="image/svg+xml" href="/static/favicon.svg">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Uso del Bot — CMMS</title>
+    <script>(function(){try{var t=localStorage.getItem('cmms.theme');if(t=='management'||t=='developer'){document.documentElement.setAttribute('data-theme',t);}}catch(e){}})();</script>
+    <link rel="stylesheet" href="/static/css/style.css?v={{ v }}">
+    <link rel="stylesheet" href="/static/css/sidebar.css?v={{ v }}">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css">
+    <style>
+        .kpi-grid { display:grid; grid-template-columns: repeat(auto-fit, minmax(190px, 1fr)); gap:14px; margin-bottom:18px; }
+        .kpi-card { background:var(--bg-primary, #1C1C1E); border:1px solid #2b3342; border-radius:12px; padding:14px; }
+        .kpi-card.deepseek { border-left:4px solid #5ac8fa; }
+        .kpi-card.whisper { border-left:4px solid #ffb86c; }
+        .kpi-card.grand { border-left:4px solid #9de4a1; }
+        .kpi-card .label { color:#9ab0cb; font-size:.78rem; text-transform:uppercase; }
+        .kpi-card .value { font-size:1.7rem; font-weight:700; margin-top:4px; }
+        .kpi-card .sub { color:#bfd2ec; font-size:.82rem; margin-top:4px; }
+        .table-sm { width:100%; margin-top:14px; border-collapse:collapse; }
+        .table-sm th, .table-sm td { padding:7px 10px; text-align:left; font-size:.88rem; border-bottom:1px solid rgba(255,255,255,.05); }
+        .table-sm th { color:#9ab0cb; text-transform:uppercase; font-size:.72rem; }
+        .controls { display:flex; gap:10px; align-items:center; margin-bottom:14px; }
+        .err { color:#ffb1ab; }
+        .ok { color:#9de4a1; }
+    </style>
+</head>
+<body>
+    <nav class="sidebar">
+        <div class="logo-details">
+            <i class="fas fa-industry icon"></i>
+            <div class="logo_name">CMMS Pro</div>
+            <i class="fas fa-bars" id="btn_toggle"></i>
+        </div>
+        <ul class="nav-list">
+            <li><a href="/"><i class="fas fa-chart-line"></i><span class="links_name">Dashboard</span></a></li>
+            <li><a href="/martillos"><i class="fas fa-gavel"></i><span class="links_name">Martillos</span></a></li>
+            <li><a href="/admin/bot-usage" class="active"><i class="fas fa-robot"></i><span class="links_name">Bot Usage</span></a></li>
+            <li><a href="/configuracion"><i class="fas fa-sitemap"></i><span class="links_name">Activos</span></a></li>
+        </ul>
+    </nav>
+    <section class="home-section">
+        <div class="top-bar">
+            <h1><i class="fas fa-robot"></i> Uso y Costo del Bot</h1>
+        </div>
+        <div class="main-container">
+            <div class="controls">
+                <label>Periodo:</label>
+                <select id="periodSel">
+                    <option value="1">Hoy</option>
+                    <option value="7" selected>Ultimos 7 dias</option>
+                    <option value="30">Ultimos 30 dias</option>
+                    <option value="90">Ultimos 90 dias</option>
+                </select>
+                <button class="btn-secondary" onclick="loadData()"><i class="fas fa-sync"></i> Actualizar</button>
+            </div>
+
+            <div class="kpi-grid" id="kpiTop">
+                <div class="kpi-card grand"><div class="label">Cargando…</div><div class="value">—</div></div>
+            </div>
+
+            <h3 style="margin-top:18px;">Por servicio</h3>
+            <div class="table-wrap">
+                <table class="table-sm">
+                    <thead>
+                        <tr>
+                            <th>Servicio</th>
+                            <th>Llamadas</th>
+                            <th>Tokens in</th>
+                            <th>Tokens cached</th>
+                            <th>Tokens out</th>
+                            <th>Audio (seg)</th>
+                            <th>Costo USD</th>
+                            <th>Latencia media</th>
+                            <th>Errores</th>
+                        </tr>
+                    </thead>
+                    <tbody id="byServiceBody"><tr><td colspan="9">Cargando…</td></tr></tbody>
+                </table>
+            </div>
+
+            <h3 style="margin-top:18px;">Por día</h3>
+            <div class="table-wrap">
+                <table class="table-sm">
+                    <thead><tr><th>Día</th><th>Servicio</th><th>Llamadas</th><th>Costo USD</th></tr></thead>
+                    <tbody id="byDayBody"><tr><td colspan="4">—</td></tr></tbody>
+                </table>
+            </div>
+
+            <h3 style="margin-top:18px;">Top usuarios (chat_id)</h3>
+            <div class="table-wrap">
+                <table class="table-sm">
+                    <thead><tr><th>chat_id</th><th>Llamadas</th><th>Costo USD</th></tr></thead>
+                    <tbody id="byChatBody"><tr><td colspan="3">—</td></tr></tbody>
+                </table>
+            </div>
+        </div>
+    </section>
+
+    <script>
+        async function loadData() {
+            const days = document.getElementById('periodSel').value;
+            try {
+                const r = await fetch(`/api/admin/bot-usage?days=${days}`);
+                const data = await r.json();
+                if (!r.ok) {
+                    document.getElementById('kpiTop').innerHTML = `<div class="kpi-card"><div class="label err">Error</div><div class="value">${data.error || 'desconocido'}</div></div>`;
+                    return;
+                }
+                renderKpis(data);
+                renderByService(data.by_service);
+                renderByDay(data.by_day);
+                renderByChat(data.by_chat);
+            } catch (e) {
+                document.getElementById('kpiTop').innerHTML = `<div class="kpi-card"><div class="label err">Error</div><div class="value">${e.message}</div></div>`;
+            }
+        }
+
+        function renderKpis(data) {
+            const gt = data.grand_totals;
+            const deepseek = (data.by_service || []).find(s => s.service === 'deepseek') || {};
+            const whisper = (data.by_service || []).find(s => s.service === 'whisper') || {};
+            document.getElementById('kpiTop').innerHTML = `
+                <div class="kpi-card grand">
+                    <div class="label">Costo total (${data.period_days}d)</div>
+                    <div class="value">USD ${gt.cost_usd.toFixed(4)}</div>
+                    <div class="sub">${gt.calls} llamadas</div>
+                </div>
+                <div class="kpi-card deepseek">
+                    <div class="label">DeepSeek</div>
+                    <div class="value">USD ${(deepseek.cost_usd || 0).toFixed(4)}</div>
+                    <div class="sub">${deepseek.calls || 0} llamadas · ${((deepseek.tokens_in || 0) + (deepseek.tokens_out || 0)).toLocaleString()} tokens</div>
+                </div>
+                <div class="kpi-card whisper">
+                    <div class="label">Whisper</div>
+                    <div class="value">USD ${(whisper.cost_usd || 0).toFixed(4)}</div>
+                    <div class="sub">${whisper.calls || 0} llamadas · ${Math.round(whisper.audio_seconds || 0)} seg de audio</div>
+                </div>
+                <div class="kpi-card">
+                    <div class="label">Errores</div>
+                    <div class="value ${((deepseek.errors || 0) + (whisper.errors || 0)) > 0 ? 'err' : 'ok'}">${(deepseek.errors || 0) + (whisper.errors || 0)}</div>
+                    <div class="sub">en ${data.period_days} dias</div>
+                </div>
+            `;
+        }
+
+        function renderByService(rows) {
+            const tbody = document.getElementById('byServiceBody');
+            if (!rows || rows.length === 0) {
+                tbody.innerHTML = '<tr><td colspan="9" style="color:#9ab0cb;">Sin uso registrado todavia.</td></tr>';
+                return;
+            }
+            tbody.innerHTML = rows.map(r => `
+                <tr>
+                    <td><strong>${r.service}</strong></td>
+                    <td>${r.calls}</td>
+                    <td>${r.tokens_in.toLocaleString()}</td>
+                    <td>${r.tokens_cached.toLocaleString()}</td>
+                    <td>${r.tokens_out.toLocaleString()}</td>
+                    <td>${Math.round(r.audio_seconds)}</td>
+                    <td><strong>USD ${r.cost_usd.toFixed(4)}</strong></td>
+                    <td>${r.avg_latency_ms} ms</td>
+                    <td class="${r.errors > 0 ? 'err' : ''}">${r.errors}</td>
+                </tr>
+            `).join('');
+        }
+
+        function renderByDay(rows) {
+            const tbody = document.getElementById('byDayBody');
+            if (!rows || rows.length === 0) {
+                tbody.innerHTML = '<tr><td colspan="4" style="color:#9ab0cb;">—</td></tr>';
+                return;
+            }
+            tbody.innerHTML = rows.map(r => `
+                <tr><td>${r.day}</td><td>${r.service}</td><td>${r.calls}</td><td>USD ${r.cost_usd.toFixed(4)}</td></tr>
+            `).join('');
+        }
+
+        function renderByChat(rows) {
+            const tbody = document.getElementById('byChatBody');
+            if (!rows || rows.length === 0) {
+                tbody.innerHTML = '<tr><td colspan="3" style="color:#9ab0cb;">—</td></tr>';
+                return;
+            }
+            tbody.innerHTML = rows.map(r => `
+                <tr><td>${r.chat_id}</td><td>${r.calls}</td><td>USD ${r.cost_usd.toFixed(4)}</td></tr>
+            `).join('');
+        }
+
+        document.getElementById('periodSel').addEventListener('change', loadData);
+        document.addEventListener('DOMContentLoaded', loadData);
+    </script>
+    <script src="/static/js/sidebar.js?v={{ v }}"></script>
+</body>
+</html>
