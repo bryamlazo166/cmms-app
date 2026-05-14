@@ -11,6 +11,10 @@ from bot.actions.work_orders import (
     close_ot, add_log_entry, start_ot, reschedule_ot, edit_ot,
 )
 from bot.actions.notices import create_notice, promote_notice, edit_notice
+from bot.actions.lubrication import (
+    register_lubrication, register_lubrication_batch,
+    edit_lubrication, delete_lubrication,
+)
 
 __all__ = [
     'change_hammer_batch',
@@ -25,4 +29,8 @@ __all__ = [
     'create_notice',
     'promote_notice',
     'edit_notice',
+    'register_lubrication',
+    'register_lubrication_batch',
+    'edit_lubrication',
+    'delete_lubrication',
 ]
