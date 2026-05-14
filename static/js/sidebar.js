@@ -306,6 +306,7 @@
         { href: '/almacen', icon: 'fas fa-boxes', label: 'Almacen', tip: 'Almacen' },
         { href: '/herramientas', icon: 'fas fa-wrench', label: 'Herramientas', tip: 'Herramientas' },
         { href: '/activos-rotativos', icon: 'fas fa-sync-alt', label: 'Act. Rotativos', tip: 'Act. Rotativos' },
+        { href: '/martillos', icon: 'fas fa-gavel', label: 'Martillos', tip: 'Martillos FAPMETAL' },
         { href: '/configuracion', icon: 'fas fa-sitemap', label: 'Activos', tip: 'Activos' },
         { href: '/equipo-historial', icon: 'fas fa-book-open', label: 'Hist. Equipo', tip: 'Historial Equipo' },
         { href: '/monitoreo', icon: 'fas fa-wave-square', label: 'Monitoreo', tip: 'Monitoreo' },
@@ -411,7 +412,7 @@
     const MODULE_TO_HREF = {
         'avisos': '/avisos', 'ordenes': '/ordenes', 'compras': '/compras',
         'almacen': '/almacen', 'herramientas': '/herramientas',
-        'activos_rotativos': '/activos-rotativos', 'activos_config': '/configuracion',
+        'activos_rotativos': '/activos-rotativos', 'martillos': '/martillos', 'activos_config': '/configuracion',
         'monitoreo': '/monitoreo', 'lubricacion': '/lubricacion',
         'inspecciones': '/inspecciones', 'espesores': '/espesores',
         'paradas': '/paradas', 'plantillas_paradas': '/plantillas-paradas',
