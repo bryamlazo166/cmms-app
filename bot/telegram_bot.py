@@ -160,6 +160,35 @@ def _cleanup_processed_updates(app, days=2):
         logger.warning(f"Cleanup bot_processed_updates fallo: {e}")
 
 
+_GUIDE_CACHE = {'path': None, 'mtime': 0.0, 'content': ''}
+
+
+def _load_cmms_guide():
+    """Carga docs/cmms_guide.md como conocimiento maestro del bot.
+
+    Cache por mtime: si el archivo no cambio, no se relee. Asi podes editar
+    el .md sin reiniciar el bot.
+    """
+    candidates = [
+        os.path.join(os.path.dirname(__file__), '..', 'docs', 'cmms_guide.md'),
+        os.path.join(os.getcwd(), 'docs', 'cmms_guide.md'),
+    ]
+    path = next((p for p in candidates if os.path.isfile(p)), None)
+    if not path:
+        return ''
+    try:
+        mtime = os.path.getmtime(path)
+        if _GUIDE_CACHE['path'] == path and _GUIDE_CACHE['mtime'] == mtime:
+            return _GUIDE_CACHE['content']
+        with open(path, 'r', encoding='utf-8') as f:
+            content = f.read()
+        _GUIDE_CACHE.update({'path': path, 'mtime': mtime, 'content': content})
+        return content
+    except Exception as e:
+        logger.warning(f"No se pudo cargar cmms_guide.md: {e}")
+        return ''
+
+
 def _send_typing(chat_id):
     """Envia el indicador 'typing...' a Telegram. Dura ~5s en el cliente."""
     try:
@@ -3847,11 +3876,15 @@ EJEMPLOS DE REPORTES DE FALLA (deben usar action:"create_notice"):
 - "vibra mucho la chumacera del TH3" → FALLA → create_notice
 - "se rompio la cadena del TH5" → FALLA → create_notice"""
 
+    cmms_guide = _load_cmms_guide()
+    guide_block = f"\n=== CONOCIMIENTO MAESTRO DEL CMMS (politicas, vocabulario y procesos) ===\n{cmms_guide}\n" if cmms_guide else ""
+
     system_prompt = f"""Eres el asistente de mantenimiento del CMMS Pro, sistema de gestion de mantenimiento industrial.
 SIEMPRE respondes con un objeto JSON valido (ver FORMATO DE RESPUESTA OBLIGATORIO abajo). NUNCA texto plano fuera de JSON.
 Dentro del campo "reply" responde en español, conciso y profesional. Usa SOLO datos reales del sistema.
 NUNCA inventes datos ni confirmes acciones no realizadas.
 Si no tienes info, responde {{"action":"none","reply":"No tengo esa informacion."}}.
+{guide_block}
 
 CONSULTAS DE ESPECIFICACIONES TECNICAS (modelo, marca, codigo, parte, dimensiones, ficha tecnica):
 - Busca PRIMERO en la seccion '=== FOCO DE CONSULTA ===' las lineas '* CLAVE: VALOR' debajo del COMPONENTE pedido. Esas SON las specs.
