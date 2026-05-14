@@ -9,6 +9,9 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 os.environ['DB_MODE'] = 'local'
 os.environ['ALLOW_LOCAL_FALLBACK'] = '1'
 os.environ['LOCAL_DATABASE_URL'] = 'sqlite://'  # In-memory DB for tests
+# Desactivar rate limiting en tests (sino el limite "10 per 1 minute" en /login
+# rompe la suite entera despues del 10mo test que use auth_admin).
+os.environ['RATELIMIT_ENABLED'] = 'False'
 
 
 @pytest.fixture(scope='session')
@@ -16,10 +19,17 @@ def app():
     from app import app as flask_app
     flask_app.config['TESTING'] = True
     flask_app.config['SQLALCHEMY_DATABASE_URI'] = 'sqlite://'
+    flask_app.config['RATELIMIT_ENABLED'] = False
+    # Desactivar el Flask-Limiter en runtime tambien (por si fue creado antes
+    # de que se aplicaran las env vars).
+    try:
+        from app import limiter as _limiter
+        _limiter.enabled = False
+    except Exception:
+        pass
     with flask_app.app_context():
         from database import db
         db.create_all()
-        # Create admin user
         from models import User
         if not User.query.filter_by(username='admin').first():
             admin = User(username='admin', role='admin', full_name='Admin')
