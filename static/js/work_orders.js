@@ -1770,23 +1770,40 @@ function getLocalISOString() {
     return localISOTime;
 }
 
-async function startJob() {
+function startJob() {
+    // Abre el modal con el input precargado a la hora actual del sistema,
+    // pero editable (por si la OT en realidad arranco hace 10 min, o anoche).
     if (!activeExecutionOT) return;
-    if (!confirm("¿Iniciar trabajo ahora? Se guardará fecha/hora según sistema.")) return;
+    const input = document.getElementById('startOtDateTime');
+    if (input) {
+        input.value = getLocalISOString();
+    }
+    const label = document.getElementById('startOtCodeLabel');
+    if (label) {
+        label.textContent = activeExecutionOT.code || `OT #${activeExecutionOT.id}`;
+    }
+    document.getElementById('startOTModal').showModal();
+}
 
-    const now = getLocalISOString();
-    const today = now.slice(0, 10);
+async function confirmStartJob() {
+    if (!activeExecutionOT) return;
+    const input = document.getElementById('startOtDateTime');
+    const startValue = (input && input.value) ? input.value : getLocalISOString();
+    if (!startValue) {
+        alert('Falta indicar la hora de inicio.');
+        return;
+    }
+    const today = startValue.slice(0, 10);
 
     await fetch(`/api/work-orders/${activeExecutionOT.id}`, {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
             status: 'En Progreso',
-            real_start_date: now
+            real_start_date: startValue
         })
     });
 
-    // Sync notice status if linked
     if (activeExecutionOT.notice_id) {
         await fetch(`/api/notices/${activeExecutionOT.notice_id}`, {
             method: 'PUT',
@@ -1798,9 +1815,8 @@ async function startJob() {
         });
     }
 
-    // Refresh
+    document.getElementById('startOTModal').close();
     await loadWorkOrders();
-    // Re-fetch to update activeExecutionOT with new status/date
     const res = await fetch('/api/work-orders');
     allWorkOrders = await res.json();
     const updatedOT = allWorkOrders.find(o => o.id === activeExecutionOT.id);
