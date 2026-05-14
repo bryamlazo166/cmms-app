@@ -1327,6 +1327,26 @@ def _build_cmms_context_real(app):
             except Exception:
                 pass
 
+            # Hammer batches state (FAPMETAL) — para responder "que lote esta en M1", etc.
+            try:
+                hb_rows = _db.session.execute(text(
+                    "SELECT code, state, hammers_count, refill_count "
+                    "FROM hammer_batches WHERE is_active = true ORDER BY code"
+                )).fetchall()
+                if hb_rows:
+                    ctx.append(f"\n=== LOTES DE MARTILLOS FAPMETAL ({len(hb_rows)} activos) ===")
+                    state_label = {
+                        'INSTALADO_M1': 'Molino #1',
+                        'INSTALADO_M2': 'Molino #2',
+                        'EN_FAPMETAL': 'En FAPMETAL (a rellenar)',
+                        'RELLENADO_EN_STOCK': 'Rellenado en stock (listo)',
+                    }
+                    for r in hb_rows:
+                        loc = state_label.get(r[1], r[1])
+                        ctx.append(f"  {r[0]}: {loc} | {r[2]} martillos | rellenados acumulados: {r[3]}")
+            except Exception:
+                pass
+
             _db.session.remove()
         except Exception as e:
             ctx.append(f"Error cargando datos: {e}")
@@ -2778,6 +2798,214 @@ def _edit_ot(app, data):
             return None, None, str(e)
 
 
+# ── Hammer batches / cambio de martillos FAPMETAL ─────────────────────────
+
+def _change_hammer_batch(app, data):
+    """Registra cambio de lote de martillos en M1 o M2.
+
+    Replica la logica del endpoint /api/hammer-batches/change para uso
+    desde el bot. Si batch_out/batch_in no vienen explicitos, se infieren
+    del estado actual (deberia haber 1 en INSTALADO_Mx y 1 en RELLENADO_EN_STOCK).
+    Retorna (info_dict | None, err | None).
+    """
+    with app.app_context():
+        from database import db as _db
+        from models import HammerBatch, HammerBatchMovement, WorkOrder, Provider
+        from datetime import date as _date, datetime as _datetime
+        try:
+            mill = (data.get('mill') or '').upper().strip()
+            if mill not in ('M1', 'M2'):
+                return None, "Falta especificar molino (M1 o M2)"
+
+            start_time = (data.get('start_time') or '').strip()
+            end_time = (data.get('end_time') or '').strip()
+            if not start_time or not end_time:
+                return None, "Faltan hora inicio y/o hora fin"
+
+            target_state = f'INSTALADO_{mill}'
+
+            # Batch saliente
+            batch_out_code = (data.get('batch_out_code') or '').strip()
+            if batch_out_code:
+                batch_out = HammerBatch.query.filter_by(code=batch_out_code).first()
+                if not batch_out:
+                    return None, f"Lote {batch_out_code} no encontrado"
+                if batch_out.state != target_state:
+                    return None, f"Lote {batch_out.code} no esta en Molino #{mill[-1]} (estado: {batch_out.state})"
+            else:
+                cands = HammerBatch.query.filter(
+                    HammerBatch.state == target_state,
+                    HammerBatch.is_active == True,  # noqa: E712
+                ).all()
+                if len(cands) == 0:
+                    return None, f"No hay lote instalado en Molino #{mill[-1]}"
+                if len(cands) > 1:
+                    return None, f"Multiples lotes en Molino #{mill[-1]}: {[c.code for c in cands]}. Especifica batch_out_code."
+                batch_out = cands[0]
+
+            # Batch entrante
+            batch_in_code = (data.get('batch_in_code') or '').strip()
+            if batch_in_code:
+                batch_in = HammerBatch.query.filter_by(code=batch_in_code).first()
+                if not batch_in:
+                    return None, f"Lote {batch_in_code} no encontrado"
+                if batch_in.state != 'RELLENADO_EN_STOCK':
+                    return None, f"Lote {batch_in.code} no esta en RELLENADO_EN_STOCK (estado: {batch_in.state})"
+            else:
+                cands = HammerBatch.query.filter(
+                    HammerBatch.state == 'RELLENADO_EN_STOCK',
+                    HammerBatch.is_active == True,  # noqa: E712
+                ).all()
+                if len(cands) == 0:
+                    return None, "No hay lote rellenado disponible en stock. Verifica que FAPMETAL haya devuelto el lote."
+                if len(cands) > 1:
+                    return None, f"Multiples lotes en stock: {[c.code for c in cands]}. Especifica batch_in_code."
+                batch_in = cands[0]
+
+            if batch_out.id == batch_in.id:
+                return None, "Lote saliente y entrante no pueden ser el mismo"
+
+            hammers_changed = int(data.get('hammers_changed_count') or batch_out.hammers_count)
+            lubrication_done = data.get('lubrication_done', True)
+            event_date = start_time[:10] if len(start_time) >= 10 else _date.today().isoformat()
+
+            # Duracion
+            real_duration = None
+            for fmt in ('%Y-%m-%dT%H:%M', '%Y-%m-%d %H:%M', '%Y-%m-%dT%H:%M:%S'):
+                try:
+                    sd = _datetime.strptime(start_time, fmt)
+                    ed = _datetime.strptime(end_time, fmt)
+                    real_duration = round((ed - sd).total_seconds() / 3600, 2)
+                    break
+                except ValueError:
+                    continue
+
+            # Crear OT
+            lub_text = " + Lubricacion chumaceras motriz/conducida" if lubrication_done else ""
+            description = (
+                f"Cambio de martillos Molino #{mill[-1]} (Lote OUT: {batch_out.code} / "
+                f"IN: {batch_in.code} | {hammers_changed} martillos){lub_text}"
+            )
+            user_notes = (data.get('notes') or '').strip()
+            ec = [
+                f"Lote retirado: {batch_out.code} -> EN_FAPMETAL",
+                f"Lote instalado: {batch_in.code} (rellenado #{batch_in.refill_count + 1})",
+                f"Martillos cambiados: {hammers_changed}",
+            ]
+            if lubrication_done:
+                ec.append("Lubricacion chumaceras motriz y conducida: realizada")
+            if user_notes:
+                ec.append(f"Notas: {user_notes}")
+
+            fap = Provider.query.filter(Provider.name.ilike('FAPMETAL%')).first()
+            wo = WorkOrder(
+                description=description,
+                maintenance_type='Preventivo',
+                status='Cerrada',
+                scheduled_date=event_date,
+                real_start_date=start_time,
+                real_end_date=end_time,
+                real_duration=real_duration,
+                estimated_duration=1.0,
+                execution_comments="\n".join(ec),
+                technician_id=data.get('technician_id') or 'FAPMETAL',
+                provider_id=fap.id if fap else None,
+                caused_downtime=False,
+            )
+            _db.session.add(wo)
+            _db.session.flush()
+            wo.code = f"OT-{wo.id:04d}"
+
+            prev_out_state = batch_out.state
+            batch_out.state = 'EN_FAPMETAL'
+            _db.session.add(HammerBatchMovement(
+                batch_id=batch_out.id, event_type=f'RETIRAR_{mill}',
+                event_date=event_date, state_from=prev_out_state, state_to='EN_FAPMETAL',
+                work_order_id=wo.id, hammers_count=hammers_changed,
+                notes=f"Retiro de molino {mill} hacia FAPMETAL (OT {wo.code})",
+                created_by='telegram_bot',
+            ))
+            _db.session.add(HammerBatchMovement(
+                batch_id=batch_out.id, event_type='ENVIAR_FAPMETAL',
+                event_date=event_date, state_from='EN_FAPMETAL', state_to='EN_FAPMETAL',
+                work_order_id=wo.id, hammers_count=hammers_changed,
+                notes='Envio al proveedor para rellenado',
+                created_by='telegram_bot',
+            ))
+
+            prev_in_state = batch_in.state
+            batch_in.state = target_state
+            batch_in.refill_count += 1
+            _db.session.add(HammerBatchMovement(
+                batch_id=batch_in.id, event_type=f'INSTALAR_{mill}',
+                event_date=event_date, state_from=prev_in_state, state_to=target_state,
+                work_order_id=wo.id, hammers_count=hammers_changed,
+                notes=f"Instalacion en molino {mill} (refill #{batch_in.refill_count}, OT {wo.code})",
+                created_by='telegram_bot',
+            ))
+
+            _db.session.commit()
+
+            return {
+                'ot_code': wo.code,
+                'mill': mill,
+                'batch_out_code': batch_out.code,
+                'batch_in_code': batch_in.code,
+                'batch_in_refill_count': batch_in.refill_count,
+                'hammers_changed': hammers_changed,
+                'duration_h': real_duration,
+                'lubrication_done': lubrication_done,
+                'event_date': event_date,
+            }, None
+        except Exception as e:
+            _db.session.rollback()
+            logger.error(f"_change_hammer_batch error: {e}")
+            return None, str(e)
+
+
+def _receive_hammer_batch(app, data):
+    """Marca un lote como recibido rellenado desde FAPMETAL.
+
+    Si batch_code no viene y hay un solo lote en EN_FAPMETAL, lo infiere.
+    Retorna (info_dict | None, err | None).
+    """
+    with app.app_context():
+        from database import db as _db
+        from models import HammerBatch, HammerBatchMovement
+        from datetime import date as _date
+        try:
+            batch_code = (data.get('batch_code') or '').strip()
+            if batch_code:
+                batch = HammerBatch.query.filter_by(code=batch_code).first()
+                if not batch:
+                    return None, f"Lote {batch_code} no encontrado"
+                if batch.state != 'EN_FAPMETAL':
+                    return None, f"Lote {batch.code} no esta en FAPMETAL (estado: {batch.state})"
+            else:
+                cands = HammerBatch.query.filter_by(state='EN_FAPMETAL', is_active=True).all()
+                if len(cands) == 0:
+                    return None, "No hay lotes en FAPMETAL para recibir"
+                if len(cands) > 1:
+                    return None, f"Multiples lotes en FAPMETAL: {[c.code for c in cands]}. Especifica batch_code."
+                batch = cands[0]
+
+            event_date = (data.get('event_date') or _date.today().isoformat())
+            prev = batch.state
+            batch.state = 'RELLENADO_EN_STOCK'
+            _db.session.add(HammerBatchMovement(
+                batch_id=batch.id, event_type='RECIBIR_RELLENADO',
+                event_date=event_date, state_from=prev, state_to='RELLENADO_EN_STOCK',
+                notes=(data.get('notes') or 'Recibido rellenado de FAPMETAL'),
+                created_by='telegram_bot',
+            ))
+            _db.session.commit()
+            return {'code': batch.code, 'event_date': event_date, 'refill_count': batch.refill_count}, None
+        except Exception as e:
+            _db.session.rollback()
+            logger.error(f"_receive_hammer_batch error: {e}")
+            return None, str(e)
+
+
 # ── Analisis predictivo y programacion (Mejoras 2 y 3) ────────────────────
 
 _THICKNESS_KEYWORDS = (
@@ -3537,6 +3765,33 @@ REGLA CRITICA #X PARA replicate_specs (NO IGNORAR — caso real de bug):
   * "hoy hice la inspeccion semanal del D8, todo OK" → {"action":"register_inspection","data":{"route_query":"semanal D8","overall_result":"OK","findings_count":0}}
   * "ayer revise la ruta INS-TH3 y encontre dos fugas" → {"action":"register_inspection","data":{"route_code":"INS-TH3","execution_date":"<ayer ISO>","overall_result":"CON_HALLAZGOS","findings_count":2,"comments":"dos fugas detectadas"}}
   * "anteayer FAPMETAL hizo la inspeccion mensual del molino, sin hallazgos" → executed_by:"FAPMETAL", findings_count:0, execution_date:<anteayer ISO>
+
+7f. CAMBIO DE MARTILLOS EN MOLINO (cuando el usuario reporta un cambio nocturno de lote de martillos):
+{"action": "change_hammer_batch", "data": {"mill": "M1|M2", "start_time": "YYYY-MM-DDTHH:MM", "end_time": "YYYY-MM-DDTHH:MM", "lubrication_done": true, "hammers_changed_count": 72, "notes": "opcional", "batch_out_code": "opcional override", "batch_in_code": "opcional override"}}
+- DETECTOR: frases tipo "cambiaron martillos del molino X", "FAPMETAL cambio los martillos del molino X", "rotamos el lote de martillos del molino X", "cambio de martillos en M1/M2", "el lote LOTE-A se retiro del molino 1", "se hizo el cambio nocturno de martillos".
+- mill: "M1" para Molino #1, "M2" para Molino #2. Acepta variantes como "molino 1", "molino #1", "molino uno", "M1", "el primer molino".
+- start_time / end_time: formato ISO con hora "YYYY-MM-DDTHH:MM" (ej: "2026-05-13T04:30"). Aplica REGLA #3 para la fecha (event_date).
+  * "anoche de 4:30 a 5:30" → start_time del dia anterior 04:30, end_time del dia anterior 05:30
+  * "hoy de 04:00 a 05:10" → start_time hoy 04:00, end_time hoy 05:10
+  * Si el usuario da solo duracion ("duro una hora desde las 4:30") deduce end_time = start_time + duracion.
+- lubrication_done: por DEFAULT true (FAPMETAL siempre lubrica chumaceras motriz y conducida en el mismo servicio). Marcalo false SOLO si el usuario explicita "sin lubricacion" o "no lubricaron".
+- hammers_changed_count: por defecto 72 (lote completo). Solo override si el usuario aclara "cambiaron solo X martillos" o "fueron Y martillos".
+- batch_out_code / batch_in_code: SOLO incluir si el usuario menciona explicitamente codigo de lote (ej. "salio el LOTE-A, entro el LOTE-C"). Si no, el sistema infiere automaticamente (hay 1 lote en cada slot).
+- notes: capturar cualquier observacion adicional ("solo cambiaron por la noche porque no habia produccion en dia", "encontraron 3 martillos doblados", etc.).
+- Ejemplos:
+  * "anoche FAPMETAL cambio los martillos del molino 1 de 4:30 a 5:30" → {"action":"change_hammer_batch","data":{"mill":"M1","start_time":"<ayer ISO>T04:30","end_time":"<ayer ISO>T05:30","lubrication_done":true}}
+  * "se cambiaron los martillos del molino 2 hoy de 04:15 a 05:20, ademas lubricaron chumaceras" → {"action":"change_hammer_batch","data":{"mill":"M2","start_time":"<hoy ISO>T04:15","end_time":"<hoy ISO>T05:20","lubrication_done":true}}
+  * "cambio nocturno de martillos M1 ayer, salio LOTE-B y entro LOTE-C, 4:00 a 5:00" → {"action":"change_hammer_batch","data":{"mill":"M1","start_time":"<ayer ISO>T04:00","end_time":"<ayer ISO>T05:00","batch_out_code":"LOTE-B","batch_in_code":"LOTE-C"}}
+
+7g. RECIBIR LOTE RELLENADO DE FAPMETAL (cuando el usuario reporta que FAPMETAL devolvio un lote rellenado):
+{"action": "receive_hammer_batch", "data": {"batch_code": "LOTE-A", "event_date": "YYYY-MM-DD", "notes": "opcional"}}
+- DETECTOR: frases tipo "FAPMETAL entrego el lote rellenado", "llego el LOTE-X rellenado", "recibimos los martillos rellenados", "ya devolvieron el lote de martillos".
+- batch_code: codigo del lote (ej. "LOTE-A"). Si el usuario no especifica y hay un solo lote en EN_FAPMETAL, el sistema lo infiere — omite batch_code.
+- event_date: fecha de recepcion. Aplica REGLA #3 (default hoy).
+- Ejemplos:
+  * "FAPMETAL trajo hoy el LOTE-A rellenado" → {"action":"receive_hammer_batch","data":{"batch_code":"LOTE-A"}}
+  * "ayer recibimos los martillos rellenados" → {"action":"receive_hammer_batch","data":{"event_date":"<ayer ISO>"}}
+  * "llego el lote rellenado de fapmetal" → {"action":"receive_hammer_batch","data":{}}
 
 8. PROMOVER / DEGRADAR AVISO (cambiar scope y vincular o desvincular equipo):
 {"action": "promote_notice", "data": {"notice_code": "AV-0010", "target_scope": "PLAN|FUERA_PLAN|GENERAL", "equipment_tag": "D8", "component_name": "motor electrico", "free_location": "opcional"}}
@@ -4704,6 +4959,39 @@ pasados automaticamente y los usa como referencia. Pregunta cosas como
                 if notice_code:
                     extra += f"\n🔔 Aviso vinculado: *{notice_code}*"
             _send(chat_id, f"{result_emoji} *Inspeccion registrada*\n📋 Ruta: {rcode} — {rname}\n{date_line}\n👤 Por: {eb}\n📊 Resultado: {ovr}{extra}")
+        else:
+            _send(chat_id, f"❌ {err}")
+        return
+
+    elif action == 'change_hammer_batch':
+        info, err = _change_hammer_batch(app, data)
+        if info:
+            mill_num = info['mill'][-1]
+            lub_line = "\n🛢️ Lubricacion chumaceras: realizada" if info.get('lubrication_done') else ""
+            dur_line = f"\n⏱️ Duracion: {info['duration_h']}h" if info.get('duration_h') is not None else ""
+            _send(chat_id,
+                f"✅ *Cambio de martillos registrado*\n"
+                f"🏭 Molino #{mill_num} · 📅 {info['event_date']}\n"
+                f"📤 Saliente: *{info['batch_out_code']}* → FAPMETAL\n"
+                f"📥 Entrante: *{info['batch_in_code']}* (rellenado #{info['batch_in_refill_count']})\n"
+                f"🔨 Martillos: {info['hammers_changed']}"
+                f"{lub_line}{dur_line}\n"
+                f"📋 OT generada: *{info['ot_code']}*"
+            )
+        else:
+            _send(chat_id, f"❌ {err}")
+        return
+
+    elif action == 'receive_hammer_batch':
+        info, err = _receive_hammer_batch(app, data)
+        if info:
+            _send(chat_id,
+                f"✅ *Lote rellenado recibido de FAPMETAL*\n"
+                f"📦 Lote: *{info['code']}*\n"
+                f"📅 Fecha: {info['event_date']}\n"
+                f"🔁 Rellenados acumulados: {info['refill_count']}\n"
+                f"Estado: RELLENADO_EN_STOCK (listo para proximo cambio)"
+            )
         else:
             _send(chat_id, f"❌ {err}")
         return
