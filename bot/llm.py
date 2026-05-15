@@ -12,6 +12,8 @@ import logging
 import requests
 from datetime import date, timedelta
 
+from bot.context import _load_cmms_guide
+
 logger = logging.getLogger(__name__)
 
 # Estos vienen de bot.telegram_bot que ya esta cargado cuando se llama a
