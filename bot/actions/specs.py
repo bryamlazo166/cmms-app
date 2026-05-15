@@ -96,16 +96,22 @@ def replicate_specs(app, data):
                 source_id, target_id = src_comp, tgt_comp
                 table = 'component_specs'
                 fk = 'component_id'
-                # Incluir nombre del sistema para que el label distinga entre
-                # componentes con el mismo nombre en sistemas distintos
-                # (ej: "SECA-SECA2/EXHAUSTOR/CHUMACERA MOTRIZ").
+                # Label con jerarquia completa: AREA / LINEA / EQUIPO / SISTEMA / COMPONENTE.
+                # Ese es el orden taxonomico canonico — asi el usuario ve
+                # exactamente cual de los componentes homonimos se eligio.
                 names = _db.session.execute(text("""
-                    SELECT c.id, e.tag, s.name, c.name FROM components c
+                    SELECT c.id, a.name, l.name, e.tag, s.name, c.name
+                    FROM components c
                     JOIN systems s ON c.system_id = s.id
                     JOIN equipments e ON s.equipment_id = e.id
+                    LEFT JOIN lines l ON e.line_id = l.id
+                    LEFT JOIN areas a ON l.area_id = a.id
                     WHERE c.id IN (:s, :t)
                 """), {"s": source_id, "t": target_id}).fetchall()
-                name_map = {r[0]: f"{r[1]}/{r[2]}/{r[3]}" for r in names}
+                name_map = {
+                    r[0]: ' / '.join(str(x) for x in (r[1] or '-', r[2] or '-', r[3], r[4], r[5]))
+                    for r in names
+                }
                 src_label = name_map.get(source_id, str(source_id))
                 tgt_label = name_map.get(target_id, str(target_id))
             else:
@@ -116,11 +122,18 @@ def replicate_specs(app, data):
                 source_id, target_id = src_eq, tgt_eq
                 table = 'equipment_specs'
                 fk = 'equipment_id'
-                tags = _db.session.execute(
-                    text("SELECT id, tag FROM equipments WHERE id IN (:s, :t)"),
-                    {"s": source_id, "t": target_id}
-                ).fetchall()
-                tmap = {r[0]: r[1] for r in tags}
+                # Label con jerarquia completa: AREA / LINEA / EQUIPO.
+                tags = _db.session.execute(text("""
+                    SELECT e.id, a.name, l.name, e.tag
+                    FROM equipments e
+                    LEFT JOIN lines l ON e.line_id = l.id
+                    LEFT JOIN areas a ON l.area_id = a.id
+                    WHERE e.id IN (:s, :t)
+                """), {"s": source_id, "t": target_id}).fetchall()
+                tmap = {
+                    r[0]: ' / '.join(str(x) for x in (r[1] or '-', r[2] or '-', r[3]))
+                    for r in tags
+                }
                 src_label = tmap.get(source_id, str(source_id))
                 tgt_label = tmap.get(target_id, str(target_id))
 
@@ -129,26 +142,33 @@ def replicate_specs(app, data):
                 FROM {table} WHERE {fk} = :id ORDER BY order_index
             """), {"id": source_id}).fetchall()
             if not src_specs:
-                # Sugerencia inteligente para entity_type='component':
-                # si hay OTROS componentes en el mismo equipo con el mismo
-                # nombre y CON specs, listarlos. Asi el usuario puede pedir
-                # explicitamente el sistema correcto.
+                # Sugerencia inteligente: si hay OTROS componentes con el
+                # mismo nombre en otros SISTEMAS del mismo equipo Y con
+                # specs, listarlos con su jerarquia completa para que el
+                # usuario indique el sistema correcto.
                 hint = ""
                 if entity_type == 'component' and src_comp:
                     try:
                         siblings = _db.session.execute(text("""
-                            SELECT c.id, s.name AS sys_name, c.name AS comp_name,
+                            SELECT c.id, a.name, l.name, e.tag, s.name, c.name,
                                    (SELECT count(*) FROM component_specs cs WHERE cs.component_id = c.id) AS n_specs
                             FROM components c
                             JOIN systems s ON c.system_id = s.id
+                            JOIN equipments e ON s.equipment_id = e.id
+                            LEFT JOIN lines l ON e.line_id = l.id
+                            LEFT JOIN areas a ON l.area_id = a.id
                             WHERE s.equipment_id = :eid
                               AND LOWER(c.name) = (SELECT LOWER(name) FROM components WHERE id = :cid)
                               AND c.id != :cid
                         """), {"eid": src_eq, "cid": src_comp}).fetchall()
-                        with_specs = [s for s in siblings if s[3] > 0]
+                        with_specs = [s for s in siblings if s[6] > 0]
                         if with_specs:
-                            opts = ', '.join(f"sistema '{s[1]}' ({s[3]} specs)" for s in with_specs)
-                            hint = f"\nOtros componentes con el mismo nombre en el equipo SI tienen specs: {opts}.\nReintenta indicando el sistema. Ej: 'copia las specs de la chumacera motriz del exhaustor del secador 2 a ...'."
+                            opts = '\n  - '.join(
+                                f"{s[1] or '-'} / {s[2] or '-'} / {s[3]} / {s[4]} / {s[5]} ({s[6]} specs)"
+                                for s in with_specs
+                            )
+                            hint = (f"\nOtros componentes con el mismo nombre en este equipo SI tienen specs:\n  - {opts}"
+                                    f"\nReintenta indicando el sistema. Ej: 'copia las specs de la chumacera motriz del exhaustor del secador 2 a ...'.")
                     except Exception:
                         pass
                 return None, f"El origen {src_label} no tiene specs cargadas.{hint}"
