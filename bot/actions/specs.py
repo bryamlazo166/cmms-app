@@ -31,16 +31,21 @@ def replicate_specs(app, data):
             overwrite = bool(data.get('overwrite', False))
 
             def resolve(prefix):
-                """Resuelve (eq_id, comp_id) para origen o destino.
+                """Resuelve (eq_id, comp_id, sys_id, tag) para origen o destino.
 
                 CRITICAL: si el usuario/LLM proveyo un tag explicito y NO existe
                 en BD, devolvemos eq_id=None SIN fallback fuzzy. Esto evita que
                 copiemos specs al equipo equivocado por similitud de nombre
                 (caso: usuario pide TH6, LLM substituye por TH5).
+
+                Si viene `<prefix>_system_name` (ej: 'exhaustor'), se pasa
+                como system_hint al matcher para desambiguar cuando un equipo
+                tiene el mismo componente en varios sistemas.
                 """
                 tag = (data.get(f'{prefix}_equipment_tag') or '').strip()
                 comp_name = (data.get(f'{prefix}_component_name') or '').strip()
-                eq_id = comp_id = None
+                sys_hint = (data.get(f'{prefix}_system_name') or '').strip() or None
+                eq_id = comp_id = sys_id = None
                 tag_provided = bool(tag)
                 if tag:
                     r = _db.session.execute(
@@ -57,13 +62,14 @@ def replicate_specs(app, data):
                     if r:
                         eq_id = r[0]
                 if eq_id and comp_name and entity_type == 'component':
-                    res = _smart_component_match(_db, text, eq_id, comp_name)
+                    res = _smart_component_match(_db, text, eq_id, comp_name,
+                                                 system_hint=sys_hint)
                     if res:
-                        comp_id = res[0]
-                return eq_id, comp_id, tag
+                        comp_id, sys_id = res[0], res[1]
+                return eq_id, comp_id, sys_id, tag
 
-            src_eq, src_comp, src_tag = resolve('source')
-            tgt_eq, tgt_comp, tgt_tag = resolve('target')
+            src_eq, src_comp, src_sys, src_tag = resolve('source')
+            tgt_eq, tgt_comp, tgt_sys, tgt_tag = resolve('target')
 
             if src_tag and not src_eq:
                 near = _db.session.execute(
@@ -90,13 +96,16 @@ def replicate_specs(app, data):
                 source_id, target_id = src_comp, tgt_comp
                 table = 'component_specs'
                 fk = 'component_id'
+                # Incluir nombre del sistema para que el label distinga entre
+                # componentes con el mismo nombre en sistemas distintos
+                # (ej: "SECA-SECA2/EXHAUSTOR/CHUMACERA MOTRIZ").
                 names = _db.session.execute(text("""
-                    SELECT c.id, e.tag, c.name FROM components c
+                    SELECT c.id, e.tag, s.name, c.name FROM components c
                     JOIN systems s ON c.system_id = s.id
                     JOIN equipments e ON s.equipment_id = e.id
                     WHERE c.id IN (:s, :t)
                 """), {"s": source_id, "t": target_id}).fetchall()
-                name_map = {r[0]: f"{r[1]}/{r[2]}" for r in names}
+                name_map = {r[0]: f"{r[1]}/{r[2]}/{r[3]}" for r in names}
                 src_label = name_map.get(source_id, str(source_id))
                 tgt_label = name_map.get(target_id, str(target_id))
             else:
@@ -120,7 +129,29 @@ def replicate_specs(app, data):
                 FROM {table} WHERE {fk} = :id ORDER BY order_index
             """), {"id": source_id}).fetchall()
             if not src_specs:
-                return None, f"El origen {src_label} no tiene specs cargadas"
+                # Sugerencia inteligente para entity_type='component':
+                # si hay OTROS componentes en el mismo equipo con el mismo
+                # nombre y CON specs, listarlos. Asi el usuario puede pedir
+                # explicitamente el sistema correcto.
+                hint = ""
+                if entity_type == 'component' and src_comp:
+                    try:
+                        siblings = _db.session.execute(text("""
+                            SELECT c.id, s.name AS sys_name, c.name AS comp_name,
+                                   (SELECT count(*) FROM component_specs cs WHERE cs.component_id = c.id) AS n_specs
+                            FROM components c
+                            JOIN systems s ON c.system_id = s.id
+                            WHERE s.equipment_id = :eid
+                              AND LOWER(c.name) = (SELECT LOWER(name) FROM components WHERE id = :cid)
+                              AND c.id != :cid
+                        """), {"eid": src_eq, "cid": src_comp}).fetchall()
+                        with_specs = [s for s in siblings if s[3] > 0]
+                        if with_specs:
+                            opts = ', '.join(f"sistema '{s[1]}' ({s[3]} specs)" for s in with_specs)
+                            hint = f"\nOtros componentes con el mismo nombre en el equipo SI tienen specs: {opts}.\nReintenta indicando el sistema. Ej: 'copia las specs de la chumacera motriz del exhaustor del secador 2 a ...'."
+                    except Exception:
+                        pass
+                return None, f"El origen {src_label} no tiene specs cargadas.{hint}"
 
             if mode == 'replace':
                 _db.session.execute(text(f"DELETE FROM {table} WHERE {fk} = :id"), {"id": target_id})

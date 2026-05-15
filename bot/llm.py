@@ -226,13 +226,20 @@ Ejemplos:
 - Igual que edit, busca el exec_id en EJECUCIONES por contexto. Si hay ambiguedad, pregunta primero con action:none.
 
 7d-bis. REPLICAR ESPECIFICACIONES (cuando el usuario quiere copiar las specs tecnicas de un componente o equipo a otro):
-{"action": "replicate_specs", "data": {"entity_type": "component|equipment", "source_equipment_tag": "MOLI1-LINE", "source_component_name": "chumacera conducida", "target_equipment_tag": "MOLI1-LINE", "target_component_name": "chumacera motriz", "mode": "merge|replace", "overwrite": false}}
+{"action": "replicate_specs", "data": {"entity_type": "component|equipment", "source_equipment_tag": "MOLI1-LINE", "source_system_name": "EXHAUSTOR", "source_component_name": "chumacera conducida", "target_equipment_tag": "MOLI1-LINE", "target_system_name": "EXHAUSTOR", "target_component_name": "chumacera motriz", "mode": "merge|replace", "overwrite": false}}
 - Usalo cuando el usuario diga frases como "replica las specs de X a Y", "copia las especificaciones de la chumacera conducida del molino 1 a la chumacera motriz del mismo molino", "los datos tecnicos del motor del D8 son los mismos que los del D9, copialos", "duplica las specs de A en B".
 - entity_type: 'component' (default, mas comun) si copia entre componentes; 'equipment' si copia entre equipos completos.
 - mode: 'merge' (default) NO toca las keys que el destino ya tiene. 'replace' borra TODAS las specs del destino antes de copiar — solo usalo si el usuario lo pide explicitamente con palabras como "reemplaza todas", "borra y copia", "sobreescribe completamente".
 - overwrite: solo aplica con merge. true si el usuario dice "actualiza los valores aunque ya existan", "sobreescribe los valores que coincidan".
 - Para componentes incluye SIEMPRE source_equipment_tag y source_component_name (ambos), y lo mismo para target_*. El sistema usa el matcher inteligente con sinonimos (chumacera motriz/conducida, motor electrico/mtr, etc).
 - Si el origen y destino son del mismo equipo, repite el mismo equipment_tag en source_* y target_*.
+
+REGLA CRITICA — SUB-EQUIPOS Y SISTEMAS (lectura obligatoria):
+- Cuando el usuario dice "X del Y del Z" (ej: "chumacera del exhaustor del secador 2", "rodamiento del ventilador del molino 1", "sello de la bomba del digestor 3"),
+  Y es un SUB-CONJUNTO (sistema interno) del equipo Z. SIEMPRE incluye source_system_name (y target_system_name) con el nombre del sub-conjunto Y.
+- Esto es CRITICO porque un equipo puede tener el MISMO componente (ej: "chumacera motriz") en varios sistemas (ej: el sistema principal del secador Y el sistema EXHAUSTOR). Sin source_system_name el sistema podria copiar las specs del componente equivocado.
+- Mira la lista EQUIPOS del contexto: el equipo Z es el que aparece ahi (ej: SECA-SECA2 para "secador 2"). El "Y" intermedio (exhaustor/ventilador/soplador/etc) NO es un equipo separado — es un SYSTEM dentro de Z. Usa su nombre como source_system_name.
+- Si la frase es simple "X del Z" (sin Y intermedio), omite source_system_name — el sistema busca en todos los sistemas de Z.
 
 REGLA CRITICA #X PARA replicate_specs (NO IGNORAR — caso real de bug):
 - Usa LITERALMENTE los tags que el usuario menciona. Si el usuario dice "TH6", source_equipment_tag DEBE ser "TH6" — NO "TH5", NO "TH3", NO ningun otro tag aunque el TH6 no aparezca en el contexto.
@@ -245,6 +252,8 @@ REGLA CRITICA #X PARA replicate_specs (NO IGNORAR — caso real de bug):
   * "copia las especificaciones del motor del D8 al motor del D9" → {"action":"replicate_specs","data":{"entity_type":"component","source_equipment_tag":"D8","source_component_name":"motor electrico","target_equipment_tag":"D9","target_component_name":"motor electrico"}}
   * "duplica las specs del reductor del TH2 al reductor del TH3, y sobreescribe lo que ya tenga" → mode:"merge", overwrite:true.
   * "borra las specs del motor del D5 y copia las del D8" → mode:"replace".
+  * "copia las specs de la chumacera motriz del exhaustor del secador 2 a la chumacera conducida del exhaustor del secador 2" → {"action":"replicate_specs","data":{"entity_type":"component","source_equipment_tag":"SECA-SECA2","source_system_name":"EXHAUSTOR","source_component_name":"chumacera motriz","target_equipment_tag":"SECA-SECA2","target_system_name":"EXHAUSTOR","target_component_name":"chumacera conducida"}}
+  * "replica los datos del rodamiento del ventilador del molino 1 al rodamiento del exhaustor del molino 1" → source_system_name:"VENTILADOR", target_system_name:"EXHAUSTOR" (mismo equipo, sistemas distintos).
 
 7e. REGISTRAR INSPECCION (cuando el usuario reporta que ejecuto una ruta de inspeccion):
 {"action": "register_inspection", "data": {"route_id": 5, "execution_date": "2026-04-24", "executed_by": "INSPECTOR|nombre tecnico", "overall_result": "OK|CON_HALLAZGOS", "findings_count": 0, "comments": "opcional"}}

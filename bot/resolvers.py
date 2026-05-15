@@ -142,10 +142,15 @@ def score_fuzzy_candidates(tokens, candidates, blob_fn):
     return best[1] if best[0] > 0 else None, second
 
 
-def smart_component_match(db, text_module, equipment_id, raw_name):
+def smart_component_match(db, text_module, equipment_id, raw_name, system_hint=None):
     """Encuentra el mejor componente de un equipo dado un texto libre.
 
     Usa overlap de tokens con normalizacion (genero/numero) + expansion de sinonimos.
+
+    Si `system_hint` viene (ej: 'exhaustor', 'ventilador'), prioriza componentes
+    cuyo sistema padre contenga ese texto. Esto desambigua cuando un equipo
+    tiene varios sistemas con componentes del mismo nombre (ej: SECA-SECA2
+    tiene chumacera motriz en el sistema principal Y en el sistema EXHAUSTOR).
 
     Retorna (component_id, system_id) o None.
     """
@@ -170,18 +175,32 @@ def smart_component_match(db, text_module, equipment_id, raw_name):
                 terms.update(syns)
                 break
 
+    # Trae sys_name junto al componente para poder priorizar por system_hint
     rows = db.session.execute(text_module("""
-        SELECT c.id, c.name, c.system_id FROM components c
+        SELECT c.id, c.name, c.system_id, s.name FROM components c
         JOIN systems s ON c.system_id = s.id
         WHERE s.equipment_id = :eid
     """), {"eid": equipment_id}).fetchall()
     if not rows:
         return None
 
+    # Expandir el hint con sinonimos para tolerar "soplador" == "ventilador" == "extractor"
+    hint_terms = set()
+    if system_hint:
+        hint_low = system_hint.lower().strip()
+        if hint_low:
+            hint_terms.add(hint_low)
+            for key, syns in COMPONENT_SYNONYMS.items():
+                if hint_low == key or hint_low in syns:
+                    hint_terms.update(syns)
+                    hint_terms.add(key)
+                    break
+
     best = None
     best_score = 0
-    for cid, cname, sid in rows:
+    for cid, cname, sid, sname in rows:
         cname_low = (cname or '').lower()
+        sname_low = (sname or '').lower()
         comp_tokens_norm = {normalize_token(t) for t in cname_low.split() if len(t) > 2}
         score = 0
         for term in terms:
@@ -191,6 +210,18 @@ def smart_component_match(db, text_module, equipment_id, raw_name):
         score += len(overlap) * 5
         if comp_tokens_norm and comp_tokens_norm.issubset(user_tokens_norm):
             score += 20
+        # Bonus fuerte si el sistema padre matchea el hint del usuario.
+        # Esto rompe empates entre componentes con el mismo nombre en
+        # distintos sistemas del mismo equipo.
+        if hint_terms:
+            if any(h in sname_low for h in hint_terms):
+                score += 50
+            else:
+                # Penalizacion suave: si dio hint pero este sistema no coincide,
+                # baja la prioridad. No descartamos por completo para tolerar
+                # casos donde el hint es parte del nombre del componente y no
+                # del sistema.
+                score -= 5
         if score > best_score:
             best_score = score
             best = (cid, sid)
@@ -264,9 +295,14 @@ def resolve_equipment(db, text_module, data):
         if r:
             area_id = r[0]
 
-    # 7) Componente fuzzy fallback
+    # 7) Componente fuzzy fallback. Si vino system_name (ej: 'exhaustor'),
+    # se pasa como hint para desambiguar componentes homonimos en sistemas
+    # distintos del mismo equipo.
     if equipment_id and not component_id and data.get('component_name'):
-        component_id, system_id = smart_component_match(db, text_module, equipment_id, data['component_name']) or (None, None)
+        component_id, system_id = smart_component_match(
+            db, text_module, equipment_id, data['component_name'],
+            system_hint=data.get('system_name'),
+        ) or (None, None)
         if component_id and not rotative_asset_id:
             r = db.session.execute(text_module("""
                 SELECT id FROM rotative_assets
