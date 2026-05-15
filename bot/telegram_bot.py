@@ -163,6 +163,10 @@ def _cleanup_processed_updates(app, days=2):
 # ── Contexto del LLM extraido a bot/context.py ───────────────────────────
 # El guide loader, chat history, focused equipment y build CMMS context
 # viven todos en bot/context.py. Aqui los re-exportamos para compat.
+# Importamos el modulo completo (no por nombre) para que el refresh thread
+# pueda escribir directo en bot.context._cached_cmms_context sin que la
+# asignacion quede atrapada en este modulo.
+from bot import context as _ctx  # noqa: E402
 from bot.context import (  # noqa: E402
     _GUIDE_CACHE,
     _load_cmms_guide,
@@ -175,8 +179,6 @@ from bot.context import (  # noqa: E402
     _get_focused_equipment_context,
     _get_cmms_context,
     _build_cmms_context_real,
-    _cached_cmms_context,
-    _cached_cmms_context_ts,
     _CACHE_CONTEXT_TTL,
 )
 
@@ -1938,14 +1940,20 @@ def start_telegram_bot(app):
             time.sleep(60)
 
     def refresh_context_loop():
-        """Pre-calcula el contexto general cada 60s (Opt #3)."""
-        global _cached_cmms_context, _cached_cmms_context_ts
+        """Pre-calcula el contexto general cada 60s (Opt #3).
+
+        IMPORTANTE: escribimos directo en bot.context._cached_cmms_context
+        (no a un global de este modulo), porque _get_cmms_context lee la
+        variable desde bot.context. Si declaramos `global` aqui, la
+        asignacion se queda en bot.telegram_bot y el cache real nunca
+        se refresca (bug post-split fase 7).
+        """
         logger.info("Context pre-cache thread started (TTL 60s).")
         while True:
             try:
                 ctx = _build_cmms_context_real(app)
-                _cached_cmms_context = ctx
-                _cached_cmms_context_ts = time.time()
+                _ctx._cached_cmms_context = ctx
+                _ctx._cached_cmms_context_ts = time.time()
             except Exception as e:
                 logger.warning(f"Context refresh fallo: {e}")
             time.sleep(_CACHE_CONTEXT_TTL)
