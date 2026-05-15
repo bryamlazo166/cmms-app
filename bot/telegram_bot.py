@@ -197,8 +197,28 @@ def _tg_api(method, **kwargs):
 
 
 def _send(chat_id, text):
+    """Envia un mensaje a Telegram, dividiendo en chunks de 4000 chars.
+
+    Si Markdown falla al parsear (LLM devolvio *_ desbalanceados, etc),
+    Telegram responde 400 y el usuario no ve nada. Por eso detectamos
+    el fallo y reintentamos el chunk SIN parse_mode (texto plano).
+    """
+    if not text:
+        return
     for i in range(0, len(text), 4000):
-        _tg_api('sendMessage', chat_id=chat_id, text=text[i:i+4000], parse_mode='Markdown')
+        chunk = text[i:i+4000]
+        try:
+            resp = _tg_api('sendMessage', chat_id=chat_id, text=chunk, parse_mode='Markdown')
+            if not resp.get('ok'):
+                desc = (resp.get('description') or '')[:160]
+                logger.warning(f"Telegram sendMessage(Markdown) fallo: {desc}. Reintentando sin parse_mode.")
+                _tg_api('sendMessage', chat_id=chat_id, text=chunk)
+        except Exception as e:
+            logger.warning(f"_send exception: {e}. Reintentando sin parse_mode.")
+            try:
+                _tg_api('sendMessage', chat_id=chat_id, text=chunk)
+            except Exception as e2:
+                logger.error(f"_send fallback fallo: {e2}")
 
 
 # ── Helpers de matching/taxonomia extraidos a bot/resolvers.py ────────
