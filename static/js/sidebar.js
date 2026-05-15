@@ -413,14 +413,18 @@
         'avisos': '/avisos', 'ordenes': '/ordenes', 'compras': '/compras',
         'almacen': '/almacen', 'herramientas': '/herramientas',
         'activos_rotativos': '/activos-rotativos', 'martillos': '/martillos', 'activos_config': '/configuracion',
+        'responsabilidades': '/responsabilidades',
         'monitoreo': '/monitoreo', 'lubricacion': '/lubricacion',
         'inspecciones': '/inspecciones', 'espesores': '/espesores',
         'paradas': '/paradas', 'plantillas_paradas': '/plantillas-paradas',
         'indicadores': '/indicadores', 'cockpit': '/cockpit',
         'produccion': '/produccion',
         'programa_nocturno': '/programa-nocturno',
+        'flujo_planta': '/flujo-planta',
+        'perdidas_produccion': '/perdidas-produccion',
         'insights': '/insights',
         'seguimiento': '/seguimiento',
+        'calendario': '/calendario',
         'reportes': '/reportes', 'historial_equipo': '/equipo-historial',
     };
 
@@ -510,6 +514,8 @@
             const hrefToModule = Object.fromEntries(
                 Object.entries(MODULE_TO_HREF).map(([m, h]) => [h, m])
             );
+            // Aliases extra: rutas adicionales que comparten modulo de permisos
+            hrefToModule['/optimizacion-preventivos'] = 'insights';
 
             const navList = sidebar.querySelector('.nav-list');
             const extra = user.role === 'admin' ? ADMIN_MENU_ITEMS : [];
