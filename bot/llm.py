@@ -10,6 +10,7 @@ a markdown, prosa adicional y JSONs malformados (best-effort).
 import json
 import logging
 import requests
+from datetime import date, timedelta
 
 logger = logging.getLogger(__name__)
 
