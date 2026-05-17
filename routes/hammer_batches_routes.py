@@ -441,6 +441,112 @@ def register_hammer_batches_routes(
             alerts.append("No hay ningun lote en transito ni en stock — proximo cambio no es posible")
         return alerts
 
+    # ── Bitacora de cambios (para gerencia) ─────────────────────────────────
+    @app.route('/api/hammer-batches/changes-log', methods=['GET'])
+    def hammer_batches_changes_log():
+        """Bitacora de cambios de martillos con fechas, una fila por cambio.
+
+        Cada cambio = 1 RETIRAR_Mx + 1 INSTALAR_Mx con el mismo work_order_id.
+        Se devuelve agrupado: fecha, molino, lote saliente, lote entrante,
+        martillos cambiados, OT, tecnico, notas.
+
+        Query:
+          start: YYYY-MM-DD (default: hoy - 365d)
+          end:   YYYY-MM-DD (default: hoy)
+          format: 'json' (default) | 'csv'
+        """
+        try:
+            today = dt.date.today()
+            start = request.args.get('start') or (today - dt.timedelta(days=365)).isoformat()
+            end = request.args.get('end') or today.isoformat()
+            fmt = (request.args.get('format') or 'json').lower()
+
+            # Movimientos de retiro (la "salida" identifica cada cambio)
+            retire_movs = HammerBatchMovement.query.filter(
+                HammerBatchMovement.event_type.in_(['RETIRAR_M1', 'RETIRAR_M2']),
+                HammerBatchMovement.event_date >= start,
+                HammerBatchMovement.event_date <= end,
+            ).order_by(HammerBatchMovement.event_date.desc(), HammerBatchMovement.id.desc()).all()
+
+            rows = []
+            for mov in retire_movs:
+                mill = 'M1' if mov.event_type == 'RETIRAR_M1' else 'M2'
+                batch_out = mov.batch
+                wo = mov.work_order
+
+                # Buscar el INSTALAR_Mx asociado a la misma OT
+                install_event = MILL_TO_INSTALL_EVENT[mill]
+                install_mov = None
+                if mov.work_order_id:
+                    install_mov = HammerBatchMovement.query.filter_by(
+                        work_order_id=mov.work_order_id,
+                        event_type=install_event,
+                    ).first()
+
+                batch_in = install_mov.batch if install_mov else None
+
+                # Tecnico: del campo technician_id de la OT (puede ser nombre o id)
+                tech_name = None
+                if wo and wo.technician_id:
+                    tech_name = wo.technician_id
+
+                rows.append({
+                    'event_date': mov.event_date,
+                    'mill': mill,
+                    'batch_out_code': batch_out.code if batch_out else None,
+                    'batch_in_code': batch_in.code if batch_in else None,
+                    'hammers_count': mov.hammers_count,
+                    'work_order_code': wo.code if wo else None,
+                    'work_order_id': mov.work_order_id,
+                    'technician': tech_name,
+                    'real_duration_h': wo.real_duration if wo else None,
+                    'real_start_date': wo.real_start_date if wo else None,
+                    'real_end_date': wo.real_end_date if wo else None,
+                    'notes': mov.notes,
+                    'created_by': mov.created_by,
+                })
+
+            if fmt == 'csv':
+                import csv
+                from io import StringIO
+                from flask import Response
+                buf = StringIO()
+                writer = csv.writer(buf)
+                writer.writerow([
+                    'Fecha', 'Molino', 'Lote saliente', 'Lote entrante',
+                    'Martillos cambiados', 'OT', 'Tecnico/Proveedor',
+                    'Duracion real (h)', 'Inicio real', 'Fin real',
+                    'Notas', 'Registrado por',
+                ])
+                for r in rows:
+                    writer.writerow([
+                        r['event_date'] or '', r['mill'] or '',
+                        r['batch_out_code'] or '', r['batch_in_code'] or '',
+                        r['hammers_count'] if r['hammers_count'] is not None else '',
+                        r['work_order_code'] or '', r['technician'] or '',
+                        r['real_duration_h'] if r['real_duration_h'] is not None else '',
+                        r['real_start_date'] or '', r['real_end_date'] or '',
+                        (r['notes'] or '').replace('\n', ' | '),
+                        r['created_by'] or '',
+                    ])
+                # BOM para Excel ES (acentos)
+                csv_text = '﻿' + buf.getvalue()
+                fname = f"bitacora_cambios_martillos_{start}_{end}.csv"
+                return Response(
+                    csv_text,
+                    mimetype='text/csv; charset=utf-8',
+                    headers={'Content-Disposition': f'attachment; filename="{fname}"'}
+                )
+
+            return jsonify({
+                'period': {'start': start, 'end': end},
+                'count': len(rows),
+                'rows': rows,
+            }), 200
+        except Exception as e:
+            logger.exception(f"changes-log error: {e}")
+            return jsonify({"error": str(e)}), 500
+
     # ── Conciliacion FAPMETAL ────────────────────────────────────────────────
     @app.route('/api/hammer-batches/conciliation', methods=['GET'])
     def hammer_batches_conciliation():

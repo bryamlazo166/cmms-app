@@ -89,6 +89,7 @@
                 <button class="btn-secondary" data-perm="martillos.edit" onclick="openReceiveModal()"><i class="fas fa-truck-loading"></i> Recibir Rellenado</button>
                 <button class="btn-secondary" data-perm="martillos.edit" onclick="openNewBatchModal()"><i class="fas fa-plus"></i> Nuevo Lote</button>
                 <button class="btn-secondary" onclick="openConciliationModal()"><i class="fas fa-balance-scale"></i> Conciliacion FAPMETAL</button>
+                <button class="btn-secondary" onclick="openChangesLogModal()" title="Bitacora detallada de cambios con fechas — para gerencia"><i class="fas fa-clipboard-list"></i> Bitacora de Cambios</button>
                 <button class="btn-secondary" onclick="loadState()"><i class="fas fa-sync"></i> Actualizar</button>
             </div>
 
@@ -174,6 +175,24 @@
         </form>
     </dialog>
 
+    <!-- ── Modal: Bitacora de Cambios ─────────────────────────────────── -->
+    <dialog id="changesLogModal" class="modal" style="max-width: 1100px; border-radius:12px;">
+        <h3><i class="fas fa-clipboard-list"></i> Bitacora de Cambios de Martillos</h3>
+        <p style="font-size:.85rem;color:#9ab0cb;margin:6px 0 12px 0;">
+            Detalle por fecha de cada cambio realizado en los molinos — para reportar a gerencia el historico real, no solo el total.
+        </p>
+        <div style="display:flex; gap:10px; align-items:end; margin-bottom:12px; flex-wrap:wrap;">
+            <div class="form-group"><label>Desde</label><input id="logStart" type="date"></div>
+            <div class="form-group"><label>Hasta</label><input id="logEnd" type="date"></div>
+            <button class="btn-primary" onclick="loadChangesLog()"><i class="fas fa-search"></i> Buscar</button>
+            <button class="btn-secondary" onclick="exportChangesLogCSV()"><i class="fas fa-file-csv"></i> Exportar CSV (Excel)</button>
+        </div>
+        <div id="changesLogContent">Cargando…</div>
+        <div style="display:flex; justify-content:flex-end; margin-top:14px;">
+            <button class="btn-secondary" onclick="document.getElementById('changesLogModal').close()">Cerrar</button>
+        </div>
+    </dialog>
+
     <!-- ── Modal: Conciliacion ────────────────────────────────────────── -->
     <dialog id="conciliationModal" class="modal" style="max-width: 880px; border-radius:12px;">
         <h3><i class="fas fa-balance-scale"></i> Conciliacion con FAPMETAL</h3>
@@ -243,23 +262,27 @@
             const fap = _state.en_fapmetal || [];
             const stk = _state.rellenado_stock || [];
 
-            const cardHtml = (cls, title, batch, extra) => {
+            const cardHtml = (cls, title, batch, extra, canDiscard) => {
                 if (!batch) {
                     return `<div class="slot-card empty ${cls}"><div class="slot-title">${title}</div><div class="slot-batch-code">— sin lote —</div></div>`;
                 }
+                const discardBtn = canDiscard
+                    ? `<div style="margin-top:8px;"><button class="btn-secondary" style="padding:3px 8px;font-size:.72rem;background:rgba(255,69,58,.18);color:#ff8b80;border:1px solid rgba(255,69,58,.45);" onclick="discardBatch(${batch.id}, '${batch.code}')"><i class="fas fa-trash-alt"></i> Dar de baja</button></div>`
+                    : '';
                 return `<div class="slot-card ${cls}">
                     <div class="slot-title">${title}</div>
                     <div class="slot-batch-code">${batch.code}</div>
                     <div class="slot-meta">${batch.hammers_count} martillos · ${batch.refill_count} rellenados</div>
                     ${extra || ''}
+                    ${discardBtn}
                 </div>`;
             };
 
             const fapHtml = fap.length
-                ? fap.map(b => cardHtml('fap', 'En FAPMETAL', b, '<div class="slot-meta" style="color:#ffb1ab;">Pendiente de retorno</div>')).join('')
+                ? fap.map(b => cardHtml('fap', 'En FAPMETAL', b, '<div class="slot-meta" style="color:#ffb1ab;">Pendiente de retorno</div>', true)).join('')
                 : `<div class="slot-card fap empty"><div class="slot-title">En FAPMETAL</div><div class="slot-batch-code">— vacio —</div></div>`;
             const stkHtml = stk.length
-                ? stk.map(b => cardHtml('stk', 'Rellenado en stock', b, '<div class="slot-meta" style="color:#9de4a1;">Listo para proximo cambio</div>')).join('')
+                ? stk.map(b => cardHtml('stk', 'Rellenado en stock', b, '<div class="slot-meta" style="color:#9de4a1;">Listo para proximo cambio</div>', true)).join('')
                 : `<div class="slot-card stk empty"><div class="slot-title">Rellenado en stock</div><div class="slot-batch-code">— vacio —</div></div>`;
 
             grid.innerHTML = [
@@ -268,6 +291,32 @@
                 fapHtml,
                 stkHtml,
             ].join('');
+        }
+
+        // ── Dar de baja un lote (desgaste excesivo) ─────────────────────
+        async function discardBatch(batchId, batchCode) {
+            const motivo = prompt(`Dar de baja el lote ${batchCode}.\n\nMotivo (ej: "desgaste excesivo, no apto para rellenado"):`);
+            if (motivo === null) return;  // Cancelado
+            if (!motivo.trim()) {
+                alert('Debes ingresar un motivo para la baja.');
+                return;
+            }
+            if (!confirm(`Confirmar baja del lote ${batchCode}?\n\nMotivo: ${motivo}\n\nEsta accion marca el lote como DESCARTADO y lo retira del ciclo. No se puede deshacer desde la UI.`)) {
+                return;
+            }
+            try {
+                const r = await fetch(`/api/hammer-batches/${batchId}/discard`, {
+                    method: 'POST',
+                    headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify({notes: motivo.trim()}),
+                });
+                const data = await r.json();
+                if (!r.ok) { alert('Error: ' + (data.error || 'desconocido')); return; }
+                alert(`Lote ${data.code} dado de baja.\n\nRecuerda registrar el lote nuevo de reemplazo con "Nuevo Lote".`);
+                loadState();
+            } catch (e) {
+                alert('Error: ' + e.message);
+            }
         }
 
         function renderAlerts() {
@@ -447,6 +496,81 @@
             document.getElementById('newBatchModal').close();
             loadState();
         });
+
+        // ── Bitacora de Cambios ──────────────────────────────────────────
+        function openChangesLogModal() {
+            const today = new Date();
+            const start = new Date(today); start.setFullYear(start.getFullYear() - 1);
+            const iso = d => d.toISOString().slice(0, 10);
+            document.getElementById('logStart').value = iso(start);
+            document.getElementById('logEnd').value = iso(today);
+            document.getElementById('changesLogModal').showModal();
+            loadChangesLog();
+        }
+
+        async function loadChangesLog() {
+            const start = document.getElementById('logStart').value;
+            const end = document.getElementById('logEnd').value;
+            const div = document.getElementById('changesLogContent');
+            div.innerHTML = 'Cargando…';
+            try {
+                const r = await fetch(`/api/hammer-batches/changes-log?start=${start}&end=${end}`);
+                const data = await r.json();
+                if (!r.ok) { div.innerHTML = `<span style="color:#ffb1ab;">Error: ${data.error}</span>`; return; }
+                const rows = data.rows || [];
+                if (rows.length === 0) {
+                    div.innerHTML = '<p style="color:#9ab0cb;">Sin cambios en el periodo seleccionado.</p>';
+                    return;
+                }
+                // Resumen
+                const cambiosM1 = rows.filter(r => r.mill === 'M1').length;
+                const cambiosM2 = rows.filter(r => r.mill === 'M2').length;
+                const totalMartillos = rows.reduce((acc, r) => acc + (r.hammers_count || 0), 0);
+                let html = `
+                    <div class="totals-grid">
+                        <div class="total-card"><div class="label">Cambios M1</div><div class="value">${cambiosM1}</div></div>
+                        <div class="total-card"><div class="label">Cambios M2</div><div class="value">${cambiosM2}</div></div>
+                        <div class="total-card"><div class="label">Total cambios</div><div class="value">${rows.length}</div></div>
+                        <div class="total-card"><div class="label">Martillos cambiados</div><div class="value">${totalMartillos}</div></div>
+                    </div>
+                    <div class="table-wrap" style="max-height:400px;overflow-y:auto;">
+                    <table class="summary-table" style="width:100%;">
+                        <thead>
+                            <tr>
+                                <th>Fecha</th><th>Molino</th><th>Lote OUT</th><th>Lote IN</th>
+                                <th>Martillos</th><th>OT</th><th>Tec./Prov.</th><th>Duracion</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                `;
+                for (const r of rows) {
+                    const otLink = r.work_order_code
+                        ? `<a href="/ordenes?q=${encodeURIComponent(r.work_order_code)}">${r.work_order_code}</a>`
+                        : '—';
+                    html += `<tr>
+                        <td>${r.event_date || '—'}</td>
+                        <td><span class="pill ${r.mill === 'M1' ? 'pill-m1' : 'pill-m2'}">${r.mill}</span></td>
+                        <td><strong>${r.batch_out_code || '—'}</strong></td>
+                        <td><strong>${r.batch_in_code || '—'}</strong></td>
+                        <td>${r.hammers_count ?? '—'}</td>
+                        <td>${otLink}</td>
+                        <td>${r.technician || '—'}</td>
+                        <td>${r.real_duration_h != null ? r.real_duration_h + 'h' : '—'}</td>
+                    </tr>`;
+                }
+                html += '</tbody></table></div>';
+                div.innerHTML = html;
+            } catch (e) {
+                div.innerHTML = `<span style="color:#ffb1ab;">Error: ${e.message}</span>`;
+            }
+        }
+
+        function exportChangesLogCSV() {
+            const start = document.getElementById('logStart').value;
+            const end = document.getElementById('logEnd').value;
+            // Descarga directa via endpoint con format=csv
+            window.location.href = `/api/hammer-batches/changes-log?start=${start}&end=${end}&format=csv`;
+        }
 
         // ── Conciliacion ─────────────────────────────────────────────────
         let _lastConciliation = null;
