@@ -555,6 +555,13 @@ class WorkOrder(db.Model):
     # Telegram lo devuelve cuando se le pide el informe de la OT.
     report_url: Mapped[str | None] = mapped_column(String(500), nullable=True)
 
+    # Conformidad de servicio (proveedores). Cuando mantenimiento firma el
+    # formato dando OK al servicio del proveedor, se sube el PDF/imagen aqui.
+    # La presencia de conformity_doc_url indica que ya se envio a logistica
+    # para pago. Sin URL = pendiente de conformidad.
+    conformity_doc_url: Mapped[str | None] = mapped_column(String(500), nullable=True)
+    conformity_uploaded_at: Mapped[str | None] = mapped_column(String(20), nullable=True)
+
     def to_dict(self):
         return {c.name: getattr(self, c.name) for c in self.__table__.columns}
 

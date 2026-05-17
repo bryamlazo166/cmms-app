@@ -264,7 +264,7 @@ _AUTH_EXEMPT = {'login', 'logout', 'static', 'health_check'}
 # Map module keys → page paths and API prefixes
 _MODULE_ROUTES = {
     'avisos':           {'pages': ['/avisos'], 'api': ['/api/notices']},
-    'ordenes':          {'pages': ['/ordenes'], 'api': ['/api/work-orders', '/api/work_orders', '/api/generate-preventive', '/api/pending-reports']},
+    'ordenes':          {'pages': ['/ordenes'], 'api': ['/api/work-orders', '/api/work_orders', '/api/generate-preventive', '/api/pending-reports', '/api/pending-conformity']},
     'compras':          {'pages': ['/compras'], 'api': ['/api/purchase']},
     'almacen':          {'pages': ['/almacen'], 'api': ['/api/warehouse']},
     'herramientas':     {'pages': ['/herramientas'], 'api': ['/api/tools']},

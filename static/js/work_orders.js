@@ -578,6 +578,8 @@ window.applyFilters = () => {
     const logisticsFilter = logisticsSelect ? logisticsSelect.value : 'all';
     const reportSelect = document.getElementById('planningReportFilter');
     const reportFilter = reportSelect ? reportSelect.value : 'all';
+    const conformitySelect = document.getElementById('planningConformityFilter');
+    const conformityFilter = conformitySelect ? conformitySelect.value : 'all';
     const shutdownSelect = document.getElementById('planningShutdownFilter');
     const shutdownFilter = shutdownSelect ? shutdownSelect.value : 'all';
 
@@ -606,6 +608,11 @@ window.applyFilters = () => {
 
         if (reportFilter === 'pending' && !(ot.report_required && ot.report_status !== 'RECIBIDO')) return false;
         if (reportFilter === 'received' && !(ot.report_required && ot.report_status === 'RECIBIDO')) return false;
+
+        // Filtro de conformidad de servicio (solo aplica a OTs con proveedor)
+        const hasConformity = !!ot.conformity_doc_url;
+        if (conformityFilter === 'pending' && !(ot.provider_id && !hasConformity)) return false;
+        if (conformityFilter === 'sent' && !(ot.provider_id && hasConformity)) return false;
 
         const hasShutdown = !!ot.shutdown_id;
         if (shutdownFilter === 'with' && !hasShutdown) return false;
@@ -1470,6 +1477,7 @@ async function searchForExecution() {
     // Load bitacora + report status + photos
     loadOTLog(ot.id);
     loadReportStatus(ot);
+    loadConformityStatus(ot);
     loadOTPhotos(ot.id);
     loadNoticePhotosInExecution(ot.notice_id);
     document.getElementById('logDate').value = new Date().toISOString().slice(0, 10);
@@ -2887,6 +2895,102 @@ function updateReportBadge(ot) {
         badge.textContent = 'PENDIENTE';
         badge.style.background = 'rgba(255,69,58,.18)';
         badge.style.color = '#FF6B61';
+    }
+}
+
+// ── Conformidad de Servicio (proveedor) ─────────────────────────────────────
+
+function loadConformityStatus(ot) {
+    const section = document.getElementById('conformitySection');
+    if (!section) return;
+    // Mostrar solo si la OT tiene proveedor
+    if (!ot.provider_id) {
+        section.style.display = 'none';
+        return;
+    }
+    section.style.display = 'block';
+
+    const urlInput = document.getElementById('conformityUrl');
+    const dateInput = document.getElementById('conformityDate');
+    if (urlInput) urlInput.value = ot.conformity_doc_url || '';
+    if (dateInput) dateInput.value = ot.conformity_uploaded_at || '';
+    updateConformityUI(ot);
+}
+
+function updateConformityUI(ot) {
+    const input = document.getElementById('conformityUrl');
+    const openBtn = document.getElementById('conformityUrlOpen');
+    const clearBtn = document.getElementById('conformityClearBtn');
+    const badge = document.getElementById('conformityBadge');
+    if (!input || !openBtn) return;
+    const url = (input.value || '').trim();
+    const hasUrl = url && (url.startsWith('http://') || url.startsWith('https://'));
+    if (hasUrl) {
+        openBtn.href = url;
+        openBtn.style.display = 'inline-block';
+        if (clearBtn) clearBtn.style.display = 'inline-block';
+    } else {
+        openBtn.style.display = 'none';
+        if (clearBtn) clearBtn.style.display = 'none';
+    }
+    if (badge) {
+        if (hasUrl) {
+            badge.innerHTML = '<span style="background:rgba(48,209,88,.18);color:#30D158;padding:3px 10px;border-radius:999px;"><i class="fas fa-check-circle"></i> CONFORMIDAD ENVIADA A LOGISTICA</span>';
+        } else if (ot && ot.provider_id && ot.status === 'Cerrada') {
+            badge.innerHTML = '<span style="background:rgba(255,69,58,.18);color:#FF6B61;padding:3px 10px;border-radius:999px;"><i class="fas fa-exclamation-triangle"></i> PENDIENTE DE CONFORMIDAD</span>';
+        } else {
+            badge.innerHTML = '';
+        }
+    }
+}
+
+async function updateConformity() {
+    if (!activeExecutionOT) return;
+    const urlInput = document.getElementById('conformityUrl');
+    const url = (urlInput ? urlInput.value : '').trim();
+    if (!url) return;  // Si esta vacio, no hacer nada (usar Quitar para limpiar)
+    if (!(url.startsWith('http://') || url.startsWith('https://'))) {
+        alert('El link debe iniciar con http:// o https://');
+        return;
+    }
+    try {
+        const r = await fetch(`/api/work_orders/${activeExecutionOT.id}/conformity`, {
+            method: 'PUT',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ conformity_doc_url: url })
+        });
+        if (!r.ok) {
+            const err = await r.json();
+            alert('Error guardando conformidad: ' + (err.error || 'desconocido'));
+            return;
+        }
+        const updated = await r.json();
+        activeExecutionOT.conformity_doc_url = updated.conformity_doc_url;
+        activeExecutionOT.conformity_uploaded_at = updated.conformity_uploaded_at;
+        const dateInput = document.getElementById('conformityDate');
+        if (dateInput) dateInput.value = updated.conformity_uploaded_at || '';
+        updateConformityUI(activeExecutionOT);
+    } catch (e) {
+        console.error('Conformity update error:', e);
+    }
+}
+
+async function clearConformity() {
+    if (!activeExecutionOT) return;
+    if (!confirm('Quitar la conformidad registrada para esta OT?')) return;
+    try {
+        const r = await fetch(`/api/work_orders/${activeExecutionOT.id}/conformity`, {
+            method: 'DELETE'
+        });
+        if (!r.ok) return;
+        const updated = await r.json();
+        activeExecutionOT.conformity_doc_url = null;
+        activeExecutionOT.conformity_uploaded_at = null;
+        document.getElementById('conformityUrl').value = '';
+        document.getElementById('conformityDate').value = '';
+        updateConformityUI(activeExecutionOT);
+    } catch (e) {
+        console.error('Conformity clear error:', e);
     }
 }
 

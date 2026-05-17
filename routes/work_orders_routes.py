@@ -302,6 +302,81 @@ def register_work_orders_routes(
             db.session.rollback()
             return jsonify({"error": str(e)}), 500
 
+    @app.route('/api/work_orders/<int:ot_id>/conformity', methods=['PUT', 'DELETE'])
+    def update_ot_conformity(ot_id):
+        """Registra (PUT) o limpia (DELETE) el link al PDF de conformidad
+        de servicio (firmado por mantenimiento, enviado a logistica para pago).
+
+        PUT body: { "conformity_doc_url": "https://drive.google.com/..." }
+        La fecha se auto-registra al guardar.
+        """
+        try:
+            wo = WorkOrder.query.get_or_404(ot_id)
+
+            if request.method == 'DELETE':
+                wo.conformity_doc_url = None
+                wo.conformity_uploaded_at = None
+                db.session.commit()
+                return jsonify(wo.to_dict())
+
+            data = request.json or {}
+            url = (data.get('conformity_doc_url') or '').strip()
+            if not url:
+                return jsonify({"error": "conformity_doc_url es requerido"}), 400
+            if not (url.startswith('http://') or url.startswith('https://')):
+                return jsonify({"error": "conformity_doc_url debe iniciar con http:// o https://"}), 400
+            wo.conformity_doc_url = url
+            wo.conformity_uploaded_at = (data.get('conformity_uploaded_at')
+                                          or datetime.now().strftime('%Y-%m-%d'))
+            db.session.commit()
+            return jsonify(wo.to_dict())
+        except Exception as e:
+            db.session.rollback()
+            logger.exception(f"update_ot_conformity error: {e}")
+            return jsonify({"error": str(e)}), 500
+
+    @app.route('/api/pending-conformity', methods=['GET'])
+    def get_pending_conformity():
+        """OTs de proveedor que aun no tienen conformidad firmada/enviada
+        a logistica. Por defecto solo cerradas (donde aplica el pago).
+
+        Query:
+          ?include_open=1   incluye OTs no cerradas (preview)
+        """
+        try:
+            include_open = request.args.get('include_open', '0') == '1'
+            q = WorkOrder.query.filter(
+                WorkOrder.provider_id.isnot(None),
+                db.or_(
+                    WorkOrder.conformity_doc_url.is_(None),
+                    WorkOrder.conformity_doc_url == '',
+                ),
+            )
+            if not include_open:
+                q = q.filter(WorkOrder.status == 'Cerrada')
+            ots = q.order_by(WorkOrder.id.desc()).all()
+
+            results = []
+            for wo in ots:
+                eq = Equipment.query.get(wo.equipment_id) if wo.equipment_id else None
+                prov = Provider.query.get(wo.provider_id) if wo.provider_id else None
+                results.append({
+                    'id': wo.id,
+                    'code': wo.code,
+                    'description': wo.description,
+                    'equipment': f"{eq.tag or ''} {eq.name}".strip() if eq else '-',
+                    'provider': prov.name if prov else '-',
+                    'status': wo.status,
+                    'maintenance_type': wo.maintenance_type,
+                    'real_end_date': wo.real_end_date,
+                    'scheduled_date': wo.scheduled_date,
+                    'has_report': bool(wo.report_url),
+                })
+            return jsonify(results)
+        except Exception as e:
+            logger.exception(f"get_pending_conformity error: {e}")
+            return jsonify({"error": str(e)}), 500
+
     @app.route('/api/pending-reports', methods=['GET'])
     def get_pending_reports():
         """List OTs that require a report but haven't received one."""

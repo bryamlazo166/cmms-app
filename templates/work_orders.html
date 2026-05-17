@@ -217,6 +217,12 @@
                             <option value="received">Informe recibido</option>
                         </select>
 
+                        <select id="planningConformityFilter" class="filter-btn" onchange="applyFilters()" title="Conformidad de servicio enviada a logistica (solo OTs con proveedor)">
+                            <option value="all">Conformidad: Todas</option>
+                            <option value="pending">Pendiente conformidad</option>
+                            <option value="sent">Conformidad enviada</option>
+                        </select>
+
                         <div class="search-bar">
                             <input type="text" id="searchPlanning" placeholder="Buscar OT..." onkeyup="applyFilters()">
                         </div>
@@ -532,6 +538,33 @@
                                     <i class="fas fa-external-link-alt"></i> Abrir
                                 </a>
                             </div>
+                        </div>
+
+                        <!-- Conformidad de Servicio (proveedor) -->
+                        <div id="conformitySection" style="background: #1e1e1e; border-radius: 8px; padding: 15px; margin-bottom: 15px; border: 1px solid #1a3a2a; display:none;">
+                            <h4 style="margin: 0 0 10px 0; color: #30D158;"><i class="fas fa-file-signature"></i> Conformidad de Servicio</h4>
+                            <p style="font-size:.78rem;color:#999;margin:0 0 10px 0;">
+                                Una vez firmada por mantenimiento y enviada a logistica para pago, pega aqui el link del PDF/imagen en Drive.
+                            </p>
+                            <div style="display:flex;gap:8px;align-items:end;">
+                                <div style="flex:1;">
+                                    <label style="font-size:.70rem;color:#888;display:block;margin-bottom:2px;">
+                                        <i class="fas fa-link"></i> Link de conformidad firmada (Drive / OneDrive)
+                                    </label>
+                                    <input type="url" id="conformityUrl" onchange="updateConformity()" placeholder="https://drive.google.com/file/d/..." style="width:100%;height:32px;background:#2a2a2e;border:1px solid #444;border-radius:6px;color:#ddd;padding:0 8px;font-size:.82rem">
+                                </div>
+                                <div style="width:130px;">
+                                    <label style="font-size:.70rem;color:#888;display:block;margin-bottom:2px;">Fecha</label>
+                                    <input type="date" id="conformityDate" readonly style="width:100%;height:32px;background:#2a2a2e;border:1px solid #444;border-radius:6px;color:#aaa;padding:0 6px;font-size:.80rem">
+                                </div>
+                                <a id="conformityUrlOpen" href="#" target="_blank" style="display:none;height:32px;padding:0 12px;background:#30D158;color:#fff;text-decoration:none;border-radius:6px;font-size:.80rem;line-height:32px;">
+                                    <i class="fas fa-external-link-alt"></i> Abrir
+                                </a>
+                                <button type="button" id="conformityClearBtn" onclick="clearConformity()" style="display:none;height:32px;padding:0 10px;background:#FF453A;color:#fff;border:none;border-radius:6px;font-size:.78rem;cursor:pointer;">
+                                    <i class="fas fa-times"></i> Quitar
+                                </button>
+                            </div>
+                            <div id="conformityBadge" style="margin-top:8px;font-size:.78rem;"></div>
                         </div>
 
                         <!-- Botones de Accion -->
