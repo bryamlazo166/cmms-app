@@ -1592,10 +1592,18 @@ def register_core_routes(app, db, logger, app_build_tag,
         try:
             from flask import send_file
             from utils.pdf_helpers import generate_daily_coordination_pdf
+            from utils.specialty_helpers import (
+                resolve_ot_specialty, resolve_notice_specialty, normalize_specialty_label,
+            )
 
             area_id = request.args.get('area_id', type=int)
             include_closed = request.args.get('include_closed', '0') == '1'
             include_with_ot = request.args.get('include_with_ot', '0') == '1'
+
+            specialty_arg = (request.args.get('specialty') or '').strip().upper().replace('_', ' ')
+            specialty_filter = None
+            if specialty_arg in ('MECANICO', 'ELECTRICO'):
+                specialty_filter = specialty_arg
 
             # Pre-cargar taxonomia para enriquecer
             from models import Component
@@ -1651,6 +1659,7 @@ def register_core_routes(app, db, logger, app_build_tag,
                     'scheduled_date': wo.scheduled_date,
                     'technician_name': tech_name,
                     'description': wo.description,
+                    'specialty': resolve_ot_specialty(wo, equipment=eq),
                 })
 
             # Avisos pendientes (no cerrados). Por defecto solo los que aun no
@@ -1693,19 +1702,35 @@ def register_core_routes(app, db, logger, app_build_tag,
                     'created_date': getattr(n, 'request_date', None),
                     'reporter': getattr(n, 'reporter_name', None),
                     'description': n.description,
+                    'specialty': resolve_notice_specialty(n, equipment=eq),
                 })
 
-            subtitle = None
+            subtitle_parts = []
             if area_id and area_id in areas:
-                subtitle = f"Filtro por area: <b>{areas[area_id].name}</b>"
+                subtitle_parts.append(f"Filtro por area: <b>{areas[area_id].name}</b>")
+            if specialty_filter:
+                subtitle_parts.append(f"Especialidad: <b>{specialty_filter}</b>")
+            subtitle = ' &nbsp;|&nbsp; '.join(subtitle_parts) if subtitle_parts else None
+
+            title = 'Hoja de Coordinacion Diaria'
+            if specialty_filter == 'MECANICO':
+                title += ' — MECANICA'
+            elif specialty_filter == 'ELECTRICO':
+                title += ' — ELECTRICA'
 
             pdf = generate_daily_coordination_pdf(
                 ots_data, notices_data,
-                title='Hoja de Coordinacion Diaria',
+                title=title,
                 subtitle=subtitle,
+                specialty_filter=specialty_filter,
             )
 
-            fname = f"coordinacion_{dt.date.today().isoformat()}.pdf"
+            fname_suffix = ''
+            if specialty_filter == 'MECANICO':
+                fname_suffix = '_mecanica'
+            elif specialty_filter == 'ELECTRICO':
+                fname_suffix = '_electrica'
+            fname = f"coordinacion{fname_suffix}_{dt.date.today().isoformat()}.pdf"
             return send_file(pdf, mimetype='application/pdf',
                              as_attachment=False, download_name=fname)
         except Exception as e:

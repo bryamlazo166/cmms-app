@@ -116,11 +116,26 @@ def _status_color(status):
     return colors.HexColor('#FFFFFF')
 
 
+_SPECIALTY_BADGE = {
+    'MECANICO': ('MEC', colors.HexColor('#0A84FF')),
+    'ELECTRICO': ('ELE', colors.HexColor('#FF9F0A')),
+    'MIXTO': ('MIX', colors.HexColor('#AF52DE')),
+    'SIN CLASIF': ('S/C', colors.HexColor('#8E8E93')),
+    'SIN ASIGNAR': ('S/C', colors.HexColor('#8E8E93')),
+}
+
+
+def _spec_paragraph(spec):
+    label, color = _SPECIALTY_BADGE.get((spec or '').upper(), ('-', colors.grey))
+    style = ParagraphStyle('spec', parent=_cell_bold, textColor=color, alignment=1)
+    return Paragraph(label, style)
+
+
 def build_ots_table(ots):
     """ots: lista de dicts con campos: code, equipment_name, equipment_tag, area_name,
        component_name, maintenance_type, status, priority, criticality,
-       scheduled_date, technician_name, description"""
-    headers = ['#', 'Codigo', 'Equipo', 'Componente', 'Area', 'Tipo', 'Estado',
+       scheduled_date, technician_name, description, specialty"""
+    headers = ['#', 'Codigo', 'Esp.', 'Equipo', 'Componente', 'Area', 'Tipo', 'Estado',
                'Prio', 'Fecha Prog', 'Tecnico', 'Descripcion']
     data = [[_p(h, _cell_bold) for h in headers]]
 
@@ -129,6 +144,7 @@ def build_ots_table(ots):
         row = [
             _p(str(i)),
             _p(ot.get('code') or '-', _cell_bold),
+            _spec_paragraph(ot.get('specialty')),
             _equip_paragraph(ot.get('equipment_tag'), ot.get('equipment_name')),
             _p(ot.get('component_name') or '-'),
             _p(ot.get('area_name') or '-'),
@@ -142,9 +158,8 @@ def build_ots_table(ots):
         data.append(row)
 
     # Anchos en mm: total ~277 (A4 landscape sin margenes ~277mm)
-    # Equipo se reduce gracias al wrap de 2 lineas; descripcion gana espacio.
-    col_widths = [8*mm, 18*mm, 28*mm, 26*mm, 20*mm, 16*mm, 16*mm,
-                  10*mm, 14*mm, 26*mm, 95*mm]
+    col_widths = [7*mm, 17*mm, 10*mm, 27*mm, 25*mm, 19*mm, 15*mm, 15*mm,
+                  9*mm, 13*mm, 25*mm, 95*mm]
 
     table = Table(data, colWidths=col_widths, repeatRows=1)
     style = TableStyle([
@@ -170,8 +185,8 @@ def build_ots_table(ots):
 def build_notices_table(notices):
     """notices: lista de dicts con campos: code, equipment_name, equipment_tag, area_name,
        component_name, failure_mode, criticality, priority, status,
-       created_date, reporter, description, blockage_object"""
-    headers = ['#', 'Codigo', 'Equipo', 'Componente', 'Area', 'Modo Falla',
+       created_date, reporter, description, blockage_object, specialty"""
+    headers = ['#', 'Codigo', 'Esp.', 'Equipo', 'Componente', 'Area', 'Modo Falla',
                'Bloqueo', 'Crit', 'Estado', 'Fecha', 'Reportado', 'Descripcion']
     data = [[_p(h, _cell_bold) for h in headers]]
 
@@ -179,6 +194,7 @@ def build_notices_table(notices):
         row = [
             _p(str(i)),
             _p(n.get('code') or n.get('id_str') or '-', _cell_bold),
+            _spec_paragraph(n.get('specialty')),
             _equip_paragraph(n.get('equipment_tag'), n.get('equipment_name')),
             _p(n.get('component_name') or '-'),
             _p(n.get('area_name') or '-'),
@@ -192,8 +208,8 @@ def build_notices_table(notices):
         ]
         data.append(row)
 
-    col_widths = [8*mm, 18*mm, 28*mm, 22*mm, 20*mm, 22*mm, 16*mm,
-                  12*mm, 16*mm, 14*mm, 24*mm, 77*mm]
+    col_widths = [7*mm, 17*mm, 10*mm, 27*mm, 21*mm, 19*mm, 21*mm, 15*mm,
+                  11*mm, 15*mm, 13*mm, 23*mm, 78*mm]
 
     table = Table(data, colWidths=col_widths, repeatRows=1)
     style = TableStyle([
@@ -227,9 +243,19 @@ def _make_footer(canvas, doc):
     canvas.restoreState()
 
 
+def _is_unclassified(spec):
+    return (spec or '').upper().strip() in ('', 'SIN CLASIF', 'SIN ASIGNAR', 'SIN_CLASIF')
+
+
 def generate_daily_coordination_pdf(ots, notices, title='Hoja de Coordinacion Diaria',
-                                    subtitle=None):
-    """Genera el PDF y devuelve un BytesIO listo para enviar."""
+                                    subtitle=None, specialty_filter=None):
+    """Genera el PDF y devuelve un BytesIO listo para enviar.
+
+    Si `specialty_filter` se provee ('MECANICO' / 'ELECTRICO'), las secciones
+    principales muestran solo items de esa especialidad (MIXTO entra en ambas).
+    Los items SIN CLASIF se listan al final en una seccion separada con un
+    aviso para forzar su clasificacion.
+    """
     buf = BytesIO()
     doc = SimpleDocTemplate(
         buf,
@@ -240,10 +266,29 @@ def generate_daily_coordination_pdf(ots, notices, title='Hoja de Coordinacion Di
     )
     elements = []
 
+    # Particionar por especialidad
+    wanted = (specialty_filter or '').upper().strip().replace('_', ' ') or None
+
+    def _spec_match(spec):
+        if not wanted:
+            return True
+        s = (spec or '').upper().strip()
+        if s == wanted:
+            return True
+        if s == 'MIXTO' and wanted in ('MECANICO', 'ELECTRICO'):
+            return True
+        return False
+
+    ots_in = [o for o in ots if _spec_match(o.get('specialty')) and not _is_unclassified(o.get('specialty'))]
+    notices_in = [n for n in notices if _spec_match(n.get('specialty')) and not _is_unclassified(n.get('specialty'))]
+    ots_uncls = [o for o in ots if _is_unclassified(o.get('specialty'))]
+    notices_uncls = [n for n in notices if _is_unclassified(n.get('specialty'))]
+
     elements.append(_p(title, _title_style))
     meta_lines = [
         f"Fecha de impresion: <b>{datetime.now().strftime('%Y-%m-%d %H:%M')}</b>",
-        f"Total OTs activas: <b>{len(ots)}</b> | Total Avisos pendientes: <b>{len(notices)}</b>",
+        f"OTs en seccion: <b>{len(ots_in)}</b> | Avisos en seccion: <b>{len(notices_in)}</b>"
+        + (f" | Sin clasificar: <b>{len(ots_uncls) + len(notices_uncls)}</b>" if (ots_uncls or notices_uncls) else ''),
     ]
     if subtitle:
         meta_lines.insert(0, subtitle)
@@ -252,20 +297,52 @@ def generate_daily_coordination_pdf(ots, notices, title='Hoja de Coordinacion Di
     elements.append(Spacer(1, 4*mm))
 
     # Seccion OTs
-    elements.append(Paragraph(f"ORDENES DE TRABAJO ACTIVAS ({len(ots)})", _section_style))
-    if ots:
-        elements.append(build_ots_table(ots))
+    ot_header = f"ORDENES DE TRABAJO ACTIVAS ({len(ots_in)})"
+    if wanted:
+        ot_header += f" — {wanted}"
+    elements.append(Paragraph(ot_header, _section_style))
+    if ots_in:
+        elements.append(build_ots_table(ots_in))
     else:
-        elements.append(_p("Sin OTs activas en el filtro actual.", _meta_style))
+        elements.append(_p("Sin OTs en esta especialidad.", _meta_style))
 
     elements.append(Spacer(1, 6*mm))
 
     # Seccion Avisos
-    elements.append(Paragraph(f"AVISOS PENDIENTES ({len(notices)})", _section_style))
-    if notices:
-        elements.append(build_notices_table(notices))
+    n_header = f"AVISOS PENDIENTES ({len(notices_in)})"
+    if wanted:
+        n_header += f" — {wanted}"
+    elements.append(Paragraph(n_header, _section_style))
+    if notices_in:
+        elements.append(build_notices_table(notices_in))
     else:
-        elements.append(_p("Sin avisos pendientes en el filtro actual.", _meta_style))
+        elements.append(_p("Sin avisos en esta especialidad.", _meta_style))
+
+    # Seccion SIN CLASIFICAR (al final, con aviso)
+    if ots_uncls or notices_uncls:
+        elements.append(Spacer(1, 8*mm))
+        warn_style = ParagraphStyle(
+            'warn', parent=_section_style,
+            textColor=colors.HexColor('#FF453A')
+        )
+        elements.append(Paragraph(
+            f"⚠ SIN CLASIFICAR — REVISAR Y ASIGNAR ESPECIALIDAD "
+            f"({len(ots_uncls)} OTs, {len(notices_uncls)} Avisos)",
+            warn_style,
+        ))
+        elements.append(_p(
+            "Los items abajo no tienen especialidad asignada manualmente ni se pudo inferir. "
+            "Editar el aviso/OT y marcar especialidad antes del siguiente cierre del turno.",
+            _meta_style,
+        ))
+        elements.append(Spacer(1, 2*mm))
+        if ots_uncls:
+            elements.append(Paragraph(f"OTs sin clasificar ({len(ots_uncls)})", _section_style))
+            elements.append(build_ots_table(ots_uncls))
+            elements.append(Spacer(1, 4*mm))
+        if notices_uncls:
+            elements.append(Paragraph(f"Avisos sin clasificar ({len(notices_uncls)})", _section_style))
+            elements.append(build_notices_table(notices_uncls))
 
     # Espacio para firmas/notas
     elements.append(Spacer(1, 8*mm))

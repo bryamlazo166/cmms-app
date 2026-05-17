@@ -91,6 +91,72 @@ def infer_discipline_from_text(*texts):
     return 'SIN CLASIF'
 
 
+def resolve_ot_specialty(ot, equipment=None):
+    """Resuelve la especialidad de una OT para la Hoja Diaria.
+
+    Cascada:
+      1. Aviso vinculado tiene specialty manual -> usar.
+      2. Personal asignado / proveedor (specialty_for_ot).
+      3. Inferencia por palabras clave (descripcion + tag de equipo).
+    Devuelve uno de: MECANICO, ELECTRICO, MIXTO, SIN CLASIF.
+    """
+    notice = getattr(ot, 'notice', None)
+    if notice is not None:
+        manual = normalize_specialty_label(getattr(notice, 'specialty', None))
+        if manual in ('MECANICO', 'ELECTRICO', 'MIXTO'):
+            return manual
+
+    sp = specialty_for_ot(ot)
+    if sp in ('MECANICO', 'ELECTRICO', 'MIXTO'):
+        return sp
+
+    eq_tag = getattr(equipment, 'tag', None) if equipment is not None else None
+    eq_name = getattr(equipment, 'name', None) if equipment is not None else None
+    return infer_discipline_from_text(
+        getattr(ot, 'description', None),
+        getattr(ot, 'failure_mode', None),
+        eq_tag, eq_name,
+    )
+
+
+def resolve_notice_specialty(notice, equipment=None):
+    """Resuelve la especialidad de un Aviso para la Hoja Diaria.
+
+    Si el campo manual existe, lo usa. Sino, infiere por palabras clave.
+    """
+    manual = normalize_specialty_label(getattr(notice, 'specialty', None))
+    if manual in ('MECANICO', 'ELECTRICO', 'MIXTO'):
+        return manual
+
+    eq_tag = getattr(equipment, 'tag', None) if equipment is not None else None
+    eq_name = getattr(equipment, 'name', None) if equipment is not None else None
+    return infer_discipline_from_text(
+        getattr(notice, 'description', None),
+        getattr(notice, 'failure_mode', None),
+        getattr(notice, 'blockage_object', None),
+        eq_tag, eq_name,
+    )
+
+
+def specialty_matches_filter(item_specialty, wanted):
+    """True si un item de `item_specialty` debe aparecer en el PDF filtrado por `wanted`.
+
+    Reglas:
+      - wanted vacio/None -> True (sin filtro).
+      - MIXTO siempre aparece en ambos PDFs (mecanico y electrico).
+      - SIN_CLASIF: aparece solo si wanted == 'SIN CLASIF' o sin filtro.
+    """
+    if not wanted:
+        return True
+    item = (item_specialty or '').upper().strip()
+    target = (wanted or '').upper().strip().replace('_', ' ')
+    if item == target:
+        return True
+    if item == 'MIXTO' and target in ('MECANICO', 'ELECTRICO'):
+        return True
+    return False
+
+
 def discipline_for_weekly_item(item):
     """Disciplina de un WeeklyPlanItem.
     1. Si la OT vinculada existe y tiene personal -> usar specialty_for_ot
