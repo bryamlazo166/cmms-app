@@ -66,6 +66,7 @@ from routes.thickness_routes import register_thickness_routes
 from routes.shutdown_routes import register_shutdown_routes
 from routes.indicators_routes import register_indicators_routes
 from routes.plant_flow_routes import register_plant_flow_routes
+from routes.operatividad_routes import register_operatividad_routes
 from routes.notices_routes import register_notices_routes
 from routes.reports_routes import register_reports_routes
 from routes.rotative_assets_routes import register_rotative_assets_routes
@@ -1012,6 +1013,16 @@ register_admin_routes(
     app=app,
     db=db,
     logger=logger,
+)
+
+register_operatividad_routes(
+    app=app,
+    db=db,
+    logger=logger,
+    Equipment=Equipment,
+    Area=Area,
+    Line=Line,
+    WorkOrder=WorkOrder,
 )
 
 

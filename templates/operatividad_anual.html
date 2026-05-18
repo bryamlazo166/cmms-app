@@ -1,0 +1,295 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <link rel="icon" type="image/svg+xml" href="/static/favicon.svg">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Operatividad Anual — CMMS</title>
+    <script>(function(){try{var t=localStorage.getItem('cmms.theme');if(t=='management'||t=='developer'){document.documentElement.setAttribute('data-theme',t);}}catch(e){}})();</script>
+    <link rel="stylesheet" href="/static/css/style.css?v={{ v }}">
+    <link rel="stylesheet" href="/static/css/sidebar.css?v={{ v }}">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css">
+    <style>
+        .wrap{max-width:100%;margin:0 auto;padding:10px 14px}
+        h2 i{margin-right:8px;color:#34D472}
+        .subtitle{color:rgba(255,255,255,.50);font-size:.82rem;margin-bottom:14px}
+        .filters{display:flex;flex-wrap:wrap;gap:10px;align-items:end;background:var(--bg-primary,#1C1C1E);border:1px solid rgba(255,255,255,.08);border-radius:12px;padding:12px 14px;margin-bottom:14px}
+        .filters label{display:block;font-size:.7rem;color:rgba(255,255,255,.55);text-transform:uppercase;letter-spacing:.4px;margin-bottom:3px}
+        .filters select, .filters input[type=number]{height:32px;background:rgba(255,255,255,.06);border:1px solid rgba(255,255,255,.10);border-radius:7px;color:#fff;padding:0 8px;font-size:.84rem;min-width:130px}
+        .filters select:focus, .filters input:focus{border-color:#5AC8FA;outline:none}
+        .btn{height:32px;border:none;border-radius:7px;padding:0 12px;font-size:.82rem;font-weight:600;cursor:pointer;display:inline-flex;align-items:center;gap:6px;transition:opacity 150ms}
+        .btn:hover{opacity:.85}
+        .btn-primary{background:#0A84FF;color:#fff}
+        .btn-secondary{background:rgba(255,255,255,.10);color:rgba(255,255,255,.70)}
+        .legend{display:flex;flex-wrap:wrap;gap:14px;font-size:.78rem;color:rgba(255,255,255,.65);margin-left:auto}
+        .legend .sw{display:inline-block;width:12px;height:12px;border-radius:3px;margin-right:5px;vertical-align:-2px}
+        .sw-op{background:#34D472}
+        .sw-inop{background:#FFCC2E}
+        .sw-future{background:rgba(255,255,255,.12)}
+
+        .grid-wrap{overflow:auto;background:var(--bg-primary,#1C1C1E);border:1px solid rgba(255,255,255,.08);border-radius:12px;padding:8px}
+        table.op-grid{border-collapse:separate;border-spacing:0;font-size:.78rem;color:rgba(255,255,255,.85)}
+        table.op-grid th, table.op-grid td{padding:3px 4px;text-align:center;white-space:nowrap}
+        table.op-grid thead th{background:rgba(255,255,255,.04);color:#9ab0cb;font-size:.7rem;text-transform:uppercase;letter-spacing:.4px;font-weight:600;position:sticky;top:0;z-index:3}
+        table.op-grid thead tr.month-row th{border-bottom:1px solid rgba(255,255,255,.10);padding:6px 4px}
+        table.op-grid thead tr.week-row th{border-bottom:1px solid rgba(255,255,255,.10);font-size:.62rem;padding:3px 2px;color:rgba(255,255,255,.45)}
+        table.op-grid th.equipment, table.op-grid td.equipment{position:sticky;left:0;background:var(--bg-primary,#1C1C1E);text-align:left;padding-left:10px;min-width:200px;max-width:240px;overflow:hidden;text-overflow:ellipsis;border-right:1px solid rgba(255,255,255,.10);z-index:2}
+        table.op-grid thead th.equipment{z-index:4}
+        table.op-grid td.equipment{font-weight:600}
+        table.op-grid td.equipment .eq-tag{color:#5AC8FA;font-weight:700;margin-right:6px}
+        table.op-grid td.equipment .eq-name{color:rgba(255,255,255,.65);font-weight:400;font-size:.74rem}
+        table.op-grid td.cell{width:18px;height:22px;padding:1px}
+        table.op-grid td.cell .box{display:inline-block;width:14px;height:14px;border-radius:3px;cursor:pointer;transition:transform 80ms}
+        table.op-grid td.cell .box:hover{transform:scale(1.35);outline:1px solid rgba(255,255,255,.55)}
+        .box.operative{background:#34D472}
+        .box.inoperative{background:#FFCC2E}
+        .box.future{background:rgba(255,255,255,.10)}
+        table.op-grid td.month-end{border-right:1px solid rgba(255,255,255,.08)}
+        table.op-grid th.month-end{border-right:1px solid rgba(255,255,255,.08)}
+        table.op-grid tbody tr:hover{background:rgba(10,132,255,.05)}
+        table.op-grid td.avail{font-weight:700;color:#34D472;padding-left:12px;padding-right:10px;border-left:1px solid rgba(255,255,255,.10)}
+        table.op-grid td.avail.warn{color:#FFCC2E}
+        table.op-grid td.avail.bad{color:#FF6B61}
+        .empty{padding:30px;text-align:center;color:rgba(255,255,255,.40);font-size:.88rem}
+        .err{color:#FF6B61;font-size:.82rem;padding:8px}
+
+        /* Modal de detalle de celda */
+        .modal-bg{position:fixed;inset:0;background:rgba(0,0,0,.65);z-index:9000;display:none;align-items:center;justify-content:center;padding:20px}
+        .modal-bg.show{display:flex}
+        .modal{background:#1C1C1E;border:1px solid rgba(255,255,255,.10);border-radius:14px;max-width:700px;width:100%;max-height:80vh;overflow:auto;padding:18px}
+        .modal h3{margin:0 0 6px;font-size:1rem;color:#fff}
+        .modal .close{float:right;background:rgba(255,255,255,.08);border:0;color:#fff;width:28px;height:28px;border-radius:50%;cursor:pointer;font-size:.9rem}
+        .modal table{width:100%;border-collapse:collapse;margin-top:8px;font-size:.82rem}
+        .modal th, .modal td{padding:6px 8px;text-align:left;border-bottom:1px solid rgba(255,255,255,.05);color:rgba(255,255,255,.85)}
+        .modal th{color:#9ab0cb;font-size:.7rem;text-transform:uppercase}
+    </style>
+</head>
+<body>
+    <nav class="sidebar">
+        <div class="logo-details"><i class="fas fa-industry icon"></i><div class="logo_name">CMMS Pro</div><i class="fas fa-bars" id="btn_toggle"></i></div>
+        <ul class="nav-list"></ul>
+    </nav>
+    <section class="home-section">
+        <div class="wrap">
+            <h2><i class="fas fa-calendar-check"></i>Operatividad Anual de Equipos</h2>
+            <p class="subtitle">Semana verde = el equipo operó al menos un día. Semana amarilla = los 7 días estuvo inoperativo. Click en una celda para ver las OTs que causaron el paro.</p>
+
+            <div class="filters">
+                <div>
+                    <label>Año</label>
+                    <select id="yearSel"></select>
+                </div>
+                <div>
+                    <label>Área</label>
+                    <select id="areaSel"><option value="">Todas</option></select>
+                </div>
+                <div>
+                    <label>Línea</label>
+                    <select id="lineSel"><option value="">Todas</option></select>
+                </div>
+                <div>
+                    <label>Equipo</label>
+                    <select id="equipSel"><option value="">Todos</option></select>
+                </div>
+                <div><button class="btn btn-primary" onclick="loadGrid()"><i class="fas fa-sync"></i> Actualizar</button></div>
+                <div><button class="btn btn-secondary" onclick="resetFilters()"><i class="fas fa-eraser"></i> Limpiar</button></div>
+
+                <div class="legend">
+                    <span><span class="sw sw-op"></span>Operativo (≥1 día)</span>
+                    <span><span class="sw sw-inop"></span>Inoperativo (semana completa)</span>
+                    <span><span class="sw sw-future"></span>Futuro / sin datos</span>
+                </div>
+            </div>
+
+            <div id="gridContainer" class="grid-wrap">
+                <div class="empty">Cargando…</div>
+            </div>
+        </div>
+    </section>
+
+    <div class="modal-bg" id="modal" onclick="if(event.target===this)closeModal()">
+        <div class="modal">
+            <button class="close" onclick="closeModal()"><i class="fas fa-times"></i></button>
+            <h3 id="modalTitle">Detalle</h3>
+            <div id="modalBody">Cargando…</div>
+        </div>
+    </div>
+
+    <script>
+        const MONTH_NAMES = ['ENE','FEB','MAR','ABR','MAY','JUN','JUL','AGO','SEP','OCT','NOV','DIC'];
+        let FILTERS_DATA = { areas: [], lines: [], equipments: [] };
+
+        function escapeHtml(s){return String(s==null?'':s).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));}
+
+        function populateYearSelector(){
+            const sel = document.getElementById('yearSel');
+            const current = new Date().getFullYear();
+            // Rango: 2023 hasta current+2 para permitir programar a futuro
+            const opts = [];
+            for (let y = current + 2; y >= 2023; y--){
+                opts.push(`<option value="${y}" ${y===current?'selected':''}>${y}</option>`);
+            }
+            sel.innerHTML = opts.join('');
+        }
+
+        async function loadFilters(){
+            try {
+                const r = await fetch('/api/operatividad-anual/filters');
+                const d = await r.json();
+                if (!r.ok) throw new Error(d.error || 'error');
+                FILTERS_DATA = d;
+                renderAreaSel();
+                renderLineSel();
+                renderEquipSel();
+            } catch (e) {
+                document.getElementById('gridContainer').innerHTML = `<div class="err">Error cargando filtros: ${e.message}</div>`;
+            }
+        }
+
+        function renderAreaSel(){
+            const sel = document.getElementById('areaSel');
+            sel.innerHTML = '<option value="">Todas</option>' +
+                FILTERS_DATA.areas.map(a => `<option value="${a.id}">${escapeHtml(a.name)}</option>`).join('');
+        }
+        function renderLineSel(){
+            const sel = document.getElementById('lineSel');
+            const areaId = document.getElementById('areaSel').value;
+            const lines = areaId ? FILTERS_DATA.lines.filter(l => String(l.area_id) === String(areaId)) : FILTERS_DATA.lines;
+            sel.innerHTML = '<option value="">Todas</option>' +
+                lines.map(l => `<option value="${l.id}">${escapeHtml(l.name)}</option>`).join('');
+        }
+        function renderEquipSel(){
+            const sel = document.getElementById('equipSel');
+            const areaId = document.getElementById('areaSel').value;
+            const lineId = document.getElementById('lineSel').value;
+            let eqs = FILTERS_DATA.equipments;
+            if (lineId) eqs = eqs.filter(e => String(e.line_id) === String(lineId));
+            else if (areaId) eqs = eqs.filter(e => String(e.area_id) === String(areaId));
+            sel.innerHTML = '<option value="">Todos</option>' +
+                eqs.map(e => `<option value="${e.id}">${escapeHtml(e.tag)} — ${escapeHtml(e.name)}</option>`).join('');
+        }
+
+        function resetFilters(){
+            document.getElementById('areaSel').value = '';
+            document.getElementById('lineSel').value = '';
+            document.getElementById('equipSel').value = '';
+            renderLineSel(); renderEquipSel();
+            loadGrid();
+        }
+
+        async function loadGrid(){
+            const container = document.getElementById('gridContainer');
+            container.innerHTML = '<div class="empty">Cargando…</div>';
+            const params = new URLSearchParams();
+            params.set('year', document.getElementById('yearSel').value);
+            const a = document.getElementById('areaSel').value;
+            const l = document.getElementById('lineSel').value;
+            const e = document.getElementById('equipSel').value;
+            if (a) params.set('area_id', a);
+            if (l) params.set('line_id', l);
+            if (e) params.set('equipment_id', e);
+            try {
+                const r = await fetch('/api/operatividad-anual?' + params.toString());
+                const d = await r.json();
+                if (!r.ok) { container.innerHTML = `<div class="err">${d.error || 'Error'}</div>`; return; }
+                renderGrid(d);
+            } catch (err) {
+                container.innerHTML = `<div class="err">Error: ${err.message}</div>`;
+            }
+        }
+
+        function renderGrid(data){
+            const container = document.getElementById('gridContainer');
+            if (!data.equipments.length){
+                container.innerHTML = '<div class="empty">No hay equipos para los filtros seleccionados.</div>';
+                return;
+            }
+            // Cabecera: fila de meses + fila de semanas
+            let html = '<table class="op-grid"><thead>';
+            html += '<tr class="month-row"><th class="equipment" rowspan="2">Equipo</th>';
+            for (let m = 0; m < 12; m++){
+                html += `<th colspan="4" class="month-end">${MONTH_NAMES[m]}</th>`;
+            }
+            html += '<th rowspan="2">% Disp.<br><span style="font-size:.6rem;color:rgba(255,255,255,.40)">YTD</span></th>';
+            html += '</tr>';
+            html += '<tr class="week-row">';
+            for (let m = 0; m < 12; m++){
+                for (let w = 1; w <= 4; w++){
+                    html += `<th class="${w===4?'month-end':''}">S${w}</th>`;
+                }
+            }
+            html += '</tr></thead><tbody>';
+
+            for (const eq of data.equipments){
+                html += '<tr>';
+                html += `<td class="equipment"><span class="eq-tag">${escapeHtml(eq.tag||'')}</span><span class="eq-name">${escapeHtml(eq.name||'')}</span></td>`;
+                eq.cells.forEach((c, idx) => {
+                    const monthEnd = (idx % 4 === 3) ? 'month-end' : '';
+                    const tooltip = `${MONTH_NAMES[c.month-1]} S${c.week}: ${c.start} → ${c.end}\n` +
+                                    `${c.down_days}/${c.total_days} días inoperativos`;
+                    html += `<td class="cell ${monthEnd}">` +
+                            `<span class="box ${c.status}" title="${tooltip}" ` +
+                            `onclick="openCell(${data.year}, ${eq.id}, ${c.month}, ${c.week}, '${escapeHtml(eq.tag||'')} ${escapeHtml(eq.name||'')}')"></span>` +
+                            `</td>`;
+                });
+                const availClass = eq.availability >= 95 ? '' : (eq.availability >= 85 ? 'warn' : 'bad');
+                html += `<td class="avail ${availClass}">${eq.availability.toFixed(1)}%</td>`;
+                html += '</tr>';
+            }
+            html += '</tbody></table>';
+            container.innerHTML = html;
+        }
+
+        async function openCell(year, equipmentId, month, week, equipLabel){
+            const modal = document.getElementById('modal');
+            const body = document.getElementById('modalBody');
+            const title = document.getElementById('modalTitle');
+            title.textContent = `${equipLabel} — ${MONTH_NAMES[month-1]} S${week} ${year}`;
+            body.innerHTML = 'Cargando…';
+            modal.classList.add('show');
+            try {
+                const r = await fetch(`/api/operatividad-anual/cell?year=${year}&month=${month}&week=${week}&equipment_id=${equipmentId}`);
+                const d = await r.json();
+                if (!r.ok) { body.innerHTML = `<div class="err">${d.error || 'Error'}</div>`; return; }
+                if (!d.ots || !d.ots.length){
+                    body.innerHTML = `<p style="color:rgba(255,255,255,.55);font-size:.86rem">No hay OTs con paro registrado en esta semana (${d.start} → ${d.end}). El equipo operó normal.</p>`;
+                    return;
+                }
+                const rows = d.ots.map(o => `
+                    <tr>
+                        <td><a href="/ordenes?focus=${o.id}" style="color:#5AC8FA">${escapeHtml(o.code||'OT-?')}</a></td>
+                        <td>${escapeHtml(o.maintenance_type||'')}</td>
+                        <td>${o.start.replace('T',' ')}</td>
+                        <td>${o.end.replace('T',' ')}</td>
+                        <td style="text-align:right">${o.downtime_hours} h</td>
+                        <td>${escapeHtml(o.status||'')}</td>
+                    </tr>
+                    <tr><td colspan="6" style="color:rgba(255,255,255,.55);font-size:.78rem;padding-top:0">${escapeHtml(o.description||'')}</td></tr>
+                `).join('');
+                body.innerHTML = `
+                    <p style="color:rgba(255,255,255,.55);font-size:.82rem;margin:6px 0 4px">Semana ${d.start} → ${d.end}</p>
+                    <table>
+                        <thead><tr><th>OT</th><th>Tipo</th><th>Inicio</th><th>Fin</th><th style="text-align:right">Horas</th><th>Estado</th></tr></thead>
+                        <tbody>${rows}</tbody>
+                    </table>`;
+            } catch (e) {
+                body.innerHTML = `<div class="err">Error: ${e.message}</div>`;
+            }
+        }
+
+        function closeModal(){ document.getElementById('modal').classList.remove('show'); }
+
+        document.addEventListener('keydown', e => { if (e.key === 'Escape') closeModal(); });
+        document.getElementById('areaSel').addEventListener('change', () => { renderLineSel(); renderEquipSel(); });
+        document.getElementById('lineSel').addEventListener('change', () => { renderEquipSel(); });
+        document.getElementById('yearSel') && document.getElementById('yearSel').addEventListener('change', loadGrid);
+
+        document.addEventListener('DOMContentLoaded', async () => {
+            populateYearSelector();
+            await loadFilters();
+            loadGrid();
+        });
+    </script>
+    <script src="/static/js/sidebar.js?v={{ v }}"></script>
+</body>
+</html>
