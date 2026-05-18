@@ -82,13 +82,15 @@ def register_operatividad_routes(app, db, logger, Equipment, Area, Line, WorkOrd
     @login_required
     def operatividad_filters():
         """Devuelve areas, lineas (con area_id) y equipos (con line_id, area_id)
-        para alimentar los filtros en cascada."""
+        para alimentar los filtros en cascada. El area del equipo se deriva
+        a traves de su linea (Equipment no tiene area_id directo)."""
         try:
             areas = [{"id": a.id, "name": a.name} for a in Area.query.order_by(Area.name).all()]
-            lines = [{"id": l.id, "name": l.name, "area_id": l.area_id}
-                     for l in Line.query.order_by(Line.name).all()]
+            lines_data = Line.query.order_by(Line.name).all()
+            line_to_area = {l.id: l.area_id for l in lines_data}
+            lines = [{"id": l.id, "name": l.name, "area_id": l.area_id} for l in lines_data]
             equipments = [{"id": e.id, "tag": e.tag, "name": e.name,
-                           "line_id": e.line_id, "area_id": e.area_id}
+                           "line_id": e.line_id, "area_id": line_to_area.get(e.line_id)}
                           for e in Equipment.query.order_by(Equipment.tag).all()]
             return jsonify({"areas": areas, "lines": lines, "equipments": equipments})
         except Exception as e:
@@ -112,13 +114,21 @@ def register_operatividad_routes(app, db, logger, Equipment, Area, Line, WorkOrd
             line_id = request.args.get('line_id', type=int)
             equipment_id = request.args.get('equipment_id', type=int)
 
+            # Mapa line_id -> area_id (Equipment no tiene area_id directo,
+            # se deriva via su Line).
+            line_to_area = {l.id: l.area_id for l in Line.query.all()}
+
             q = Equipment.query
             if equipment_id:
                 q = q.filter(Equipment.id == equipment_id)
             elif line_id:
                 q = q.filter(Equipment.line_id == line_id)
             elif area_id:
-                q = q.filter(Equipment.area_id == area_id)
+                # Filtrar por todas las lineas que pertenecen al area
+                line_ids_of_area = [lid for lid, aid in line_to_area.items() if aid == area_id]
+                if not line_ids_of_area:
+                    return jsonify({"year": year, "equipments": [], "today": dt.date.today().isoformat()})
+                q = q.filter(Equipment.line_id.in_(line_ids_of_area))
             equipments = q.order_by(Equipment.tag).all()
 
             year_start = dt.date(year, 1, 1)
@@ -186,7 +196,7 @@ def register_operatividad_routes(app, db, logger, Equipment, Area, Line, WorkOrd
                     "id": eq.id,
                     "tag": eq.tag,
                     "name": eq.name,
-                    "area_id": eq.area_id,
+                    "area_id": line_to_area.get(eq.line_id),
                     "line_id": eq.line_id,
                     "cells": cells,
                     "availability": avail,
