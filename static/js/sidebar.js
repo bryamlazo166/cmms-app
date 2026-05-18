@@ -331,6 +331,8 @@
 
     const ADMIN_MENU_ITEMS = [
         { href: '/usuarios', icon: 'fas fa-users-cog', label: 'Usuarios', tip: 'Usuarios' },
+        { href: '/admin/telegram-users', icon: 'fab fa-telegram', label: 'Reporters Bot', tip: 'Usuarios autorizados del bot Telegram' },
+        { href: '/admin/bot-usage', icon: 'fas fa-robot', label: 'Uso del Bot', tip: 'Telemetría y costo del bot Telegram' },
         { href: '/mantenimiento-bd', icon: 'fas fa-database', label: 'Mant. BD', tip: 'Mantenimiento BD' },
         { href: '/admin/backup', icon: 'fas fa-cloud-download-alt', label: 'Backup BD', tip: 'Snapshot/restore de BD', restricted: true },
         { href: '/configuracion-kpi', icon: 'fas fa-filter', label: 'Alcance KPIs', tip: 'Que areas/equipos entran en indicadores', restricted: true }

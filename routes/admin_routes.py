@@ -522,3 +522,135 @@ def register_admin_routes(app, db, logger):
             return redirect(url_for('index'))
         from flask import render_template
         return render_template('bot_usage.html')
+
+    # ── USUARIOS DEL BOT TELEGRAM (REPORTERS) ────────────────────────────────
+    # Permite al admin asociar un chat_id de Telegram con un nombre y area,
+    # para que al crear un aviso desde el bot el reporter_name no sea
+    # genérico "Bot Telegram" sino la persona real que lo reportó.
+
+    @app.route('/api/admin/telegram-users', methods=['GET'])
+    @login_required
+    def list_telegram_users():
+        if not _is_admin():
+            return jsonify({"error": "Solo admin"}), 403
+        try:
+            rows = db.session.execute(text(
+                "SELECT chat_id, nombre, area, rol, activo, notas, created_at, updated_at, created_by "
+                "FROM bot_telegram_users ORDER BY activo DESC, nombre"
+            )).fetchall()
+            return jsonify([{
+                "chat_id": r[0], "nombre": r[1], "area": r[2], "rol": r[3],
+                "activo": bool(r[4]), "notas": r[5],
+                "created_at": r[6].isoformat() if r[6] else None,
+                "updated_at": r[7].isoformat() if r[7] else None,
+                "created_by": r[8],
+            } for r in rows])
+        except Exception as e:
+            logger.exception('list_telegram_users error')
+            return jsonify({"error": str(e)}), 500
+
+    @app.route('/api/admin/telegram-users', methods=['POST'])
+    @login_required
+    def create_telegram_user():
+        if not _is_admin():
+            return jsonify({"error": "Solo admin"}), 403
+        data = request.get_json() or {}
+        try:
+            chat_id = int(data.get('chat_id') or 0)
+            nombre = (data.get('nombre') or '').strip()
+            if not chat_id or not nombre:
+                return jsonify({"error": "chat_id y nombre son obligatorios"}), 400
+            rol = (data.get('rol') or 'reporter').strip().lower()
+            if rol not in ('admin', 'reporter'):
+                rol = 'reporter'
+            area = (data.get('area') or '').strip() or None
+            notas = (data.get('notas') or '').strip() or None
+            activo = bool(data.get('activo', True))
+
+            existing = db.session.execute(text(
+                "SELECT 1 FROM bot_telegram_users WHERE chat_id = :c"
+            ), {"c": chat_id}).scalar()
+            if existing:
+                return jsonify({"error": f"chat_id {chat_id} ya existe"}), 409
+
+            db.session.execute(text(
+                "INSERT INTO bot_telegram_users (chat_id, nombre, area, rol, activo, notas, created_by) "
+                "VALUES (:c, :n, :a, :r, :ac, :no, :cb)"
+            ), {"c": chat_id, "n": nombre, "a": area, "r": rol, "ac": activo,
+                "no": notas, "cb": current_user.username})
+            db.session.commit()
+            return jsonify({"ok": True, "chat_id": chat_id}), 201
+        except Exception as e:
+            db.session.rollback()
+            logger.exception('create_telegram_user error')
+            return jsonify({"error": str(e)}), 500
+
+    @app.route('/api/admin/telegram-users/<int:chat_id>', methods=['PUT'])
+    @login_required
+    def update_telegram_user(chat_id):
+        if not _is_admin():
+            return jsonify({"error": "Solo admin"}), 403
+        data = request.get_json() or {}
+        try:
+            updates = {}
+            if 'nombre' in data:
+                v = (data['nombre'] or '').strip()
+                if not v:
+                    return jsonify({"error": "nombre no puede estar vacío"}), 400
+                updates['nombre'] = v
+            if 'area' in data:
+                updates['area'] = (data['area'] or '').strip() or None
+            if 'rol' in data:
+                r = (data['rol'] or '').strip().lower()
+                if r in ('admin', 'reporter'):
+                    updates['rol'] = r
+            if 'activo' in data:
+                updates['activo'] = bool(data['activo'])
+            if 'notas' in data:
+                updates['notas'] = (data['notas'] or '').strip() or None
+
+            if not updates:
+                return jsonify({"error": "Sin campos para actualizar"}), 400
+
+            set_clause = ", ".join(f"{k} = :{k}" for k in updates.keys())
+            updates['c'] = chat_id
+            result = db.session.execute(text(
+                f"UPDATE bot_telegram_users SET {set_clause}, updated_at = CURRENT_TIMESTAMP WHERE chat_id = :c"
+            ), updates)
+            if result.rowcount == 0:
+                db.session.rollback()
+                return jsonify({"error": "No encontrado"}), 404
+            db.session.commit()
+            return jsonify({"ok": True})
+        except Exception as e:
+            db.session.rollback()
+            logger.exception('update_telegram_user error')
+            return jsonify({"error": str(e)}), 500
+
+    @app.route('/api/admin/telegram-users/<int:chat_id>', methods=['DELETE'])
+    @login_required
+    def delete_telegram_user(chat_id):
+        if not _is_admin():
+            return jsonify({"error": "Solo admin"}), 403
+        try:
+            result = db.session.execute(text(
+                "DELETE FROM bot_telegram_users WHERE chat_id = :c"
+            ), {"c": chat_id})
+            if result.rowcount == 0:
+                db.session.rollback()
+                return jsonify({"error": "No encontrado"}), 404
+            db.session.commit()
+            return jsonify({"ok": True})
+        except Exception as e:
+            db.session.rollback()
+            logger.exception('delete_telegram_user error')
+            return jsonify({"error": str(e)}), 500
+
+    @app.route('/admin/telegram-users', methods=['GET'])
+    @login_required
+    def telegram_users_page():
+        if not _is_admin():
+            from flask import redirect, url_for
+            return redirect(url_for('index'))
+        from flask import render_template
+        return render_template('telegram_users.html')

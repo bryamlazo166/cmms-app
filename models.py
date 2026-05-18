@@ -2088,6 +2088,41 @@ class HammerBatchMovement(db.Model):
 # tokens, latencia y costo estimado USD. Sirve para detectar abuso, anomalias,
 # y darle visibilidad real al gasto en IA (que de otro modo es invisible).
 
+class BotTelegramUser(db.Model):
+    """Usuarios autorizados del bot Telegram con nombre asociado al chat_id.
+
+    Reemplaza a la whitelist por variable de entorno (TELEGRAM_ALLOWED_CHAT_IDS):
+    el admin gestiona altas/bajas desde /admin/telegram-users.
+    El `nombre` se usa como reporter_name al crear avisos desde el bot.
+    `rol` queda preparado para futuro gating (admin | reporter), pero hoy
+    solo discrimina visualmente en el tablero.
+    """
+    __tablename__ = 'bot_telegram_users'
+
+    chat_id: Mapped[int] = mapped_column(primary_key=True, autoincrement=False)
+    nombre: Mapped[str] = mapped_column(String(120), nullable=False)
+    area: Mapped[str | None] = mapped_column(String(80), nullable=True)
+    rol: Mapped[str] = mapped_column(String(20), nullable=False, default='reporter')
+    activo: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
+    notas: Mapped[str | None] = mapped_column(String(300), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+    updated_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+    created_by: Mapped[str | None] = mapped_column(String(80), nullable=True)
+
+    def to_dict(self):
+        return {
+            "chat_id": self.chat_id,
+            "nombre": self.nombre,
+            "area": self.area,
+            "rol": self.rol,
+            "activo": self.activo,
+            "notas": self.notas,
+            "created_at": self.created_at.isoformat() if self.created_at else None,
+            "updated_at": self.updated_at.isoformat() if self.updated_at else None,
+            "created_by": self.created_by,
+        }
+
+
 class BotUsage(db.Model):
     __tablename__ = 'bot_usage'
     __table_args__ = (

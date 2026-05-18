@@ -79,6 +79,37 @@ _processed_lock = threading.Lock()
 _processed_table_ready = False
 
 
+# Cache en memoria de chat_id → nombre registrado en bot_telegram_users.
+# Se invalida cada 60 s para reflejar altas/bajas hechas desde el tablero web
+# sin reiniciar el bot.
+_registered_users_cache = {"ts": 0.0, "map": {}}
+
+
+def _get_registered_name(app, chat_id):
+    """Devuelve el nombre registrado para el chat_id, o None si no esta activo.
+
+    Lee de la tabla bot_telegram_users (gestionada desde /admin/telegram-users).
+    Solo considera usuarios con activo=true.
+    """
+    import time as _time
+    now = _time.time()
+    if now - _registered_users_cache["ts"] > 60:
+        try:
+            from sqlalchemy import text
+            from database import db as _db
+            with app.app_context():
+                rows = _db.session.execute(text(
+                    "SELECT chat_id, nombre FROM bot_telegram_users WHERE activo = true"
+                )).fetchall()
+                _registered_users_cache["map"] = {int(r[0]): r[1] for r in rows}
+                _registered_users_cache["ts"] = now
+        except Exception as e:
+            # Si la tabla aun no existe (deploy antiguo) o hay otro error,
+            # no rompemos el flujo — el bot sigue funcionando como antes.
+            logger.debug(f"_get_registered_name: cache refresh fallo: {e}")
+    return _registered_users_cache["map"].get(int(chat_id))
+
+
 def _ensure_processed_updates_table(app):
     """Crea la tabla bot_processed_updates si no existe (idempotente)."""
     global _processed_table_ready
@@ -1604,6 +1635,15 @@ pasados automaticamente y los usa como referencia. Pregunta cosas como
         return
 
     if action == 'create_notice':
+        # Si el chat_id esta registrado en bot_telegram_users, usar su nombre
+        # como reporter_name para que el aviso quede atribuido a la persona real.
+        # Si el LLM ya extrajo un nombre del texto (ej: "Juan reportó..."), lo
+        # respetamos; solo completamos cuando viene vacio o como generico.
+        _reg_name = _get_registered_name(app, chat_id)
+        if _reg_name:
+            _cur = (data.get('reporter_name') or '').strip()
+            if not _cur or _cur.lower() in ('bot telegram', 'telegram', 'bot'):
+                data['reporter_name'] = _reg_name
         code, nid, err = _create_notice(app, data)
         if code and nid:
             _pending_photos[chat_id] = {"entity_type": "notice", "entity_id": nid, "code": code}
