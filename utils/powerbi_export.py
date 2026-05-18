@@ -93,6 +93,19 @@ def query_work_orders(lookups):
         elif o.scheduled_date and o.status == 'Cerrada' and not o.real_end_date:
             on_time = 'Sin fecha cierre'
 
+        # Conformidad e Informe solo aplican a OTs con proveedor (trabajo
+        # externo). En OTs internas (Alimencorp) se marca 'N/A (interno)'
+        # para que los reportes/filtros no las cuenten como pendientes.
+        is_provider_ot = bool(o.provider_id)
+        if is_provider_ot:
+            conformidad_estado = 'Enviada' if (getattr(o, 'conformity_doc_url', None) or '').strip() else 'Pendiente'
+            informe_estado = 'Recibido' if (getattr(o, 'report_url', None) or '').strip() else (
+                (getattr(o, 'report_status', None) or 'Pendiente') if getattr(o, 'report_required', False) else 'No requerido'
+            )
+        else:
+            conformidad_estado = 'N/A (interno)'
+            informe_estado = 'N/A (interno)'
+
         rows.append({
             'Codigo_OT': o.code,
             'Codigo_Aviso': nt.code if nt else None,
@@ -129,6 +142,11 @@ def query_work_orders(lookups):
             'Reporte_Requerido': _yn(getattr(o, 'report_required', False)),
             'Reporte_Estado': getattr(o, 'report_status', None),
             'Reporte_Fecha_Limite': getattr(o, 'report_due_date', None),
+            'Informe': informe_estado,
+            'Link_Informe': getattr(o, 'report_url', None) or '',
+            'Conformidad': conformidad_estado,
+            'Fecha_Conformidad': getattr(o, 'conformity_uploaded_at', None) or '',
+            'Link_Conformidad': getattr(o, 'conformity_doc_url', None) or '',
         })
     return rows
 

@@ -1130,6 +1130,19 @@ def register_work_orders_routes(
                         comp.name if comp else None,
                     )
 
+                # Conformidad e Informe solo aplican a OTs con proveedor
+                # (trabajo externo). En OTs internas (Alimencorp) se marca N/A
+                # para que el filtro de Excel no las cuente como "pendientes".
+                is_provider_ot = bool(wo.provider_id)
+                if is_provider_ot:
+                    conformidad_estado = 'Enviada' if (wo.conformity_doc_url or '').strip() else 'Pendiente'
+                    informe_estado = 'Recibido' if (wo.report_url or '').strip() else (
+                        (wo.report_status or 'Pendiente') if wo.report_required else 'No requerido'
+                    )
+                else:
+                    conformidad_estado = 'N/A (interno)'
+                    informe_estado = 'N/A (interno)'
+
                 data.append(
                     {
                         'Código': wo.code,
@@ -1155,6 +1168,11 @@ def register_work_orders_routes(
                         'Fecha Fin Real': wo.real_end_date,
                         'Duración Real (Hr)': wo.real_duration,
                         'Comentarios Ejecución': wo.execution_comments,
+                        'Informe': informe_estado,
+                        'Link Informe': wo.report_url or '',
+                        'Conformidad': conformidad_estado,
+                        'Fecha Conformidad': wo.conformity_uploaded_at or '',
+                        'Link Conformidad': wo.conformity_doc_url or '',
                     }
                 )
 
