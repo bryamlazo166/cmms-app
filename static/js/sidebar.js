@@ -514,6 +514,64 @@
                 obs.observe(document.body, { childList: true, subtree: true });
             } catch (_) {}
 
+            // ── Proteccion global de copia ─────────────────────────────────
+            // Solo admin puede copiar/seleccionar/arrastrar datos desde
+            // cualquier tabla o grid-container del CMMS. El resto de roles
+            // tiene esos eventos bloqueados. Ojo: es disuasivo, no a prueba
+            // de devtools — pero cubre los flujos normales de uso.
+            try {
+                if (!window.CMMS_PERMS.isAdmin) {
+                    // CSS reglas para todas las tablas y grids de datos
+                    if (!document.getElementById('cmms-copy-protection-style')) {
+                        const st = document.createElement('style');
+                        st.id = 'cmms-copy-protection-style';
+                        st.textContent = `
+                            body.cmms-no-copy table,
+                            body.cmms-no-copy .grid-container,
+                            body.cmms-no-copy .kanban-body,
+                            body.cmms-no-copy .data-table,
+                            body.cmms-no-copy [data-no-copy] {
+                                -webkit-user-select: none !important;
+                                -moz-user-select: none !important;
+                                -ms-user-select: none !important;
+                                user-select: none !important;
+                            }
+                        `;
+                        document.head.appendChild(st);
+                    }
+                    document.body.classList.add('cmms-no-copy');
+
+                    const insideProtected = (el) => {
+                        if (!el || el.nodeType !== 1) return false;
+                        return !!el.closest(
+                            'table, .grid-container, .kanban-body, .data-table, [data-no-copy]'
+                        );
+                    };
+                    const blockEvent = (e) => {
+                        const sel = window.getSelection && window.getSelection();
+                        let node = sel && sel.anchorNode;
+                        if (node && node.nodeType !== 1) node = node.parentElement;
+                        if (insideProtected(node) || insideProtected(e.target)) {
+                            e.preventDefault();
+                            try {
+                                e.clipboardData && e.clipboardData.setData('text/plain', '');
+                            } catch (_) {}
+                        }
+                    };
+                    document.addEventListener('copy', blockEvent);
+                    document.addEventListener('cut', blockEvent);
+                    document.addEventListener('contextmenu', (e) => {
+                        if (insideProtected(e.target)) e.preventDefault();
+                    });
+                    document.addEventListener('selectstart', (e) => {
+                        if (insideProtected(e.target)) e.preventDefault();
+                    });
+                    document.addEventListener('dragstart', (e) => {
+                        if (insideProtected(e.target)) e.preventDefault();
+                    });
+                }
+            } catch (_) {}
+
             const hrefToModule = Object.fromEntries(
                 Object.entries(MODULE_TO_HREF).map(([m, h]) => [h, m])
             );

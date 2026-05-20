@@ -148,10 +148,23 @@ def register_notices_routes(
             entries = query.all()
         results = []
 
-        # Pre-fetch cache to avoid N+1 if possible, but for simplicity we'll do direct lookups first or simple caching
-        # Better: just resolve per item.
+        # Pre-cargar diccionarios de nombres para resolver IDs en el response.
+        # Asi el frontend no necesita /api/areas, /api/lines, etc. para mostrar
+        # nombres (eso evita que roles sin acceso a 'activos_config' vean solo
+        # numeros en la tabla de avisos).
+        areas_map      = {a.id: a.name for a in Area.query.all()}
+        lines_map      = {l.id: l.name for l in Line.query.all()}
+        equipments_map = {e.id: (e.tag or e.name) for e in Equipment.query.all()}
+        systems_map    = {s.id: s.name for s in System.query.all()}
+        components_map = {c.id: c.name for c in Component.query.all()}
+
         for notice in entries:
             data = notice.to_dict()
+            data['area_name']      = areas_map.get(notice.area_id, '-') if notice.area_id else '-'
+            data['line_name']      = lines_map.get(notice.line_id, '-') if notice.line_id else '-'
+            data['equipment_name'] = equipments_map.get(notice.equipment_id, '-') if notice.equipment_id else '-'
+            data['system_name']    = systems_map.get(notice.system_id, '-') if notice.system_id else '-'
+            data['component_name'] = components_map.get(notice.component_id, '-') if notice.component_id else '-'
 
             # Resolve Equipment ID
             equip_id = None

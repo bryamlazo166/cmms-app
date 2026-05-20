@@ -181,6 +181,9 @@ def register_work_orders_routes(
             return jsonify([])
 
         if request.method == 'POST':
+            denied = _guard_closed_ot(ot_id)
+            if denied:
+                return denied
             try:
                 data = request.json or {}
                 comment = (data.get('comment') or '').strip()
@@ -210,6 +213,9 @@ def register_work_orders_routes(
     def delete_ot_log(ot_id, log_id):
         if not OTLogEntry:
             return jsonify({"error": "No disponible"}), 500
+        denied = _guard_closed_ot(ot_id)
+        if denied:
+            return denied
         entry = OTLogEntry.query.get_or_404(log_id)
         db.session.delete(entry)
         db.session.commit()
@@ -419,6 +425,9 @@ def register_work_orders_routes(
     @app.route('/api/work_orders/<int:ot_id>/personnel', methods=['GET', 'POST'])
     def handle_ot_personnel(ot_id):
         if request.method == 'POST':
+            denied = _guard_closed_ot(ot_id)
+            if denied:
+                return denied
             try:
                 data = request.json
 
@@ -514,6 +523,9 @@ def register_work_orders_routes(
 
     @app.route('/api/work_orders/<int:ot_id>/personnel/<int:id>', methods=['PUT', 'DELETE'])
     def handle_ot_personnel_id(ot_id, id):
+        denied = _guard_closed_ot(ot_id)
+        if denied:
+            return denied
         personnel = OTPersonnel.query.get_or_404(id)
 
         if request.method == 'PUT':
@@ -533,6 +545,9 @@ def register_work_orders_routes(
     @app.route('/api/work_orders/<int:ot_id>/materials', methods=['GET', 'POST'])
     def handle_ot_materials(ot_id):
         if request.method == 'POST':
+            denied = _guard_closed_ot(ot_id)
+            if denied:
+                return denied
             try:
                 data = request.json
                 item_type = data.get('item_type', 'free')
@@ -625,6 +640,9 @@ def register_work_orders_routes(
 
     @app.route('/api/work_orders/<int:ot_id>/materials/<int:id>', methods=['PUT', 'DELETE'])
     def handle_ot_material_id(ot_id, id):
+        denied = _guard_closed_ot(ot_id)
+        if denied:
+            return denied
         material = OTMaterial.query.get_or_404(id)
 
         if request.method == 'PUT':
@@ -1337,9 +1355,11 @@ def register_work_orders_routes(
             return jsonify({"error": str(e)}), 500
 
     def _user_can_edit_closed_ot():
-        """True si el usuario es admin o tiene ordenes.close (puede modificar
-        OTs cerradas). Se importa _load_role_perms perezosamente para evitar
-        ciclo con app.py."""
+        """True si el usuario es admin o tiene ordenes.close. Se usa SOLO en
+        los flujos auditados sobre OT cerrada (PATCH /hours, PUT /report,
+        PUT/DELETE /conformity). El PUT generico de la OT y el DELETE de la OT
+        usan _is_admin() (mas estricto) para evitar que se sobreescriban
+        los valores de cierre via 'Cerrar Trabajo'."""
         from flask_login import current_user
         role = getattr(current_user, 'role', None)
         if role == 'admin':
@@ -1352,6 +1372,21 @@ def register_work_orders_routes(
             return bool(perms.get('ordenes', {}).get('close', False))
         except Exception:
             return False
+
+    def _is_admin():
+        from flask_login import current_user
+        return getattr(current_user, 'role', None) == 'admin'
+
+    def _guard_closed_ot(ot_id):
+        """Devuelve None si la OT no esta cerrada O el usuario tiene permiso
+        para modificar OTs cerradas (admin / ordenes.close). En caso contrario
+        devuelve (jsonify, 403) listo para retornar desde el handler."""
+        wo = WorkOrder.query.get(ot_id)
+        if not wo or wo.status != 'Cerrada':
+            return None
+        if _user_can_edit_closed_ot():
+            return None
+        return jsonify({"error": "OT cerrada: no se pueden modificar sus datos. Solo admin/jefatura via flujos auditados."}), 403
 
     @app.route('/api/work-orders/<int:id>', methods=['PUT', 'DELETE'])
     def handle_wot_id(id):
@@ -1368,9 +1403,13 @@ def register_work_orders_routes(
                 # Capturar valores anteriores para auditoria de cambios en OT cerrada
                 was_closed = (wo.status == 'Cerrada')
 
-                # Bloqueo de edicion sobre OT cerrada (salvo admin / ordenes.close)
-                if was_closed and not _user_can_edit_closed_ot():
-                    return jsonify({"error": "OT cerrada: solo administrador o usuarios con permiso de cierre pueden modificarla."}), 403
+                # OT cerrada: el PUT generico SOLO lo puede usar admin. Cualquier
+                # otro rol (incluidos los que tienen ordenes.close) debe ir por
+                # el flujo auditado PATCH /api/work-orders/<id>/hours. Asi se
+                # evita que se sobreescriban horas/comentarios usando otra vez
+                # "Cerrar Trabajo".
+                if was_closed and not _is_admin():
+                    return jsonify({"error": "OT cerrada: el flujo de cierre no se puede repetir. Para ajustes usa 'Ajustar horas' (admin/jefatura)."}), 403
                 prev_values = {
                     'real_end_date': wo.real_end_date,
                     'real_start_date': wo.real_start_date,
@@ -1456,8 +1495,8 @@ def register_work_orders_routes(
 
             # DELETE — registrar en auditoria antes de borrar
             wo_to_delete = WorkOrder.query.get(id)
-            if wo_to_delete and wo_to_delete.status == 'Cerrada' and not _user_can_edit_closed_ot():
-                return jsonify({"error": "OT cerrada: solo administrador o usuarios con permiso de cierre pueden eliminarla."}), 403
+            if wo_to_delete and wo_to_delete.status == 'Cerrada' and not _is_admin():
+                return jsonify({"error": "OT cerrada: solo administrador puede eliminarla."}), 403
             if wo_to_delete:
                 audit_log('OT_DELETE', module='work_orders', entity_id=id,
                           detail=f"code={wo_to_delete.code} status={wo_to_delete.status}")

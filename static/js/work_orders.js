@@ -16,61 +16,6 @@ async function handleProviderSubmit(e) {
     console.log("Submitting provider...");
 }
 
-// ── Permisos granulares ──────────────────────────────────────────────────
-// Devuelve true cuando el usuario actual NO puede exportar/copiar (y no es
-// admin). Sirve para bloquear copy / contextmenu / seleccion en planificacion,
-// proveedores y tecnicos.
-function _shouldBlockCopy() {
-    const P = window.CMMS_PERMS;
-    if (!P) return false; // permisos aun no cargados → no bloquear
-    if (P.isAdmin) return false;
-    return !P.can('ordenes', 'export');
-}
-
-function setupCopyProtection() {
-    const SELECTORS = ['#planningTable', '#tab-providers', '#tab-technicians'];
-    const isInside = (target) => {
-        if (!target || target.nodeType !== 1) return false;
-        return SELECTORS.some(sel => target.closest && target.closest(sel));
-    };
-
-    // Aplica clase global para CSS user-select:none cuando corresponde.
-    const refreshBodyClass = () => {
-        document.body.classList.toggle('no-copy-ot', _shouldBlockCopy());
-    };
-    // El estado de permisos llega async desde sidebar.js → re-evaluar pronto.
-    refreshBodyClass();
-    setTimeout(refreshBodyClass, 800);
-    setTimeout(refreshBodyClass, 2500);
-
-    document.addEventListener('copy', (e) => {
-        if (!_shouldBlockCopy()) return;
-        const sel = window.getSelection && window.getSelection();
-        let node = sel && sel.anchorNode;
-        if (node && node.nodeType !== 1) node = node.parentElement;
-        if (isInside(node) || isInside(e.target)) {
-            e.preventDefault();
-            try { e.clipboardData && e.clipboardData.setData('text/plain', ''); } catch (_) {}
-        }
-    });
-    document.addEventListener('cut', (e) => {
-        if (!_shouldBlockCopy()) return;
-        if (isInside(e.target)) e.preventDefault();
-    });
-    document.addEventListener('contextmenu', (e) => {
-        if (!_shouldBlockCopy()) return;
-        if (isInside(e.target)) e.preventDefault();
-    });
-    document.addEventListener('selectstart', (e) => {
-        if (!_shouldBlockCopy()) return;
-        if (isInside(e.target)) e.preventDefault();
-    });
-    document.addEventListener('dragstart', (e) => {
-        if (!_shouldBlockCopy()) return;
-        if (isInside(e.target)) e.preventDefault();
-    });
-}
-
 // Bloquea visualmente la edicion en el panel de ejecucion cuando la OT esta
 // cerrada y el usuario no es admin ni tiene permiso ordenes.close.
 function applyClosedOTLockdown(ot) {
@@ -91,7 +36,7 @@ document.addEventListener('DOMContentLoaded', () => {
     loadCurrentUser();
     loadUsersForTechLink();
     loadShutdownsForOT();
-    setupCopyProtection();
+    // setupCopyProtection() ahora vive en sidebar.js (aplica globalmente)
 
     // Deep-link: /ordenes?ot_code=OT-XXXX → abrir el modal de la OT en ejecucion.
     // Normaliza por si llega con prefijo duplicado (bug viejo en avisos: "OT-OT-0007").
@@ -1954,6 +1899,15 @@ window.handlePauseSubmit = handlePauseSubmit;
 
 async function openCloseModal() {
     if (!activeExecutionOT) return;
+
+    // Una OT ya cerrada NO se puede volver a cerrar — eso sobreescribiria
+    // horas, comentarios y duracion sin trazabilidad. Para ajustes posteriores
+    // existe el flujo auditado "Ajustar horas" (PATCH /hours).
+    if (activeExecutionOT.status === 'Cerrada') {
+        alert('Esta OT ya esta cerrada. Para ajustar horas o fechas usa "Ajustar horas" (solo administracion/jefatura).');
+        return;
+    }
+
     document.getElementById('closeOtId').value = activeExecutionOT.id;
 
     // Asegurarse de tener el personal planificado cargado (puede estar vacío

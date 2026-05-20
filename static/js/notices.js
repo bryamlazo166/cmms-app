@@ -196,11 +196,11 @@ function renderNotices() {
             <td>${provName}</td>
             <td>${n.specialty || '-'}</td>
             <td>${n.shift || '-'}</td>
-            <td>${getName(allAreas, n.area_id)}</td>
-            <td>${getName(allLines, n.line_id)}</td>
-            <td>${n.equipment_id ? getName(allEquips, n.equipment_id) : (n.free_location ? `<span style="color:#888;font-style:italic">${n.free_location}</span>` : '-')}</td>
-            <td>${getName(allSys, n.system_id)}</td>
-            <td>${getName(allComps, n.component_id)}</td>
+            <td>${n.area_name || getName(allAreas, n.area_id)}</td>
+            <td>${n.line_name || getName(allLines, n.line_id)}</td>
+            <td>${n.equipment_id ? (n.equipment_name || getName(allEquips, n.equipment_id)) : (n.free_location ? `<span style="color:#888;font-style:italic">${n.free_location}</span>` : '-')}</td>
+            <td>${n.system_name || getName(allSys, n.system_id)}</td>
+            <td>${n.component_name || getName(allComps, n.component_id)}</td>
             <td style="max-width:320px;min-width:260px;">
                 <div style="display:-webkit-box;-webkit-line-clamp:3;-webkit-box-orient:vertical;overflow:hidden;text-overflow:ellipsis;max-width:320px;line-height:1.3;white-space:normal;word-break:break-word;" title="${(n.description || '').replace(/"/g,'&quot;')}">${n.description || '-'}</div>
                 ${n.cancellation_reason ? `<small style="color:#FF453A;">(Anulado: ${n.cancellation_reason})</small>` : ''}
