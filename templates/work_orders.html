@@ -16,6 +16,37 @@
     <!-- FontAwesome for Icons -->
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css">
     <link rel="stylesheet" href="/static/css/work_orders.css?v={{ v }}">
+    <style>
+        /* Bloqueo visual de edicion en OT cerrada (cuando el usuario no tiene
+           permiso ordenes.close ni es admin). Aplica solo dentro del panel
+           #execution-details cuando lleva la clase .ot-locked. */
+        #execution-details.ot-locked [data-perm="ordenes.edit"],
+        #execution-details.ot-locked [data-perm="ordenes.create"],
+        #execution-details.ot-locked [data-perm="ordenes.delete"] {
+            display: none !important;
+        }
+        #execution-details.ot-locked input:not([type=button]):not([type=submit]):not([type=hidden]),
+        #execution-details.ot-locked select,
+        #execution-details.ot-locked textarea {
+            pointer-events: none !important;
+            opacity: 0.65;
+        }
+        #execution-details.ot-locked .ot-locked-banner {
+            display: block !important;
+        }
+        .ot-locked-banner { display: none; }
+
+        /* Bloqueo de seleccion/copiado de la tabla de planificacion para
+           usuarios que no tienen ordenes.export (admin sigue pudiendo). */
+        body.no-copy-ot #planningTable,
+        body.no-copy-ot #tab-providers,
+        body.no-copy-ot #tab-technicians {
+            -webkit-user-select: none;
+            -moz-user-select: none;
+            -ms-user-select: none;
+            user-select: none;
+        }
+    </style>
 </head>
 
 <body>
@@ -101,9 +132,9 @@
                     <button class="tab-link" onclick="openTab(event, 'tab-execution')"><i class="fas fa-hard-hat"></i>
                         Ejecucion
                         y Cierre</button>
-                    <button class="tab-link" onclick="openTab(event, 'tab-providers')"><i class="fas fa-users-cog"></i>
+                    <button class="tab-link" data-perm="proveedores.view" onclick="openTab(event, 'tab-providers')"><i class="fas fa-users-cog"></i>
                         Proveedores</button>
-                    <button class="tab-link" onclick="openTab(event, 'tab-technicians')"><i
+                    <button class="tab-link" data-perm="tecnicos.view" onclick="openTab(event, 'tab-technicians')"><i
                             class="fas fa-user-hard-hat"></i>
                         Tecnicos</button>
                     <button class="tab-link" onclick="openTab(event, 'tab-notices')"><i
@@ -125,8 +156,8 @@
                             style="padding:8px 16px;border-radius:8px;border:1px solid #30D158;background:rgba(48,209,88,0.12);color:#30D158;cursor:pointer;font-size:0.9em;">
                             <i class="fas fa-clipboard-check"></i> Ronda del Día
                         </button>
-                        <a href="/api/export-ots" target="_blank" style="text-decoration:none;">
-                            <button class="btn-secondary"
+                        <a id="exportOTsLink" href="/api/export-ots" target="_blank" data-perm="ordenes.export" style="text-decoration:none;">
+                            <button class="btn-secondary" data-perm="ordenes.export"
                                 style="background:#30D158; color:white; border:none; padding: 10px 20px;">
                                 <i class="fas fa-file-excel"></i> Exportar
                             </button>
@@ -348,6 +379,9 @@
                     </div>
 
                     <div id="execution-details" class="execution-card hidden">
+                        <div class="ot-locked-banner" style="background:rgba(255,159,10,0.12);border:1px solid #FF9F0A;color:#FFB845;padding:8px 12px;border-radius:6px;margin-bottom:10px;font-size:.85em;">
+                            <i class="fas fa-lock"></i> Esta OT esta <strong>cerrada</strong>. La edicion esta deshabilitada para tu rol. Solicita a un administrador o jefatura si necesitas modificar.
+                        </div>
                         <!-- Header de la OT -->
                         <div
                             style="display: flex; justify-content: space-between; align-items: center; border-bottom: 2px solid #0A84FF; padding-bottom: 10px; margin-bottom: 15px;">
@@ -623,7 +657,7 @@
             <!-- TAB: PROVEEDORES -->
             <div id="tab-providers" class="tab-content">
                 <div class="toolbar">
-                    <button class="btn-primary" data-perm="ordenes.create" onclick="openProviderModal()"><i class="fas fa-plus"></i> Nuevo
+                    <button class="btn-primary" data-perm="proveedores.create" onclick="openProviderModal()"><i class="fas fa-plus"></i> Nuevo
                         Proveedor</button>
                 </div>
                 <div class="grid-container" id="providersGrid">
@@ -634,7 +668,7 @@
             <!-- TAB: TECNICOS -->
             <div id="tab-technicians" class="tab-content">
                 <div class="toolbar">
-                    <button class="btn-primary" data-perm="ordenes.create" onclick="openTechnicianModal()"><i class="fas fa-plus"></i> Nuevo
+                    <button class="btn-primary" data-perm="tecnicos.create" onclick="openTechnicianModal()"><i class="fas fa-plus"></i> Nuevo
                         Tecnico</button>
                     <label style="margin-left: 15px;">
                         <input type="checkbox" id="showInactiveTechs" onchange="loadTechnicians()"> Mostrar inactivos

@@ -206,6 +206,8 @@ def register_auth_routes(app, db, logger, User, RolePermission=None):
     MODULES = [
         {'key': 'avisos', 'label': 'Avisos'},
         {'key': 'ordenes', 'label': 'Ordenes de Trabajo'},
+        {'key': 'proveedores', 'label': 'Proveedores (OT)'},
+        {'key': 'tecnicos', 'label': 'Tecnicos (OT)'},
         {'key': 'compras', 'label': 'Compras'},
         {'key': 'almacen', 'label': 'Almacen'},
         {'key': 'herramientas', 'label': 'Herramientas'},
@@ -240,6 +242,7 @@ def register_auth_routes(app, db, logger, User, RolePermission=None):
     DEFAULTS = {
         'jefe_mtto': {
             'avisos': {'view': True, 'edit': True}, 'ordenes': {'view': True, 'edit': True},
+            'proveedores': {'view': True, 'edit': True}, 'tecnicos': {'view': True, 'edit': True},
             'compras': {'view': True, 'edit': True}, 'almacen': {'view': True, 'edit': True},
             'herramientas': {'view': True, 'edit': True}, 'lubricacion': {'view': True, 'edit': True},
             'inspecciones': {'view': True, 'edit': True}, 'monitoreo': {'view': True, 'edit': True},
@@ -263,6 +266,7 @@ def register_auth_routes(app, db, logger, User, RolePermission=None):
         },
         'planner': {
             'avisos': {'view': True, 'edit': True}, 'ordenes': {'view': True, 'edit': True},
+            'proveedores': {'view': True, 'edit': True}, 'tecnicos': {'view': True, 'edit': True},
             'compras': {'view': True, 'edit': True}, 'almacen': {'view': True, 'edit': False},
             'herramientas': {'view': True, 'edit': False}, 'lubricacion': {'view': True, 'edit': True},
             'inspecciones': {'view': True, 'edit': True}, 'monitoreo': {'view': True, 'edit': True},
@@ -286,6 +290,7 @@ def register_auth_routes(app, db, logger, User, RolePermission=None):
         },
         'supervisor': {
             'avisos': {'view': True, 'edit': True}, 'ordenes': {'view': True, 'edit': False},
+            'proveedores': {'view': True, 'edit': False}, 'tecnicos': {'view': True, 'edit': False},
             'compras': {'view': True, 'edit': False}, 'almacen': {'view': True, 'edit': False},
             'herramientas': {'view': True, 'edit': False}, 'lubricacion': {'view': True, 'edit': True},
             'inspecciones': {'view': True, 'edit': True}, 'monitoreo': {'view': True, 'edit': True},
@@ -309,6 +314,7 @@ def register_auth_routes(app, db, logger, User, RolePermission=None):
         },
         'tecnico': {
             'avisos': {'view': True, 'edit': True}, 'ordenes': {'view': True, 'edit': True},
+            'proveedores': {'view': True, 'edit': False}, 'tecnicos': {'view': True, 'edit': False},
             'compras': {'view': False, 'edit': False}, 'almacen': {'view': False, 'edit': False},
             'herramientas': {'view': True, 'edit': False}, 'lubricacion': {'view': True, 'edit': True},
             'inspecciones': {'view': True, 'edit': True}, 'monitoreo': {'view': True, 'edit': True},
@@ -332,6 +338,7 @@ def register_auth_routes(app, db, logger, User, RolePermission=None):
         },
         'operador': {
             'avisos': {'view': True, 'edit': True}, 'ordenes': {'view': False, 'edit': False},
+            'proveedores': {'view': False, 'edit': False}, 'tecnicos': {'view': False, 'edit': False},
             'compras': {'view': False, 'edit': False}, 'almacen': {'view': False, 'edit': False},
             'herramientas': {'view': False, 'edit': False}, 'lubricacion': {'view': False, 'edit': False},
             'inspecciones': {'view': False, 'edit': False}, 'monitoreo': {'view': False, 'edit': False},
@@ -355,6 +362,7 @@ def register_auth_routes(app, db, logger, User, RolePermission=None):
         },
         'almacenero': {
             'avisos': {'view': False, 'edit': False}, 'ordenes': {'view': False, 'edit': False},
+            'proveedores': {'view': False, 'edit': False}, 'tecnicos': {'view': False, 'edit': False},
             'compras': {'view': True, 'edit': True}, 'almacen': {'view': True, 'edit': True},
             'herramientas': {'view': True, 'edit': True}, 'lubricacion': {'view': False, 'edit': False},
             'inspecciones': {'view': False, 'edit': False}, 'monitoreo': {'view': False, 'edit': False},
@@ -378,6 +386,7 @@ def register_auth_routes(app, db, logger, User, RolePermission=None):
         },
         'gerencia': {
             'avisos': {'view': True, 'edit': False}, 'ordenes': {'view': True, 'edit': False},
+            'proveedores': {'view': True, 'edit': False}, 'tecnicos': {'view': True, 'edit': False},
             'compras': {'view': True, 'edit': False}, 'almacen': {'view': True, 'edit': False},
             'herramientas': {'view': True, 'edit': False}, 'lubricacion': {'view': True, 'edit': False},
             'inspecciones': {'view': True, 'edit': False}, 'monitoreo': {'view': True, 'edit': False},

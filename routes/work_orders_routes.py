@@ -281,6 +281,8 @@ def register_work_orders_routes(
     def update_ot_report(ot_id):
         try:
             wo = WorkOrder.query.get_or_404(ot_id)
+            if wo.status == 'Cerrada' and not _user_can_edit_closed_ot():
+                return jsonify({"error": "OT cerrada: solo administrador o usuarios con permiso de cierre pueden actualizar el informe."}), 403
             data = request.json or {}
             if 'report_required' in data:
                 wo.report_required = bool(data['report_required'])
@@ -312,6 +314,8 @@ def register_work_orders_routes(
         """
         try:
             wo = WorkOrder.query.get_or_404(ot_id)
+            if wo.status == 'Cerrada' and not _user_can_edit_closed_ot():
+                return jsonify({"error": "OT cerrada: solo administrador o usuarios con permiso de cierre pueden actualizar la conformidad."}), 403
 
             if request.method == 'DELETE':
                 wo.conformity_doc_url = None
@@ -1248,10 +1252,9 @@ def register_work_orders_routes(
     def patch_wot_hours(id):
         try:
             from flask_login import current_user
-            allowed_roles = ('admin', 'supervisor', 'gerencia')
             user_role = getattr(current_user, 'role', None)
-            if user_role not in allowed_roles:
-                return jsonify({"error": "Solo jefatura/administrador puede editar horas de OT cerrada."}), 403
+            if not _user_can_edit_closed_ot():
+                return jsonify({"error": "Solo administrador o usuarios con permiso de cierre pueden editar horas de OT cerrada."}), 403
 
             wo = WorkOrder.query.get(id)
             if not wo:
@@ -1333,6 +1336,23 @@ def register_work_orders_routes(
             logger.exception(f"Error patching OT hours {id}")
             return jsonify({"error": str(e)}), 500
 
+    def _user_can_edit_closed_ot():
+        """True si el usuario es admin o tiene ordenes.close (puede modificar
+        OTs cerradas). Se importa _load_role_perms perezosamente para evitar
+        ciclo con app.py."""
+        from flask_login import current_user
+        role = getattr(current_user, 'role', None)
+        if role == 'admin':
+            return True
+        if not role:
+            return False
+        try:
+            from app import _load_role_perms
+            perms = _load_role_perms(role)
+            return bool(perms.get('ordenes', {}).get('close', False))
+        except Exception:
+            return False
+
     @app.route('/api/work-orders/<int:id>', methods=['PUT', 'DELETE'])
     def handle_wot_id(id):
         try:
@@ -1347,6 +1367,10 @@ def register_work_orders_routes(
 
                 # Capturar valores anteriores para auditoria de cambios en OT cerrada
                 was_closed = (wo.status == 'Cerrada')
+
+                # Bloqueo de edicion sobre OT cerrada (salvo admin / ordenes.close)
+                if was_closed and not _user_can_edit_closed_ot():
+                    return jsonify({"error": "OT cerrada: solo administrador o usuarios con permiso de cierre pueden modificarla."}), 403
                 prev_values = {
                     'real_end_date': wo.real_end_date,
                     'real_start_date': wo.real_start_date,
@@ -1432,6 +1456,8 @@ def register_work_orders_routes(
 
             # DELETE — registrar en auditoria antes de borrar
             wo_to_delete = WorkOrder.query.get(id)
+            if wo_to_delete and wo_to_delete.status == 'Cerrada' and not _user_can_edit_closed_ot():
+                return jsonify({"error": "OT cerrada: solo administrador o usuarios con permiso de cierre pueden eliminarla."}), 403
             if wo_to_delete:
                 audit_log('OT_DELETE', module='work_orders', entity_id=id,
                           detail=f"code={wo_to_delete.code} status={wo_to_delete.status}")

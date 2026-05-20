@@ -1,4 +1,23 @@
 from flask import jsonify, request
+from flask_login import current_user
+
+
+def _require_perm(module, action):
+    """Devuelve None si el usuario actual tiene el permiso, o una tupla
+    (response, status) lista para retornar si no. Admin siempre pasa."""
+    role = getattr(current_user, 'role', None)
+    if role == 'admin':
+        return None
+    if not role:
+        return jsonify({"error": "No autenticado."}), 401
+    try:
+        from app import _load_role_perms
+        perms = _load_role_perms(role)
+        if perms.get(module, {}).get(action, False):
+            return None
+    except Exception:
+        pass
+    return jsonify({"error": f"No tienes permiso para esta accion en {module}."}), 403
 
 
 def register_master_data_routes(
@@ -20,6 +39,9 @@ def register_master_data_routes(
     @app.route('/api/providers', methods=['GET', 'POST'])
     def handle_providers():
         if request.method == 'POST':
+            denied = _require_perm('proveedores', 'create')
+            if denied:
+                return denied
             return create_entry(Provider, request.json, ['name'])
 
         providers = Provider.query.filter_by(is_active=True).order_by(Provider.name).all()
@@ -28,8 +50,14 @@ def register_master_data_routes(
     @app.route('/api/providers/<int:id>', methods=['PUT', 'DELETE'])
     def handle_provider_id(id):
         if request.method == 'PUT':
+            denied = _require_perm('proveedores', 'edit')
+            if denied:
+                return denied
             return update_entry(Provider, id, request.json)
 
+        denied = _require_perm('proveedores', 'delete')
+        if denied:
+            return denied
         try:
             provider = Provider.query.get(id)
             if not provider:
@@ -45,6 +73,9 @@ def register_master_data_routes(
     @app.route('/api/technicians', methods=['GET', 'POST'])
     def handle_technicians():
         if request.method == 'POST':
+            denied = _require_perm('tecnicos', 'create')
+            if denied:
+                return denied
             return create_entry(Technician, request.json, ['name'])
 
         show_all = request.args.get('all', 'false').lower() == 'true'
@@ -57,8 +88,14 @@ def register_master_data_routes(
     @app.route('/api/technicians/<int:id>', methods=['PUT', 'DELETE'])
     def handle_technician_id(id):
         if request.method == 'PUT':
+            denied = _require_perm('tecnicos', 'edit')
+            if denied:
+                return denied
             return update_entry(Technician, id, request.json)
 
+        denied = _require_perm('tecnicos', 'delete')
+        if denied:
+            return denied
         try:
             tech = Technician.query.get(id)
             if not tech:

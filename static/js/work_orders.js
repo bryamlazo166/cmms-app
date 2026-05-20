@@ -16,6 +16,72 @@ async function handleProviderSubmit(e) {
     console.log("Submitting provider...");
 }
 
+// ── Permisos granulares ──────────────────────────────────────────────────
+// Devuelve true cuando el usuario actual NO puede exportar/copiar (y no es
+// admin). Sirve para bloquear copy / contextmenu / seleccion en planificacion,
+// proveedores y tecnicos.
+function _shouldBlockCopy() {
+    const P = window.CMMS_PERMS;
+    if (!P) return false; // permisos aun no cargados → no bloquear
+    if (P.isAdmin) return false;
+    return !P.can('ordenes', 'export');
+}
+
+function setupCopyProtection() {
+    const SELECTORS = ['#planningTable', '#tab-providers', '#tab-technicians'];
+    const isInside = (target) => {
+        if (!target || target.nodeType !== 1) return false;
+        return SELECTORS.some(sel => target.closest && target.closest(sel));
+    };
+
+    // Aplica clase global para CSS user-select:none cuando corresponde.
+    const refreshBodyClass = () => {
+        document.body.classList.toggle('no-copy-ot', _shouldBlockCopy());
+    };
+    // El estado de permisos llega async desde sidebar.js → re-evaluar pronto.
+    refreshBodyClass();
+    setTimeout(refreshBodyClass, 800);
+    setTimeout(refreshBodyClass, 2500);
+
+    document.addEventListener('copy', (e) => {
+        if (!_shouldBlockCopy()) return;
+        const sel = window.getSelection && window.getSelection();
+        let node = sel && sel.anchorNode;
+        if (node && node.nodeType !== 1) node = node.parentElement;
+        if (isInside(node) || isInside(e.target)) {
+            e.preventDefault();
+            try { e.clipboardData && e.clipboardData.setData('text/plain', ''); } catch (_) {}
+        }
+    });
+    document.addEventListener('cut', (e) => {
+        if (!_shouldBlockCopy()) return;
+        if (isInside(e.target)) e.preventDefault();
+    });
+    document.addEventListener('contextmenu', (e) => {
+        if (!_shouldBlockCopy()) return;
+        if (isInside(e.target)) e.preventDefault();
+    });
+    document.addEventListener('selectstart', (e) => {
+        if (!_shouldBlockCopy()) return;
+        if (isInside(e.target)) e.preventDefault();
+    });
+    document.addEventListener('dragstart', (e) => {
+        if (!_shouldBlockCopy()) return;
+        if (isInside(e.target)) e.preventDefault();
+    });
+}
+
+// Bloquea visualmente la edicion en el panel de ejecucion cuando la OT esta
+// cerrada y el usuario no es admin ni tiene permiso ordenes.close.
+function applyClosedOTLockdown(ot) {
+    const panel = document.getElementById('execution-details');
+    if (!panel) return;
+    const isClosed = !!(ot && ot.status === 'Cerrada');
+    const P = window.CMMS_PERMS;
+    const canEditClosed = !P || P.isAdmin || P.can('ordenes', 'close');
+    panel.classList.toggle('ot-locked', isClosed && !canEditClosed);
+}
+
 document.addEventListener('DOMContentLoaded', () => {
     loadProviders();
     loadTechnicians();
@@ -25,6 +91,7 @@ document.addEventListener('DOMContentLoaded', () => {
     loadCurrentUser();
     loadUsersForTechLink();
     loadShutdownsForOT();
+    setupCopyProtection();
 
     // Deep-link: /ordenes?ot_code=OT-XXXX → abrir el modal de la OT en ejecucion.
     // Normaliza por si llega con prefijo duplicado (bug viejo en avisos: "OT-OT-0007").
@@ -421,8 +488,8 @@ function renderProviders() {
             <p><strong>Esp:</strong> ${p.specialty || '-'}</p>
             <p><i class="fas fa-phone"></i> ${p.contact_info || '-'}</p>
             <div style="margin-top:10px; border-top:1px solid #eee; padding-top:5px;">
-                <button class="btn-icon" onclick="editProvider(${p.id})"><i class="fas fa-edit"></i></button>
-                <button class="btn-icon" onclick="deleteProvider(${p.id})" style="color:red;"><i class="fas fa-trash"></i></button>
+                <button class="btn-icon" data-perm="proveedores.edit" onclick="editProvider(${p.id})"><i class="fas fa-edit"></i></button>
+                <button class="btn-icon" data-perm="proveedores.delete" onclick="deleteProvider(${p.id})" style="color:red;"><i class="fas fa-trash"></i></button>
             </div>
         </div>
     `).join('');
@@ -723,7 +790,7 @@ function renderPlanningTable(data = null) {
                 : '<span style="color:rgba(255,255,255,.20);font-size:.78rem">-</span>'}</td>
             <td>
                 <div style="display:flex; align-items:center; gap:6px;">
-                    <button class="btn-icon planning-action-btn" onclick="editOT(${ot.id})" title="Editar OT"><i class="fas fa-edit"></i></button>
+                    <button class="btn-icon planning-action-btn" data-perm="ordenes.edit" onclick="editOT(${ot.id})" title="Editar OT"><i class="fas fa-edit"></i></button>
                     <button class="btn-icon planning-action-btn" onclick="openOTInExecution(${ot.id})" title="Ir a Ejecucion y Cierre" style="border-color:#2d6a3d; background:#173528; color:#b8ffd0;"><i class="fas fa-play"></i></button>
                     <button class="btn-icon planning-action-btn" onclick="quickShareOT(${ot.id})" title="Compartir por WhatsApp" style="border-color:#25D366; background:rgba(37,211,102,.12); color:#25D366;"><i class="fab fa-whatsapp"></i></button>
                 </div>
@@ -1340,6 +1407,7 @@ async function searchForExecution() {
     activeExecutionOT = ot;
     window.activeExecutionOT = ot;
     panel.classList.remove('hidden');
+    applyClosedOTLockdown(ot);
 
     document.getElementById('exec-ot-code').innerText = ot.code || `OT-${ot.id}`;
     document.getElementById('exec-desc').innerText = ot.description || 'Sin descripcion';
@@ -2314,8 +2382,8 @@ function renderTechnicians() {
             <p><i class="fas fa-phone"></i> ${t.contact_info || '-'}</p>
             <p>${userLabel}</p>
             <div style="margin-top:10px; border-top:1px solid #eee; padding-top:5px;">
-                <button class="btn-icon" onclick="editTechnician(${t.id})"><i class="fas fa-edit"></i></button>
-                <button class="btn-icon" onclick="toggleTechnician(${t.id})" style="color:${t.is_active ? 'orange' : 'green'};" title="${t.is_active ? 'Dar de baja' : 'Dar de alta'}">
+                <button class="btn-icon" data-perm="tecnicos.edit" onclick="editTechnician(${t.id})"><i class="fas fa-edit"></i></button>
+                <button class="btn-icon" data-perm="tecnicos.delete" onclick="toggleTechnician(${t.id})" style="color:${t.is_active ? 'orange' : 'green'};" title="${t.is_active ? 'Dar de baja' : 'Dar de alta'}">
                     <i class="fas fa-${t.is_active ? 'user-slash' : 'user-check'}"></i>
                 </button>
             </div>
