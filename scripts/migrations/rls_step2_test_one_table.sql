@@ -14,12 +14,15 @@
 ALTER TABLE public.audit_logs ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.audit_logs FORCE ROW LEVEL SECURITY;
 
--- Verifica que quedo activada
-SELECT tablename, rowsecurity, forcerowsecurity
-FROM pg_tables
-WHERE schemaname = 'public' AND tablename = 'audit_logs';
+-- Verifica que quedo activada (forcerowsecurity vive en pg_class, no en pg_tables)
+SELECT c.relname              AS tabla,
+       c.relrowsecurity       AS rls_activa,
+       c.relforcerowsecurity  AS force_activa
+FROM pg_class c
+JOIN pg_namespace n ON n.oid = c.relnamespace
+WHERE n.nspname = 'public' AND c.relname = 'audit_logs';
 
--- Esperado: rowsecurity = true, forcerowsecurity = true.
+-- Esperado: rls_activa = true, force_activa = true.
 
 
 -- ┌─────────────────────────────────────────────────────────────────────────┐

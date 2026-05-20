@@ -28,8 +28,13 @@ BEGIN
 END $$;
 
 -- Verificacion: lista tablas que aun tengan RLS activa (deberia salir vacio)
-SELECT schemaname, tablename, rowsecurity, forcerowsecurity
-FROM pg_tables
-WHERE schemaname = 'public'
-  AND rowsecurity = true
-ORDER BY tablename;
+SELECT n.nspname              AS esquema,
+       c.relname              AS tabla,
+       c.relrowsecurity       AS rls_activa,
+       c.relforcerowsecurity  AS force_activa
+FROM pg_class c
+JOIN pg_namespace n ON n.oid = c.relnamespace
+WHERE n.nspname = 'public'
+  AND c.relkind = 'r'
+  AND (c.relrowsecurity = true OR c.relforcerowsecurity = true)
+ORDER BY tabla;
