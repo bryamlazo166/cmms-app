@@ -152,6 +152,7 @@ def register_notices_routes(
         # Asi el frontend no necesita /api/areas, /api/lines, etc. para mostrar
         # nombres (eso evita que roles sin acceso a 'activos_config' vean solo
         # numeros en la tabla de avisos).
+        from models import Area, Line, Equipment
         areas_map      = {a.id: a.name for a in Area.query.all()}
         lines_map      = {l.id: l.name for l in Line.query.all()}
         equipments_map = {e.id: (e.tag or e.name) for e in Equipment.query.all()}
