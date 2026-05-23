@@ -132,11 +132,12 @@ def _spec_paragraph(spec):
 
 
 def build_ots_table(ots):
-    """ots: lista de dicts con campos: code, equipment_name, equipment_tag, area_name,
-       component_name, maintenance_type, status, priority, criticality,
-       scheduled_date, technician_name, description, specialty"""
-    headers = ['#', 'Codigo', 'Esp.', 'Equipo', 'Componente', 'Area', 'Tipo', 'Estado',
-               'Prio', 'Fecha Prog', 'Tecnico', 'Descripcion']
+    """ots: lista de dicts con campos: code, equipment_name, equipment_tag,
+       area_name, line_name, system_name, component_name, maintenance_type,
+       status, priority, criticality, scheduled_date, technician_name,
+       description, specialty"""
+    headers = ['#', 'Codigo', 'Esp.', 'Area', 'Linea', 'Equipo', 'Sistema',
+               'Componente', 'Tipo', 'Estado', 'Fecha Prog', 'Descripcion']
     data = [[_p(h, _cell_bold) for h in headers]]
 
     for i, ot in enumerate(ots, 1):
@@ -145,21 +146,22 @@ def build_ots_table(ots):
             _p(str(i)),
             _p(ot.get('code') or '-', _cell_bold),
             _spec_paragraph(ot.get('specialty')),
-            _equip_paragraph(ot.get('equipment_tag'), ot.get('equipment_name')),
-            _p(ot.get('component_name') or '-'),
             _p(ot.get('area_name') or '-'),
+            _p(ot.get('line_name') or '-'),
+            _equip_paragraph(ot.get('equipment_tag'), ot.get('equipment_name')),
+            _p(ot.get('system_name') or '-'),
+            _p(ot.get('component_name') or '-'),
             _p(ot.get('maintenance_type') or '-'),
             _p(ot.get('status') or '-'),
-            _p(ot.get('priority') or '-'),
             _p(_short_date(ot.get('scheduled_date'))),
-            _p(_short_tech_name(ot.get('technician_name') or ot.get('provider_name'))),
             _p(ot.get('description') or '-'),
         ]
         data.append(row)
 
     # Anchos en mm: total ~277 (A4 landscape sin margenes ~277mm)
-    col_widths = [7*mm, 17*mm, 10*mm, 27*mm, 25*mm, 19*mm, 15*mm, 15*mm,
-                  9*mm, 13*mm, 25*mm, 95*mm]
+    # # Codigo Esp Area Linea Equipo Sistema Componente Tipo Estado Fecha Desc
+    col_widths = [7*mm, 17*mm, 10*mm, 22*mm, 20*mm, 28*mm, 22*mm, 24*mm,
+                  14*mm, 14*mm, 13*mm, 86*mm]
 
     table = Table(data, colWidths=col_widths, repeatRows=1)
     style = TableStyle([
@@ -183,11 +185,12 @@ def build_ots_table(ots):
 
 
 def build_notices_table(notices):
-    """notices: lista de dicts con campos: code, equipment_name, equipment_tag, area_name,
-       component_name, failure_mode, criticality, priority, status,
-       created_date, reporter, description, blockage_object, specialty"""
-    headers = ['#', 'Codigo', 'Esp.', 'Equipo', 'Componente', 'Area', 'Modo Falla',
-               'Bloqueo', 'Crit', 'Estado', 'Fecha', 'Reportado', 'Descripcion']
+    """notices: lista de dicts con campos: code, equipment_name, equipment_tag,
+       area_name, line_name, system_name, component_name, failure_mode,
+       criticality, priority, status, created_date, reporter, description,
+       blockage_object, specialty"""
+    headers = ['#', 'Codigo', 'Esp.', 'Area', 'Linea', 'Equipo', 'Sistema',
+               'Componente', 'Modo Falla', 'Crit', 'Estado', 'Fecha', 'Descripcion']
     data = [[_p(h, _cell_bold) for h in headers]]
 
     for i, n in enumerate(notices, 1):
@@ -195,21 +198,22 @@ def build_notices_table(notices):
             _p(str(i)),
             _p(n.get('code') or n.get('id_str') or '-', _cell_bold),
             _spec_paragraph(n.get('specialty')),
-            _equip_paragraph(n.get('equipment_tag'), n.get('equipment_name')),
-            _p(n.get('component_name') or '-'),
             _p(n.get('area_name') or '-'),
+            _p(n.get('line_name') or '-'),
+            _equip_paragraph(n.get('equipment_tag'), n.get('equipment_name')),
+            _p(n.get('system_name') or '-'),
+            _p(n.get('component_name') or '-'),
             _p(n.get('failure_mode') or '-'),
-            _p(n.get('blockage_object') or '-'),
             _p(n.get('criticality') or '-'),
             _p(n.get('status') or '-'),
             _p(_short_date(n.get('created_date'))),
-            _p(_short_tech_name(n.get('reporter'))),
             _p(n.get('description') or '-'),
         ]
         data.append(row)
 
-    col_widths = [7*mm, 17*mm, 10*mm, 27*mm, 21*mm, 19*mm, 21*mm, 15*mm,
-                  11*mm, 15*mm, 13*mm, 23*mm, 78*mm]
+    # # Codigo Esp Area Linea Equipo Sistema Componente Modo Crit Estado Fecha Desc
+    col_widths = [7*mm, 17*mm, 10*mm, 22*mm, 20*mm, 28*mm, 22*mm, 24*mm,
+                  21*mm, 11*mm, 15*mm, 13*mm, 67*mm]
 
     table = Table(data, colWidths=col_widths, repeatRows=1)
     style = TableStyle([
