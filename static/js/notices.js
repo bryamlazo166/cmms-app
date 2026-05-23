@@ -198,7 +198,7 @@ function renderNotices() {
             <td>${n.shift || '-'}</td>
             <td>${n.area_name || getName(allAreas, n.area_id)}</td>
             <td>${n.line_name || getName(allLines, n.line_id)}</td>
-            <td>${n.equipment_id ? (n.equipment_name || getName(allEquips, n.equipment_id)) : (n.free_location ? `<span style="color:#888;font-style:italic">${n.free_location}</span>` : '-')}</td>
+            <td>${n.equipment_id ? renderEquipCell(n.equipment_tag, n.equipment_name, n.equipment_id) : (n.free_location ? `<span style="color:#888;font-style:italic">${n.free_location}</span>` : '-')}</td>
             <td>${n.system_name || getName(allSys, n.system_id)}</td>
             <td>${n.component_name || getName(allComps, n.component_id)}</td>
             <td style="max-width:320px;min-width:260px;">
@@ -777,6 +777,19 @@ function getName(list, id) {
     const numId = parseInt(id);
     const item = list.find(x => x.id === numId);
     return item ? item.name : id;
+}
+
+// Renderiza una celda de equipo con TAG arriba (gris pequeno) y nombre debajo.
+// Fallback al cache local `allEquips` si la API no envia name/tag.
+function renderEquipCell(tag, name, id) {
+    let t = tag, n = name;
+    if (!t || !n) {
+        const item = allEquips.find(x => x.id === parseInt(id));
+        if (item) { t = t || item.tag; n = n || item.name; }
+    }
+    if (!t && !n) return '-';
+    if (t && n) return `<small style="color:#888;display:block;line-height:1.1;">[${t}]</small><span>${n}</span>`;
+    return t || n;
 }
 
 // ── Promote / Reclassify Modal ───────────────────────────────────────────────

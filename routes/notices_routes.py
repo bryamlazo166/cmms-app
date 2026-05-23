@@ -155,7 +155,9 @@ def register_notices_routes(
         from models import Area, Line, Equipment
         areas_map      = {a.id: a.name for a in Area.query.all()}
         lines_map      = {l.id: l.name for l in Line.query.all()}
-        equipments_map = {e.id: (e.tag or e.name) for e in Equipment.query.all()}
+        # Separar nombre y tag — antes solo devolvia el tag y la tabla mostraba
+        # el codigo en lugar del nombre del equipo.
+        equipments_map = {e.id: {'name': e.name, 'tag': e.tag} for e in Equipment.query.all()}
         systems_map    = {s.id: s.name for s in System.query.all()}
         components_map = {c.id: c.name for c in Component.query.all()}
 
@@ -163,7 +165,9 @@ def register_notices_routes(
             data = notice.to_dict()
             data['area_name']      = areas_map.get(notice.area_id, '-') if notice.area_id else '-'
             data['line_name']      = lines_map.get(notice.line_id, '-') if notice.line_id else '-'
-            data['equipment_name'] = equipments_map.get(notice.equipment_id, '-') if notice.equipment_id else '-'
+            eq_info = equipments_map.get(notice.equipment_id) if notice.equipment_id else None
+            data['equipment_name'] = (eq_info['name'] if eq_info else '-')
+            data['equipment_tag']  = (eq_info['tag'] if eq_info else None)
             data['system_name']    = systems_map.get(notice.system_id, '-') if notice.system_id else '-'
             data['component_name'] = components_map.get(notice.component_id, '-') if notice.component_id else '-'
 
