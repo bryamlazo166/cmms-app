@@ -514,21 +514,35 @@ def _build_schedule_context(app, message):
 def _apply_aliases(app, text_msg, chat_id):
     """Expande aliases conocidos dentro del mensaje del usuario.
 
+    Aplica primero los aliases del SISTEMA (hardcoded en bot.resolvers,
+    como 'TH FINOS' -> 'TH3') y luego los aliases personales guardados
+    en BD por el usuario via /alias.
+
     Devuelve (texto_expandido, lista_aliases_aplicados).
     """
     if not text_msg:
         return text_msg, []
+    expanded = text_msg
+    applied = []
+    # 1) Aliases del sistema (baseline universal, no requieren BD)
+    try:
+        from bot.resolvers import expand_equipment_aliases
+        expanded, sys_applied = expand_equipment_aliases(expanded)
+        applied.extend(sys_applied)
+    except Exception as e:
+        logger.warning(f"system aliases error: {e}")
+    # 2) Aliases personales del usuario (BD)
     try:
         from utils.aliases import expand_message, increment_usage
         with app.app_context():
             from database import db as _db
-            expanded, applied = expand_message(text_msg, chat_id, db_session=_db.session)
-            if applied:
-                increment_usage(_db.session, applied)
-            return expanded, applied
+            expanded, user_applied = expand_message(expanded, chat_id, db_session=_db.session)
+            if user_applied:
+                increment_usage(_db.session, user_applied)
+                applied.extend(user_applied)
     except Exception as e:
         logger.warning(f"_apply_aliases error: {e}")
-        return text_msg, []
+    return expanded, applied
 
 
 def _handle_alias_command(app, chat_id, text_msg):

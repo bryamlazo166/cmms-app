@@ -69,6 +69,50 @@ FUZZY_STOPWORDS = {
 }
 
 
+# ── Aliases de equipos a nivel sistema (baseline, no requieren BD) ──────────
+#
+# Convencion: clave = patron que el usuario escribe (case-insensitive, palabra
+# completa), valor = texto que reemplaza al patron en el mensaje antes de que
+# el bot extraiga tags. Mantener las expansiones cortas y usar tags reales que
+# el resolvedor de contexto reconozca (TH3, D2, etc.). Los aliases mas largos
+# se aplican primero para evitar matches parciales.
+#
+# Para alias personales del usuario, usar /alias en Telegram (se guardan en BD
+# y se aplican DESPUES de estos del sistema).
+SYSTEM_EQUIPMENT_ALIASES = {
+    'th finos': 'TH3',
+    'th fino': 'TH3',
+    'transportador fino': 'TH3',
+    'transportador finos': 'TH3',
+    'helicoidal fino': 'TH3',
+    'helicoidal finos': 'TH3',
+}
+
+
+def expand_equipment_aliases(text_msg):
+    """Reemplaza aliases de equipo del sistema en el mensaje.
+
+    Devuelve (texto_expandido, lista_aliases_aplicados).
+    Match por palabra completa, case-insensitive. Mantiene la nota original
+    entre parentesis para que el usuario vea como se interpreto.
+    """
+    if not text_msg:
+        return text_msg, []
+    expanded = text_msg
+    applied = []
+    # Aplicar primero los aliases mas largos para evitar matches parciales
+    # (ej: 'th fino' antes que 'fino' si en el futuro agregamos uno mas corto).
+    keys = sorted(SYSTEM_EQUIPMENT_ALIASES.keys(), key=lambda k: -len(k))
+    for alias_l in keys:
+        pattern = r'\b' + re.escape(alias_l) + r'\b'
+        if re.search(pattern, expanded, flags=re.IGNORECASE):
+            expansion = SYSTEM_EQUIPMENT_ALIASES[alias_l]
+            replacement = f"{expansion} (alias: {alias_l})"
+            expanded = re.sub(pattern, replacement, expanded, flags=re.IGNORECASE)
+            applied.append((alias_l, expansion))
+    return expanded, applied
+
+
 # ── Tokenizacion y matching fuzzy ────────────────────────────────────────────
 
 def fuzzy_tokens(query):
