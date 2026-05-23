@@ -341,8 +341,7 @@ async function loadAiDiagnosis() {
         });
         const j = await r.json();
         body.textContent = j.diagnosis || 'Sin diagnóstico disponible.';
-        src.textContent = '🤖 Análisis automático basado en datos del CMMS · ' +
-            new Date().toLocaleString('es-PE', { dateStyle: 'medium', timeStyle: 'short' });
+        src.textContent = '🤖 Análisis automático basado en datos del CMMS · ' + fmtDateTime(new Date());
     } catch (e) {
         body.textContent = 'Error al generar diagnóstico: ' + e.message;
     }

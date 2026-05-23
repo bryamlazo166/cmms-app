@@ -109,9 +109,10 @@
         </div>
     </section>
 
+    <script src="/static/js/datetime_utils.js?v={{ v }}"></script>
     <script>
         function escapeHtml(s){return String(s==null?'':s).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));}
-        function fmtDate(iso){if(!iso)return '—';try{const d=new Date(iso);return d.toLocaleDateString('es-PE')+' '+d.toLocaleTimeString('es-PE',{hour:'2-digit',minute:'2-digit'});}catch(_){return iso;}}
+        function fmtDate(iso){if(!iso)return '—';try{return fmtDateTime(iso);}catch(_){return iso;}}
 
         async function loadUsers(){
             const tbody = document.getElementById('usersBody');

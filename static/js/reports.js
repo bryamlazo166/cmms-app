@@ -383,7 +383,7 @@ function printWeeklyPlan() {
 </tr></thead>
 <tbody>${tableRows}</tbody>
 </table>
-<p class="footer">Generado desde CMMS Industrial — ${new Date().toLocaleString('es-PE')}</p>
+<p class="footer">Generado desde CMMS Industrial — ${fmtDateTime(new Date())}</p>
 </body></html>`;
 
     const win = window.open('', '_blank');

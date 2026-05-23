@@ -140,6 +140,7 @@
 </section>
 
 <script src="/static/js/sidebar.js?v={{ v }}"></script>
+<script src="/static/js/datetime_utils.js?v={{ v }}"></script>
 <script>
 async function loadSummary() {
     const weeks = document.getElementById('weeksBack').value;
@@ -220,7 +221,7 @@ async function loadSummary() {
                     '🤖 ' + (src === 'ai' ? 'Análisis IA automático' :
                             src === 'internal' ? 'Análisis interno (sin IA)' :
                             'Análisis fallback interno') +
-                    ' · ' + new Date().toLocaleString('es-PE');
+                    ' · ' + fmtDateTime(new Date());
             } else {
                 document.getElementById('narrativeBody').textContent = buildLocalFallback(m);
                 document.getElementById('narrativeSrc').textContent =
