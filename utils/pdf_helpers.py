@@ -251,6 +251,115 @@ def _is_unclassified(spec):
     return (spec or '').upper().strip() in ('', 'SIN CLASIF', 'SIN ASIGNAR', 'SIN_CLASIF')
 
 
+# ── Sorting helpers para el layout agrupado por area ──────────────────────────
+
+def _natural_key(s):
+    """Sort natural: 'TH2' < 'TH10' en lugar de 'TH10' < 'TH2'."""
+    import re as _re
+    return [int(t) if t.isdigit() else (t or '').lower()
+            for t in _re.split(r'(\d+)', str(s or ''))]
+
+
+def _ot_status_rank(status):
+    s = (status or '').lower()
+    return {'en progreso': 0, 'programada': 1, 'abierta': 2}.get(s, 3)
+
+
+def _crit_rank(crit):
+    c = (crit or '').lower()
+    return {'alta': 0, 'emergencia': 0, 'critica': 0, 'media': 1, 'baja': 2}.get(c, 3)
+
+
+def _is_urgent_ot(ot):
+    """OT urgente = En Progreso (lo que se trabaja HOY)."""
+    return (ot.get('status') or '').lower() == 'en progreso'
+
+
+def _is_urgent_notice(n):
+    """Aviso urgente = criticidad Alta."""
+    return _crit_rank(n.get('criticality')) == 0
+
+
+def _sort_ots(items):
+    return sorted(items, key=lambda o: (
+        _ot_status_rank(o.get('status')),
+        _natural_key(o.get('line_name')),
+        _natural_key(o.get('equipment_tag') or o.get('equipment_name')),
+        _natural_key(o.get('system_name')),
+        _natural_key(o.get('component_name')),
+        str(o.get('code') or ''),
+    ))
+
+
+def _sort_notices(items):
+    return sorted(items, key=lambda n: (
+        _crit_rank(n.get('criticality')),
+        _natural_key(n.get('line_name')),
+        _natural_key(n.get('equipment_tag') or n.get('equipment_name')),
+        _natural_key(n.get('system_name')),
+        _natural_key(n.get('component_name')),
+        str(n.get('code') or ''),
+    ))
+
+
+def _group_by_area(ots, notices):
+    """Agrupa OTs y Avisos por area_name. Devuelve lista de tuplas
+    (area_name, process_order, ots_de_area, notices_de_area) ordenadas por
+    process_order asc (NULL al final) y luego por nombre.
+    """
+    groups = {}
+    for it in ots:
+        key = it.get('area_name') or '(SIN AREA)'
+        slot = groups.setdefault(key, {'po': it.get('area_process_order'), 'ots': [], 'notices': []})
+        slot['ots'].append(it)
+        if slot['po'] is None and it.get('area_process_order') is not None:
+            slot['po'] = it.get('area_process_order')
+    for it in notices:
+        key = it.get('area_name') or '(SIN AREA)'
+        slot = groups.setdefault(key, {'po': it.get('area_process_order'), 'ots': [], 'notices': []})
+        slot['notices'].append(it)
+        if slot['po'] is None and it.get('area_process_order') is not None:
+            slot['po'] = it.get('area_process_order')
+    # Orden: process_order asc (None al final), luego nombre alfabetico
+    return sorted(
+        ((name, d['po'], _sort_ots(d['ots']), _sort_notices(d['notices']))
+         for name, d in groups.items()),
+        key=lambda x: (x[1] is None, x[1] if x[1] is not None else 0, x[0])
+    )
+
+
+def _area_band(area_name, n_ots, n_notices, color_hex='#0A84FF'):
+    """Banda de seccion de area con subtotal en una sola fila estilizada."""
+    style = ParagraphStyle(
+        'area_band', parent=_styles['Heading3'],
+        fontName='Helvetica-Bold', fontSize=11,
+        textColor=colors.white, backColor=colors.HexColor(color_hex),
+        leftIndent=4, rightIndent=4, spaceBefore=8, spaceAfter=2,
+        borderPadding=(4, 6, 4, 6),
+    )
+    return Paragraph(
+        f"&nbsp;&nbsp;{_esc(area_name)} &nbsp;&middot;&nbsp; "
+        f"{n_ots} OT{'s' if n_ots != 1 else ''}, "
+        f"{n_notices} aviso{'s' if n_notices != 1 else ''}",
+        style,
+    )
+
+
+def _urgent_band(n_ots, n_notices):
+    style = ParagraphStyle(
+        'urgent_band', parent=_styles['Heading2'],
+        fontName='Helvetica-Bold', fontSize=12,
+        textColor=colors.white, backColor=colors.HexColor('#FF453A'),
+        leftIndent=4, rightIndent=4, spaceBefore=4, spaceAfter=4,
+        borderPadding=(5, 6, 5, 6),
+    )
+    return Paragraph(
+        f"&nbsp;&nbsp;EN EJECUCION HOY &middot; {n_ots} OT(s) En Progreso "
+        f"+ {n_notices} aviso(s) de Alta criticidad",
+        style,
+    )
+
+
 def generate_daily_coordination_pdf(ots, notices, title='Hoja de Coordinacion Diaria',
                                     subtitle=None, specialty_filter=None):
     """Genera el PDF y devuelve un BytesIO listo para enviar.
@@ -288,6 +397,12 @@ def generate_daily_coordination_pdf(ots, notices, title='Hoja de Coordinacion Di
     ots_uncls = [o for o in ots if _is_unclassified(o.get('specialty'))]
     notices_uncls = [n for n in notices if _is_unclassified(n.get('specialty'))]
 
+    # Particionar en URGENTE (En Progreso + Alta criticidad) vs el RESTO
+    urgent_ots = [o for o in ots_in if _is_urgent_ot(o)]
+    urgent_notices = [n for n in notices_in if _is_urgent_notice(n)]
+    rest_ots = [o for o in ots_in if not _is_urgent_ot(o)]
+    rest_notices = [n for n in notices_in if not _is_urgent_notice(n)]
+
     elements.append(_p(title, _title_style))
     meta_lines = [
         f"Fecha de impresion: <b>{datetime.now().strftime('%Y-%m-%d %H:%M')}</b>",
@@ -300,27 +415,33 @@ def generate_daily_coordination_pdf(ots, notices, title='Hoja de Coordinacion Di
         elements.append(Paragraph(ml, _meta_style))
     elements.append(Spacer(1, 4*mm))
 
-    # Seccion OTs
-    ot_header = f"ORDENES DE TRABAJO ACTIVAS ({len(ots_in)})"
-    if wanted:
-        ot_header += f" — {wanted}"
-    elements.append(Paragraph(ot_header, _section_style))
-    if ots_in:
-        elements.append(build_ots_table(ots_in))
-    else:
-        elements.append(_p("Sin OTs en esta especialidad.", _meta_style))
+    # ── SECCION 1: EN EJECUCION HOY (urgentes) ────────────────────────────────
+    if urgent_ots or urgent_notices:
+        elements.append(_urgent_band(len(urgent_ots), len(urgent_notices)))
+        if urgent_ots:
+            elements.append(_p(f"OTs En Progreso ({len(urgent_ots)})", _section_style))
+            elements.append(build_ots_table(_sort_ots(urgent_ots)))
+            elements.append(Spacer(1, 3*mm))
+        if urgent_notices:
+            elements.append(_p(f"Avisos Alta criticidad ({len(urgent_notices)})", _section_style))
+            elements.append(build_notices_table(_sort_notices(urgent_notices)))
+        elements.append(Spacer(1, 6*mm))
 
-    elements.append(Spacer(1, 6*mm))
-
-    # Seccion Avisos
-    n_header = f"AVISOS PENDIENTES ({len(notices_in)})"
-    if wanted:
-        n_header += f" — {wanted}"
-    elements.append(Paragraph(n_header, _section_style))
-    if notices_in:
-        elements.append(build_notices_table(notices_in))
-    else:
-        elements.append(_p("Sin avisos en esta especialidad.", _meta_style))
+    # ── SECCION 2: AGRUPADO POR AREA (orden de proceso) ───────────────────────
+    if rest_ots or rest_notices:
+        elements.append(_p("Resto por area (orden de proceso de planta)", _section_style))
+        groups = _group_by_area(rest_ots, rest_notices)
+        for area_name, _po, area_ots, area_notices in groups:
+            elements.append(_area_band(area_name, len(area_ots), len(area_notices)))
+            if area_ots:
+                elements.append(build_ots_table(area_ots))
+                elements.append(Spacer(1, 2*mm))
+            if area_notices:
+                elements.append(build_notices_table(area_notices))
+            elements.append(Spacer(1, 4*mm))
+    elif not (urgent_ots or urgent_notices):
+        # No habia nada en absoluto
+        elements.append(_p("Sin OTs ni avisos en esta especialidad.", _meta_style))
 
     # Seccion SIN CLASIFICAR (al final, con aviso)
     if ots_uncls or notices_uncls:

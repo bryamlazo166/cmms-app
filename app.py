@@ -1108,6 +1108,9 @@ _ENSURE_COLUMNS = [
     # y canal por el que llego el aviso (SISTEMA, WHATSAPP, VERBAL, RADIO, CORREO).
     ("maintenance_notices", "reported_at", "VARCHAR(20)"),
     ("maintenance_notices", "report_channel", "VARCHAR(20)"),
+    # Orden de proceso para coordinacion diaria (COCCION=10, SECADO=20,
+    # MOLINO=30, CALDERAS=100). NULL = al final, alfabetico.
+    ("areas", "process_order", "INTEGER"),
     # Matriz de responsabilidad de mantenimiento (Opcion C: hibrido).
     # default en Equipment = responsable por defecto del equipo.
     # override en cada punto preventivo = excepcion puntual cuando el responsable
@@ -1250,6 +1253,39 @@ def _init_schema_on_startup():
 
 _init_schema_on_startup()
 _create_default_admin()
+
+
+def _seed_area_process_order():
+    """Asigna process_order a areas conocidas si aun esta NULL.
+
+    Solo toca filas con process_order IS NULL — respeta cualquier valor que
+    el usuario haya editado manualmente. El orden refleja el flujo fisico
+    de la planta de aceite/harina de pescado:
+    COCCION -> SECADO -> MOLINO -> CALDERAS (auxiliar).
+    """
+    try:
+        with app.app_context():
+            from sqlalchemy import text
+            defaults = {
+                'COCCION':   10,
+                'COCINADO':  10,
+                'SECADO':    20,
+                'MOLINO':    30,
+                'MOLIENDA':  30,
+                'CALDERAS':  100,
+                'CALDERA':   100,
+            }
+            for name, order in defaults.items():
+                db.session.execute(text("""
+                    UPDATE areas SET process_order = :o
+                    WHERE UPPER(name) = :n AND process_order IS NULL
+                """), {"o": order, "n": name})
+            db.session.commit()
+    except Exception as e:
+        logger.warning(f"Area process_order seed skipped: {e}")
+
+
+_seed_area_process_order()
 
 
 # ── Supabase keep-alive: ping DB every 24h to prevent free-tier suspension ────

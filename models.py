@@ -160,12 +160,18 @@ class Area(db.Model):
     # produccion vs mantenimiento (util para "BAJA / FUERA DE SERVICIO",
     # "UTILITIES" u otras areas que no producen).
     include_in_kpi: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
+    # Orden en el flujo de proceso de la planta. Usado por la Hoja de
+    # Coordinacion Diaria para agrupar y secuenciar las areas en el PDF:
+    # COCCION (10) -> SECADO (20) -> MOLINO (30) -> CALDERAS (100). NULL = al
+    # final, alfabetico. Se puede editar libremente sin afectar nada mas.
+    process_order: Mapped[int | None] = mapped_column(Integer, nullable=True)
 
     lines = relationship("Line", back_populates="area", cascade="all, delete-orphan")
 
     def to_dict(self):
         return {"id": self.id, "name": self.name, "description": self.description,
-                "include_in_kpi": self.include_in_kpi}
+                "include_in_kpi": self.include_in_kpi,
+                "process_order": self.process_order}
 
 class Line(db.Model):
     __tablename__ = 'lines'
