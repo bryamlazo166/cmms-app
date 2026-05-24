@@ -494,6 +494,69 @@ function renderWeeklyTable(items) {
 
 let _lastWeeklyItems = [];
 
+function renderLubricationsTable(items) {
+    const tbody = document.getElementById('tableLubricationsBody');
+    const counter = document.getElementById('lubCount');
+    if (counter) counter.textContent = items && items.length ? `(${items.length})` : '';
+    if (!tbody) return;
+    if (!items || items.length === 0) {
+        tbody.innerHTML = '<tr><td colspan="13" class="muted-cell">Sin lubricaciones ejecutadas en el rango.</td></tr>';
+        return;
+    }
+    tbody.innerHTML = items.map(l => {
+        const flag = l.leak_detected || l.anomaly_detected
+            ? '<span class="pill pill-yellow">⚠ Anomalia</span>'
+            : '<span class="pill pill-green">OK</span>';
+        const qty = (l.quantity_used != null) ? `${l.quantity_used} ${l.quantity_unit || ''}` : '-';
+        return `
+        <tr>
+            <td>${l.execution_date || '-'}</td>
+            <td>${l.point_code || '-'}</td>
+            <td>${l.point_name || '-'}</td>
+            <td>${l.equipment_tag || '-'}</td>
+            <td>${l.equipment || '-'}</td>
+            <td>${l.area || '-'}</td>
+            <td>${l.line || '-'}</td>
+            <td>${l.lubricant || '-'}</td>
+            <td>${l.action_type || '-'}</td>
+            <td>${qty}</td>
+            <td style="font-weight:600;">${l.executed_by || '-'}</td>
+            <td>${flag}</td>
+            <td style="color:#aab;font-size:.78rem;">${l.comments || '-'}</td>
+        </tr>`;
+    }).join('');
+}
+
+function renderInspectionsTable(items) {
+    const tbody = document.getElementById('tableInspectionsBody');
+    const counter = document.getElementById('inspCount');
+    if (counter) counter.textContent = items && items.length ? `(${items.length})` : '';
+    if (!tbody) return;
+    if (!items || items.length === 0) {
+        tbody.innerHTML = '<tr><td colspan="10" class="muted-cell">Sin inspecciones ejecutadas en el rango.</td></tr>';
+        return;
+    }
+    tbody.innerHTML = items.map(i => {
+        const resultClass =
+            i.overall_result === 'OK'             ? 'pill-green' :
+            i.overall_result === 'CON_HALLAZGOS'  ? 'pill-yellow' :
+            i.overall_result === 'NO_EJECUTADA'   ? 'pill-red' : 'pill-muted';
+        return `
+        <tr>
+            <td>${i.execution_date || '-'}</td>
+            <td><strong>${i.route_code || '-'}</strong></td>
+            <td>${i.route_name || '-'}</td>
+            <td>${i.equipment_tag || '-'}</td>
+            <td>${i.equipment || '-'}</td>
+            <td>${i.area || '-'}</td>
+            <td><span class="pill ${resultClass}">${i.overall_result || '-'}</span></td>
+            <td>${i.findings_count || 0}</td>
+            <td style="font-weight:600;">${i.executed_by || '-'}</td>
+            <td style="color:#aab;font-size:.78rem;">${i.comments || '-'}</td>
+        </tr>`;
+    }).join('');
+}
+
 async function loadWeeklyPlan() {
     try {
         const data = await getJson(`/api/reports/weekly-plan?${qs(currentWeeklyFilters())}`);
@@ -502,6 +565,8 @@ async function loadWeeklyPlan() {
         drawWeeklyLoad(data.daily || []);
         drawWeeklySpecialty(data.summary || {});
         renderWeeklyTable(_lastWeeklyItems);
+        renderLubricationsTable(data.lubrications || []);
+        renderInspectionsTable(data.inspections || []);
     } catch (e) {
         alert(`Error cargando plan semanal: ${e.message}`);
     }

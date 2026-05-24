@@ -844,6 +844,87 @@ def register_reports_routes(
         for key in sorted(day_seed.keys()):
             day_rows.append(day_seed[key])
 
+        # ── Lubricaciones ejecutadas en el rango ─────────────────────────────
+        lubrications = []
+        try:
+            lub_q = LubricationExecution.query.filter(
+                LubricationExecution.execution_date >= start_date.isoformat(),
+                LubricationExecution.execution_date <= end_date.isoformat(),
+            )
+            for ex in lub_q.all():
+                pt = ex.point
+                eq = equipment_map.get(pt.equipment_id) if pt and pt.equipment_id else None
+                ln_id = (pt.line_id if pt else None) or (eq.line_id if eq else None)
+                ln = line_map.get(ln_id) if ln_id else None
+                ar_id = (pt.area_id if pt else None) or (ln.area_id if ln else None)
+                ar = area_map.get(ar_id) if ar_id else None
+                if area_id and ar_id != area_id:
+                    continue
+                if line_id and ln_id != line_id:
+                    continue
+                if equipment_id and (pt.equipment_id if pt else None) != equipment_id:
+                    continue
+                lubrications.append({
+                    'id': ex.id,
+                    'execution_date': ex.execution_date,
+                    'point_code': pt.code if pt else None,
+                    'point_name': pt.name if pt else '-',
+                    'lubricant': pt.lubricant_name if pt else '-',
+                    'action_type': ex.action_type,
+                    'quantity_used': ex.quantity_used,
+                    'quantity_unit': ex.quantity_unit,
+                    'executed_by': ex.executed_by or '-',
+                    'leak_detected': bool(ex.leak_detected),
+                    'anomaly_detected': bool(ex.anomaly_detected),
+                    'area': ar.name if ar else '-',
+                    'line': ln.name if ln else '-',
+                    'equipment': eq.name if eq else '-',
+                    'equipment_tag': eq.tag if eq else '-',
+                    'comments': ex.comments or '-',
+                    'created_notice_code': (ex.created_notice.code if ex.created_notice else None),
+                })
+            lubrications.sort(key=lambda r: (r['execution_date'], r['area'], r['equipment_tag']))
+        except Exception as lub_err:
+            logger.warning(f"Lubrications fetch skipped: {lub_err}")
+
+        # ── Inspecciones ejecutadas en el rango ──────────────────────────────
+        inspections = []
+        try:
+            insp_q = InspectionExecution.query.filter(
+                InspectionExecution.execution_date >= start_date.isoformat(),
+                InspectionExecution.execution_date <= end_date.isoformat(),
+            )
+            for ex in insp_q.all():
+                rt = ex.route
+                eq = equipment_map.get(rt.equipment_id) if rt and rt.equipment_id else None
+                ln_id = (rt.line_id if rt else None) or (eq.line_id if eq else None)
+                ln = line_map.get(ln_id) if ln_id else None
+                ar_id = (rt.area_id if rt else None) or (ln.area_id if ln else None)
+                ar = area_map.get(ar_id) if ar_id else None
+                if area_id and ar_id != area_id:
+                    continue
+                if line_id and ln_id != line_id:
+                    continue
+                if equipment_id and (rt.equipment_id if rt else None) != equipment_id:
+                    continue
+                inspections.append({
+                    'id': ex.id,
+                    'execution_date': ex.execution_date,
+                    'route_code': rt.code if rt else None,
+                    'route_name': rt.name if rt else '-',
+                    'overall_result': ex.overall_result,
+                    'findings_count': int(ex.findings_count or 0),
+                    'executed_by': ex.executed_by or '-',
+                    'area': ar.name if ar else '-',
+                    'line': ln.name if ln else '-',
+                    'equipment': eq.name if eq else '-',
+                    'equipment_tag': eq.tag if eq else '-',
+                    'comments': ex.comments or '-',
+                })
+            inspections.sort(key=lambda r: (r['execution_date'], r['area'], r['equipment_tag']))
+        except Exception as insp_err:
+            logger.warning(f"Inspections fetch skipped: {insp_err}")
+
         return {
             'meta': {
                 'window': normalized_window,
@@ -870,9 +951,14 @@ def register_reports_routes(
                 'completion_percent': completion_percent,
                 'specialty_counts': dict(specialty_counts),
                 'status_counts': dict(status_counts),
+                'lubrications_executed': len(lubrications),
+                'inspections_executed': len(inspections),
+                'inspections_with_findings': sum(1 for i in inspections if i['overall_result'] == 'CON_HALLAZGOS'),
             },
             'daily': day_rows,
             'items': items,
+            'lubrications': lubrications,
+            'inspections': inspections,
         }
     @app.route('/api/reports/weekly-plan', methods=['GET'])
     def get_weekly_plan():

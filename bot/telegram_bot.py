@@ -1926,6 +1926,15 @@ pasados automaticamente y los usa como referencia. Pregunta cosas como
             _send(chat_id, f"❌ {err}")
         return
 
+    elif action == 'query_activities_range':
+        from bot.actions.activities import query_activities_range as _qar
+        summary, _url, err = _qar(app, data)
+        if summary:
+            _send(chat_id, summary)
+        else:
+            _send(chat_id, f"❌ No pude consultar el rango: {err or 'sin datos'}")
+        return
+
     # Unknown action — fall back to reply field if present
     reply = action_data.get('reply') or f"⚠️ Accion desconocida: {action}"
     _send(chat_id, reply)

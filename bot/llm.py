@@ -268,6 +268,18 @@ REGLA CRITICA #X PARA replicate_specs (NO IGNORAR — caso real de bug):
   * "ayer revise la ruta INS-TH3 y encontre dos fugas" → {"action":"register_inspection","data":{"route_code":"INS-TH3","execution_date":"<ayer ISO>","overall_result":"CON_HALLAZGOS","findings_count":2,"comments":"dos fugas detectadas"}}
   * "anteayer FAPMETAL hizo la inspeccion mensual del molino, sin hallazgos" → executed_by:"FAPMETAL", findings_count:0, execution_date:<anteayer ISO>
 
+7e-bis. CONSULTAR ACTIVIDADES EN UN RANGO DE FECHAS (resumen ejecutivo):
+{"action": "query_activities_range", "data": {"window": "last_7d|last_30d|this_week|last_week|this_month", "start_date": "YYYY-MM-DD", "end_date": "YYYY-MM-DD"}}
+- DETECTOR: "que actividades se hicieron la ultima semana", "que se ejecuto en mayo", "actividades del 15 al 22", "resumen de la semana", "que se hizo este mes", "actividades del ultimo mes".
+- Devuelve un resumen agregado con OTs cerradas, en progreso, lubricaciones e inspecciones ejecutadas en el rango.
+- `window` (preset): usar "last_7d" para "ultimos 7 dias / ultima semana", "last_30d" para "ultimos 30 dias / ultimo mes", "this_week" para "esta semana", "last_week" para "la semana pasada", "this_month" para "este mes".
+- `start_date` / `end_date`: usar cuando el usuario da fechas explicitas ("del 15 al 22 de mayo"). Si solo da una fecha, usa esa como inicio y deja end_date vacio (default hoy).
+- Ejemplos:
+  * "que actividades se hicieron esta semana" → {"action":"query_activities_range","data":{"window":"this_week"}}
+  * "resumen del ultimo mes" → {"action":"query_activities_range","data":{"window":"last_30d"}}
+  * "que se hizo del 1 al 15 de mayo" → {"action":"query_activities_range","data":{"start_date":"2026-05-01","end_date":"2026-05-15"}}
+  * "actividades de la semana pasada" → {"action":"query_activities_range","data":{"window":"last_week"}}
+
 7f. CAMBIO DE MARTILLOS EN MOLINO (cuando el usuario reporta un cambio nocturno de lote de martillos):
 {"action": "change_hammer_batch", "data": {"mill": "M1|M2", "start_time": "YYYY-MM-DDTHH:MM", "end_time": "YYYY-MM-DDTHH:MM", "lubrication_done": true, "hammers_changed_count": 72, "notes": "opcional", "batch_out_code": "opcional override", "batch_in_code": "opcional override"}}
 - DETECTOR: frases tipo "cambiaron martillos del molino X", "FAPMETAL cambio los martillos del molino X", "rotamos el lote de martillos del molino X", "cambio de martillos en M1/M2", "el lote LOTE-A se retiro del molino 1", "se hizo el cambio nocturno de martillos".
