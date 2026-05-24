@@ -303,26 +303,38 @@ async function createPoint() {
 }
 
 async function registerExecution() {
+    const userComment = (q('fComments') ? q('fComments').value : '').trim();
     const payload = {
         point_id: Number(q('fPoint').value || 0),
         execution_date: q('fExecDate').value || new Date().toISOString().slice(0, 10),
         quantity_used: q('fQty').value ? Number(q('fQty').value) : null,
         executed_by: (q('fBy').value || '').trim() || null,
+        leak_detected: q('fLeak') ? q('fLeak').value === '1' : false,
         anomaly_detected: q('fAnom').value === '1',
         create_notice: true,
-        comments: q('fAnom').value === '1' ? 'Anomalia detectada durante lubricacion' : 'Servicio de lubricacion ejecutado'
+        // Solo enviamos el comentario del usuario; el backend decide si crear
+        // aviso OBSERVADO cuando hay texto sin fuga ni anomalia.
+        comments: userComment || null,
     };
     if (!payload.point_id) {
         alert('Selecciona un punto para registrar ejecucion.');
         return;
     }
-    await jget('/api/lubrication/executions', {
+    const result = await jget('/api/lubrication/executions', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(payload)
     });
+    // Limpiar inputs
     q('fQty').value = '';
     q('fBy').value = '';
+    if (q('fComments')) q('fComments').value = '';
+    if (q('fLeak')) q('fLeak').value = '0';
+    q('fAnom').value = '0';
+    if (result && result.created_notice_id) {
+        const code = 'AV-' + String(result.created_notice_id).padStart(4, '0');
+        alert(`Lubricacion registrada. Se creo aviso ${code} para programar la atencion.`);
+    }
     await refreshAll();
 }
 

@@ -230,7 +230,11 @@ def refresh_lub_point_from_executions(_db, text, point_id):
 def register_lubrication(app, data):
     """Registra ejecucion de lubricacion sobre un punto.
 
-    Returns: (point_code, label, error | None).
+    Si hay fuga/anomalia, crea aviso AUTOMATICO con prioridad Alta.
+    Si hay solo comentario (sin flags), crea aviso OBSERVADO con prioridad Media.
+    Asi ningun comentario del lubricador se pierde.
+
+    Returns: (point_code, label, notice_code | None, error | None).
     """
     with app.app_context():
         from database import db as _db
@@ -255,10 +259,10 @@ def register_lubrication(app, data):
             elif point_query:
                 row, err_msg = resolve_lub_point_fuzzy(_db, text, point_query)
                 if not row and err_msg:
-                    return None, None, err_msg
+                    return None, None, None, err_msg
 
             if not row:
-                return None, None, f"Punto de lubricacion no encontrado para '{point_query or point_code or point_id}'. Verifica nombre/equipo o pasa el codigo (ej: LUB-D8-CHM-MOT)."
+                return None, None, None, f"Punto de lubricacion no encontrado para '{point_query or point_code or point_id}'. Verifica nombre/equipo o pasa el codigo (ej: LUB-D8-CHM-MOT)."
 
             pid = row[0]; pcode = row[1]; pname = row[2]
             freq_days = row[3]; warn_days = row[4]; qty_unit = row[5]
@@ -267,7 +271,7 @@ def register_lubrication(app, data):
             execution_date = data.get('execution_date') or date.today().isoformat()
             executed_by = data.get('executed_by') or 'MANTENIMIENTO'
             quantity_used = data.get('quantity_used')
-            comments = data.get('comments')
+            comments = (data.get('comments') or '').strip() or None
             leak = bool(data.get('leak_detected', False))
             anomaly = bool(data.get('anomaly_detected', False))
             action_type = data.get('action_type') or 'SERVICIO'
@@ -296,15 +300,77 @@ def register_lubrication(app, data):
                     WHERE id = :id
                 """), {"lsd": execution_date, "nd": next_due, "ss": semaphore, "id": pid})
 
+            # ── Auto-aviso si hubo fuga/anomalia/observacion ────────────────
+            notice_code = None
+            trigger_alta = leak or anomaly
+            if trigger_alta or comments:
+                # Cargar taxonomia del punto para poblar el aviso
+                pt_row = _db.session.execute(text("""
+                    SELECT area_id, line_id, equipment_id, system_id, component_id
+                    FROM lubrication_points WHERE id = :id
+                """), {"id": pid}).fetchone()
+                area_id, line_id, equipment_id, system_id, component_id = (
+                    (pt_row or (None, None, None, None, None))
+                )
+
+                flags = []
+                if leak: flags.append('FUGA')
+                if anomaly: flags.append('ANOMALIA')
+                if not flags and comments: flags.append('OBSERVADO')
+                desc_parts = [f"[LUBRICACION] {pname}"]
+                desc_parts.append(f"Estado: {' + '.join(flags)}")
+                if comments:
+                    desc_parts.append(f"Comentario: {comments}")
+                if executed_by:
+                    desc_parts.append(f"Reportado por: {executed_by}")
+                description = ' | '.join(desc_parts)
+
+                priority = 'Alta' if trigger_alta else 'Media'
+                mtto_type = 'Correctivo' if trigger_alta else 'Preventivo'
+
+                ins = _db.session.execute(text("""
+                    INSERT INTO maintenance_notices
+                    (reporter_name, reporter_type, area_id, line_id, equipment_id,
+                     system_id, component_id, description, maintenance_type,
+                     priority, status, request_date, scope)
+                    VALUES (:rn, 'MANTENIMIENTO', :a, :l, :e, :s, :c, :d, :mt,
+                            :p, 'Pendiente', :rd, 'PLAN')
+                    RETURNING id
+                """), {
+                    "rn": executed_by or 'Tecnico Lubricacion',
+                    "a": area_id, "l": line_id, "e": equipment_id,
+                    "s": system_id, "c": component_id,
+                    "d": description, "mt": mtto_type, "p": priority,
+                    "rd": date.today().isoformat(),
+                })
+                new_notice_id = ins.scalar()
+                if new_notice_id:
+                    notice_code = f"AV-{new_notice_id:04d}"
+                    _db.session.execute(text("""
+                        UPDATE maintenance_notices SET code = :c WHERE id = :id
+                    """), {"c": notice_code, "id": new_notice_id})
+                    # Vincular el aviso a la ejecucion recien creada
+                    # (PostgreSQL no acepta ORDER BY en UPDATE — usar CTE)
+                    _db.session.execute(text("""
+                        WITH last_exec AS (
+                            SELECT id FROM lubrication_executions
+                            WHERE point_id = :pid AND execution_date = :ed
+                            ORDER BY id DESC LIMIT 1
+                        )
+                        UPDATE lubrication_executions
+                        SET created_notice_id = :nid
+                        WHERE id = (SELECT id FROM last_exec)
+                    """), {"nid": new_notice_id, "pid": pid, "ed": execution_date})
+
             _db.session.commit()
             _db.session.remove()
-            return pcode or f"id:{pid}", label, None
+            return pcode or f"id:{pid}", label, notice_code, None
         except Exception as e:
             _db.session.rollback()
             try: _db.session.remove()
             except Exception: pass
             logger.error(f"register_lubrication error: {e}")
-            return None, None, str(e)
+            return None, None, None, str(e)
 
 
 def register_lubrication_batch(app, data):
@@ -330,9 +396,9 @@ def register_lubrication_batch(app, data):
         else:
             fail_list.append((str(pt), "tipo invalido"))
             continue
-        code, pname, err = register_lubrication(app, single)
+        code, pname, notice_code, err = register_lubrication(app, single)
         if code:
-            ok_list.append((code, pname))
+            ok_list.append((code, pname, notice_code))
         else:
             fail_list.append((label, err or "error desconocido"))
     return {'ok': ok_list, 'fail': fail_list}, None

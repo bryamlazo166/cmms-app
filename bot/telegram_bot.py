@@ -1808,10 +1808,13 @@ pasados automaticamente y los usa como referencia. Pregunta cosas como
                  f"📅 Fecha: {ed}", f"👤 Por: {eb}", ""]
         if ok:
             lines.append(f"✅ *Exitosas ({len(ok)}):*")
-            for code, pname in ok:
+            for code, pname, notice_code in ok:
                 # pname ya es el label jerarquico (ver _format_point_label)
                 lines.append(f"  • {pname}")
-                lines.append(f"    _cod: {code}_")
+                line_extra = f"    _cod: {code}_"
+                if notice_code:
+                    line_extra += f"  ⚠️ aviso: *{notice_code}*"
+                lines.append(line_extra)
         if fail:
             lines.append("")
             lines.append(f"❌ *Fallidas ({len(fail)}):*")
@@ -1829,15 +1832,18 @@ pasados automaticamente y los usa como referencia. Pregunta cosas como
         return
 
     elif action == 'register_lubrication':
-        code, pname, err = _register_lubrication(app, data)
+        code, pname, notice_code, err = _register_lubrication(app, data)
         if code:
             ed = data.get('execution_date') or date.today().isoformat()
             eb = data.get('executed_by') or 'MANTENIMIENTO'
             qty = data.get('quantity_used')
             qty_line = f"\n💧 Cantidad: {qty}" if qty else ""
             extra = ""
-            if data.get('leak_detected') or data.get('anomaly_detected'):
-                extra = "\n⚠️ Anomalia/fuga reportada — se creo aviso vinculado"
+            if notice_code:
+                if data.get('leak_detected') or data.get('anomaly_detected'):
+                    extra = f"\n🚨 Fuga/anomalia reportada — aviso ALTA *{notice_code}* creado"
+                else:
+                    extra = f"\n⚠️ Observacion registrada — aviso MEDIA *{notice_code}* creado"
             _send(chat_id, f"✅ *Lubricacion registrada*\n🔧 {pname}\n_cod: {code}_\n📅 Fecha: {ed}\n👤 Por: {eb}{qty_line}{extra}")
         else:
             _send(chat_id, f"❌ {err}")

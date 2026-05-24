@@ -347,7 +347,27 @@ def register_lubrication_routes(
                     point.semaphore_status = semaphore
 
                 create_notice = bool(data.get('create_notice', True))
-                if create_notice and (execution.leak_detected or execution.anomaly_detected):
+                # Triggers: fuga, anomalia, o solo observacion con texto.
+                # Antes solo creaba aviso si leak/anomaly; ahora tambien crea
+                # aviso OBSERVADO cuando el lubricador deja comentario aunque
+                # no marque fuga/anomalia (para no perder el dato).
+                has_comment = bool((execution.comments or '').strip())
+                trigger_alta = execution.leak_detected or execution.anomaly_detected
+                if create_notice and (trigger_alta or has_comment):
+                    # Construir descripcion enriquecida
+                    desc_parts = [f"[LUBRICACION] {point.name}"]
+                    flags = []
+                    if execution.leak_detected:
+                        flags.append('FUGA')
+                    if execution.anomaly_detected:
+                        flags.append('ANOMALIA')
+                    if not flags and has_comment:
+                        flags.append('OBSERVADO')
+                    desc_parts.append(f"Estado: {' + '.join(flags)}")
+                    if execution.comments:
+                        desc_parts.append(f"Comentario: {execution.comments}")
+                    if execution.executed_by:
+                        desc_parts.append(f"Reportado por: {execution.executed_by}")
                     notice = MaintenanceNotice(
                         reporter_name=execution.executed_by or 'Tecnico Lubricacion',
                         reporter_type='MANTENIMIENTO',
@@ -356,9 +376,9 @@ def register_lubrication_routes(
                         equipment_id=point.equipment_id,
                         system_id=point.system_id,
                         component_id=point.component_id,
-                        description=f"[LUBRICACION] {point.name}: {execution.comments or 'Anomalia detectada'}",
-                        maintenance_type='Correctivo',
-                        priority='Media',
+                        description=' | '.join(desc_parts),
+                        maintenance_type='Correctivo' if trigger_alta else 'Preventivo',
+                        priority='Alta' if trigger_alta else 'Media',
                         status='Pendiente',
                         request_date=dt.date.today().isoformat()
                     )
