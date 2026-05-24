@@ -947,6 +947,50 @@ async function initRotative() {
     rQ('insSystem').addEventListener('change', () => {
         fillComponentSelect('insComp', rQ('insSystem').value);
     });
+
+    // ── Soporte para URL params: prefill desde /configuracion ───────────────
+    // Cuando el usuario hace clic en "+ asignar activo" en el arbol, se pasa
+    // prefill_component_id (y equipment/system) para abrir directamente el
+    // modal "Nuevo Activo" con el componente ya seleccionado.
+    try {
+        const params = new URLSearchParams(window.location.search);
+        const prefillComp = params.get('prefill_component_id');
+        const focusAsset = params.get('focus_asset_id');
+        if (prefillComp) {
+            // Abrir el modal de nuevo activo con el componente preseleccionado
+            const eqId = params.get('prefill_equipment_id');
+            const sysId = params.get('prefill_system_id');
+            openAssetModal();
+            // Esperar un tick para que el modal se monte y populeo los selects
+            setTimeout(() => {
+                if (eqId) {
+                    // Buscar area/line del equipo
+                    const eq = rotState.equips.find(e => String(e.id) === String(eqId));
+                    if (eq) {
+                        const line = rotState.lines.find(l => String(l.id) === String(eq.line_id));
+                        if (line) {
+                            setAreaLineEquip('aArea', 'aLine', 'aEquip',
+                                line.area_id, line.id, eq.id,
+                                'Selecciona linea', 'Selecciona equipo');
+                        }
+                    }
+                    fillSystemSelect('aSystemId', eqId, sysId);
+                    fillComponentSelect('aComponentId', sysId, prefillComp);
+                }
+                rQ('aName').focus();
+            }, 100);
+            // Limpiar URL para evitar re-disparar al refrescar
+            window.history.replaceState({}, '', '/activos-rotativos');
+        } else if (focusAsset) {
+            const id = parseInt(focusAsset, 10);
+            if (Number.isFinite(id)) {
+                setTimeout(() => openAssetModal(id), 100);
+            }
+            window.history.replaceState({}, '', '/activos-rotativos');
+        }
+    } catch (_) {
+        // Ignorar fallos de URL parsing
+    }
 }
 
 document.addEventListener('DOMContentLoaded', () => {

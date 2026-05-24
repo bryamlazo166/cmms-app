@@ -443,24 +443,36 @@ async function loadGlobalTree() {
                                     const ulComps = document.createElement('ul');
                                     ulComps.className = 'nested';
 
-                                    const ROT_NAMES = ['MOTOR ELECTRICO', 'CAJA REDUCTORA', 'MOTORREDUCTOR', 'HIDROLAVADORA', 'BOMBA DE LODOS', 'BOMBA TORRE DE ENFRIAMIENTO'];
+                                    // Palabras clave que identifican un componente como ROTATIVO.
+                                    // Antes era una lista de nombres EXACTOS (no detectaba 'VENTILADOR 1' o
+                                    // 'MOTOR DEL EXHAUSTOR'). Ahora basta con que el nombre del componente
+                                    // contenga cualquiera de estas palabras.
+                                    const ROT_KEYWORDS = [
+                                        'MOTOR', 'MOTORREDUCTOR', 'REDUCTOR', 'CAJA REDUCTORA',
+                                        'BOMBA', 'VENTILADOR', 'EXTRACTOR', 'SOPLADOR',
+                                        'COMPRESOR', 'HIDROLAVADORA', 'TURBINA',
+                                    ];
                                     sysComps.forEach(comp => {
                                         const { li: liComp, node: nodeComp } = buildTreeNode(comp.name, 'Component', comp, 0);
-                                        // Show installed rotative asset for key components
-                                        if (ROT_NAMES.includes(comp.name.toUpperCase())) {
+                                        const upName = (comp.name || '').toUpperCase();
+                                        const isRotative = ROT_KEYWORDS.some(kw => upName.includes(kw));
+                                        if (isRotative) {
                                             const installed = (rotAssets || []).find(a =>
                                                 a.status === 'Instalado' && (
                                                     a.component_id === comp.id ||
-                                                    (a.equipment_id === eq.id && a.name && a.name.toUpperCase().includes(comp.name.toUpperCase()))
+                                                    (a.equipment_id === eq.id && a.name && a.name.toUpperCase().includes(upName))
                                                 )
                                             );
                                             const tag = document.createElement('span');
                                             if (installed) {
-                                                tag.innerHTML = `← <a href="/activos-rotativos" style="color:#30D158;text-decoration:none;font-weight:600" title="Ver activo ${installed.code}">${installed.code}</a>`;
+                                                tag.innerHTML = `← <a href="/activos-rotativos?focus_asset_id=${installed.id}" style="color:#30D158;text-decoration:none;font-weight:600" title="Ver/editar activo ${installed.code}">${installed.code}</a>`;
                                                 tag.style.cssText = 'font-size:.72rem;margin-left:8px;';
                                             } else {
-                                                tag.textContent = '← sin activo';
-                                                tag.style.cssText = 'font-size:.70rem;color:#FF453A;margin-left:8px;opacity:.6;';
+                                                // Clic en "sin activo" -> abrir modal de nuevo activo
+                                                // con el componente pre-seleccionado.
+                                                const url = `/activos-rotativos?prefill_component_id=${comp.id}&prefill_equipment_id=${eq.id}&prefill_system_id=${sys.id}`;
+                                                tag.innerHTML = `← <a href="${url}" style="color:#FF9F0A;text-decoration:none;font-weight:600" title="Asignar activo rotativo a este componente">+ asignar activo</a>`;
+                                                tag.style.cssText = 'font-size:.72rem;margin-left:8px;';
                                             }
                                             nodeComp.appendChild(tag);
                                         }
