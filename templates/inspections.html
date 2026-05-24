@@ -131,8 +131,8 @@
         <h3>Historial de Ejecuciones</h3>
         <div class="table-wrap" style="max-height:350px">
             <table>
-                <thead><tr><th>Fecha</th><th>Ruta</th><th>Inspector</th><th>Resultado</th><th>Hallazgos</th><th>Aviso</th><th>Comentario</th></tr></thead>
-                <tbody id="tbodyExec"><tr><td colspan="7" style="text-align:center;color:rgba(255,255,255,.30);padding:20px">Sin historial.</td></tr></tbody>
+                <thead><tr><th>Fecha</th><th>Ruta</th><th>Inspector</th><th>Resultado</th><th>Hallazgos</th><th>Aviso</th><th>Comentario general</th><th>Detalle</th></tr></thead>
+                <tbody id="tbodyExec"><tr><td colspan="8" style="text-align:center;color:rgba(255,255,255,.30);padding:20px">Sin historial.</td></tr></tbody>
             </table>
         </div>
     </div>
@@ -209,6 +209,16 @@
             <button class="btn btn-secondary" onclick="closeModal('dupModal')">Cancelar</button>
             <button class="btn btn-primary" onclick="withLoading(this, submitDuplicate)"><i class="fas fa-clone"></i> Duplicar</button>
         </div>
+    </div>
+</div>
+
+<!-- Execution Detail Modal (ver resultados por item con observaciones) -->
+<div class="modal-overlay" id="execDetailModal">
+    <div class="modal-box" style="width:min(820px,96vw)">
+        <h3><i class="fas fa-eye"></i> Detalle de inspeccion — <span id="edmRouteName" style="color:#5AC8FA"></span></h3>
+        <div style="color:#7da3cf;font-size:.85rem;margin-bottom:10px;">Fecha: <span id="edmDate"></span></div>
+        <div id="edmResults" style="max-height:480px;overflow:auto;"></div>
+        <div class="modal-actions"><button class="btn btn-secondary" onclick="closeModal('execDetailModal')">Cerrar</button></div>
     </div>
 </div>
 

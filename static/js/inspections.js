@@ -71,7 +71,7 @@ function renderRoutes(items) {
 function renderExecutions(rows) {
     const tbody = q('tbodyExec');
     if (!rows.length) {
-        tbody.innerHTML = '<tr><td colspan="7" style="text-align:center;color:rgba(255,255,255,.30);padding:20px">Sin historial.</td></tr>';
+        tbody.innerHTML = '<tr><td colspan="8" style="text-align:center;color:rgba(255,255,255,.30);padding:20px">Sin historial.</td></tr>';
         return;
     }
     tbody.innerHTML = rows.map(e => {
@@ -84,7 +84,8 @@ function renderExecutions(rows) {
             <td><span class="${resultClass}">${e.overall_result}</span></td>
             <td>${resultLabel}</td>
             <td>${e.created_notice_id ? 'AV-' + String(e.created_notice_id).padStart(4, '0') : '-'}</td>
-            <td>${e.comments || '-'}</td>
+            <td style="max-width:280px;color:#aab;font-size:.85rem;">${e.comments || '-'}</td>
+            <td><button class="btn-icon btn-edit" title="Ver detalle de items y observaciones" onclick="openExecDetailModal(${e.id}, '${(e.route_name || '').replace(/'/g, "\\'")}', '${e.execution_date || ''}')"><i class="fas fa-eye"></i></button></td>
         </tr>`;
     }).join('');
 }
@@ -255,9 +256,10 @@ async function openExecutionModal() {
     checklist.innerHTML = items.map(it => {
         let inputHtml = '';
         if (it.item_type === 'CHECK') {
-            inputHtml = `<select data-item="${it.id}" data-type="CHECK" class="cl-result">
-                <option value="OK">OK</option>
-                <option value="NO_OK">NO OK</option>
+            inputHtml = `<select data-item="${it.id}" data-type="CHECK" class="cl-result" onchange="this.style.background = this.value==='OK' ? '#1a5c2d' : this.value==='OBSERVADO' ? '#806020' : '#7a2020'; this.style.color = '#fff';">
+                <option value="OK">✅ OK</option>
+                <option value="OBSERVADO">⚠️ OBSERVADO (vigilar/programar)</option>
+                <option value="NO_OK">❌ NO OK (defecto urgente)</option>
             </select>`;
         } else if (it.item_type === 'MEDICION') {
             inputHtml = `<input data-item="${it.id}" data-type="MEDICION" class="cl-result" type="number" step="any" placeholder="${it.unit || 'valor'}">`;
@@ -327,6 +329,49 @@ function closeModal(id) {
     q(id).classList.remove('open');
 }
 window.closeModal = closeModal;
+
+// ── Execution Detail Modal ────────────────────────────────────────────────────
+
+async function openExecDetailModal(execId, routeName, execDate) {
+    q('edmRouteName').textContent = routeName || '-';
+    q('edmDate').textContent = execDate || '-';
+    q('edmResults').innerHTML = '<div style="color:#7da3cf;padding:20px;text-align:center;">Cargando...</div>';
+    q('execDetailModal').classList.add('open');
+    try {
+        const results = await jget(`/api/inspection/executions/${execId}/results`);
+        if (!results.length) {
+            q('edmResults').innerHTML = '<div style="color:#7da3cf;padding:20px;text-align:center;">Sin items registrados.</div>';
+            return;
+        }
+        const html = results.map(r => {
+            const result = (r.result || 'OK').toUpperCase();
+            let bg, color, icon;
+            if (result === 'NO_OK' || result === 'ALARMA') {
+                bg = 'rgba(244,67,54,.15)'; color = '#ff9690'; icon = '❌';
+            } else if (result === 'OBSERVADO') {
+                bg = 'rgba(255,193,7,.15)'; color = '#ffd966'; icon = '⚠️';
+            } else {
+                bg = 'rgba(67,160,71,.12)'; color = '#8df39d'; icon = '✅';
+            }
+            const valLine = r.value != null ? `<div style="color:#a8d8ff;font-size:.85rem;">Valor: <strong>${r.value}</strong></div>` : '';
+            const textLine = r.text_value ? `<div style="color:#a8d8ff;font-size:.85rem;">Texto: ${r.text_value}</div>` : '';
+            const obsLine = r.observation
+                ? `<div style="margin-top:6px;padding:6px 10px;background:rgba(255,255,255,.05);border-left:3px solid ${color};border-radius:4px;color:#d5e2f5;font-size:.88rem;"><strong style="color:${color}">Observacion:</strong> ${r.observation}</div>`
+                : '';
+            return `<div style="background:${bg};border:1px solid ${color}33;border-radius:8px;padding:10px 14px;margin-bottom:8px;">
+                <div style="display:flex;justify-content:space-between;align-items:flex-start;">
+                    <div style="color:#d5e2f5;font-weight:600;flex:1;">${icon} ${r.item_description || '(sin descripcion)'}</div>
+                    <span style="background:${color}22;color:${color};padding:2px 10px;border-radius:12px;font-size:.78rem;font-weight:700;margin-left:10px;white-space:nowrap;">${result}</span>
+                </div>
+                ${valLine}${textLine}${obsLine}
+            </div>`;
+        }).join('');
+        q('edmResults').innerHTML = html;
+    } catch (e) {
+        q('edmResults').innerHTML = `<div style="color:#ff9690;padding:20px;text-align:center;">Error: ${e.message}</div>`;
+    }
+}
+window.openExecDetailModal = openExecDetailModal;
 
 // ── Duplicate Modal ───────────────────────────────────────────────────────────
 

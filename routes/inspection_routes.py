@@ -328,6 +328,9 @@ def register_inspection_routes(
                 db.session.flush()
 
                 # Process each item result
+                # Tracking para descripcion enriquecida del aviso y prioridad
+                observed_items = []   # [(item_description, observation)] marcados OBSERVADO
+                nok_items = []        # [(item_description, observation)] marcados NO_OK / ALARMA
                 for r in results_data:
                     item_id = r.get('item_id')
                     item = InspectionItem.query.get(item_id)
@@ -336,7 +339,7 @@ def register_inspection_routes(
 
                     result_val = (r.get('result') or 'OK').upper()
                     value = r.get('value')
-                    observation = r.get('observation')
+                    observation = (r.get('observation') or '').strip() or None
 
                     # Auto-determine result for MEDICION based on thresholds
                     if item.item_type == 'MEDICION' and value is not None:
@@ -346,12 +349,27 @@ def register_inspection_routes(
                                (item.alarm_max is not None and v > item.alarm_max):
                                 result_val = 'ALARMA'
                             else:
-                                result_val = 'OK'
+                                # Si esta dentro de rango pero hay observacion -> OBSERVADO
+                                if observation:
+                                    result_val = 'OBSERVADO'
+                                else:
+                                    result_val = 'OK'
                         except (ValueError, TypeError):
                             pass
 
+                    # Auto-promote OK -> OBSERVADO si dejo observacion con texto.
+                    # Asi no se pierden los comentarios cuando el inspector marca
+                    # OK por inercia pero deja una nota indicando algo a vigilar.
+                    if result_val == 'OK' and observation:
+                        result_val = 'OBSERVADO'
+
+                    # Hallazgos: cualquier estado distinto a OK cuenta
                     if result_val in ('NO_OK', 'ALARMA'):
                         findings += 1
+                        nok_items.append((item.description, observation))
+                    elif result_val == 'OBSERVADO':
+                        findings += 1
+                        observed_items.append((item.description, observation))
 
                     ir = InspectionResult(
                         execution_id=exec_obj.id,
@@ -374,17 +392,33 @@ def register_inspection_routes(
                 route.next_due_date = next_due
                 route.semaphore_status = semaphore
 
-                # Auto-create notice if findings
+                # Auto-create notice if findings (incluye OBSERVADO + NO_OK)
                 if findings > 0 and data.get('create_notice', True):
+                    # Prioridad: Alta si hay NO_OK/ALARMA, Media si solo hay OBSERVADO
+                    notice_priority = 'Alta' if nok_items else 'Media'
+                    # Descripcion enriquecida: lista los items con su tag y observacion
+                    desc_lines = [f"[INSPECCION] {route.name}"]
+                    for desc, obs in nok_items:
+                        line = f"• {desc} (NO_OK)"
+                        if obs:
+                            line += f": {obs}"
+                        desc_lines.append(line)
+                    for desc, obs in observed_items:
+                        line = f"• {desc} (OBSERVADO)"
+                        if obs:
+                            line += f": {obs}"
+                        desc_lines.append(line)
+                    if exec_obj.comments:
+                        desc_lines.append(f"Comentario general: {exec_obj.comments}")
                     notice = MaintenanceNotice(
                         reporter_name=exec_obj.executed_by or 'Inspector',
                         reporter_type='INSPECCION',
                         area_id=route.area_id,
                         line_id=route.line_id,
                         equipment_id=route.equipment_id,
-                        description=f"[INSPECCION] {route.name}: {findings} hallazgo(s). {exec_obj.comments or ''}",
+                        description='\n'.join(desc_lines),
                         maintenance_type='Preventivo',
-                        priority='Media',
+                        priority=notice_priority,
                         status='Pendiente',
                         request_date=execution_date,
                     )
