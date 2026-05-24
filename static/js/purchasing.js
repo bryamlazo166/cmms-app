@@ -206,28 +206,68 @@ window.editExternalRQ = async function(poId, currentCode) {
 };
 
 // ── Busqueda global de OCs ──────────────────────────────────────────────
-window.searchPurchases = async function() {
-    const q = (document.getElementById('poSearchBox').value || '').trim();
+//
+// La busqueda corre AUTOMATICAMENTE mientras el usuario escribe (debounced
+// 300ms). El boton "Buscar" queda como respaldo. Para forzar minimo de
+// caracteres sin molestar con alerts, mostramos hint discreto cuando q < 2.
+
+async function runPurchaseSearch(q, opts) {
+    opts = opts || {};
     const info = document.getElementById('poSearchInfo');
-    if (q.length < 2) { alert('Ingresa al menos 2 caracteres.'); return; }
-    info.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Buscando...';
+    if (!q || q.length < 2) {
+        if (opts.fromButton) {
+            alert('Ingresa al menos 2 caracteres.');
+            return;
+        }
+        // Live mode: caja vacia o muy corta -> volver al listado default
+        if (info) info.textContent = '';
+        if (!q) loadOrders();
+        return;
+    }
+    if (info) info.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Buscando...';
     try {
         const r = await fetch(`/api/purchase-orders/search?q=${encodeURIComponent(q)}`);
         const d = await r.json();
-        if (!r.ok) { info.textContent = 'Error: ' + (d.error || r.statusText); return; }
-        info.innerHTML = `<strong>${d.count}</strong> OC${d.count !== 1 ? 's' : ''} con coincidencias para "${q}"`;
+        if (!r.ok) {
+            if (info) info.textContent = 'Error: ' + (d.error || r.statusText);
+            return;
+        }
+        if (info) info.innerHTML = `<strong>${d.count}</strong> OC${d.count !== 1 ? 's' : ''} con coincidencias para "${q}"`;
         renderOrders(d.results || []);
-    } catch (e) { info.textContent = 'Error: ' + e.message; }
+    } catch (e) {
+        if (info) info.textContent = 'Error: ' + e.message;
+    }
+}
+
+window.searchPurchases = function() {
+    const q = (document.getElementById('poSearchBox').value || '').trim();
+    return runPurchaseSearch(q, { fromButton: true });
 };
+
 window.clearSearch = function() {
     document.getElementById('poSearchBox').value = '';
     document.getElementById('poSearchInfo').textContent = '';
     loadOrders();
 };
-// Buscar tambien al presionar Enter
+
+// Debounce helper: ejecuta fn solo despues de N ms sin nuevas llamadas.
+function debounce(fn, ms) {
+    let timer = null;
+    return function () {
+        clearTimeout(timer);
+        const args = arguments;
+        timer = setTimeout(() => fn.apply(null, args), ms);
+    };
+}
+
+// Buscar tambien al presionar Enter Y AUTOMATICAMENTE mientras se escribe
 document.addEventListener('DOMContentLoaded', () => {
     const sb = document.getElementById('poSearchBox');
-    if (sb) sb.addEventListener('keypress', e => { if (e.key === 'Enter') window.searchPurchases(); });
+    if (!sb) return;
+    sb.addEventListener('keypress', e => { if (e.key === 'Enter') window.searchPurchases(); });
+
+    const liveSearch = debounce((value) => runPurchaseSearch(value, { fromButton: false }), 300);
+    sb.addEventListener('input', () => liveSearch(sb.value.trim()));
 });
 
 window.openReceiveModal = function (poId) {
