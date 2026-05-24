@@ -1057,10 +1057,55 @@ def register_reports_routes(
                 {'Indicador': 'Cumplimiento %', 'Valor': summary.get('completion_percent', 0), 'Detalle': 'Cerradas / Total programadas'},
             ]
 
+            # ── Hoja Lubricaciones ─────────────────────────────────────────
+            lub_rows = []
+            for l in payload.get('lubrications', []) or []:
+                lub_rows.append({
+                    'Fecha': l.get('execution_date'),
+                    'Codigo Punto': l.get('point_code') or '-',
+                    'Punto': l.get('point_name') or '-',
+                    'TAG': l.get('equipment_tag') or '-',
+                    'Equipo': l.get('equipment') or '-',
+                    'Linea': l.get('line') or '-',
+                    'Area': l.get('area') or '-',
+                    'Lubricante': l.get('lubricant') or '-',
+                    'Tipo Accion': l.get('action_type') or '-',
+                    'Cantidad': l.get('quantity_used'),
+                    'Unidad': l.get('quantity_unit') or '-',
+                    'Ejecutado por': l.get('executed_by') or '-',
+                    'Fuga Detectada': 'Si' if l.get('leak_detected') else 'No',
+                    'Anomalia Detectada': 'Si' if l.get('anomaly_detected') else 'No',
+                    'Aviso Generado': l.get('created_notice_code') or '-',
+                    'Comentario': l.get('comments') or '-',
+                })
+            if not lub_rows:
+                lub_rows = [{'Fecha': '-', 'Punto': 'Sin lubricaciones ejecutadas en el rango'}]
+
+            # ── Hoja Inspecciones ──────────────────────────────────────────
+            insp_rows = []
+            for i in payload.get('inspections', []) or []:
+                insp_rows.append({
+                    'Fecha': i.get('execution_date'),
+                    'Codigo Ruta': i.get('route_code') or '-',
+                    'Nombre Ruta': i.get('route_name') or '-',
+                    'TAG': i.get('equipment_tag') or '-',
+                    'Equipo': i.get('equipment') or '-',
+                    'Linea': i.get('line') or '-',
+                    'Area': i.get('area') or '-',
+                    'Resultado': i.get('overall_result') or '-',
+                    'Hallazgos': i.get('findings_count', 0),
+                    'Ejecutado por': i.get('executed_by') or '-',
+                    'Comentario': i.get('comments') or '-',
+                })
+            if not insp_rows:
+                insp_rows = [{'Fecha': '-', 'Codigo Ruta': 'Sin inspecciones ejecutadas en el rango'}]
+
             output = BytesIO()
             with pd.ExcelWriter(output, engine='openpyxl') as writer:
                 pd.DataFrame(export_rows).to_excel(writer, index=False, sheet_name='Plan Semanal')
                 pd.DataFrame(summary_rows).to_excel(writer, index=False, sheet_name='Indicadores')
+                pd.DataFrame(lub_rows).to_excel(writer, index=False, sheet_name='Lubricaciones')
+                pd.DataFrame(insp_rows).to_excel(writer, index=False, sheet_name='Inspecciones')
 
             output.seek(0)
             filename = f"Plan_Semanal_{meta.get('start_date', 'inicio')}_a_{meta.get('end_date', 'fin')}.xlsx"

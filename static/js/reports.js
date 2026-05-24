@@ -375,6 +375,8 @@ function printWeeklyPlan() {
 <div class="kpi-grid">
     ${kpis.map(([l, v]) => `<div class="kpi-box"><div class="kpi-label">${l}</div><div class="kpi-value">${v}</div></div>`).join('')}
 </div>
+
+<h2 style="color:#1a3a6b;font-size:14px;margin-top:18px;margin-bottom:6px;">🔧 Ordenes de Trabajo (${_lastWeeklyItems.length})</h2>
 <table>
 <thead><tr>
     <th>OT</th><th>Aviso</th><th>Fecha</th><th>Técnico</th><th>Especialidad</th>
@@ -383,6 +385,63 @@ function printWeeklyPlan() {
 </tr></thead>
 <tbody>${tableRows}</tbody>
 </table>
+
+<h2 style="color:#1a3a6b;font-size:14px;margin-top:18px;margin-bottom:6px;page-break-before:auto;">🛢️ Lubricaciones ejecutadas (${_lastWeeklyLubrications.length})</h2>
+${_lastWeeklyLubrications.length === 0 ? '<p style="color:#888;font-style:italic;">Sin lubricaciones ejecutadas en el rango.</p>' : `<table>
+<thead><tr>
+    <th>Fecha</th><th>Punto</th><th>TAG</th><th>Equipo</th><th>Área</th>
+    <th>Lubricante</th><th>Tipo</th><th>Cantidad</th><th>Ejecutado por</th><th>Hallazgo</th><th>Comentario</th>
+</tr></thead>
+<tbody>${_lastWeeklyLubrications.map((l, idx) => {
+    const bg = idx % 2 === 1 ? 'background:#f7f9ff;' : '';
+    const qty = (l.quantity_used != null) ? `${l.quantity_used} ${l.quantity_unit || ''}` : '-';
+    const flag = (l.leak_detected || l.anomaly_detected)
+        ? '<span style="background:#fff3cd;color:#7a5a00;padding:1px 6px;border-radius:4px;font-weight:bold;font-size:9px;">⚠ Anomalia</span>'
+        : '<span style="background:#d4f4d4;color:#1a7a1a;padding:1px 6px;border-radius:4px;font-size:9px;">OK</span>';
+    return `<tr>
+        <td style="${bg}">${l.execution_date || '-'}</td>
+        <td style="${bg}">${l.point_name || '-'}</td>
+        <td style="${bg}">${l.equipment_tag || '-'}</td>
+        <td style="${bg}">${l.equipment || '-'}</td>
+        <td style="${bg}">${l.area || '-'}</td>
+        <td style="${bg}">${l.lubricant || '-'}</td>
+        <td style="${bg}">${l.action_type || '-'}</td>
+        <td style="${bg}">${qty}</td>
+        <td style="${bg}font-weight:600;">${l.executed_by || '-'}</td>
+        <td style="${bg}">${flag}</td>
+        <td style="${bg}color:#444;font-size:9px;">${l.comments || '-'}</td>
+    </tr>`;
+}).join('')}</tbody>
+</table>`}
+
+<h2 style="color:#1a3a6b;font-size:14px;margin-top:18px;margin-bottom:6px;">🔍 Inspecciones ejecutadas (${_lastWeeklyInspections.length})</h2>
+${_lastWeeklyInspections.length === 0 ? '<p style="color:#888;font-style:italic;">Sin inspecciones ejecutadas en el rango.</p>' : `<table>
+<thead><tr>
+    <th>Fecha</th><th>Código</th><th>Ruta</th><th>TAG</th><th>Equipo</th><th>Área</th>
+    <th>Resultado</th><th>Hallazgos</th><th>Ejecutado por</th><th>Comentario</th>
+</tr></thead>
+<tbody>${_lastWeeklyInspections.map((i, idx) => {
+    const bg = idx % 2 === 1 ? 'background:#f7f9ff;' : '';
+    const resultStyle =
+        i.overall_result === 'OK'            ? 'background:#d4f4d4;color:#1a7a1a;' :
+        i.overall_result === 'CON_HALLAZGOS' ? 'background:#fff3cd;color:#7a5a00;' :
+        i.overall_result === 'NO_EJECUTADA'  ? 'background:#ffd4d4;color:#7a0000;' :
+                                               'background:#eee;color:#555;';
+    return `<tr>
+        <td style="${bg}">${i.execution_date || '-'}</td>
+        <td style="${bg}font-weight:bold;">${i.route_code || '-'}</td>
+        <td style="${bg}">${i.route_name || '-'}</td>
+        <td style="${bg}">${i.equipment_tag || '-'}</td>
+        <td style="${bg}">${i.equipment || '-'}</td>
+        <td style="${bg}">${i.area || '-'}</td>
+        <td style="${bg}"><span style="display:inline-block;padding:1px 7px;border-radius:8px;font-weight:bold;font-size:9px;${resultStyle}">${i.overall_result || '-'}</span></td>
+        <td style="${bg}">${i.findings_count || 0}</td>
+        <td style="${bg}font-weight:600;">${i.executed_by || '-'}</td>
+        <td style="${bg}color:#444;font-size:9px;">${i.comments || '-'}</td>
+    </tr>`;
+}).join('')}</tbody>
+</table>`}
+
 <p class="footer">Generado desde CMMS Industrial — ${fmtDateTime(new Date())}</p>
 </body></html>`;
 
@@ -493,6 +552,8 @@ function renderWeeklyTable(items) {
 }
 
 let _lastWeeklyItems = [];
+let _lastWeeklyLubrications = [];
+let _lastWeeklyInspections = [];
 
 function renderLubricationsTable(items) {
     const tbody = document.getElementById('tableLubricationsBody');
@@ -561,12 +622,14 @@ async function loadWeeklyPlan() {
     try {
         const data = await getJson(`/api/reports/weekly-plan?${qs(currentWeeklyFilters())}`);
         _lastWeeklyItems = data.items || [];
+        _lastWeeklyLubrications = data.lubrications || [];
+        _lastWeeklyInspections = data.inspections || [];
         renderWeeklySummary(data.summary || {}, data.meta || {});
         drawWeeklyLoad(data.daily || []);
         drawWeeklySpecialty(data.summary || {});
         renderWeeklyTable(_lastWeeklyItems);
-        renderLubricationsTable(data.lubrications || []);
-        renderInspectionsTable(data.inspections || []);
+        renderLubricationsTable(_lastWeeklyLubrications);
+        renderInspectionsTable(_lastWeeklyInspections);
     } catch (e) {
         alert(`Error cargando plan semanal: ${e.message}`);
     }
