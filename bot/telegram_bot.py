@@ -1935,6 +1935,31 @@ pasados automaticamente y los usa como referencia. Pregunta cosas como
             _send(chat_id, f"❌ No pude consultar el rango: {err or 'sin datos'}")
         return
 
+    elif action == 'duplicate_inspection_route':
+        from bot.actions.duplicate_inspection import duplicate_inspection_route as _dir
+        result, err = _dir(app, data)
+        if err:
+            _send(chat_id, f"❌ {err}")
+            return
+        src = result.get('source') or {}
+        created = result.get('created') or []
+        skipped = result.get('skipped') or []
+        lines = [
+            f"✅ *Ruta duplicada*",
+            f"📋 Origen: `{src.get('code') or '-'}` ({src.get('items_available', 0)} items)",
+            f"",
+            f"📦 *{len(created)} ruta(s) creada(s):*",
+        ]
+        for c in created:
+            lines.append(f"  • `{c['code']}` → {c['equipment_tag'] or '-'} ({c['items_count']} items)")
+        if skipped:
+            lines.append("")
+            lines.append(f"⚠ *{len(skipped)} omitida(s):*")
+            for s in skipped:
+                lines.append(f"  • {s.get('equipment_tag') or s.get('equipment_id')}: {s.get('reason')}")
+        _send(chat_id, "\n".join(lines))
+        return
+
     # Unknown action — fall back to reply field if present
     reply = action_data.get('reply') or f"⚠️ Accion desconocida: {action}"
     _send(chat_id, reply)

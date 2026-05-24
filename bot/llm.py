@@ -268,6 +268,19 @@ REGLA CRITICA #X PARA replicate_specs (NO IGNORAR — caso real de bug):
   * "ayer revise la ruta INS-TH3 y encontre dos fugas" → {"action":"register_inspection","data":{"route_code":"INS-TH3","execution_date":"<ayer ISO>","overall_result":"CON_HALLAZGOS","findings_count":2,"comments":"dos fugas detectadas"}}
   * "anteayer FAPMETAL hizo la inspeccion mensual del molino, sin hallazgos" → executed_by:"FAPMETAL", findings_count:0, execution_date:<anteayer ISO>
 
+7e-tris. DUPLICAR RUTA DE INSPECCION a uno o varios equipos:
+{"action": "duplicate_inspection_route", "data": {"source_route_code": "INSP-0005", "target_equipment_tags": ["D6", "D7", "D8"], "frequency_days": null, "warning_days": null, "code_template": null, "name_template": null}}
+- DETECTOR: "duplica la ruta INSP-X al D6", "copia la inspeccion de la caja reductora del D5 a los demas digestores", "replica esta inspeccion a D6, D7 y D8", "crea la misma inspeccion para X y Y".
+- source_route_code: codigo de la ruta origen (preferido). Si el usuario solo da el nombre, busca en la lista RUTAS DE INSPECCION del contexto.
+- target_equipment_tags: lista de tags DESTINO. El usuario suele listarlos: "D6, D7 y D8" -> ["D6","D7","D8"]. Tambien acepta ranges como "del D6 al D9" -> ["D6","D7","D8","D9"].
+- code_template / name_template: SOLO si el usuario explicitamente da una plantilla con placeholder {tag} (ej: "los codigos deberian ser INSP-{tag}-CAJA"). Si no, dejar null y el sistema auto-genera reemplazando el tag del origen.
+- frequency_days / warning_days: SOLO si el usuario explicitamente las menciona distintas al origen. Default = heredar.
+- Items: SIEMPRE se copian profundamente (no pidas confirmacion).
+- Ejemplos:
+  * "duplica la ruta INSP-0005 a los digestores D6, D7 y D8" -> {"action":"duplicate_inspection_route","data":{"source_route_code":"INSP-0005","target_equipment_tags":["D6","D7","D8"]}}
+  * "copia la inspeccion de caja reductora del D5 al D6 con frecuencia 60 dias" -> {"action":"duplicate_inspection_route","data":{"source_route_code":"<la del D5 en contexto>","target_equipment_tags":["D6"],"frequency_days":60}}
+  * "replica INSP-0010 del D2 al D3,D4,D5 con codigos tipo INSP-{tag}-VIBR" -> data.code_template:"INSP-{tag}-VIBR"
+
 7e-bis. CONSULTAR ACTIVIDADES EN UN RANGO DE FECHAS (resumen ejecutivo):
 {"action": "query_activities_range", "data": {"window": "last_7d|last_30d|this_week|last_week|this_month", "start_date": "YYYY-MM-DD", "end_date": "YYYY-MM-DD"}}
 - DETECTOR: "que actividades se hicieron la ultima semana", "que se ejecuto en mayo", "actividades del 15 al 22", "resumen de la semana", "que se hizo este mes", "actividades del ultimo mes".

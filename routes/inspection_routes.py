@@ -86,6 +86,162 @@ def register_inspection_routes(
             db.session.rollback()
             return jsonify({"error": str(e)}), 500
 
+    # ── Duplicar ruta a uno o varios equipos ──────────────────────────────
+    @app.route('/api/inspection/routes/<int:route_id>/duplicate', methods=['POST'])
+    def duplicate_inspection_route(route_id):
+        """Duplica una ruta de inspeccion a 1 o N equipos destino.
+
+        Body JSON:
+        {
+            "target_equipment_ids": [12, 13, 14],   # requerido
+            "code_template": null,                  # opcional, ej: "INSP-{tag}-CAJA"
+            "name_template": null,                  # opcional, ej: "Caja Reductora {tag}"
+            "frequency_days": null,                 # opcional, default = igual al origen
+            "warning_days": null,                   # opcional, default = igual al origen
+            "copy_items": true                      # default true
+        }
+
+        Devuelve: {"created": [...], "skipped": [...]}.
+        """
+        source = InspectionRoute.query.get_or_404(route_id)
+        try:
+            data = request.json or {}
+            target_ids = data.get('target_equipment_ids') or []
+            if not isinstance(target_ids, list) or not target_ids:
+                return jsonify({"error": "target_equipment_ids debe ser una lista no vacia"}), 400
+
+            from models import Equipment
+            code_template = (data.get('code_template') or '').strip() or None
+            name_template = (data.get('name_template') or '').strip() or None
+            copy_items = data.get('copy_items', True)
+            freq_override = data.get('frequency_days')
+            warn_override = data.get('warning_days')
+
+            # Equipo origen para inferir TAG y poder sustituirlo en codigos/nombres
+            source_eq = Equipment.query.get(source.equipment_id) if source.equipment_id else None
+            source_tag = (source_eq.tag if source_eq else '') or ''
+            source_name = (source_eq.name if source_eq else '') or ''
+
+            # Cargar items del origen una sola vez (si vamos a copiarlos)
+            source_items = []
+            if copy_items:
+                source_items = InspectionItem.query.filter_by(
+                    route_id=source.id, is_active=True
+                ).order_by(InspectionItem.order_index).all()
+
+            created, skipped = [], []
+            for target_id in target_ids:
+                try:
+                    target_id = int(target_id)
+                except (TypeError, ValueError):
+                    skipped.append({"equipment_id": target_id, "reason": "id invalido"})
+                    continue
+
+                target_eq = Equipment.query.get(target_id)
+                if not target_eq:
+                    skipped.append({"equipment_id": target_id, "reason": "equipo no existe"})
+                    continue
+
+                target_tag = target_eq.tag or ''
+                target_name_eq = target_eq.name or ''
+
+                # ── Generar codigo nuevo ──────────────────────────────────
+                if code_template:
+                    new_code = code_template.replace('{tag}', target_tag).replace('{name}', target_name_eq)
+                elif source.code and source_tag and source_tag in source.code:
+                    new_code = source.code.replace(source_tag, target_tag)
+                else:
+                    new_code = None  # lo asignamos despues con el ID auto
+
+                # Verificar unicidad del codigo
+                if new_code:
+                    existing = InspectionRoute.query.filter_by(code=new_code).first()
+                    if existing:
+                        skipped.append({
+                            "equipment_id": target_id,
+                            "equipment_tag": target_tag,
+                            "reason": f"codigo '{new_code}' ya existe (ruta id={existing.id})",
+                        })
+                        continue
+
+                # ── Generar nombre nuevo ──────────────────────────────────
+                if name_template:
+                    new_name = name_template.replace('{tag}', target_tag).replace('{name}', target_name_eq)
+                elif source_tag and source_tag in (source.name or ''):
+                    new_name = source.name.replace(source_tag, target_tag)
+                elif source_name and source_name in (source.name or ''):
+                    new_name = source.name.replace(source_name, target_name_eq)
+                else:
+                    suffix = f" ({target_tag})" if target_tag else f" ({target_name_eq})"
+                    new_name = (source.name or 'Inspeccion') + suffix
+
+                # ── Crear ruta nueva ──────────────────────────────────────
+                new_route = InspectionRoute(
+                    name=new_name,
+                    description=source.description,
+                    area_id=target_eq.line.area_id if target_eq.line else None,
+                    line_id=target_eq.line_id,
+                    equipment_id=target_eq.id,
+                    frequency_days=int(freq_override) if freq_override else source.frequency_days,
+                    warning_days=int(warn_override) if warn_override else source.warning_days,
+                    is_active=True,
+                    # Fechas reseteadas: la ruta nueva empieza limpia
+                    last_execution_date=None,
+                    next_due_date=None,
+                    semaphore_status='PENDIENTE',
+                    # Heredar responsabilidad y proveedor override
+                    responsible_party_override=source.responsible_party_override,
+                    provider_id_override=source.provider_id_override,
+                )
+                db.session.add(new_route)
+                db.session.flush()
+
+                # Asignar codigo: el explicito o auto-generar
+                new_route.code = new_code or f"INSP-{new_route.id:04d}"
+
+                # Copia profunda de items
+                items_copied = 0
+                for src_item in source_items:
+                    db.session.add(InspectionItem(
+                        route_id=new_route.id,
+                        description=src_item.description,
+                        item_type=src_item.item_type,
+                        unit=src_item.unit,
+                        alarm_min=src_item.alarm_min,
+                        alarm_max=src_item.alarm_max,
+                        criteria=src_item.criteria,
+                        order_index=src_item.order_index,
+                        is_active=True,
+                    ))
+                    items_copied += 1
+
+                created.append({
+                    "id": new_route.id,
+                    "code": new_route.code,
+                    "name": new_route.name,
+                    "equipment_id": target_id,
+                    "equipment_tag": target_tag,
+                    "equipment_name": target_name_eq,
+                    "items_count": items_copied,
+                })
+
+            db.session.commit()
+            return jsonify({
+                "source": {
+                    "id": source.id,
+                    "code": source.code,
+                    "name": source.name,
+                    "equipment_tag": source_tag,
+                    "items_available": len(source_items),
+                },
+                "created": created,
+                "skipped": skipped,
+            }), 201
+        except Exception as e:
+            db.session.rollback()
+            logger.exception("duplicate_inspection_route error")
+            return jsonify({"error": str(e)}), 500
+
     # ── Items CRUD ─────────────────────────────────────────────────────────
 
     @app.route('/api/inspection/routes/<int:route_id>/items', methods=['GET', 'POST'])

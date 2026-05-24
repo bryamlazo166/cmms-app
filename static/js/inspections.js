@@ -55,6 +55,7 @@ function renderRoutes(items) {
             <td><span class="pill ${pill}">${sem}</span></td>
             <td>
                 ${inactive ? '' : `<button class="btn-icon btn-edit" title="Items" onclick="openItemsModal(${r.id})"><i class="fas fa-list-check"></i></button>`}
+                ${inactive ? '' : `<button class="btn-icon btn-edit" title="Duplicar a otros equipos" onclick="openDuplicateModal(${r.id})"><i class="fas fa-clone"></i></button>`}
                 <button class="btn-icon ${toggleClass}" title="${toggleTitle}" onclick="toggleRoute(${r.id}, ${inactive})"><i class="fas ${toggleIcon}"></i></button>
             </td>
         </tr>`;
@@ -326,6 +327,167 @@ function closeModal(id) {
     q(id).classList.remove('open');
 }
 window.closeModal = closeModal;
+
+// ── Duplicate Modal ───────────────────────────────────────────────────────────
+
+const dupState = { sourceId: null, sourceTag: '', sourceCode: '', sourceName: '', selectedIds: new Set() };
+
+function openDuplicateModal(routeId) {
+    const route = inspState.routes.find(r => r.id === routeId);
+    if (!route) return;
+    dupState.sourceId = routeId;
+    dupState.sourceCode = route.code || '';
+    dupState.sourceName = route.name || '';
+    dupState.selectedIds = new Set();
+    // Find equipment object to get tag
+    const sourceEq = inspState.equipments.find(e => e.id === route.equipment_id);
+    dupState.sourceTag = sourceEq ? (sourceEq.tag || '') : '';
+
+    q('dupSourceId').value = routeId;
+    q('dupSourceCode').textContent = route.code || '(sin codigo)';
+    q('dupSourceName').textContent = route.name;
+    q('dupSourceEq').textContent = sourceEq
+        ? `[${sourceEq.tag || '-'}] ${sourceEq.name}`
+        : '(sin equipo)';
+    q('dupSourceItems').textContent = route.item_count || 0;
+    q('dupSearch').value = '';
+    q('dupFreq').value = '';
+    q('dupWarn').value = '';
+    q('dupCodeTpl').value = '';
+    q('dupNameTpl').value = '';
+
+    renderDupTargets();
+    updateDupPreview();
+    q('dupModal').classList.add('open');
+}
+window.openDuplicateModal = openDuplicateModal;
+
+function renderDupTargets() {
+    const search = (q('dupSearch').value || '').toLowerCase().trim();
+    const box = q('dupTargetsBox');
+    const list = inspState.equipments
+        .filter(e => e.id !== (inspState.routes.find(r => r.id === dupState.sourceId) || {}).equipment_id)
+        .filter(e => {
+            if (!search) return true;
+            const blob = ((e.tag || '') + ' ' + (e.name || '')).toLowerCase();
+            return blob.includes(search);
+        });
+    if (!list.length) {
+        box.innerHTML = '<div style="color:#7da3cf;padding:8px;font-style:italic;">Sin equipos que coincidan.</div>';
+        return;
+    }
+    box.innerHTML = list.map(e => {
+        const checked = dupState.selectedIds.has(e.id) ? 'checked' : '';
+        return `<label style="display:flex;align-items:center;gap:8px;padding:4px 0;cursor:pointer;border-bottom:1px solid rgba(255,255,255,.05);">
+            <input type="checkbox" value="${e.id}" ${checked} onchange="toggleDupTarget(${e.id}, this.checked)">
+            <span style="color:#5AC8FA;font-weight:600;min-width:80px;">${e.tag || '-'}</span>
+            <span style="color:#d5e2f5;">${e.name}</span>
+        </label>`;
+    }).join('');
+}
+
+function filterDupTargets() {
+    renderDupTargets();
+}
+window.filterDupTargets = filterDupTargets;
+
+function toggleDupTarget(id, checked) {
+    if (checked) dupState.selectedIds.add(id);
+    else dupState.selectedIds.delete(id);
+    updateDupPreview();
+}
+window.toggleDupTarget = toggleDupTarget;
+
+function dupSelectAllFiltered() {
+    const search = (q('dupSearch').value || '').toLowerCase().trim();
+    inspState.equipments
+        .filter(e => e.id !== (inspState.routes.find(r => r.id === dupState.sourceId) || {}).equipment_id)
+        .filter(e => {
+            if (!search) return true;
+            const blob = ((e.tag || '') + ' ' + (e.name || '')).toLowerCase();
+            return blob.includes(search);
+        })
+        .forEach(e => dupState.selectedIds.add(e.id));
+    renderDupTargets();
+    updateDupPreview();
+}
+window.dupSelectAllFiltered = dupSelectAllFiltered;
+
+function dupClearAll() {
+    dupState.selectedIds.clear();
+    renderDupTargets();
+    updateDupPreview();
+}
+window.dupClearAll = dupClearAll;
+
+function previewNewCode(targetTag) {
+    const tpl = (q('dupCodeTpl').value || '').trim();
+    if (tpl) return tpl.replace('{tag}', targetTag);
+    if (dupState.sourceCode && dupState.sourceTag && dupState.sourceCode.includes(dupState.sourceTag)) {
+        return dupState.sourceCode.replace(dupState.sourceTag, targetTag);
+    }
+    return '(auto: INSP-<nuevo_id>)';
+}
+
+function updateDupPreview() {
+    const ids = Array.from(dupState.selectedIds);
+    const box = q('dupPreview');
+    if (!ids.length) {
+        box.innerHTML = '<i class="fas fa-info-circle"></i> Selecciona al menos un equipo destino.';
+        return;
+    }
+    const previews = ids.slice(0, 5).map(id => {
+        const eq = inspState.equipments.find(e => e.id === id);
+        if (!eq) return '';
+        return `<div>&middot; <strong style="color:#5AC8FA">${eq.tag || '-'}</strong> → codigo: <code style="color:#a8d8ff">${previewNewCode(eq.tag || '')}</code></div>`;
+    }).join('');
+    const more = ids.length > 5 ? `<div style="margin-top:4px;">... y ${ids.length - 5} mas</div>` : '';
+    box.innerHTML = `<i class="fas fa-check-circle" style="color:#30D158"></i> Se crearan <strong>${ids.length}</strong> ruta(s):<div style="margin-top:6px;">${previews}${more}</div>`;
+}
+
+async function submitDuplicate() {
+    const ids = Array.from(dupState.selectedIds);
+    if (!ids.length) { alert('Selecciona al menos un equipo destino.'); return; }
+
+    const body = {
+        target_equipment_ids: ids,
+        code_template: (q('dupCodeTpl').value || '').trim() || null,
+        name_template: (q('dupNameTpl').value || '').trim() || null,
+        frequency_days: q('dupFreq').value ? Number(q('dupFreq').value) : null,
+        warning_days: q('dupWarn').value !== '' ? Number(q('dupWarn').value) : null,
+        copy_items: true,
+    };
+
+    try {
+        const result = await jget(`/api/inspection/routes/${dupState.sourceId}/duplicate`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(body),
+        });
+        const created = result.created || [];
+        const skipped = result.skipped || [];
+        let msg = `✅ ${created.length} ruta(s) creada(s)`;
+        if (created.length) {
+            msg += '\n\n' + created.map(c => `  • ${c.code} — ${c.equipment_tag || '-'}`).join('\n');
+        }
+        if (skipped.length) {
+            msg += `\n\n⚠ ${skipped.length} omitida(s):\n` + skipped.map(s => `  • ${s.equipment_tag || s.equipment_id}: ${s.reason}`).join('\n');
+        }
+        alert(msg);
+        closeModal('dupModal');
+        await refreshAll();
+    } catch (e) {
+        alert(`Error al duplicar: ${e.message}`);
+    }
+}
+window.submitDuplicate = submitDuplicate;
+
+// Re-render preview when templates change
+document.addEventListener('input', (e) => {
+    if (e.target && (e.target.id === 'dupCodeTpl' || e.target.id === 'dupNameTpl')) {
+        updateDupPreview();
+    }
+});
 
 // ── Boot ──────────────────────────────────────────────────────────────────────
 
