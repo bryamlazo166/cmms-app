@@ -221,7 +221,7 @@ def register_purchasing_routes(
             like = f"%{q}%"
 
             # Subquery: ids de PO cuyos items matchean
-            from models import SparePart, WarehouseItem
+            from models import SparePart, WarehouseItem, WorkOrder
             req_q = db.session.query(PurchaseRequest).outerjoin(
                 SparePart, PurchaseRequest.spare_part_id == SparePart.id
             ).outerjoin(
