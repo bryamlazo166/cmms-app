@@ -232,37 +232,68 @@
                 <span class="tooltip">Instalar como app</span>
             `;
             navList.appendChild(li);
-            document.getElementById('cmmsInstallSidebarLink').addEventListener('click', async (ev) => {
+            document.getElementById('cmmsInstallSidebarLink').addEventListener('click', (ev) => {
                 ev.preventDefault();
-                if (_deferredInstallPrompt) {
-                    _deferredInstallPrompt.prompt();
-                    try {
-                        const choice = await _deferredInstallPrompt.userChoice;
-                        if (choice.outcome === 'accepted') {
-                            li.remove();
-                        }
-                    } catch (_) {}
-                    _deferredInstallPrompt = null;
-                } else {
-                    // Fallback: mostrar instrucciones segun plataforma
-                    const ua = navigator.userAgent || '';
-                    const isIOS = /iPad|iPhone|iPod/.test(ua) && !window.MSStream;
-                    if (isIOS) {
-                        alert('En iPhone/iPad: usa Safari y toca el boton Compartir ↑ -> "Añadir a pantalla de inicio".');
-                    } else {
-                        alert('Para instalar en Android Chrome:\n\n1. Toca los 3 puntos arriba derecha\n2. Selecciona "Instalar aplicación" o "Añadir a pantalla principal"\n\nSi no aparece la opcion, espera unos segundos y vuelve a abrir el menu (Chrome necesita evaluar la app).');
-                    }
-                }
+                _triggerInstall();
             });
         }
-        // Inyectar el boton SIEMPRE al cargar la pagina (no esperar al
-        // beforeinstallprompt). Asi el usuario lo ve aunque Chrome todavia
-        // no lo considere instalable — y al hacer clic recibe instrucciones
-        // claras si todavia no esta disponible el deferred prompt.
+        // Inyectar el boton en el sidebar Y un boton flotante fallback.
+        // El boton flotante no depende del DOM del sidebar y es mas visible
+        // para el usuario en planta con celular.
         function _tryInjectInstallItem() {
             if (_isAlreadyInstalled()) return;
             _injectInstallSidebarItem();
+            // Retry varias veces por si el sidebar se renderiza tarde
+            let tries = 0;
+            const retryInterval = setInterval(() => {
+                tries++;
+                if (document.getElementById('cmmsInstallSidebarItem') || tries > 10) {
+                    clearInterval(retryInterval);
+                    return;
+                }
+                _injectInstallSidebarItem();
+            }, 400);
+            // Boton flotante siempre visible como respaldo
+            _injectFloatingInstallButton();
         }
+
+        function _injectFloatingInstallButton() {
+            if (_isAlreadyInstalled()) return;
+            if (document.getElementById('cmmsInstallFab')) return;
+            const fab = document.createElement('button');
+            fab.id = 'cmmsInstallFab';
+            fab.title = 'Instalar CMMS como app';
+            fab.style.cssText = 'position:fixed;bottom:18px;left:18px;z-index:9997;background:linear-gradient(145deg,#0a4d8c,#0a84ff);color:#fff;border:none;padding:11px 16px;border-radius:30px;box-shadow:0 4px 14px rgba(10,132,255,.5);cursor:pointer;font-weight:600;font-size:.85rem;display:flex;align-items:center;gap:8px;font-family:Roboto,sans-serif;';
+            fab.innerHTML = '<i class="fas fa-mobile-alt" style="font-size:1.1rem;"></i> <span>Instalar app</span>';
+            fab.addEventListener('click', _triggerInstall);
+            document.body.appendChild(fab);
+        }
+
+        async function _triggerInstall() {
+            if (_deferredInstallPrompt) {
+                _deferredInstallPrompt.prompt();
+                try {
+                    const choice = await _deferredInstallPrompt.userChoice;
+                    if (choice.outcome === 'accepted') {
+                        const item = document.getElementById('cmmsInstallSidebarItem');
+                        if (item) item.remove();
+                        const fab = document.getElementById('cmmsInstallFab');
+                        if (fab) fab.remove();
+                    }
+                } catch (_) {}
+                _deferredInstallPrompt = null;
+                return;
+            }
+            // Fallback: instrucciones especificas
+            const ua = navigator.userAgent || '';
+            const isIOS = /iPad|iPhone|iPod/.test(ua) && !window.MSStream;
+            if (isIOS) {
+                alert('En iPhone/iPad:\n\n1. Asegurate de estar usando Safari (no Chrome)\n2. Toca el boton Compartir (cuadrado con flecha arriba ↑)\n3. Desplazate y elige "Añadir a pantalla de inicio"\n4. Confirma');
+            } else {
+                alert('En Android Chrome:\n\n1. Toca los 3 puntos arriba derecha (menu Chrome)\n2. Busca "Instalar aplicacion" o "Añadir a pantalla principal"\n3. Confirma\n\nSi la opcion no aparece, recarga la pagina o espera unos segundos (Chrome necesita evaluar la app).');
+            }
+        }
+
         if (document.readyState === 'loading') {
             document.addEventListener('DOMContentLoaded', _tryInjectInstallItem);
         } else {
