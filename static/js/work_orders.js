@@ -735,7 +735,7 @@ function renderPlanningTable(data = null) {
                 : '<span style="color:rgba(255,255,255,.20);font-size:.78rem">-</span>'}</td>
             <td>
                 <div style="display:flex; align-items:center; gap:6px;">
-                    <button class="btn-icon planning-action-btn" data-perm="ordenes.edit" onclick="editOT(${ot.id})" title="Editar OT"><i class="fas fa-edit"></i></button>
+                    <button class="btn-icon planning-action-btn" data-perm="ordenes.edit_ot" data-perm-mode="disable" onclick="editOT(${ot.id})" title="Editar OT"><i class="fas fa-edit"></i></button>
                     <button class="btn-icon planning-action-btn" onclick="openOTInExecution(${ot.id})" title="Ir a Ejecucion y Cierre" style="border-color:#2d6a3d; background:#173528; color:#b8ffd0;"><i class="fas fa-play"></i></button>
                     <button class="btn-icon planning-action-btn" onclick="quickShareOT(${ot.id})" title="Compartir por WhatsApp" style="border-color:#25D366; background:rgba(37,211,102,.12); color:#25D366;"><i class="fab fa-whatsapp"></i></button>
                 </div>
@@ -1566,12 +1566,14 @@ function renderIndicatorsBlock(ot, personnel) {
         mhEl.textContent = '—';
     }
 
-    // Mostrar botón de edición solo si el rol lo permite (admin/supervisor/gerencia)
+    // El boton "Ajustar horas" se muestra siempre que el bloque sea visible
+    // (OT cerrada). Si el rol no tiene permiso ordenes.adjust_hours,
+    // sidebar.js lo dejara visible pero deshabilitado (data-perm-mode="disable").
     const editBtn = document.getElementById('btn-edit-closed-hours');
     if (editBtn) {
-        const role = ((_currentUser && _currentUser.role) || '').toLowerCase();
-        const allowed = ['admin', 'supervisor', 'gerencia'].includes(role);
-        editBtn.style.display = allowed ? '' : 'none';
+        editBtn.style.display = '';
+        // Reaplica permisos al boton (por si CMMS_PERMS cargo despues del render).
+        try { if (window.CMMS_PERMS) window.CMMS_PERMS.applyToDom(editBtn.parentElement); } catch (_) {}
     }
 }
 

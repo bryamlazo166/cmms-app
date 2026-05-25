@@ -410,22 +410,27 @@ def register_auth_routes(app, db, logger, User, RolePermission=None):
         },
     }
 
-    PERM_ACTIONS = ('view', 'create', 'edit', 'delete', 'export', 'import', 'close', 'approve')
+    PERM_ACTIONS = ('view', 'create', 'edit', 'delete', 'export', 'import',
+                    'close', 'approve', 'edit_ot', 'adjust_hours')
 
     def _expand_default(p):
-        """Convierte el formato legado {view,edit} al de 8 flags."""
+        """Convierte el formato legado {view,edit} al de 10 flags.
+        edit_ot deriva de edit; adjust_hours deriva de close."""
         if not isinstance(p, dict):
             return {a: False for a in PERM_ACTIONS}
         edit = bool(p.get('edit', False))
+        close = bool(p.get('close', edit))
         return {
-            'view':    bool(p.get('view', True)),
-            'create':  bool(p.get('create', edit)),
-            'edit':    edit,
-            'delete':  bool(p.get('delete', edit)),
-            'export':  bool(p.get('export', edit)),
-            'import':  bool(p.get('import', False)),
-            'close':   bool(p.get('close', edit)),
-            'approve': bool(p.get('approve', False)),
+            'view':         bool(p.get('view', True)),
+            'create':       bool(p.get('create', edit)),
+            'edit':         edit,
+            'delete':       bool(p.get('delete', edit)),
+            'export':       bool(p.get('export', edit)),
+            'import':       bool(p.get('import', False)),
+            'close':        close,
+            'approve':      bool(p.get('approve', False)),
+            'edit_ot':      bool(p.get('edit_ot', edit)),
+            'adjust_hours': bool(p.get('adjust_hours', close)),
         }
 
     def _get_permissions():
@@ -444,14 +449,16 @@ def register_auth_routes(app, db, logger, User, RolePermission=None):
                 default_perm = _expand_default(DEFAULTS.get(role, {}).get(key, {}))
                 if perm:
                     result[role][key] = {
-                        'view':    perm.can_view,
-                        'create':  perm.can_create,
-                        'edit':    perm.can_edit,
-                        'delete':  perm.can_delete,
-                        'export':  perm.can_export,
-                        'import':  perm.can_import,
-                        'close':   perm.can_close,
-                        'approve': perm.can_approve,
+                        'view':         perm.can_view,
+                        'create':       perm.can_create,
+                        'edit':         perm.can_edit,
+                        'delete':       perm.can_delete,
+                        'export':       perm.can_export,
+                        'import':       perm.can_import,
+                        'close':        perm.can_close,
+                        'approve':      perm.can_approve,
+                        'edit_ot':      getattr(perm, 'can_edit_ot', perm.can_edit),
+                        'adjust_hours': getattr(perm, 'can_adjust_hours', perm.can_close),
                     }
                 else:
                     result[role][key] = default_perm
@@ -532,19 +539,25 @@ def register_auth_routes(app, db, logger, User, RolePermission=None):
                 continue
             for module, perms in modules.items():
                 fields = {
-                    'can_view':    bool(perms.get('view', True)),
-                    'can_create':  bool(perms.get('create', False)),
-                    'can_edit':    bool(perms.get('edit', False)),
-                    'can_delete':  bool(perms.get('delete', False)),
-                    'can_export':  bool(perms.get('export', False)),
-                    'can_import':  bool(perms.get('import', False)),
-                    'can_close':   bool(perms.get('close', False)),
-                    'can_approve': bool(perms.get('approve', False)),
+                    'can_view':         bool(perms.get('view', True)),
+                    'can_create':       bool(perms.get('create', False)),
+                    'can_edit':         bool(perms.get('edit', False)),
+                    'can_delete':       bool(perms.get('delete', False)),
+                    'can_export':       bool(perms.get('export', False)),
+                    'can_import':       bool(perms.get('import', False)),
+                    'can_close':        bool(perms.get('close', False)),
+                    'can_approve':      bool(perms.get('approve', False)),
+                    'can_edit_ot':      bool(perms.get('edit_ot', False)),
+                    'can_adjust_hours': bool(perms.get('adjust_hours', False)),
                 }
                 existing = RolePermission.query.filter_by(role=role, module=module).first()
                 if existing:
                     for k, v in fields.items():
-                        setattr(existing, k, v)
+                        # Por compat: si la columna aun no existe en BD vieja,
+                        # setattr crearia el atributo en memoria pero el commit
+                        # fallaria. Solo seteamos lo que el modelo conoce.
+                        if hasattr(existing, k):
+                            setattr(existing, k, v)
                 else:
                     db.session.add(RolePermission(role=role, module=module, **fields))
         db.session.commit()

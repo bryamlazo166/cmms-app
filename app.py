@@ -458,24 +458,29 @@ _DEFAULT_PERMS = {
 _perms_cache = {}
 _perms_cache_ts = 0
 
-_PERM_ACTIONS = ('view', 'create', 'edit', 'delete', 'export', 'import', 'close', 'approve')
+_PERM_ACTIONS = ('view', 'create', 'edit', 'delete', 'export', 'import',
+                 'close', 'approve', 'edit_ot', 'adjust_hours')
 
 
 def _expand_legacy_perm(p):
-    """Convierte el formato legado {view,edit} al de 8 flags. Sirve
-    como fallback cuando _DEFAULT_PERMS aun usa el formato corto."""
+    """Convierte el formato legado {view,edit} al de 10 flags. Sirve
+    como fallback cuando _DEFAULT_PERMS aun usa el formato corto.
+    edit_ot deriva de edit; adjust_hours deriva de close."""
     if not isinstance(p, dict):
         return {a: False for a in _PERM_ACTIONS}
     edit = bool(p.get('edit', False))
+    close = bool(p.get('close', edit))
     return {
-        'view':    bool(p.get('view', True)),
-        'create':  bool(p.get('create', edit)),
-        'edit':    edit,
-        'delete':  bool(p.get('delete', edit)),
-        'export':  bool(p.get('export', edit)),
-        'import':  bool(p.get('import', False)),
-        'close':   bool(p.get('close', edit)),
-        'approve': bool(p.get('approve', False)),
+        'view':         bool(p.get('view', True)),
+        'create':       bool(p.get('create', edit)),
+        'edit':         edit,
+        'delete':       bool(p.get('delete', edit)),
+        'export':       bool(p.get('export', edit)),
+        'import':       bool(p.get('import', False)),
+        'close':        close,
+        'approve':      bool(p.get('approve', False)),
+        'edit_ot':      bool(p.get('edit_ot', edit)),
+        'adjust_hours': bool(p.get('adjust_hours', close)),
     }
 
 
@@ -498,14 +503,16 @@ def _load_role_perms(role):
             default_perm = _expand_legacy_perm(defaults.get(mod_key, {}))
             if perm:
                 result[mod_key] = {
-                    'view':    perm.can_view,
-                    'create':  perm.can_create,
-                    'edit':    perm.can_edit,
-                    'delete':  perm.can_delete,
-                    'export':  perm.can_export,
-                    'import':  perm.can_import,
-                    'close':   perm.can_close,
-                    'approve': perm.can_approve,
+                    'view':         perm.can_view,
+                    'create':       perm.can_create,
+                    'edit':         perm.can_edit,
+                    'delete':       perm.can_delete,
+                    'export':       perm.can_export,
+                    'import':       perm.can_import,
+                    'close':        perm.can_close,
+                    'approve':      perm.can_approve,
+                    'edit_ot':      getattr(perm, 'can_edit_ot', perm.can_edit),
+                    'adjust_hours': getattr(perm, 'can_adjust_hours', perm.can_close),
                 }
             else:
                 result[mod_key] = default_perm
@@ -1147,6 +1154,12 @@ _ENSURE_COLUMNS = [
     ("role_permissions", "can_import",  "BOOLEAN DEFAULT false"),
     ("role_permissions", "can_close",   "BOOLEAN DEFAULT false"),
     ("role_permissions", "can_approve", "BOOLEAN DEFAULT false"),
+    # Flags granulares por boton (solo aplican a modulo 'ordenes'):
+    # can_edit_ot     -> boton "Editar OT" en tabla Planificacion
+    # can_adjust_hours-> boton "Ajustar horas" en panel Ejecucion (OT cerrada)
+    # Se inicializan derivando de can_edit/can_close en el backfill de abajo.
+    ("role_permissions", "can_edit_ot",      "BOOLEAN DEFAULT false"),
+    ("role_permissions", "can_adjust_hours", "BOOLEAN DEFAULT false"),
 ]
 
 
@@ -1213,6 +1226,31 @@ def _init_schema_on_startup():
                       AND can_delete = false
                       AND can_close  = false
                       AND can_approve = false
+                """))
+                db.session.commit()
+            except Exception:
+                db.session.rollback()
+
+            # Backfill especifico de los 2 flags granulares nuevos:
+            # can_edit_ot deriva de can_edit; can_adjust_hours de can_close.
+            # Solo se aplica a filas con can_edit_ot/can_adjust_hours en NULL
+            # o false (preserva ajustes manuales). Idempotente.
+            try:
+                db.session.execute(text("""
+                    UPDATE role_permissions
+                    SET can_edit_ot = COALESCE(can_edit_ot, false),
+                        can_adjust_hours = COALESCE(can_adjust_hours, false)
+                    WHERE can_edit_ot IS NULL OR can_adjust_hours IS NULL
+                """))
+                db.session.execute(text("""
+                    UPDATE role_permissions
+                    SET can_edit_ot = can_edit
+                    WHERE can_edit_ot = false AND can_edit = true
+                """))
+                db.session.execute(text("""
+                    UPDATE role_permissions
+                    SET can_adjust_hours = can_close
+                    WHERE can_adjust_hours = false AND can_close = true
                 """))
                 db.session.commit()
             except Exception:

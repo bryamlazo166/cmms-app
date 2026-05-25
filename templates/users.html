@@ -389,15 +389,23 @@ async function loadPermissions() {
     } catch (_) {}
 }
 
-const PERM_ACTIONS = ['view', 'create', 'edit', 'delete', 'export', 'import', 'close', 'approve'];
+const PERM_ACTIONS = ['view', 'create', 'edit', 'delete', 'export', 'import',
+                      'close', 'approve', 'edit_ot', 'adjust_hours'];
 const ACTION_LABELS = {
     view: 'Ver', create: 'Crear', edit: 'Editar', delete: 'Eliminar',
-    export: 'Exportar', import: 'Importar', close: 'Cerrar', approve: 'Aprobar'
+    export: 'Exportar', import: 'Importar', close: 'Cerrar', approve: 'Aprobar',
+    edit_ot: 'Editar OT', adjust_hours: 'Ajustar horas'
 };
 const ACTION_ICONS = {
     view: 'fa-eye', create: 'fa-plus', edit: 'fa-pen', delete: 'fa-trash',
     export: 'fa-file-export', import: 'fa-file-import', close: 'fa-flag-checkered',
-    approve: 'fa-check-double'
+    approve: 'fa-check-double', edit_ot: 'fa-pen-to-square', adjust_hours: 'fa-stopwatch'
+};
+// Acciones que solo aplican a modulos especificos. En el resto de modulos
+// se muestra un "-" en lugar de checkbox para evitar confusion.
+const ACTION_MODULE_SCOPE = {
+    edit_ot:      ['ordenes'],
+    adjust_hours: ['ordenes'],
 };
 let _activeRole = null;
 
@@ -452,6 +460,13 @@ function renderPermissions(data) {
         const p = rolePerms[mod.key] || {};
         let cells = `<td style="padding:9px 10px;font-size:.85rem;color:rgba(255,255,255,.85);font-weight:500">${mod.label}</td>`;
         PERM_ACTIONS.forEach(act => {
+            const scope = ACTION_MODULE_SCOPE[act];
+            // Si la accion solo aplica a algunos modulos y este no esta en la
+            // lista, pinta "-" en lugar de checkbox.
+            if (scope && !scope.includes(mod.key)) {
+                cells += `<td style="text-align:center;padding:6px;color:rgba(255,255,255,.2);font-size:.8rem">-</td>`;
+                return;
+            }
             const checked = !!p[act];
             cells += `<td style="text-align:center;padding:6px"><input type="checkbox" data-role="${_activeRole}" data-mod="${mod.key}" data-perm="${act}" ${checked ? 'checked' : ''} style="cursor:pointer;width:16px;height:16px"></td>`;
         });

@@ -1271,8 +1271,8 @@ def register_work_orders_routes(
         try:
             from flask_login import current_user
             user_role = getattr(current_user, 'role', None)
-            if not _user_can_edit_closed_ot():
-                return jsonify({"error": "Solo administrador o usuarios con permiso de cierre pueden editar horas de OT cerrada."}), 403
+            if not _user_can_adjust_hours():
+                return jsonify({"error": "Solo administrador o usuarios con permiso 'Ajustar horas' (modulo Ordenes) pueden editar horas de OT cerrada."}), 403
 
             wo = WorkOrder.query.get(id)
             if not wo:
@@ -1355,11 +1355,13 @@ def register_work_orders_routes(
             return jsonify({"error": str(e)}), 500
 
     def _user_can_edit_closed_ot():
-        """True si el usuario es admin o tiene ordenes.close. Se usa SOLO en
-        los flujos auditados sobre OT cerrada (PATCH /hours, PUT /report,
-        PUT/DELETE /conformity). El PUT generico de la OT y el DELETE de la OT
+        """True si el usuario es admin o tiene ordenes.close. Se usa en
+        los flujos auditados sobre OT cerrada (PUT /report, PUT/DELETE
+        /conformity). El PUT generico de la OT y el DELETE de la OT
         usan _is_admin() (mas estricto) para evitar que se sobreescriban
-        los valores de cierre via 'Cerrar Trabajo'."""
+        los valores de cierre via 'Cerrar Trabajo'.
+
+        Para PATCH /hours usar _user_can_adjust_hours() (flag dedicado)."""
         from flask_login import current_user
         role = getattr(current_user, 'role', None)
         if role == 'admin':
@@ -1370,6 +1372,24 @@ def register_work_orders_routes(
             from app import _load_role_perms
             perms = _load_role_perms(role)
             return bool(perms.get('ordenes', {}).get('close', False))
+        except Exception:
+            return False
+
+    def _user_can_adjust_hours():
+        """True si el usuario es admin o tiene ordenes.adjust_hours.
+        Especifico para el boton/endpoint 'Ajustar horas' sobre OT cerrada.
+        Si la flag dedicada no existe (BD vieja), cae a 'close' para no
+        romper el comportamiento previo."""
+        from flask_login import current_user
+        role = getattr(current_user, 'role', None)
+        if role == 'admin':
+            return True
+        if not role:
+            return False
+        try:
+            from app import _load_role_perms
+            p = _load_role_perms(role).get('ordenes', {})
+            return bool(p.get('adjust_hours', p.get('close', False)))
         except Exception:
             return False
 

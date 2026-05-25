@@ -138,6 +138,11 @@ class RolePermission(db.Model):
     can_import: Mapped[bool] = mapped_column(Boolean, default=False)
     can_close: Mapped[bool] = mapped_column(Boolean, default=False)
     can_approve: Mapped[bool] = mapped_column(Boolean, default=False)
+    # Flags granulares especificos del modulo "ordenes". En otros modulos
+    # quedan a False y no se usan. Permiten controlar boton-por-boton
+    # sin acoplarlos a los flags genericos edit/close.
+    can_edit_ot: Mapped[bool] = mapped_column(Boolean, default=False)
+    can_adjust_hours: Mapped[bool] = mapped_column(Boolean, default=False)
 
     def to_dict(self):
         return {
@@ -146,6 +151,8 @@ class RolePermission(db.Model):
             "can_edit": self.can_edit, "can_delete": self.can_delete,
             "can_export": self.can_export, "can_import": self.can_import,
             "can_close": self.can_close, "can_approve": self.can_approve,
+            "can_edit_ot": self.can_edit_ot,
+            "can_adjust_hours": self.can_adjust_hours,
         }
 
 

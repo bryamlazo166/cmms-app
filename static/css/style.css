@@ -234,6 +234,25 @@ button:active,
     color: var(--label-primary, rgba(255,255,255,0.92));
 }
 
+/* Botones bloqueados por permisos (data-perm-mode="disable"): se muestran
+   visibles pero en gris y sin hover, para que el usuario vea que la accion
+   existe pero no la puede ejecutar. */
+.perm-disabled,
+button.perm-disabled,
+.btn-icon.perm-disabled {
+    opacity: 0.35 !important;
+    cursor: not-allowed !important;
+    filter: grayscale(80%);
+    pointer-events: auto;
+}
+.perm-disabled:hover,
+button.perm-disabled:hover {
+    background: transparent !important;
+    color: inherit !important;
+    transform: none !important;
+    box-shadow: none !important;
+}
+
 /* ══════════════════════════════════════════════════════
    TABS
 ══════════════════════════════════════════════════════ */
