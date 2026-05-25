@@ -177,6 +177,83 @@
                     .catch((e) => console.warn('SW registration failed:', e));
             });
         }
+
+        // ── Install prompt: banner discreto cuando es instalable ─────────
+        // Android dispara beforeinstallprompt cuando los criterios PWA se
+        // cumplen y el usuario aun no ha instalado. iOS no lo dispara (hay
+        // que usar 'Añadir a pantalla de inicio' desde Safari).
+        let _deferredInstallPrompt = null;
+        const HIDE_KEY = 'cmms.pwa.installHidden';
+        window.addEventListener('beforeinstallprompt', (e) => {
+            e.preventDefault();
+            _deferredInstallPrompt = e;
+            // Respetar si el usuario ya rechazo recientemente
+            try {
+                const hidden = localStorage.getItem(HIDE_KEY);
+                if (hidden && (Date.now() - parseInt(hidden, 10)) < 7 * 86400000) return;
+            } catch (_) {}
+            _showInstallBanner();
+        });
+        window.addEventListener('appinstalled', () => {
+            _deferredInstallPrompt = null;
+            const banner = document.getElementById('cmmsInstallBanner');
+            if (banner) banner.remove();
+        });
+
+        function _showInstallBanner() {
+            if (document.getElementById('cmmsInstallBanner')) return;
+            const banner = document.createElement('div');
+            banner.id = 'cmmsInstallBanner';
+            banner.style.cssText = 'position:fixed;bottom:16px;right:16px;z-index:9998;background:linear-gradient(145deg,#0a4d8c,#0a84ff);color:#fff;padding:10px 14px;border-radius:10px;box-shadow:0 6px 20px rgba(0,0,0,.4);display:flex;align-items:center;gap:10px;max-width:320px;font-size:.85rem;font-family:Roboto,sans-serif;';
+            banner.innerHTML = `
+                <i class="fas fa-mobile-alt" style="font-size:1.4rem;"></i>
+                <div style="flex:1;">
+                    <div style="font-weight:600;margin-bottom:2px;">Instalar CMMS en tu celular</div>
+                    <div style="opacity:.85;font-size:.75rem;">Acceso rapido y funciona sin internet en planta.</div>
+                </div>
+                <button id="cmmsInstallBtn" style="background:#fff;color:#0a4d8c;border:none;padding:6px 12px;border-radius:6px;font-weight:600;cursor:pointer;font-size:.82rem;">Instalar</button>
+                <button id="cmmsInstallClose" style="background:transparent;color:#fff;border:none;cursor:pointer;font-size:1.2rem;padding:0 4px;opacity:.7;" title="Recordar mas tarde">&times;</button>
+            `;
+            document.body.appendChild(banner);
+            document.getElementById('cmmsInstallBtn').addEventListener('click', async () => {
+                if (!_deferredInstallPrompt) return;
+                _deferredInstallPrompt.prompt();
+                try { await _deferredInstallPrompt.userChoice; } catch (_) {}
+                _deferredInstallPrompt = null;
+                banner.remove();
+            });
+            document.getElementById('cmmsInstallClose').addEventListener('click', () => {
+                try { localStorage.setItem(HIDE_KEY, String(Date.now())); } catch (_) {}
+                banner.remove();
+            });
+        }
+
+        // ── Indicador online/offline ─────────────────────────────────────
+        // Pequeno badge fijo arriba derecha que solo aparece offline.
+        function _renderOfflineBadge(isOffline) {
+            let b = document.getElementById('cmmsOfflineBadge');
+            if (isOffline) {
+                if (b) return;
+                b = document.createElement('div');
+                b.id = 'cmmsOfflineBadge';
+                b.style.cssText = 'position:fixed;top:10px;right:14px;z-index:9999;background:#FF453A;color:#fff;padding:5px 11px;border-radius:14px;font-size:.78rem;font-weight:700;box-shadow:0 4px 12px rgba(0,0,0,.3);font-family:Roboto,sans-serif;display:flex;align-items:center;gap:6px;';
+                b.innerHTML = '<i class="fas fa-wifi-slash"></i> SIN CONEXION';
+                document.body.appendChild(b);
+            } else if (b) {
+                b.remove();
+            }
+        }
+        window.addEventListener('online', () => _renderOfflineBadge(false));
+        window.addEventListener('offline', () => _renderOfflineBadge(true));
+        // Check inicial
+        if (typeof navigator !== 'undefined' && navigator.onLine === false) {
+            // Esperar a que el DOM este listo
+            if (document.readyState === 'loading') {
+                document.addEventListener('DOMContentLoaded', () => _renderOfflineBadge(true));
+            } else {
+                _renderOfflineBadge(true);
+            }
+        }
     } catch (e) { console.warn('PWA init error:', e); }
 })();
 

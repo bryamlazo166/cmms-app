@@ -3,23 +3,45 @@
 // El nombre del cache cambia con cada deploy para forzar refresh limpio.
 // Bump CACHE_NAME (ej v1 → v2) cuando cambien CSS/JS y necesites invalidar
 // los assets cacheados en clientes ya instalados.
-const CACHE_NAME = 'cmms-v20';
+const CACHE_NAME = 'cmms-v21';
+
+// Assets estaticos que se pre-cachean al install (siempre disponibles offline)
 const ASSET_PATHS = [
   '/static/css/style.css',
   '/static/css/sidebar.css',
   '/static/css/themes.css',
   '/static/js/sidebar.js',
+  '/static/js/app.js',
+  '/static/js/lubrication.js',
+  '/static/js/inspections.js',
+  '/static/js/notices.js',
+  '/static/js/datetime_utils.js',
   '/static/favicon.svg',
   '/static/icon-192.png',
   '/static/icon-512.png',
   '/static/manifest.webmanifest',
 ];
 
+// Paginas criticas para uso en planta. Se intenta cachear al install para
+// que esten disponibles aunque no haya red al abrir la app.
+// Si alguna falla (401 por sesion expirada), se ignora — el network-first
+// las cacheara la proxima vez que el usuario las visite logueado.
+const PAGE_PATHS = [
+  '/',
+  '/lubricacion',
+  '/inspecciones',
+  '/avisos',
+  '/ordenes',
+  '/configuracion',
+];
+
 self.addEventListener('install', (event) => {
   // Pre-cachea el shell minimo (no falla si algun asset no responde 200)
   event.waitUntil(
     caches.open(CACHE_NAME).then((cache) =>
-      Promise.allSettled(ASSET_PATHS.map((p) => cache.add(p)))
+      Promise.allSettled(
+        ASSET_PATHS.concat(PAGE_PATHS).map((p) => cache.add(p))
+      )
     )
   );
   self.skipWaiting();
