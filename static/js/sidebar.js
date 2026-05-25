@@ -187,7 +187,8 @@
         window.addEventListener('beforeinstallprompt', (e) => {
             e.preventDefault();
             _deferredInstallPrompt = e;
-            // Respetar si el usuario ya rechazo recientemente
+            _injectInstallSidebarItem();
+            // Respetar si el usuario ya rechazo recientemente el banner
             try {
                 const hidden = localStorage.getItem(HIDE_KEY);
                 if (hidden && (Date.now() - parseInt(hidden, 10)) < 7 * 86400000) return;
@@ -198,7 +199,75 @@
             _deferredInstallPrompt = null;
             const banner = document.getElementById('cmmsInstallBanner');
             if (banner) banner.remove();
+            const item = document.getElementById('cmmsInstallSidebarItem');
+            if (item) item.remove();
         });
+
+        // Detectar si ya esta instalada (display-mode standalone) o si ya
+        // fue agregada en iOS (navigator.standalone). En ese caso no
+        // tiene sentido mostrar el boton.
+        function _isAlreadyInstalled() {
+            try {
+                if (window.matchMedia && window.matchMedia('(display-mode: standalone)').matches) return true;
+                if (window.navigator && window.navigator.standalone === true) return true;
+            } catch (_) {}
+            return false;
+        }
+
+        // Inyecta un item "Instalar app" en la sidebar nav-list, siempre
+        // visible cuando es instalable. Si el click llega y no hay
+        // deferred prompt (ya rechazado, iOS, etc.), muestra instrucciones.
+        function _injectInstallSidebarItem() {
+            if (_isAlreadyInstalled()) return;
+            if (document.getElementById('cmmsInstallSidebarItem')) return;
+            const navList = document.querySelector('.sidebar .nav-list');
+            if (!navList) return;
+            const li = document.createElement('li');
+            li.id = 'cmmsInstallSidebarItem';
+            li.innerHTML = `
+                <a href="#" id="cmmsInstallSidebarLink" style="background:linear-gradient(145deg,#0a4d8c,#0a84ff);">
+                    <i class="fas fa-mobile-alt"></i>
+                    <span class="links_name">Instalar app</span>
+                </a>
+                <span class="tooltip">Instalar como app</span>
+            `;
+            navList.appendChild(li);
+            document.getElementById('cmmsInstallSidebarLink').addEventListener('click', async (ev) => {
+                ev.preventDefault();
+                if (_deferredInstallPrompt) {
+                    _deferredInstallPrompt.prompt();
+                    try {
+                        const choice = await _deferredInstallPrompt.userChoice;
+                        if (choice.outcome === 'accepted') {
+                            li.remove();
+                        }
+                    } catch (_) {}
+                    _deferredInstallPrompt = null;
+                } else {
+                    // Fallback: mostrar instrucciones segun plataforma
+                    const ua = navigator.userAgent || '';
+                    const isIOS = /iPad|iPhone|iPod/.test(ua) && !window.MSStream;
+                    if (isIOS) {
+                        alert('En iPhone/iPad: usa Safari y toca el boton Compartir ↑ -> "Añadir a pantalla de inicio".');
+                    } else {
+                        alert('Para instalar en Android Chrome:\n\n1. Toca los 3 puntos arriba derecha\n2. Selecciona "Instalar aplicación" o "Añadir a pantalla principal"\n\nSi no aparece la opcion, espera unos segundos y vuelve a abrir el menu (Chrome necesita evaluar la app).');
+                    }
+                }
+            });
+        }
+        // Inyectar el boton SIEMPRE al cargar la pagina (no esperar al
+        // beforeinstallprompt). Asi el usuario lo ve aunque Chrome todavia
+        // no lo considere instalable — y al hacer clic recibe instrucciones
+        // claras si todavia no esta disponible el deferred prompt.
+        function _tryInjectInstallItem() {
+            if (_isAlreadyInstalled()) return;
+            _injectInstallSidebarItem();
+        }
+        if (document.readyState === 'loading') {
+            document.addEventListener('DOMContentLoaded', _tryInjectInstallItem);
+        } else {
+            _tryInjectInstallItem();
+        }
 
         function _showInstallBanner() {
             if (document.getElementById('cmmsInstallBanner')) return;

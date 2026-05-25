@@ -3,7 +3,7 @@
 // El nombre del cache cambia con cada deploy para forzar refresh limpio.
 // Bump CACHE_NAME (ej v1 → v2) cuando cambien CSS/JS y necesites invalidar
 // los assets cacheados en clientes ya instalados.
-const CACHE_NAME = 'cmms-v21';
+const CACHE_NAME = 'cmms-v22';
 
 // Assets estaticos que se pre-cachean al install (siempre disponibles offline)
 const ASSET_PATHS = [
