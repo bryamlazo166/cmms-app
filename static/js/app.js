@@ -692,6 +692,15 @@ function createNode(text, type, data, cfg, childCount) {
         actions.appendChild(btnSpecs);
     }
 
+    // Merge button (only for Line) — fusionar con otra linea de la misma area
+    if (type === 'Line') {
+        const btnMerge = document.createElement('span');
+        btnMerge.innerHTML = '<i class="fas fa-code-merge"></i>';
+        btnMerge.title = 'Fusionar con otra linea (mueve todos los equipos)';
+        btnMerge.onclick = (e) => { e.stopPropagation(); if (data && data.id) openMergeLineModal(data); };
+        actions.appendChild(btnMerge);
+    }
+
     actions.appendChild(btnNotice);
     actions.appendChild(btnEdit);
     actions.appendChild(btnDel);
@@ -1099,3 +1108,102 @@ async function deleteDocLink(docId) {
     await fetch(`/api/doc-links/${docId}`, { method: 'DELETE' });
     loadDocLinks();
 }
+
+// ── Merge Lines Modal ────────────────────────────────────────────────────────
+//
+// Permite fusionar la linea actual (source) con otra linea destino.
+// Mueve todos los equipos + actualiza tablas relacionadas (notices, OTs,
+// lubricaciones, inspecciones, activos rotativos) en una transaccion del
+// backend. La linea origen se borra al final.
+
+async function openMergeLineModal(sourceLine) {
+    // Cargar todas las lineas y filtrar por la misma area
+    const [allLines, allEquips] = await Promise.all([
+        fetch('/api/lines').then(r => r.json()),
+        fetch('/api/equipments').then(r => r.json()),
+    ]);
+    const sameAreaLines = (allLines || [])
+        .filter(l => l.area_id === sourceLine.area_id && l.id !== sourceLine.id)
+        .sort((a, b) => (a.name || '').localeCompare(b.name || ''));
+
+    if (sameAreaLines.length === 0) {
+        alert('No hay otras lineas en la misma area para fusionar con esta.');
+        return;
+    }
+
+    const equipsInSource = (allEquips || []).filter(e => e.line_id === sourceLine.id);
+    const equipsList = equipsInSource.length === 0
+        ? '<em style="color:#888">(linea vacia, no hay equipos que mover)</em>'
+        : equipsInSource.map(e => `&nbsp;&nbsp;• ${e.tag ? '[' + e.tag + '] ' : ''}${e.name}`).join('<br>');
+
+    const optionsHtml = sameAreaLines.map(l => `<option value="${l.id}">${l.name}</option>`).join('');
+
+    const modal = document.createElement('div');
+    modal.id = 'mergeLineModalOverlay';
+    modal.style.cssText = 'position:fixed;inset:0;z-index:10000;background:rgba(0,0,0,.78);backdrop-filter:blur(6px);display:flex;align-items:center;justify-content:center;';
+    modal.innerHTML = `
+        <div style="width:min(560px,96vw);background:#1c1f25;border:1px solid #2f4257;border-radius:12px;padding:20px;color:#d5e2f5;box-shadow:0 12px 40px rgba(0,0,0,.5);">
+            <h3 style="margin:0 0 12px;color:#FF9F0A;font-size:1.1rem;"><i class="fas fa-code-merge"></i> Fusionar linea</h3>
+            <div style="background:#0a1a2e;border:1px solid #1f3656;border-radius:8px;padding:10px 14px;margin-bottom:14px;font-size:.88rem;">
+                <div style="color:#7da3cf;">Linea ORIGEN (se borrara al fusionar):</div>
+                <div style="color:#5AC8FA;font-weight:600;margin:4px 0;">${sourceLine.name}</div>
+                <div style="color:#7da3cf;font-size:.78rem;margin-top:8px;">${equipsInSource.length} equipo(s) a mover:</div>
+                <div style="color:#a8d8ff;font-size:.82rem;margin-top:4px;max-height:140px;overflow:auto;">${equipsList}</div>
+            </div>
+            <div style="margin-bottom:14px;">
+                <label style="display:block;color:#7da3cf;font-size:.82rem;margin-bottom:6px;">Linea DESTINO (recibira los equipos):</label>
+                <select id="mergeTargetSelect" style="width:100%;padding:8px 10px;background:#0a1a2e;border:1px solid #2f4257;color:#d5e2f5;border-radius:6px;">
+                    <option value="">-- Seleccionar --</option>
+                    ${optionsHtml}
+                </select>
+            </div>
+            <div style="background:rgba(255,69,58,.10);border:1px solid #FF453A55;border-radius:6px;padding:8px 12px;margin-bottom:14px;color:#ff9690;font-size:.82rem;">
+                <i class="fas fa-exclamation-triangle"></i> Operacion NO reversible. Se actualizan tambien
+                avisos, OTs, lubricaciones, inspecciones y activos rotativos vinculados.
+                Requiere permiso admin.
+            </div>
+            <div style="display:flex;justify-content:flex-end;gap:8px;">
+                <button onclick="closeMergeLineModal()" style="padding:8px 14px;background:#2a2d35;border:1px solid #4a5361;color:#d6d8de;border-radius:6px;cursor:pointer;">Cancelar</button>
+                <button onclick="confirmMergeLine(${sourceLine.id})" style="padding:8px 14px;background:linear-gradient(145deg,#7a2020,#a02828);border:1px solid #c03030;color:#fff;border-radius:6px;cursor:pointer;font-weight:600;"><i class="fas fa-code-merge"></i> Fusionar</button>
+            </div>
+        </div>
+    `;
+    document.body.appendChild(modal);
+}
+window.openMergeLineModal = openMergeLineModal;
+
+function closeMergeLineModal() {
+    const m = document.getElementById('mergeLineModalOverlay');
+    if (m) m.remove();
+}
+window.closeMergeLineModal = closeMergeLineModal;
+
+async function confirmMergeLine(sourceId) {
+    const sel = document.getElementById('mergeTargetSelect');
+    const targetId = sel && sel.value;
+    if (!targetId) { alert('Selecciona una linea destino.'); return; }
+    if (!confirm('Confirmar la fusion? Esta operacion NO se puede deshacer.')) return;
+
+    try {
+        const r = await fetch(`/api/lines/${sourceId}/merge-into/${targetId}`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({}),
+        });
+        const d = await r.json();
+        if (!r.ok) { alert('Error: ' + (d.error || r.statusText)); return; }
+        let msg = `✅ ${d.message}\n\nEquipos movidos: ${d.equipments_moved}`;
+        if (d.related_rows_updated) {
+            msg += '\n\nRegistros actualizados en otras tablas:';
+            for (const [t, n] of Object.entries(d.related_rows_updated)) {
+                msg += `\n  • ${t}: ${n}`;
+            }
+        }
+        alert(msg);
+        closeMergeLineModal();
+        loadGlobalTree();
+    } catch (e) {
+        alert('Error: ' + e.message);
+    }
+}
+window.confirmMergeLine = confirmMergeLine;

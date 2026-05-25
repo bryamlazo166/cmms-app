@@ -132,6 +132,100 @@ def register_master_data_routes(
             return update_entry(Line, id, request.json)
         return delete_entry(Line, id)
 
+    @app.route('/api/lines/<int:source_id>/merge-into/<int:target_id>', methods=['POST'])
+    def merge_lines(source_id, target_id):
+        """Fusiona dos lineas: mueve TODOS los equipos de source -> target y
+        actualiza todas las tablas con line_id para mantener consistencia.
+        Luego borra la linea source (que queda vacia).
+
+        Permiso requerido: admin (operacion destructiva, no reversible).
+
+        Tablas actualizadas:
+          - equipments.line_id
+          - maintenance_notices.line_id
+          - work_orders.line_id
+          - lubrication_points.line_id
+          - inspection_routes.line_id
+          - rotative_assets.line_id
+
+        Body opcional: {"allow_cross_area": false} para permitir mover entre
+        areas distintas (por defecto solo se permite mismo area).
+        """
+        perm = _require_perm('activos_config', 'edit')
+        if perm: return perm
+        if getattr(current_user, 'role', None) != 'admin':
+            return jsonify({"error": "Solo admin puede fusionar lineas (operacion destructiva)."}), 403
+
+        try:
+            from sqlalchemy import text as _text
+            data = request.json or {}
+            allow_cross_area = bool(data.get('allow_cross_area', False))
+
+            if source_id == target_id:
+                return jsonify({"error": "Las lineas origen y destino no pueden ser iguales."}), 400
+
+            source = Line.query.get(source_id)
+            target = Line.query.get(target_id)
+            if not source:
+                return jsonify({"error": f"Linea origen {source_id} no existe."}), 404
+            if not target:
+                return jsonify({"error": f"Linea destino {target_id} no existe."}), 404
+
+            if source.area_id != target.area_id and not allow_cross_area:
+                return jsonify({
+                    "error": (f"Las lineas estan en areas distintas (origen: area_id={source.area_id}, "
+                              f"destino: area_id={target.area_id}). Pasa allow_cross_area=true para forzar."),
+                }), 400
+
+            # Contar items antes para feedback
+            n_equips = Equipment.query.filter_by(line_id=source_id).count()
+
+            # 1) Mover equipos
+            db.session.execute(_text("""
+                UPDATE equipments SET line_id = :tgt WHERE line_id = :src
+            """), {"tgt": target_id, "src": source_id})
+
+            # 2) Actualizar tablas relacionadas (cada una en try porque puede que
+            #    la tabla/columna no exista en instalaciones antiguas).
+            related_updated = {}
+            for table_name, col_name in [
+                ('maintenance_notices', 'line_id'),
+                ('work_orders',         'line_id'),
+                ('lubrication_points',  'line_id'),
+                ('inspection_routes',   'line_id'),
+                ('rotative_assets',     'line_id'),
+            ]:
+                try:
+                    result = db.session.execute(_text(
+                        f"UPDATE {table_name} SET {col_name} = :tgt WHERE {col_name} = :src"
+                    ), {"tgt": target_id, "src": source_id})
+                    related_updated[table_name] = result.rowcount if result.rowcount is not None else 0
+                except Exception as ex_rel:
+                    related_updated[table_name] = f"skipped ({ex_rel.__class__.__name__})"
+
+            # 3) Verificar que la linea origen quedo vacia
+            remaining = Equipment.query.filter_by(line_id=source_id).count()
+            if remaining > 0:
+                db.session.rollback()
+                return jsonify({
+                    "error": f"Despues del merge quedaron {remaining} equipos en la linea origen. Rollback.",
+                }), 500
+
+            # 4) Borrar la linea source
+            source_name = source.name
+            db.session.delete(source)
+            db.session.commit()
+
+            return jsonify({
+                "ok": True,
+                "message": f"Linea '{source_name}' (id {source_id}) fusionada en '{target.name}' (id {target_id})",
+                "equipments_moved": n_equips,
+                "related_rows_updated": related_updated,
+            })
+        except Exception as e:
+            db.session.rollback()
+            return jsonify({"error": str(e)}), 500
+
     @app.route('/api/equipments', methods=['GET', 'POST'])
     def handle_equipments():
         if request.method == 'POST':
