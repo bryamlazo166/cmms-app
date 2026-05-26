@@ -457,10 +457,15 @@ async function loadGlobalTree() {
                                         const upName = (comp.name || '').toUpperCase();
                                         const isRotative = ROT_KEYWORDS.some(kw => upName.includes(kw));
                                         if (isRotative) {
+                                            // Match exacto por component_id es prioridad. El fallback por
+                                            // nombre+equipo SOLO aplica si el rotativo no tiene component_id
+                                            // explicito; de lo contrario, un MR-XXXX asignado al MOTOR ELECTRICO
+                                            // del SISTEMA DE ACCIONAMIENTO se mostraria tambien colgado del MOTOR
+                                            // ELECTRICO del EXHAUSTOR (mismo nombre, mismo equipo).
                                             const installed = (rotAssets || []).find(a =>
                                                 a.status === 'Instalado' && (
                                                     a.component_id === comp.id ||
-                                                    (a.equipment_id === eq.id && a.name && a.name.toUpperCase().includes(upName))
+                                                    (!a.component_id && a.equipment_id === eq.id && a.name && a.name.toUpperCase().includes(upName))
                                                 )
                                             );
                                             const tag = document.createElement('span');
