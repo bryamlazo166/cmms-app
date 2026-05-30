@@ -318,10 +318,15 @@ def register_lubrication_routes(
                     return jsonify({"error": "Punto no encontrado"}), 404
 
                 execution_date = _safe_date_iso(data.get('execution_date')) or dt.date.today().isoformat()
+                # action_type:
+                #   CAMBIO_TOTAL -> reinicia el cronograma (drain & fill)
+                #   RELLENO      -> top-up, NO reinicia el cronograma
+                #   SERVICIO     -> legado: tratado como CAMBIO_TOTAL
+                action_type = (data.get('action_type') or 'CAMBIO_TOTAL').upper()
                 execution = LubricationExecution(
                     point_id=point.id,
                     execution_date=execution_date,
-                    action_type=data.get('action_type') or 'SERVICIO',
+                    action_type=action_type,
                     quantity_used=data.get('quantity_used'),
                     quantity_unit=data.get('quantity_unit') or point.quantity_unit or 'L',
                     executed_by=data.get('executed_by'),
@@ -330,13 +335,16 @@ def register_lubrication_routes(
                     comments=data.get('comments')
                 )
 
-                # Solo avanza el cronograma si esta ejecucion es la mas reciente.
-                # Una ejecucion retroactiva (fecha anterior a la ultima ya registrada)
-                # se guarda en el historial pero no debe mover last_service_date hacia
-                # atras ni reactivar el semaforo en rojo.
+                # Avanza el cronograma solo cuando:
+                #  (a) la accion reinicia el ciclo (CAMBIO_TOTAL o SERVICIO legado), y
+                #  (b) esta ejecucion es la mas reciente (no retroactiva).
+                # RELLENO se guarda en el historial pero NO mueve last_service_date,
+                # porque el aceite/grasa solo se completo a nivel — el cambio total
+                # sigue pendiente en su fecha programada.
+                resets_cycle = action_type in ('CAMBIO_TOTAL', 'SERVICIO')
                 current_last = _parse_date_flexible(point.last_service_date)
                 new_exec = _parse_date_flexible(execution_date)
-                if (current_last is None) or (new_exec and new_exec >= current_last):
+                if resets_cycle and ((current_last is None) or (new_exec and new_exec >= current_last)):
                     point.last_service_date = execution_date
                     next_due, semaphore = _calculate_lubrication_schedule(
                         point.last_service_date,
@@ -417,11 +425,15 @@ def register_lubrication_routes(
             db.session.flush()
 
             # Recalcular last/next/semaforo del punto desde la ejecucion mas
-            # reciente que queda. Si no quedan, dejar PENDIENTE.
+            # reciente que reinicia el ciclo (CAMBIO_TOTAL o SERVICIO legado).
+            # Los RELLENOs no cuentan: el cronograma depende del ultimo cambio
+            # total. Si no queda ninguna ejecucion que reinicie, dejar PENDIENTE.
             point = LubricationPoint.query.get(point_id)
             if point:
                 latest = (LubricationExecution.query
                           .filter_by(point_id=point_id)
+                          .filter(LubricationExecution.action_type.in_(
+                              ('CAMBIO_TOTAL', 'SERVICIO')))
                           .order_by(LubricationExecution.execution_date.desc(),
                                     LubricationExecution.id.desc())
                           .first())

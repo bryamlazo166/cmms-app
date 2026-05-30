@@ -236,11 +236,16 @@ function renderExecutions(rows) {
         tbody.innerHTML = '<tr><td colspan="9">Sin historial.</td></tr>';
         return;
     }
+    const ACTION_LABEL = {
+        CAMBIO_TOTAL: '<span class="pill" style="background:rgba(48,209,88,.18);color:#30D158">Cambio total</span>',
+        SERVICIO:     '<span class="pill" style="background:rgba(48,209,88,.18);color:#30D158">Cambio total</span>',
+        RELLENO:      '<span class="pill" style="background:rgba(10,132,255,.18);color:#5AC8FA">Relleno</span>',
+    };
     tbody.innerHTML = rows.map(r => `
         <tr>
             <td>${r.execution_date || '-'}</td>
             <td>${r.point_name || '-'}</td>
-            <td>${r.action_type || '-'}</td>
+            <td>${ACTION_LABEL[r.action_type] || (r.action_type || '-')}</td>
             <td>${r.quantity_used ? fnum(r.quantity_used, 2) : '-'} ${r.quantity_unit || ''}</td>
             <td>${r.executed_by || '-'}</td>
             <td>${r.anomaly_detected || r.leak_detected ? 'Si' : 'No'}</td>
@@ -307,6 +312,7 @@ async function registerExecution() {
     const payload = {
         point_id: Number(q('fPoint').value || 0),
         execution_date: q('fExecDate').value || new Date().toISOString().slice(0, 10),
+        action_type: (q('fActionType') && q('fActionType').value) || 'CAMBIO_TOTAL',
         quantity_used: q('fQty').value ? Number(q('fQty').value) : null,
         executed_by: (q('fBy').value || '').trim() || null,
         leak_detected: q('fLeak') ? q('fLeak').value === '1' : false,

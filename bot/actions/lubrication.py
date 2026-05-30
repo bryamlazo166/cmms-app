@@ -274,7 +274,10 @@ def register_lubrication(app, data):
             comments = (data.get('comments') or '').strip() or None
             leak = bool(data.get('leak_detected', False))
             anomaly = bool(data.get('anomaly_detected', False))
-            action_type = data.get('action_type') or 'SERVICIO'
+            # action_type: CAMBIO_TOTAL reinicia el cronograma; RELLENO solo
+            # registra el top-up. SERVICIO se mantiene como alias de CAMBIO_TOTAL
+            # para retrocompatibilidad con datos historicos.
+            action_type = (data.get('action_type') or 'CAMBIO_TOTAL').upper()
 
             _db.session.execute(text("""
                 INSERT INTO lubrication_executions
@@ -288,11 +291,12 @@ def register_lubrication(app, data):
                 "now": datetime.utcnow()
             })
 
-            # Solo avanza el cronograma si esta ejecucion es la mas reciente
+            # Solo avanza el cronograma si reinicia ciclo Y es la ejecucion mas reciente.
+            resets_cycle = action_type in ('CAMBIO_TOTAL', 'SERVICIO')
             current_last = _db.session.execute(text(
                 "SELECT last_service_date FROM lubrication_points WHERE id = :id"
             ), {"id": pid}).scalar()
-            if (not current_last) or (str(execution_date) >= str(current_last)):
+            if resets_cycle and ((not current_last) or (str(execution_date) >= str(current_last))):
                 next_due, semaphore = _calculate_lubrication_schedule(execution_date, freq_days, warn_days)
                 _db.session.execute(text("""
                     UPDATE lubrication_points
