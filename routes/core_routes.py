@@ -1492,18 +1492,25 @@ def register_core_routes(app, db, logger, app_build_tag,
 
     @app.route('/api/notifications/scan', methods=['POST'])
     def scan_notifications():
-        """Generate notifications from overdue points and low stock."""
+        """Generate notifications from overdue points and low stock.
+
+        Tambien auto-resuelve (marca como leidas) las notificaciones cuya
+        causa ya no aplica: stock repuesto, OT con progreso, lubricacion o
+        inspeccion ejecutada. Asi el boton 'Actualizar' refleja el estado real.
+        """
         if not Notification:
-            return jsonify({'created': 0})
+            return jsonify({'created': 0, 'resolved': 0})
         try:
             created = 0
             today = dt.date.today()
-            today_str = today.isoformat()
 
             # Don't duplicate: only create if no unread notification of same category+title exists
             def _exists(title):
                 return Notification.query.filter_by(
                     title=title, is_read=False).first() is not None
+
+            # Titulos actualmente vigentes por categoria (para auto-resolver el resto)
+            current = {'VENCIDO': set(), 'STOCK_BAJO': set(), 'OT': set()}
 
             # 1. Overdue lubrication points
             if LubricationPoint and _calculate_lubrication_schedule:
@@ -1512,6 +1519,7 @@ def register_core_routes(app, db, logger, app_build_tag,
                         p.last_service_date, p.frequency_days, p.warning_days)
                     if sem == 'ROJO':
                         title = f"Lubricacion vencida: {p.code}"
+                        current['VENCIDO'].add(title)
                         if not _exists(title):
                             db.session.add(Notification(
                                 title=title,
@@ -1528,6 +1536,7 @@ def register_core_routes(app, db, logger, app_build_tag,
                         r.last_execution_date, r.frequency_days, r.warning_days)
                     if sem == 'ROJO':
                         title = f"Inspeccion vencida: {r.code}"
+                        current['VENCIDO'].add(title)
                         if not _exists(title):
                             db.session.add(Notification(
                                 title=title,
@@ -1546,6 +1555,7 @@ def register_core_routes(app, db, logger, app_build_tag,
                 ).all()
                 for item in low:
                     title = f"Stock bajo: {item.code}"
+                    current['STOCK_BAJO'].add(title)
                     if not _exists(title):
                         db.session.add(Notification(
                             title=title,
@@ -1563,6 +1573,7 @@ def register_core_routes(app, db, logger, app_build_tag,
                 d = _parse_date_flexible(ot.scheduled_date)
                 if d and (today - d).days > 7:
                     title = f"OT sin progreso: {ot.code}"
+                    current['OT'].add(title)
                     if not _exists(title):
                         db.session.add(Notification(
                             title=title,
@@ -1572,8 +1583,24 @@ def register_core_routes(app, db, logger, app_build_tag,
                         ))
                         created += 1
 
+            # Auto-resolver: marca como leidas las notificaciones de las
+            # categorias gestionadas por scan cuyo titulo ya no esta vigente.
+            # Solo afecta a notificaciones globales (user_id=None), que son las
+            # que crea este scan. No toca AVISO, SISTEMA u otras categorias.
+            resolved = 0
+            for cat, titles in current.items():
+                q = Notification.query.filter(
+                    Notification.category == cat,
+                    Notification.is_read == False,
+                    Notification.user_id == None,
+                )
+                if titles:
+                    q = q.filter(~Notification.title.in_(titles))
+                resolved += q.update(
+                    {Notification.is_read: True}, synchronize_session=False)
+
             db.session.commit()
-            return jsonify({'created': created})
+            return jsonify({'created': created, 'resolved': resolved})
         except Exception as e:
             db.session.rollback()
             logger.exception("Notification scan error")

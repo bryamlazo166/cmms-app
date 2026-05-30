@@ -1000,7 +1000,8 @@
 
     async function loadNotifications() {
         try {
-            const res = await fetch('/api/notifications');
+            // Solo no-leidas: las resueltas (auto o manual) dejan de aparecer.
+            const res = await fetch('/api/notifications?unread=true');
             const items = await res.json();
             const list = document.getElementById('notif-list');
             if (!items.length) {
