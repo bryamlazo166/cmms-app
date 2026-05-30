@@ -1363,6 +1363,7 @@ async function searchForExecution() {
 
     document.getElementById('exec-type').innerText = ot.maintenance_type || '-';
     document.getElementById('exec-priority').innerText = ot.priority || '-';
+    document.getElementById('exec-request-date').innerText = ot.notice_request_date || '-';
     document.getElementById('exec-scheduled').innerText = ot.scheduled_date || '-';
     document.getElementById('exec-duration').innerText = ot.estimated_duration ? `${ot.estimated_duration} hrs` : '-';
 
