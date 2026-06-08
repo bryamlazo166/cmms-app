@@ -12,7 +12,7 @@ import datetime as dt
 
 import requests
 from flask import jsonify, request, render_template
-from sqlalchemy import func
+from sqlalchemy import func, text
 
 
 DEEPSEEK_API_KEY = os.getenv('DEEPSEEK_API_KEY')
@@ -106,6 +106,142 @@ def register_insights_routes(
         except Exception as e:
             db.session.rollback()
             logger.error(f"apply_optimization error: {e}")
+            return jsonify({"error": str(e)}), 500
+
+    # ── Cumplimiento de preventivos (frecuencia REAL vs planificada) ─────
+    @app.route('/cumplimiento-preventivos', methods=['GET'])
+    def preventive_compliance_page():
+        return render_template('cumplimiento_preventivos.html')
+
+    _COMPLIANCE_SOURCES = {
+        'lubrication': dict(point_table='lubrication_points', exec_table='lubrication_executions',
+                            exec_fk='point_id', exec_date='execution_date',
+                            has_lubricant=True, has_sys_comp=True, label='Lubricación'),
+        'inspection':  dict(point_table='inspection_routes', exec_table='inspection_executions',
+                            exec_fk='route_id', exec_date='execution_date',
+                            has_lubricant=False, has_sys_comp=False, label='Inspección'),
+        'monitoring':  dict(point_table='monitoring_points', exec_table='monitoring_readings',
+                            exec_fk='point_id', exec_date='reading_date',
+                            has_lubricant=False, has_sys_comp=True, label='Monitoreo'),
+    }
+
+    def _compliance_rows(source, window_days):
+        """Calcula, por cada punto del tipo dado, la frecuencia real (intervalo
+        promedio entre ejecuciones en la ventana) vs la planificada."""
+        cfg = _COMPLIANCE_SOURCES[source]
+        today = dt.date.today()
+        cutoff = (today - dt.timedelta(days=window_days)).isoformat()
+        lub_col = "p.lubricant_name" if cfg['has_lubricant'] else "NULL"
+        if cfg['has_sys_comp']:
+            sys_join = "LEFT JOIN systems s ON p.system_id = s.id"
+            comp_join = "LEFT JOIN components c ON p.component_id = c.id"
+            sys_col, comp_col = "s.name", "c.name"
+        else:
+            sys_join, comp_join = "", ""
+            sys_col, comp_col = "NULL", "NULL"
+
+        points = db.session.execute(text(f"""
+            SELECT p.id, p.code, p.name, p.frequency_days, {lub_col},
+                   e.tag, e.name, {comp_col}, {sys_col}, a.name, l.name
+            FROM {cfg['point_table']} p
+            LEFT JOIN equipments e ON p.equipment_id = e.id
+            {comp_join}
+            {sys_join}
+            LEFT JOIN areas a ON p.area_id = a.id
+            LEFT JOIN lines l ON p.line_id = l.id
+            WHERE p.is_active = true
+        """)).fetchall()
+
+        execs = db.session.execute(text(f"""
+            SELECT {cfg['exec_fk']} AS fk, {cfg['exec_date']} AS d
+            FROM {cfg['exec_table']}
+            WHERE substr({cfg['exec_date']}, 1, 10) >= :cutoff
+            ORDER BY {cfg['exec_fk']}, {cfg['exec_date']}
+        """), {"cutoff": cutoff}).fetchall()
+
+        from collections import defaultdict
+        by_point = defaultdict(list)
+        for r in execs:
+            ds = str(r[1])[:10] if r[1] else None
+            if ds:
+                try:
+                    by_point[r[0]].append(dt.date.fromisoformat(ds))
+                except Exception:
+                    pass
+
+        out = []
+        for p in points:
+            pid, code, name, plan, lubricant, etag, ename, cname, sname, aname, lname = p
+            plan = plan or 0
+            dates = sorted(by_point.get(pid, []))
+            n = len(dates)
+            real_freq = None
+            if n >= 2:
+                intervals = [(dates[i] - dates[i - 1]).days for i in range(1, n)]
+                intervals = [iv for iv in intervals if iv > 0]
+                if intervals:
+                    real_freq = round(sum(intervals) / len(intervals), 1)
+            last = dates[-1].isoformat() if dates else None
+            days_since = (today - dates[-1]).days if dates else None
+            if real_freq is None:
+                estado, cumpl = 'SIN_DATOS', None
+            else:
+                cumpl = round(plan / real_freq * 100) if (plan and real_freq) else None
+                if plan and real_freq > plan * 1.2:
+                    estado = 'TARDE'
+                elif plan and real_freq < plan * 0.8:
+                    estado = 'SEGUIDO'
+                else:
+                    estado = 'AL_DIA'
+            atrasado = bool(plan and days_since is not None and days_since > plan * 1.5)
+            out.append({
+                'source_type': source,
+                'source_label': cfg['label'],
+                'code': code or f'{source[:3].upper()}-{pid}',
+                'name': name or '',
+                'lubricant': lubricant or '',
+                'equipment_tag': etag or '',
+                'equipment_name': ename or '',
+                'component_name': cname or '',
+                'system_name': sname or '',
+                'area_name': aname or '',
+                'line_name': lname or '',
+                'planned_frequency_days': plan,
+                'real_frequency_days': real_freq,
+                'executions': n,
+                'last_execution': last,
+                'days_since_last': days_since,
+                'compliance_pct': cumpl,
+                'estado': estado,
+                'atrasado': atrasado,
+            })
+        return out
+
+    @app.route('/api/insights/preventive-compliance', methods=['GET'])
+    def preventive_compliance():
+        """Frecuencia REAL vs planificada para lubricacion, inspeccion y monitoreo."""
+        try:
+            window_days = int(request.args.get('window_days') or 365)
+        except Exception:
+            window_days = 365
+        source = (request.args.get('source') or 'all').lower()
+        srcs = ['lubrication', 'inspection', 'monitoring'] if source == 'all' else [source]
+        srcs = [s for s in srcs if s in _COMPLIANCE_SOURCES]
+        if not srcs:
+            return jsonify({"error": "source invalido"}), 400
+        try:
+            rows = []
+            for s in srcs:
+                rows.extend(_compliance_rows(s, window_days))
+            keymap = {'AL_DIA': 'al_dia', 'TARDE': 'tarde', 'SEGUIDO': 'seguido', 'SIN_DATOS': 'sin_datos'}
+            summary = {'al_dia': 0, 'tarde': 0, 'seguido': 0, 'sin_datos': 0}
+            for r in rows:
+                summary[keymap[r['estado']]] += 1
+            estado_rank = {'TARDE': 0, 'SEGUIDO': 1, 'AL_DIA': 2, 'SIN_DATOS': 3}
+            rows.sort(key=lambda r: (estado_rank.get(r['estado'], 9), -(r['days_since_last'] or 0)))
+            return jsonify({'rows': rows, 'summary': summary, 'window_days': window_days, 'total': len(rows)})
+        except Exception as e:
+            logger.exception(f"preventive_compliance error: {e}")
             return jsonify({"error": str(e)}), 500
 
     @app.route('/api/insights/weekly-summary', methods=['GET'])

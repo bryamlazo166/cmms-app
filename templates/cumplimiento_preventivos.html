@@ -4,7 +4,7 @@
     <meta charset="UTF-8">
     <link rel="icon" type="image/svg+xml" href="/static/favicon.svg">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Cumplimiento de Lubricación - CMMS</title>
+    <title>Cumplimiento de Preventivos - CMMS</title>
     <!-- CMMS_THEME_INIT -->
     <script>(function(){try{var t=localStorage.getItem('cmms.theme');if(t=='management'||t=='developer'){document.documentElement.setAttribute('data-theme',t);}}catch(e){}})();</script>
     <link rel="stylesheet" href="/static/css/style.css?v={{ v }}">
@@ -14,22 +14,24 @@
     <style>
         body{background:#0a0e14;}
         .wrap{max-width:1500px;margin:0 auto;padding:16px;}
-        .header{background:linear-gradient(120deg,#1e2430,#151b24);border:1px solid #2d3f56;border-radius:14px;padding:18px 22px;margin-bottom:14px;display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:12px;}
-        .header h1{margin:0;color:#FFD60A;font-size:1.35rem;display:flex;align-items:center;gap:10px;}
-        .header p{margin:4px 0 0;color:#9ab0cb;font-size:.82rem;}
+        .header{background:linear-gradient(120deg,#1e2430,#151b24);border:1px solid #2d3f56;border-radius:14px;padding:16px 20px;margin-bottom:14px;}
+        .header h1{margin:0;color:#FFD60A;font-size:1.3rem;display:flex;align-items:center;gap:10px;}
+        .header p{margin:4px 0 12px;color:#9ab0cb;font-size:.82rem;}
         .tools{display:flex;gap:10px;align-items:center;flex-wrap:wrap;}
+        .tools label{color:#9ab0cb;font-size:.78rem;}
         .tools select,.tools input{height:34px;background:#0f1319;color:#d5e2f5;border:1px solid #344964;border-radius:7px;padding:5px 10px;font-size:.82rem;}
         .btn{height:34px;border:1px solid #385273;border-radius:7px;background:#193451;color:#d7e9ff;padding:0 14px;font-weight:600;cursor:pointer;font-size:.82rem;display:inline-flex;align-items:center;gap:6px;}
         .btn.primary{background:#FFD60A;border-color:#FFD60A;color:#000;}
         .btn.primary:hover{background:#ffe04a;}
+        .cascade{display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-top:10px;padding-top:10px;border-top:1px solid #2a3a50;}
+        .cascade .fl{display:flex;flex-direction:column;gap:2px;}
+        .cascade .fl small{color:#7e93ad;font-size:.64rem;text-transform:uppercase;letter-spacing:.3px;}
 
         .summary-row{display:grid;grid-template-columns:repeat(4,1fr);gap:10px;margin-bottom:14px;}
         .summary-card{background:linear-gradient(135deg,#1b212b,#151a23);border:1px solid #31455f;border-radius:10px;padding:12px;position:relative;overflow:hidden;}
         .summary-card::before{content:'';position:absolute;top:0;left:0;right:0;height:3px;background:var(--c,#30D158);}
-        .summary-card.tarde{--c:#FF453A;}
-        .summary-card.seguido{--c:#FF9F0A;}
-        .summary-card.aldia{--c:#30D158;}
-        .summary-card.sindatos{--c:#5AC8FA;}
+        .summary-card.tarde{--c:#FF453A;} .summary-card.seguido{--c:#FF9F0A;}
+        .summary-card.aldia{--c:#30D158;} .summary-card.sindatos{--c:#5AC8FA;}
         .summary-card .lbl{font-size:.66rem;color:#9ab3d0;text-transform:uppercase;letter-spacing:.4px;font-weight:600;margin-bottom:5px;}
         .summary-card .val{font-size:1.6rem;font-weight:700;color:#eff6ff;line-height:1;}
         .summary-card .sub{font-size:.7rem;color:#9ab0cb;margin-top:3px;}
@@ -51,16 +53,17 @@
         .sev.AL_DIA{background:rgba(48,209,88,.18);color:#30D158;border:1px solid rgba(48,209,88,.4);}
         .sev.SIN_DATOS{background:rgba(90,200,250,.18);color:#5AC8FA;border:1px solid rgba(90,200,250,.4);}
 
+        .type-chip{padding:1px 7px;border-radius:6px;font-size:.7rem;font-weight:700;white-space:nowrap;}
+        .type-chip.lubrication{background:rgba(255,214,10,.15);color:#FFD60A;}
+        .type-chip.inspection{background:rgba(48,209,88,.15);color:#30D158;}
+        .type-chip.monitoring{background:rgba(90,200,250,.15);color:#5AC8FA;}
+
         .freq{font-weight:700;}
-        .freq.tarde{color:#ff6b61;}
-        .freq.seguido{color:#FFA834;}
-        .freq.aldia{color:#30D158;}
+        .freq.tarde{color:#ff6b61;} .freq.seguido{color:#FFA834;} .freq.aldia{color:#30D158;}
         .muted{color:#9ab0cb;font-size:.75rem;}
         .warn-late{color:#ff6b61;font-weight:700;}
-
         .loading{text-align:center;padding:40px;color:#9ab0cb;}
         .loading i{font-size:2rem;color:#FFD60A;}
-
         @media(max-width:900px){ .summary-row{grid-template-columns:repeat(2,1fr);} }
     </style>
 </head>
@@ -73,51 +76,48 @@
 <section class="home-section">
     <div class="wrap">
         <div class="header">
-            <div>
-                <h1><i class="fas fa-oil-can"></i> Cumplimiento de Lubricación</h1>
-                <p>Frecuencia REAL (intervalo entre ejecuciones) vs la planificada — para decidir si el plan se cumple, se hace tarde o muy seguido</p>
-            </div>
+            <h1><i class="fas fa-calendar-check"></i> Cumplimiento de Preventivos</h1>
+            <p>Frecuencia REAL (intervalo entre ejecuciones) vs la planificada — lubricación, inspección y monitoreo. Para decidir si el plan se cumple, se hace tarde o muy seguido.</p>
             <div class="tools">
-                <label style="color:#9ab0cb;font-size:.8rem;">Ventana:</label>
-                <select id="windowDays">
+                <label>Tipo:</label>
+                <select id="sourceType" onchange="analyze()">
+                    <option value="all">Todos los tipos</option>
+                    <option value="lubrication">Lubricación</option>
+                    <option value="inspection">Inspección</option>
+                    <option value="monitoring">Monitoreo</option>
+                </select>
+                <label>Ventana:</label>
+                <select id="windowDays" onchange="analyze()">
                     <option value="90">90 días</option>
                     <option value="180">180 días</option>
                     <option value="365" selected>1 año</option>
                     <option value="730">2 años</option>
                 </select>
-                <input type="text" id="search" placeholder="Buscar equipo / componente / código…" style="width:240px;" oninput="renderTable()">
                 <button class="btn primary" onclick="analyze()"><i class="fas fa-search"></i> Analizar</button>
                 <button class="btn" onclick="exportCSV()"><i class="fas fa-file-csv"></i> Exportar CSV</button>
+            </div>
+            <div class="cascade">
+                <div class="fl"><small>Área</small><select id="fArea" data-label="Todas" onchange="onCascadeChange(0)"></select></div>
+                <div class="fl"><small>Línea</small><select id="fLine" data-label="Todas" onchange="onCascadeChange(1)"></select></div>
+                <div class="fl"><small>Equipo</small><select id="fEquip" data-label="Todos" onchange="onCascadeChange(2)"></select></div>
+                <div class="fl"><small>Sistema</small><select id="fSys" data-label="Todos" onchange="onCascadeChange(3)"></select></div>
+                <div class="fl"><small>Componente</small><select id="fComp" data-label="Todos" onchange="onCascadeChange(4)"></select></div>
+                <div class="fl"><small>Buscar</small><input type="text" id="search" placeholder="código / texto…" style="width:170px;" oninput="renderTable()"></div>
+                <button class="btn" onclick="clearFilters()" style="align-self:flex-end;"><i class="fas fa-eraser"></i> Limpiar</button>
             </div>
         </div>
 
         <div id="loading" class="loading" style="display:none;">
             <i class="fas fa-spinner fa-spin"></i>
-            <p>Calculando la frecuencia real de cada punto de lubricación…</p>
+            <p>Calculando la frecuencia real de cada punto…</p>
         </div>
 
         <div id="content" style="display:none;">
             <div class="summary-row">
-                <div class="summary-card tarde">
-                    <div class="lbl"><i class="fas fa-clock"></i> Se hace TARDE</div>
-                    <div class="val" id="cTarde">—</div>
-                    <div class="sub">Real &gt; 20% sobre lo planificado (riesgo)</div>
-                </div>
-                <div class="summary-card seguido">
-                    <div class="lbl"><i class="fas fa-redo"></i> Muy SEGUIDO</div>
-                    <div class="val" id="cSeguido">—</div>
-                    <div class="sub">Real &lt; 20% bajo lo planificado (desperdicio)</div>
-                </div>
-                <div class="summary-card aldia">
-                    <div class="lbl"><i class="fas fa-check-circle"></i> Al día</div>
-                    <div class="val" id="cAldia">—</div>
-                    <div class="sub">Real ≈ planificada (±20%)</div>
-                </div>
-                <div class="summary-card sindatos">
-                    <div class="lbl"><i class="fas fa-question-circle"></i> Sin datos</div>
-                    <div class="val" id="cSindatos">—</div>
-                    <div class="sub">Menos de 2 ejecuciones en la ventana</div>
-                </div>
+                <div class="summary-card tarde"><div class="lbl"><i class="fas fa-clock"></i> Se hace TARDE</div><div class="val" id="cTarde">—</div><div class="sub">Real &gt;20% sobre lo planificado (riesgo)</div></div>
+                <div class="summary-card seguido"><div class="lbl"><i class="fas fa-redo"></i> Muy SEGUIDO</div><div class="val" id="cSeguido">—</div><div class="sub">Real &lt;20% bajo lo planificado (desperdicio)</div></div>
+                <div class="summary-card aldia"><div class="lbl"><i class="fas fa-check-circle"></i> Al día</div><div class="val" id="cAldia">—</div><div class="sub">Real ≈ planificada (±20%)</div></div>
+                <div class="summary-card sindatos"><div class="lbl"><i class="fas fa-question-circle"></i> Sin datos</div><div class="val" id="cSindatos">—</div><div class="sub">Menos de 2 ejecuciones</div></div>
             </div>
 
             <div class="tabs">
@@ -129,22 +129,22 @@
             </div>
 
             <div class="panel">
-                <table class="rec-table" id="recTable">
+                <table class="rec-table">
                     <thead>
                         <tr>
+                            <th>Tipo</th>
                             <th>Estado</th>
                             <th>Código</th>
                             <th>Componente / Equipo / Área</th>
-                            <th>Lubricante</th>
-                            <th style="text-align:center;">Planificada</th>
+                            <th style="text-align:center;">Planif.</th>
                             <th style="text-align:center;">Real</th>
                             <th style="text-align:center;"># Ejec</th>
                             <th>Última ejecución</th>
-                            <th style="text-align:center;">Cumplimiento</th>
+                            <th style="text-align:center;">Cumplim.</th>
                         </tr>
                     </thead>
                     <tbody id="recBody">
-                        <tr><td colspan="9" style="text-align:center;color:#9ab0cb;padding:30px;">Click en Analizar para empezar</td></tr>
+                        <tr><td colspan="9" style="text-align:center;color:#9ab0cb;padding:30px;">Cargando…</td></tr>
                     </tbody>
                 </table>
             </div>
@@ -156,36 +156,42 @@
 <script>
 let _allRows = [];
 let _activeTab = 'TARDE';
+const CASCADE = [
+    { id: 'fArea', field: 'area_name' },
+    { id: 'fLine', field: 'line_name' },
+    { id: 'fEquip', field: 'equipment_tag' },
+    { id: 'fSys', field: 'system_name' },
+    { id: 'fComp', field: 'component_name' },
+];
 
 async function analyze() {
+    const src = document.getElementById('sourceType').value;
     const wd = document.getElementById('windowDays').value;
     document.getElementById('loading').style.display = 'block';
     document.getElementById('content').style.display = 'none';
     try {
-        const r = await fetch(`/api/lubrication/compliance?window_days=${wd}`);
+        const r = await fetch(`/api/insights/preventive-compliance?source=${src}&window_days=${wd}`);
         const j = await r.json();
         if (!r.ok) throw new Error(j.error || 'Error');
-
         _allRows = j.rows || [];
         const s = j.summary || {};
         document.getElementById('cTarde').textContent = s.tarde || 0;
         document.getElementById('cSeguido').textContent = s.seguido || 0;
         document.getElementById('cAldia').textContent = s.al_dia || 0;
         document.getElementById('cSindatos').textContent = s.sin_datos || 0;
-
         document.getElementById('tabTarde').textContent = s.tarde || 0;
         document.getElementById('tabSeguido').textContent = s.seguido || 0;
         document.getElementById('tabAldia').textContent = s.al_dia || 0;
         document.getElementById('tabSindatos').textContent = s.sin_datos || 0;
         document.getElementById('tabAll').textContent = _allRows.length;
-
-        // Ir a la categoría con más items relevantes
         if ((s.tarde || 0) > 0) _activeTab = 'TARDE';
         else if ((s.seguido || 0) > 0) _activeTab = 'SEGUIDO';
         else _activeTab = 'all';
         updateTabUI();
+        // Reset filtros de cascada al recargar datos
+        CASCADE.forEach(c => { const el = document.getElementById(c.id); if (el) el.value = ''; });
+        populateCascades();
         renderTable();
-
         document.getElementById('loading').style.display = 'none';
         document.getElementById('content').style.display = 'block';
     } catch (e) {
@@ -199,16 +205,48 @@ function updateTabUI() {
     document.querySelectorAll('.tab').forEach(t => t.classList.toggle('active', t.dataset.cat === _activeTab));
 }
 
-function _estadoClass(estado) {
-    return estado === 'TARDE' ? 'tarde' : estado === 'SEGUIDO' ? 'seguido' : estado === 'AL_DIA' ? 'aldia' : '';
+// ── Filtros en cascada ───────────────────────────────────────────────
+function populateCascades() {
+    CASCADE.forEach((c, idx) => {
+        const elem = document.getElementById(c.id);
+        if (!elem) return;
+        const current = elem.value;
+        // Opciones = valores únicos de filas que cumplen los niveles superiores
+        let rows = _allRows;
+        for (let i = 0; i < idx; i++) {
+            const v = document.getElementById(CASCADE[i].id).value;
+            if (v) rows = rows.filter(r => (r[CASCADE[i].field] || '') === v);
+        }
+        const vals = [...new Set(rows.map(r => r[c.field]).filter(v => v))].sort((a, b) => a.localeCompare(b));
+        const label = elem.dataset.label || 'Todos';
+        elem.innerHTML = `<option value="">${label}</option>` + vals.map(v => `<option value="${v}">${v}</option>`).join('');
+        elem.value = vals.includes(current) ? current : '';
+    });
 }
-function _estadoLabel(estado) {
-    return { TARDE: 'TARDE', SEGUIDO: 'MUY SEGUIDO', AL_DIA: 'AL DÍA', SIN_DATOS: 'SIN DATOS' }[estado] || estado;
+
+function onCascadeChange(changedIdx) {
+    // Resetear niveles inferiores al que cambió, luego repoblar y renderizar
+    for (let i = changedIdx + 1; i < CASCADE.length; i++) {
+        document.getElementById(CASCADE[i].id).value = '';
+    }
+    populateCascades();
+    renderTable();
+}
+
+function clearFilters() {
+    CASCADE.forEach(c => { document.getElementById(c.id).value = ''; });
+    document.getElementById('search').value = '';
+    populateCascades();
+    renderTable();
 }
 
 function _filteredRows() {
     const q = (document.getElementById('search').value || '').toLowerCase().trim();
     let rows = _activeTab === 'all' ? _allRows : _allRows.filter(r => r.estado === _activeTab);
+    CASCADE.forEach(c => {
+        const v = document.getElementById(c.id).value;
+        if (v) rows = rows.filter(r => (r[c.field] || '') === v);
+    });
     if (q) {
         rows = rows.filter(r =>
             (r.code || '').toLowerCase().includes(q) ||
@@ -222,28 +260,33 @@ function _filteredRows() {
     return rows;
 }
 
+function _estadoClass(e) { return e === 'TARDE' ? 'tarde' : e === 'SEGUIDO' ? 'seguido' : e === 'AL_DIA' ? 'aldia' : ''; }
+function _estadoLabel(e) { return { TARDE: 'TARDE', SEGUIDO: 'MUY SEGUIDO', AL_DIA: 'AL DÍA', SIN_DATOS: 'SIN DATOS' }[e] || e; }
+
 function renderTable() {
     const tbody = document.getElementById('recBody');
     const rows = _filteredRows();
     if (rows.length === 0) {
-        tbody.innerHTML = `<tr><td colspan="9" style="text-align:center;color:#9ab0cb;padding:30px;">Sin puntos en esta categoría</td></tr>`;
+        tbody.innerHTML = `<tr><td colspan="9" style="text-align:center;color:#9ab0cb;padding:30px;">Sin puntos con estos filtros</td></tr>`;
         return;
     }
     tbody.innerHTML = rows.map(r => {
         const cls = _estadoClass(r.estado);
         const real = r.real_frequency_days != null ? `${r.real_frequency_days} d` : '—';
         const cumpl = r.compliance_pct != null ? `${r.compliance_pct}%` : '—';
+        const lub = r.lubricant ? ` · 🛢️ ${r.lubricant}` : '';
+        const sysComp = [r.system_name, r.component_name].filter(Boolean).join(' / ');
         const lastTxt = r.last_execution
             ? `${r.last_execution}<div class="${r.atrasado ? 'warn-late' : 'muted'}">${r.days_since_last != null ? 'hace ' + r.days_since_last + ' d' : ''}${r.atrasado ? ' ⚠ atrasado' : ''}</div>`
             : '<span class="muted">nunca</span>';
         return `<tr>
+            <td><span class="type-chip ${r.source_type}">${r.source_label}</span></td>
             <td><span class="sev ${r.estado}">${_estadoLabel(r.estado)}</span></td>
             <td style="color:#FFD60A;font-weight:700;">${r.code || '-'}</td>
             <td>
-                <b>${r.component_name || r.name || '-'}</b>
-                <div class="muted"><b style="color:#FF9F0A;">${r.equipment_tag || '-'}</b> ${r.equipment_name || ''} · ${r.area_name || '-'}</div>
+                <b>${sysComp || r.name || '-'}</b>
+                <div class="muted"><b style="color:#FF9F0A;">${r.equipment_tag || '-'}</b> ${r.equipment_name || ''} · ${r.area_name || '-'}${lub}</div>
             </td>
-            <td>${r.lubricant || '<span class="muted">-</span>'}</td>
             <td style="text-align:center;">${r.planned_frequency_days || '-'} d</td>
             <td style="text-align:center;" class="freq ${cls}">${real}</td>
             <td style="text-align:center;">${r.executions}</td>
@@ -256,14 +299,15 @@ function renderTable() {
 function exportCSV() {
     if (!_allRows.length) { alert('Primero analiza los datos.'); return; }
     const rows = _filteredRows();
-    const headers = ['Estado','Codigo','Componente','Equipo (tag)','Equipo','Area','Lubricante',
-                     'Planificada (dias)','Real (dias)','Ejecuciones','Ultima ejecucion','Dias desde ultima','Cumplimiento %','Atrasado'];
+    const headers = ['Tipo','Estado','Codigo','Nombre','Componente','Sistema','Equipo (tag)','Equipo','Linea','Area',
+                     'Lubricante','Planificada (dias)','Real (dias)','Ejecuciones','Ultima','Dias desde','Cumplimiento %','Atrasado'];
     const esc = v => '"' + String(v == null ? '' : v).replace(/"/g, '""') + '"';
     const lines = [headers.map(esc).join(',')];
     rows.forEach(r => {
         lines.push([
-            _estadoLabel(r.estado), r.code, r.component_name, r.equipment_tag, r.equipment_name,
-            r.area_name, r.lubricant, r.planned_frequency_days, r.real_frequency_days != null ? r.real_frequency_days : '',
+            r.source_label, _estadoLabel(r.estado), r.code, r.name, r.component_name, r.system_name,
+            r.equipment_tag, r.equipment_name, r.line_name, r.area_name, r.lubricant,
+            r.planned_frequency_days, r.real_frequency_days != null ? r.real_frequency_days : '',
             r.executions, r.last_execution || '', r.days_since_last != null ? r.days_since_last : '',
             r.compliance_pct != null ? r.compliance_pct : '', r.atrasado ? 'SI' : 'NO'
         ].map(esc).join(','));
@@ -271,16 +315,17 @@ function exportCSV() {
     const blob = new Blob(['﻿' + lines.join('\r\n')], { type: 'text/csv;charset=utf-8;' });
     const a = document.createElement('a');
     a.href = URL.createObjectURL(blob);
-    a.download = 'cumplimiento_lubricacion.csv';
+    a.download = 'cumplimiento_preventivos.csv';
     a.click();
     URL.revokeObjectURL(a.href);
 }
 
 window.analyze = analyze;
 window.setTab = setTab;
+window.onCascadeChange = onCascadeChange;
+window.clearFilters = clearFilters;
 window.exportCSV = exportCSV;
 
-// Auto-analizar al cargar
 document.addEventListener('DOMContentLoaded', analyze);
 </script>
 </body>

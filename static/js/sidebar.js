@@ -488,7 +488,7 @@
         { href: '/equipo-historial', icon: 'fas fa-book-open', label: 'Hist. Equipo', tip: 'Historial Equipo' },
         { href: '/monitoreo', icon: 'fas fa-wave-square', label: 'Monitoreo', tip: 'Monitoreo' },
         { href: '/lubricacion', icon: 'fas fa-oil-can', label: 'Lubricacion', tip: 'Lubricacion' },
-        { href: '/cumplimiento-lubricacion', icon: 'fas fa-calendar-check', label: 'Cumplim. Lubricación', tip: 'Frecuencia real vs planificada de lubricación' },
+        { href: '/cumplimiento-preventivos', icon: 'fas fa-calendar-check', label: 'Cumplim. Preventivos', tip: 'Frecuencia real vs planificada (lubricación, inspección, monitoreo)', restricted: true },
         { href: '/inspecciones', icon: 'fas fa-clipboard-check', label: 'Inspecciones', tip: 'Inspecciones' },
         { href: '/espesores', icon: 'fas fa-ruler-vertical', label: 'Espesores', tip: 'Espesores UT' },
         { href: '/paradas', icon: 'fas fa-hard-hat', label: 'Paradas', tip: 'Parada de Planta' },
@@ -755,7 +755,7 @@
             );
             // Aliases extra: rutas adicionales que comparten modulo de permisos
             hrefToModule['/optimizacion-preventivos'] = 'insights';
-            hrefToModule['/cumplimiento-lubricacion'] = 'lubricacion';
+            hrefToModule['/cumplimiento-preventivos'] = 'insights';
 
             const navList = sidebar.querySelector('.nav-list');
             const extra = user.role === 'admin' ? ADMIN_MENU_ITEMS : [];

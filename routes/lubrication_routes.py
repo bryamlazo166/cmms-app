@@ -1,7 +1,7 @@
 import datetime as dt
 import re
 
-from flask import jsonify, request, render_template
+from flask import jsonify, request
 from sqlalchemy import inspect, text
 
 
@@ -186,116 +186,6 @@ def register_lubrication_routes(
         except Exception:
             logger.exception("Lubrication schema compat check warning")
             # No bloquea el flujo; se sigue con la operacion normal.
-
-    @app.route('/cumplimiento-lubricacion', methods=['GET'])
-    def cumplimiento_lubricacion_page():
-        return render_template('cumplimiento_lubricacion.html')
-
-    @app.route('/api/lubrication/compliance', methods=['GET'])
-    def lubrication_compliance():
-        """Frecuencia REAL de lubricacion por punto: intervalo promedio entre
-        ejecuciones consecutivas vs la frecuencia planificada. Sirve para
-        decidir si el plan se cumple, se hace tarde o muy seguido."""
-        try:
-            window_days = int(request.args.get('window_days') or 365)
-        except Exception:
-            window_days = 365
-        today = dt.date.today()
-        cutoff = (today - dt.timedelta(days=window_days)).isoformat()
-        try:
-            # 1) Puntos activos con su taxonomia (equipo / componente / area)
-            points = db.session.execute(text("""
-                SELECT lp.id, lp.code, lp.name, lp.frequency_days, lp.lubricant_name,
-                       e.tag, e.name, c.name, a.name
-                FROM lubrication_points lp
-                LEFT JOIN equipments e ON lp.equipment_id = e.id
-                LEFT JOIN components c ON lp.component_id = c.id
-                LEFT JOIN areas a ON lp.area_id = a.id
-                WHERE lp.is_active = true
-            """)).fetchall()
-
-            # 2) Ejecuciones dentro de la ventana, ordenadas por punto y fecha
-            execs = db.session.execute(text("""
-                SELECT point_id, execution_date
-                FROM lubrication_executions
-                WHERE substr(execution_date, 1, 10) >= :cutoff
-                ORDER BY point_id, execution_date
-            """), {"cutoff": cutoff}).fetchall()
-
-            from collections import defaultdict
-            by_point = defaultdict(list)
-            for r in execs:
-                d = _parse_date_flexible(str(r[1])[:10])
-                if d:
-                    by_point[r[0]].append(d)
-
-            rows = []
-            summary = {'al_dia': 0, 'tarde': 0, 'seguido': 0, 'sin_datos': 0}
-            for p in points:
-                pid, code, name, plan, lubricant, etag, ename, cname, aname = p
-                plan = plan or 0
-                dates = sorted(by_point.get(pid, []))
-                n = len(dates)
-                real_freq = None
-                if n >= 2:
-                    intervals = [(dates[i] - dates[i - 1]).days for i in range(1, n)]
-                    intervals = [iv for iv in intervals if iv > 0]
-                    if intervals:
-                        real_freq = round(sum(intervals) / len(intervals), 1)
-                last = dates[-1].isoformat() if dates else None
-                days_since = (today - dates[-1]).days if dates else None
-
-                if real_freq is None:
-                    estado = 'SIN_DATOS'
-                    summary['sin_datos'] += 1
-                    cumpl = None
-                else:
-                    cumpl = round(plan / real_freq * 100) if (plan and real_freq) else None
-                    if plan and real_freq > plan * 1.2:
-                        estado = 'TARDE'
-                        summary['tarde'] += 1
-                    elif plan and real_freq < plan * 0.8:
-                        estado = 'SEGUIDO'
-                        summary['seguido'] += 1
-                    else:
-                        estado = 'AL_DIA'
-                        summary['al_dia'] += 1
-
-                # Atraso actual: hace mucho que no se ejecuta (> 1.5x lo planificado)
-                atrasado = bool(plan and days_since is not None and days_since > plan * 1.5)
-
-                rows.append({
-                    'point_id': pid,
-                    'code': code or f'LUB-{pid}',
-                    'name': name or '',
-                    'lubricant': lubricant or '',
-                    'equipment_tag': etag or '',
-                    'equipment_name': ename or '',
-                    'component_name': cname or '',
-                    'area_name': aname or '',
-                    'planned_frequency_days': plan,
-                    'real_frequency_days': real_freq,
-                    'executions': n,
-                    'last_execution': last,
-                    'days_since_last': days_since,
-                    'compliance_pct': cumpl,
-                    'estado': estado,
-                    'atrasado': atrasado,
-                })
-
-            estado_rank = {'TARDE': 0, 'SEGUIDO': 1, 'AL_DIA': 2, 'SIN_DATOS': 3}
-            rows.sort(key=lambda r: (estado_rank.get(r['estado'], 9),
-                                     -(r['days_since_last'] or 0)))
-
-            return jsonify({
-                'rows': rows,
-                'summary': summary,
-                'window_days': window_days,
-                'total': len(rows),
-            })
-        except Exception as e:
-            logger.exception(f"lubrication_compliance error: {e}")
-            return jsonify({"error": str(e)}), 500
 
     @app.route('/api/lubrication/points', methods=['GET', 'POST'])
     def handle_lubrication_points():
