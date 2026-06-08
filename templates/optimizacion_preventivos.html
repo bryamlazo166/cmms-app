@@ -259,14 +259,18 @@ function renderTable() {
             <td style="text-align:center;">${freqChange}</td>
             <td>${r.action}</td>
             <td>${canApply
-                ? `<button class="btn-apply" onclick='applyRec(${JSON.stringify(r).replace(/'/g,"&#39;")})'><i class="fas fa-check"></i> Aplicar</button>`
+                ? `<button class="btn-apply" onclick="applyRec('${r.source_type}', ${r.source_id})"><i class="fas fa-check"></i> Aplicar</button>`
                 : '<span style="color:#555;font-size:.75rem;">—</span>'}
             </td>
         </tr>`;
     }).join('');
 }
 
-async function applyRec(rec) {
+async function applyRec(sourceType, sourceId) {
+    // Usar la referencia REAL de _allRecs (no una copia serializada) para que
+    // al mutar la categoria y re-renderizar, la fila no reaparezca.
+    const rec = _allRecs.find(x => x.source_type === sourceType && String(x.source_id) === String(sourceId));
+    if (!rec) { alert('No se encontro la recomendacion.'); return; }
     if (!confirm(
         `Aplicar recomendación:\n\n` +
         `Punto: ${rec.code} - ${rec.name}\n` +

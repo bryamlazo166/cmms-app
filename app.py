@@ -1160,6 +1160,12 @@ _ENSURE_COLUMNS = [
     # Se inicializan derivando de can_edit/can_close en el backfill de abajo.
     ("role_permissions", "can_edit_ot",      "BOOLEAN DEFAULT false"),
     ("role_permissions", "can_adjust_hours", "BOOLEAN DEFAULT false"),
+    # Fecha del ultimo ajuste de frecuencia via 'Optimizacion de preventivos'.
+    # El analisis solo cuenta fallas posteriores, para que una recomendacion
+    # ya aplicada no reaparezca salvo nuevas fallas.
+    ("lubrication_points", "freq_optimized_at", "VARCHAR(20)"),
+    ("monitoring_points",  "freq_optimized_at", "VARCHAR(20)"),
+    ("inspection_routes",  "freq_optimized_at", "VARCHAR(20)"),
 ]
 
 

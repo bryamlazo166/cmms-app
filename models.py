@@ -902,6 +902,10 @@ class LubricationPoint(db.Model):
 
     frequency_days: Mapped[int] = mapped_column(Integer, nullable=False, default=30)
     warning_days: Mapped[int] = mapped_column(Integer, nullable=False, default=3)
+    # Fecha (YYYY-MM-DD) del ultimo ajuste de frecuencia via 'Optimizacion de
+    # preventivos'. El analisis solo cuenta fallas POSTERIORES a esta fecha, para
+    # que una recomendacion ya aplicada no reaparezca salvo nuevas fallas.
+    freq_optimized_at: Mapped[str | None] = mapped_column(String(20), nullable=True)
 
     last_service_date: Mapped[str | None] = mapped_column(String(20), nullable=True)
     next_due_date: Mapped[str | None] = mapped_column(String(20), nullable=True)
@@ -1027,6 +1031,8 @@ class MonitoringPoint(db.Model):
     alarm_max: Mapped[float | None] = mapped_column(Float, nullable=True)
     frequency_days: Mapped[int] = mapped_column(Integer, nullable=False, default=7)
     warning_days: Mapped[int] = mapped_column(Integer, nullable=False, default=1)
+    # Ver nota en LubricationPoint.freq_optimized_at
+    freq_optimized_at: Mapped[str | None] = mapped_column(String(20), nullable=True)
 
     last_measurement_date: Mapped[str | None] = mapped_column(String(20), nullable=True)
     next_due_date: Mapped[str | None] = mapped_column(String(20), nullable=True)
@@ -1216,6 +1222,8 @@ class InspectionRoute(db.Model):
     equipment_id: Mapped[int | None] = mapped_column(ForeignKey('equipments.id'), nullable=True)
     frequency_days: Mapped[int] = mapped_column(Integer, nullable=False, default=7)
     warning_days: Mapped[int] = mapped_column(Integer, nullable=False, default=1)
+    # Ver nota en LubricationPoint.freq_optimized_at
+    freq_optimized_at: Mapped[str | None] = mapped_column(String(20), nullable=True)
     last_execution_date: Mapped[str | None] = mapped_column(String(20), nullable=True)
     next_due_date: Mapped[str | None] = mapped_column(String(20), nullable=True)
     semaphore_status: Mapped[str | None] = mapped_column(String(10), nullable=True)

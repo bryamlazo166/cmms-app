@@ -78,15 +78,30 @@ def analyze_preventive_plan(
         comp_id = getattr(point, 'component_id', None)
         sys_id = getattr(point, 'system_id', None)
         eq_id = getattr(point, 'equipment_id', None)
+        # Si el punto ya fue optimizado, contar SOLO fallas posteriores al ajuste
+        # (las previas ya motivaron el cambio de frecuencia ya aplicado), para que
+        # la recomendacion no reaparezca salvo nuevas fallas.
+        opt = getattr(point, 'freq_optimized_at', None)
+        opt_iso = str(opt)[:10] if opt else None
+
+        def _after_opt(ot):
+            if not opt_iso:
+                return True
+            ot_date = str(ot.real_end_date or ot.scheduled_date or '')[:10]
+            return ot_date > opt_iso
+
         if comp_id:
             for ot in corr_by_comp.get(comp_id, []):
-                seen.add(ot.id)
+                if _after_opt(ot):
+                    seen.add(ot.id)
         if sys_id:
             for ot in corr_by_sys.get(sys_id, []):
-                seen.add(ot.id)
+                if _after_opt(ot):
+                    seen.add(ot.id)
         if eq_id:
             for ot in corr_by_equip.get(eq_id, []):
-                seen.add(ot.id)
+                if _after_opt(ot):
+                    seen.add(ot.id)
         return len(seen)
 
     # ── 2. Procesar cada tipo de punto ──────────────────────────────────────
@@ -290,6 +305,10 @@ def apply_recommendation(
 
     old_freq = point.frequency_days
     point.frequency_days = int(new_frequency_days)
+    # Marcar la fecha del ajuste: el analisis solo contara fallas POSTERIORES,
+    # asi esta recomendacion no reaparece al recargar salvo nuevas fallas.
+    if hasattr(point, 'freq_optimized_at'):
+        point.freq_optimized_at = dt.date.today().isoformat()
     db.session.commit()
 
     return {
