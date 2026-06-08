@@ -774,6 +774,35 @@ def _build_cmms_context_real(app):
             except Exception as e:
                 ctx.append(f"(error informes pendientes: {e})")
 
+            # Seccion dedicada: INFORMES DISPONIBLES — lista TODAS las OTs que
+            # tienen report_url cargado (no solo las ultimas 50), para que el
+            # bot pueda devolver el link del informe de cualquier OT por antigua
+            # que sea. Resuelve "muestrame el informe de la OT-XXXX".
+            try:
+                informes = _db.session.execute(text("""
+                    SELECT w.code, w.report_url, e.tag, e.name, c.name, w.real_end_date
+                    FROM work_orders w
+                    LEFT JOIN equipments e ON w.equipment_id = e.id
+                    LEFT JOIN components c ON w.component_id = c.id
+                    WHERE w.report_url IS NOT NULL AND w.report_url != ''
+                    ORDER BY w.id DESC
+                    LIMIT 300
+                """)).fetchall()
+                if informes:
+                    ctx.append(f"\n=== INFORMES DISPONIBLES ({len(informes)}) ===")
+                    ctx.append("INSTRUCCION: si el usuario pide 'el informe', 'el link', 'el archivo'")
+                    ctx.append("o 'el reporte' de una OT, busca el codigo aqui y devuelve el link TAL")
+                    ctx.append("CUAL como enlace clickeable. Esta lista cubre TODAS las OTs con informe,")
+                    ctx.append("incluidas OTs antiguas que no aparecen en la lista de ultimas OTs.")
+                    ctx.append("El link puede ser un archivo o una carpeta de Drive con varios documentos.")
+                    for r in informes:
+                        eq = f"[{r[2] or '-'}] {r[3] or '-'}".strip()
+                        comp = f" / {r[4]}" if r[4] else ""
+                        cierre = f"cerrada {r[5]}" if r[5] else ""
+                        ctx.append(f"  {r[0]} | {eq}{comp} | {cierre} | {r[1]}")
+            except Exception as e:
+                ctx.append(f"(error informes disponibles: {e})")
+
             # Bitacora / Log entries — relevantes para responder "muestrame el informe / bitacora"
             # Trae las ultimas 80 entradas de las OTs visibles en contexto. Si una entrada
             # contiene una URL, el LLM debe devolverla como enlace clickeable al usuario.
