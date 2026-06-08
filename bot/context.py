@@ -613,6 +613,108 @@ def _get_focused_equipment_context(app, message):
     return header + "\n".join(lines) + "\n\n"
 
 
+def _get_focused_ot_context(app, message):
+    """Si el mensaje menciona uno o mas codigos de OT (OT-0022, 'OT 22',
+    'OT0022'), inyecta la info COMPLETA de esas OTs: datos, bitacora y
+    repuestos/materiales — SIN el limite de 'ultimas 50 OTs' del contexto
+    general. Resuelve 'muestrame la bitacora / los repuestos / el informe de
+    la OT-XXXX' para cualquier OT por antigua que sea.
+    """
+    import re
+    if not message:
+        return ''
+    codes = set()
+    for m in re.finditer(r'\bOT[-\s]?0*(\d{1,5})\b', message, re.IGNORECASE):
+        try:
+            codes.add(int(m.group(1)))
+        except Exception:
+            pass
+    if not codes:
+        return ''
+    # Limite de seguridad: a lo sumo 5 OTs por mensaje para no inflar el contexto.
+    code_strs = [f"OT-{n:04d}" for n in sorted(codes)[:5]]
+
+    lines = []
+    with app.app_context():
+        from database import db as _db
+        from sqlalchemy import text
+        try:
+            ots = _db.session.execute(text("""
+                SELECT w.id, w.code, w.maintenance_type, w.status, w.description,
+                       w.real_start_date, w.real_end_date, w.execution_comments,
+                       w.report_url, e.tag, e.name, c.name, p.name
+                FROM work_orders w
+                LEFT JOIN equipments e ON w.equipment_id = e.id
+                LEFT JOIN components c ON w.component_id = c.id
+                LEFT JOIN providers p ON w.provider_id = p.id
+                WHERE w.code = ANY(:codes)
+            """), {"codes": code_strs}).fetchall()
+            if not ots:
+                return ''
+            ot_ids = [o[0] for o in ots]
+            lines.append("=== FOCO: OT(s) MENCIONADA(S) — INFO COMPLETA ===")
+            lines.append("INSTRUCCION: el usuario menciono estas OTs. Responde con esta info")
+            lines.append("(datos, bitacora y repuestos). Si pide el informe/link/archivo, devuelve")
+            lines.append("el report_url como enlace clickeable (puede ser archivo o carpeta de Drive).")
+            for o in ots:
+                eq = f"[{o[9] or '-'}] {o[10] or '-'}"
+                comp = f" / {o[11]}" if o[11] else ""
+                lines.append(f"\n{o[1]} | {o[2] or '-'} | {o[3]} | {eq}{comp} | Prov: {o[12] or '-'}")
+                if o[4]:
+                    lines.append(f"  Descripcion: {o[4]}")
+                if o[5] or o[6]:
+                    lines.append(f"  Inicio real: {o[5] or '-'} | Fin real: {o[6] or '-'}")
+                if o[7]:
+                    lines.append(f"  Comentarios de ejecucion: {o[7]}")
+                lines.append(f"  Informe (report_url): {o[8] or 'sin informe cargado'}")
+
+            # Bitacora COMPLETA de estas OTs
+            logs = _db.session.execute(text("""
+                SELECT w.code, le.log_date, le.log_type, le.author, le.comment
+                FROM ot_log_entries le
+                JOIN work_orders w ON le.work_order_id = w.id
+                WHERE le.work_order_id = ANY(:ids)
+                ORDER BY le.id DESC
+            """), {"ids": ot_ids}).fetchall()
+            if logs:
+                lines.append(f"\n  -- Bitacora ({len(logs)}):")
+                for lg in logs:
+                    comment = (lg[4] or '').replace('\n', ' ')
+                    if len(comment) > 240:
+                        comment = comment[:240] + '...'
+                    lines.append(f"  {lg[0]} | {lg[1]} | {lg[2]} | {lg[3] or '-'} | {comment}")
+
+            # Repuestos / materiales de estas OTs
+            mats = _db.session.execute(text("""
+                SELECT w.code,
+                       COALESCE(om.subtype, om.item_type) AS tipo,
+                       CASE
+                         WHEN om.item_type = 'tool'      THEN COALESCE(t.code || ' - ' || t.name, om.item_name_free)
+                         WHEN om.item_type = 'warehouse' THEN COALESCE(wi.code || ' - ' || wi.name, om.item_name_free)
+                         ELSE om.item_name_free
+                       END AS nombre,
+                       om.quantity, om.unit, om.is_installed
+                FROM ot_materials om
+                JOIN work_orders w ON om.work_order_id = w.id
+                LEFT JOIN tools t            ON om.item_type = 'tool'      AND om.item_id = t.id
+                LEFT JOIN warehouse_items wi ON om.item_type = 'warehouse' AND om.item_id = wi.id
+                WHERE om.work_order_id = ANY(:ids)
+                ORDER BY w.id DESC, om.id ASC
+            """), {"ids": ot_ids}).fetchall()
+            if mats:
+                lines.append(f"\n  -- Repuestos/Materiales ({len(mats)}):")
+                for mt in mats:
+                    inst = 'instalado' if mt[5] else 'usado'
+                    lines.append(f"  {mt[0]} | {mt[1]} | {mt[2]} | {mt[3] or ''} {mt[4] or ''} | {inst}")
+            lines.append("")
+        except Exception as e:
+            logger.warning(f"_get_focused_ot_context error: {e}")
+            return ''
+    if not lines:
+        return ''
+    return "\n".join(lines) + "\n\n"
+
+
 # ── Pre-calculo del contexto general (Opt #3) ────────────────────────────
 # El contexto general (conteos, listado de equipos/tecnicos/fallas, etc)
 # cambia lentamente. Lo pre-calculamos cada 60s en un thread de background

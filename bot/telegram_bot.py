@@ -208,6 +208,7 @@ from bot.context import (  # noqa: E402
     _append_chat_history,
     _reset_chat_history,
     _get_focused_equipment_context,
+    _get_focused_ot_context,
     _get_cmms_context,
     _build_cmms_context_real,
     _CACHE_CONTEXT_TTL,
@@ -1554,6 +1555,7 @@ pasados automaticamente y los usa como referencia. Pregunta cosas como
     _send(chat_id, "⏳ Consultando datos...")
     _send_typing(chat_id)  # indicador 'typing...' adicional (Telegram ~5s)
     focus = _get_focused_equipment_context(app, text)
+    ot_focus = _get_focused_ot_context(app, text)
     context = _get_cmms_context(app)
     if focus:
         # Si hay foco, quitar la seccion gigante 'SPECS DE COMPONENTES' del contexto
@@ -1568,6 +1570,10 @@ pasados automaticamente y los usa como referencia. Pregunta cosas como
         except Exception:
             pass
         context = focus + context
+    # Foco por codigo de OT (bitacora/repuestos/informe completos de esa OT,
+    # sin el limite de ultimas 50). Va al inicio para maxima prioridad.
+    if ot_focus:
+        context = ot_focus + context
 
     # ── RAG: casos historicos similares ──────────────────────────────
     # Busqueda semantica sobre OTs cerradas y avisos para que el bot
