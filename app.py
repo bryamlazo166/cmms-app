@@ -273,7 +273,7 @@ _MODULE_ROUTES = {
     'martillos':       {'pages': ['/martillos'], 'api': ['/api/hammer-batches']},
     'activos_config':   {'pages': ['/configuracion'], 'api': ['/api/areas', '/api/lines', '/api/equipments', '/api/systems', '/api/components', '/api/spare-parts', '/api/upload-excel', '/api/bulk-paste']},
     'monitoreo':        {'pages': ['/monitoreo'], 'api': ['/api/monitoring']},
-    'lubricacion':      {'pages': ['/lubricacion'], 'api': ['/api/lubrication']},
+    'lubricacion':      {'pages': ['/lubricacion', '/cumplimiento-lubricacion'], 'api': ['/api/lubrication']},
     'inspecciones':     {'pages': ['/inspecciones'], 'api': ['/api/inspection']},
     'espesores':        {'pages': ['/espesores'], 'api': ['/api/thickness']},
     'cockpit':          {'pages': ['/cockpit'], 'api': []},
