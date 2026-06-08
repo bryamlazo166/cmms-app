@@ -533,7 +533,8 @@ window.editNotice = async (id) => {
         document.getElementById('description').value = n.description || '';
         document.getElementById('criticality').value = n.criticality || 'Baja';
         document.getElementById('priority').value = n.priority || 'Baja';
-        document.getElementById('requestDate').value = n.request_date || '';
+        // input type=date solo acepta 'YYYY-MM-DD'; request_date puede traer hora.
+        document.getElementById('requestDate').value = (n.request_date || '').slice(0, 10);
         // Datos del reporte (nuevos campos)
         const channelEl = document.getElementById('reportChannel');
         if (channelEl) channelEl.value = n.report_channel || 'SISTEMA';

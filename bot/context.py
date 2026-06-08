@@ -703,6 +703,12 @@ def _build_cmms_context_real(app):
                 ORDER BY w.id DESC LIMIT 50
             """)).fetchall()
             ctx.append(f"\n=== ULTIMAS {len(ots)} OTs ===")
+            ctx.append("INSTRUCCION: si el usuario pide 'el informe', 'el link',")
+            ctx.append("'el archivo' o 'el reporte' de una OT, devuelve TAL CUAL la")
+            ctx.append("URL que aparece tras 'Informe:' en esa OT como enlace")
+            ctx.append("clickeable. Solo si esa OT no tiene 'Informe:' responde que")
+            ctx.append("aun no hay informe cargado. El link puede ser un archivo o una")
+            ctx.append("carpeta de Drive con varios documentos.")
             for o in ots:
                 eq = f"{o[10] or ''} {o[9] or '-'}".strip()
                 tech = o[15] or '-'

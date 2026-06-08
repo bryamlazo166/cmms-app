@@ -287,8 +287,11 @@ def register_work_orders_routes(
     def update_ot_report(ot_id):
         try:
             wo = WorkOrder.query.get_or_404(ot_id)
-            if wo.status == 'Cerrada' and not _user_can_edit_closed_ot():
-                return jsonify({"error": "OT cerrada: solo administrador o usuarios con permiso de cierre pueden actualizar el informe."}), 403
+            # El informe tecnico normalmente llega DESPUES de cerrar la OT
+            # (lo entrega el proveedor/tecnico dias despues), por lo que
+            # adjuntar el link NO se restringe a admin/permiso de cierre:
+            # cualquier usuario con acceso a OTs puede cargarlo. Estos campos
+            # son metadatos de seguimiento y no alteran los datos de cierre.
             data = request.json or {}
             if 'report_required' in data:
                 wo.report_required = bool(data['report_required'])
@@ -1453,6 +1456,14 @@ def register_work_orders_routes(
                 # Final safeguard: OT status must never be null
                 if not wo.status:
                     wo.status = 'Abierta'
+
+                # Al pasar a 'En Progreso' por cualquier via (kanban, select de
+                # estado, modal Iniciar Trabajo) registrar la hora de inicio
+                # real si aun no existe, para que el cierre la muestre por
+                # defecto en vez de la hora actual.
+                if data.get('status') == 'En Progreso' and not wo.real_start_date:
+                    from utils.tz import now_lima_iso
+                    wo.real_start_date = now_lima_iso(with_seconds=False)
 
                 # If WO is being closed, sync to associated notice
                 if data.get('status') == 'Cerrada' and wo.notice_id:

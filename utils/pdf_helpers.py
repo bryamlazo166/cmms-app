@@ -11,7 +11,7 @@ from reportlab.lib.pagesizes import A4, landscape
 from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
 from reportlab.lib.units import mm
 from reportlab.platypus import (
-    SimpleDocTemplate, Table, TableStyle, Paragraph, Spacer, PageBreak
+    SimpleDocTemplate, Table, TableStyle, Paragraph, Spacer, PageBreak, KeepTogether
 )
 
 
@@ -114,6 +114,38 @@ def _status_color(status):
     if s in ('cerrada', 'cerrado'):
         return colors.HexColor('#EEEEEE')
     return colors.HexColor('#FFFFFF')
+
+
+def _status_legend():
+    """Tabla-leyenda con el significado de cada estado de OT. Va al pie de la
+    hoja de coordinacion. La celda de cada estado usa el mismo color de fondo
+    que las filas de las tablas para que sirva de referencia visual."""
+    rows = [
+        ('Abierta', 'OT registrada; aun sin programar ni iniciar.'),
+        ('Pendiente', 'Actividad preventiva del plan por programar/confirmar.'),
+        ('Programada', 'Planificada, con fecha asignada.'),
+        ('En Progreso', 'Trabajo iniciado, en ejecucion.'),
+        ('Cerrada', 'Trabajo finalizado y registrado.'),
+        ('No Ejecutada', 'No se realizo (reprogramada o cancelada).'),
+    ]
+    data = [[_p('Estado', _cell_bold), _p('Significado', _cell_bold)]]
+    for st, desc in rows:
+        data.append([_p(st, _cell_bold), _p(desc)])
+    tbl = Table(data, colWidths=[35 * mm, 150 * mm])
+    style = [
+        ('GRID', (0, 0), (-1, -1), 0.5, colors.HexColor('#CCCCCC')),
+        ('BACKGROUND', (0, 0), (-1, 0), colors.HexColor('#0A84FF')),
+        ('TEXTCOLOR', (0, 0), (-1, 0), colors.white),
+        ('VALIGN', (0, 0), (-1, -1), 'MIDDLE'),
+        ('LEFTPADDING', (0, 0), (-1, -1), 4),
+        ('RIGHTPADDING', (0, 0), (-1, -1), 4),
+        ('TOPPADDING', (0, 0), (-1, -1), 2),
+        ('BOTTOMPADDING', (0, 0), (-1, -1), 2),
+    ]
+    for i, (st, _desc) in enumerate(rows, start=1):
+        style.append(('BACKGROUND', (0, i), (0, i), _status_color(st)))
+    tbl.setStyle(TableStyle(style))
+    return tbl
 
 
 _SPECIALTY_BADGE = {
@@ -468,6 +500,14 @@ def generate_daily_coordination_pdf(ots, notices, title='Hoja de Coordinacion Di
         if notices_uncls:
             elements.append(Paragraph(f"Avisos sin clasificar ({len(notices_uncls)})", _section_style))
             elements.append(build_notices_table(notices_uncls))
+
+    # Leyenda de estados de OT (pie de hoja). KeepTogether evita que el titulo
+    # quede huerfano de la tabla al saltar de pagina.
+    elements.append(Spacer(1, 6*mm))
+    elements.append(KeepTogether([
+        _p("Leyenda de estados de OT", _section_style),
+        _status_legend(),
+    ]))
 
     # Espacio para firmas/notas
     elements.append(Spacer(1, 8*mm))

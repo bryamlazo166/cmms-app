@@ -104,17 +104,24 @@ document.addEventListener('DOMContentLoaded', () => {
         downtimeSelect.addEventListener('change', function() {
             document.getElementById('downtimeHoursGroup').style.display =
                 this.value === '1' ? '' : 'none';
+            // Al marcar "Si", sugerir horas = diferencia inicio/fin real.
+            suggestDowntimeHours();
             checkDowntimeVsDuration();
             recalcCloseTimes();
         });
     }
     const dtHoursInput = document.getElementById('closeDowntimeHours');
     if (dtHoursInput) {
-        dtHoursInput.addEventListener('input', () => { checkDowntimeVsDuration(); recalcCloseTimes(); });
+        dtHoursInput.addEventListener('input', () => {
+            // El usuario tomo control del valor: no volver a autocalcular.
+            downtimeManuallyEdited = true;
+            checkDowntimeVsDuration();
+            recalcCloseTimes();
+        });
     }
     ['realStart', 'realEnd'].forEach(id => {
         const el = document.getElementById(id);
-        if (el) el.addEventListener('input', recalcCloseTimes);
+        if (el) el.addEventListener('input', () => { suggestDowntimeHours(); recalcCloseTimes(); });
     });
 });
 
@@ -140,6 +147,26 @@ function formatHours(hrs) {
     if (h === 0) return `${m}m`;
     if (m === 0) return `${h}h`;
     return `${h}h ${m}m`;
+}
+
+// Bandera: el usuario edito manualmente las horas de parada -> no autocalcular.
+let downtimeManuallyEdited = false;
+
+// Sugiere las horas de parada = diferencia entre fin e inicio real, pero solo
+// si "causo parada" esta en "Si" y el usuario no las ha editado a mano. Asi el
+// valor sale por defecto y sigue siendo modificable.
+function suggestDowntimeHours() {
+    const causedSel = document.getElementById('closeCausedDowntime');
+    const dtInput = document.getElementById('closeDowntimeHours');
+    if (!causedSel || !dtInput) return;
+    if (causedSel.value !== '1') return;
+    if (downtimeManuallyEdited) return;
+    const start = document.getElementById('realStart').value;
+    const end = document.getElementById('realEnd').value;
+    if (!start || !end) return;
+    const hrs = (new Date(end) - new Date(start)) / 3600000;
+    if (isNaN(hrs) || hrs < 0) return;
+    dtInput.value = hrs.toFixed(2);
 }
 
 // Recalcula los 3 tiempos del bloque resumen del modal de cierre
@@ -1363,7 +1390,15 @@ async function searchForExecution() {
 
     document.getElementById('exec-type').innerText = ot.maintenance_type || '-';
     document.getElementById('exec-priority').innerText = ot.priority || '-';
-    document.getElementById('exec-request-date').innerText = ot.notice_request_date || '-';
+    // F. Solicitud con hora. request_date es el momento de captura; si un
+    // aviso antiguo no trae hora pero reported_at si, mostramos esa hora.
+    (function () {
+        const rd = ot.notice_request_date || '';
+        const ra = ot.notice_reported_at || '';
+        let v = rd;
+        if (rd.length <= 10 && ra.length > 10) v = ra;
+        document.getElementById('exec-request-date').innerText = v ? v.replace('T', ' ') : '-';
+    })();
     document.getElementById('exec-scheduled').innerText = ot.scheduled_date || '-';
     document.getElementById('exec-duration').innerText = ot.estimated_duration ? `${ot.estimated_duration} hrs` : '-';
 
@@ -1938,7 +1973,14 @@ async function openCloseModal() {
     endInput.readOnly = false;
     endInput.style.backgroundColor = "";
 
+    // Reset del bloque de parada: arranca en "No", oculto y sin marca manual.
+    downtimeManuallyEdited = false;
+    const causedSel = document.getElementById('closeCausedDowntime');
+    if (causedSel) causedSel.value = '0';
+    const dtGroup = document.getElementById('downtimeHoursGroup');
+    if (dtGroup) dtGroup.style.display = 'none';
     // Pre-llenar horas de parada con la duración calendario como sugerencia
+    // (se recalcula al marcar "Si" o al cambiar inicio/fin via suggestDowntimeHours).
     try {
         const dt0 = new Date(start);
         const dt1 = new Date(now);
@@ -3052,22 +3094,31 @@ async function updateReport() {
             activeExecutionOT.report_status = updated.report_status;
             activeExecutionOT.report_due_date = updated.report_due_date;
             activeExecutionOT.report_received_date = updated.report_received_date;
+            flashReportSaved();
+        } else {
+            // No silenciar el fallo: antes el link quedaba visible en el input y
+            // el boton "Abrir" funcionaba, dando la falsa impresion de que se
+            // habia guardado (p. ej. 403 al cargar informe en OT cerrada).
+            let msg = 'No se pudo guardar el informe.';
+            try { const err = await r.json(); if (err && err.error) msg = err.error; } catch (_) {}
+            alert(msg);
         }
         updateReportUrlButton();
         updateReportBadge(activeExecutionOT);
-    } catch (e) { console.error('Report update error:', e); }
-
-    // Set default specialty from first technician
-    const firstTech = techSelect[0];
-    if (firstTech && firstTech.specialty) {
-        document.getElementById('personnelSpecialty').value = firstTech.specialty;
+    } catch (e) {
+        console.error('Report update error:', e);
+        alert('Error de conexion al guardar el informe. Revisa tu conexion e intenta de nuevo.');
     }
+}
 
-    // Reset hours
-    document.getElementById('personnelHours').value = '8';
-
-    // Open modal
-    document.getElementById('addPersonnelModal').showModal();
+// Feedback visual breve: borde verde en el campo del link al guardar OK.
+function flashReportSaved() {
+    const input = document.getElementById('reportUrl');
+    if (!input) return;
+    const prev = input.style.borderColor;
+    input.style.transition = 'border-color .3s';
+    input.style.borderColor = '#22c55e';
+    setTimeout(() => { input.style.borderColor = prev || ''; }, 1200);
 }
 
 // Update specialty when technician changes

@@ -32,6 +32,18 @@ def register_notices_routes(
                     if isinstance(v, str) and v.strip() == "":
                         clean_data[k] = None
 
+                # F. Solicitud = momento de captura en el CMMS. El front manda
+                # solo la fecha (input type=date) o nada; completamos con la
+                # HORA actual de Lima para registrar el instante real, en
+                # formato 'YYYY-MM-DD HH:MM'.
+                from utils.tz import now_lima_iso
+                _rd = clean_data.get('request_date')
+                _now_lima = now_lima_iso(with_seconds=False).replace('T', ' ')
+                if not _rd:
+                    clean_data['request_date'] = _now_lima
+                elif len(str(_rd).strip()) <= 10:
+                    clean_data['request_date'] = f"{str(_rd).strip()[:10]} {_now_lima[11:16]}"
+
                 # Defaults para los nuevos campos de reporte:
                 # - report_channel: si no se especifica, asumir SISTEMA
                 # - reported_at: si el canal es SISTEMA o no hay valor manual,
@@ -228,7 +240,42 @@ def register_notices_routes(
                 return jsonify({"error": "Notice not found"}), 404
             return jsonify(notice.to_dict())
         if request.method == 'PUT':
-            return update_entry(MaintenanceNotice, id, request.json)
+            data = request.json or {}
+            # Preservar la HORA de captura: si el front reenvia request_date como
+            # solo fecha (input type=date) y la fecha no cambio, conservar el
+            # valor ya guardado que incluye la hora.
+            _in_rd = data.get('request_date')
+            if isinstance(_in_rd, str) and 0 < len(_in_rd.strip()) <= 10:
+                _cur = MaintenanceNotice.query.get(id)
+                if (_cur and _cur.request_date and len(str(_cur.request_date)) > 10
+                        and str(_cur.request_date)[:10] == _in_rd.strip()[:10]):
+                    data['request_date'] = _cur.request_date
+
+            resp = update_entry(MaintenanceNotice, id, data)
+
+            # Propagar el arbol de equipos del aviso a la OT vinculada (si no
+            # esta cerrada) para que reportes/tableros la ubiquen en el area
+            # correcta. Antes la OT quedaba con el arbol viejo ("SIN AREA").
+            try:
+                TREE = ('area_id', 'line_id', 'equipment_id', 'system_id', 'component_id')
+                if any(k in data for k in TREE):
+                    notice = MaintenanceNotice.query.get(id)
+                    wo = getattr(notice, 'work_order', None) if notice else None
+                    if wo and (wo.status or '') != 'Cerrada':
+                        changed = False
+                        for f in TREE:
+                            nv = getattr(notice, f, None)
+                            if getattr(wo, f, None) != nv:
+                                setattr(wo, f, nv)
+                                changed = True
+                        if changed:
+                            db.session.commit()
+                            logger.info(f"Notice {id}: arbol de equipos propagado a OT {wo.code or wo.id}")
+            except Exception as e:
+                db.session.rollback()
+                logger.exception(f"Error propagando arbol aviso->OT (notice {id}): {e}")
+
+            return resp
         return delete_entry(MaintenanceNotice, id)
 
     # ── Edición auditada de la hora real del reporte ──────────────────

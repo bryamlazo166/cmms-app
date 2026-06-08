@@ -1259,7 +1259,7 @@ def _process_message(app, chat_id, text, photos=None):
                 aviso_q = """
                     SELECT reporter_name, count(*) AS cnt
                     FROM maintenance_notices
-                    WHERE request_date >= :s AND request_date <= :e
+                    WHERE substr(request_date, 1, 10) >= :s AND substr(request_date, 1, 10) <= :e
                     AND reporter_type = 'telegram'
                 """
                 if provider_filter:
