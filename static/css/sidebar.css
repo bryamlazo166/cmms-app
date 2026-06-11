@@ -275,6 +275,60 @@ body {
 
 .sidebar li a:hover i { color: var(--label-primary); }
 
+/* ── Collapsible nav groups ────────────────────────── */
+.sidebar .nav-group-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 6px 10px;
+    margin-top: var(--sp-2);
+    border-radius: var(--r-md);
+    text-decoration: none;
+    cursor: pointer;
+    user-select: none;
+    min-height: 30px;
+}
+
+.sidebar .nav-group-header:hover {
+    background: var(--bg-hover);
+}
+
+.sidebar .nav-group-title {
+    font-size: 11px;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.07em;
+    color: var(--label-tertiary);
+    white-space: nowrap;
+    transition: color var(--t-fast);
+}
+
+.sidebar .nav-group-header:hover .nav-group-title {
+    color: var(--label-secondary);
+}
+
+.sidebar .nav-group-chevron {
+    font-size: 9px !important;
+    width: 16px !important;
+    height: 16px !important;
+    color: var(--label-tertiary);
+    transition: transform var(--t-base);
+}
+
+.sidebar .nav-group.open .nav-group-chevron {
+    transform: rotate(90deg);
+}
+
+.sidebar .nav-group-items ul {
+    list-style: none;
+    margin: 0;
+    padding: 0;
+}
+
+.sidebar .nav-group-items.collapsed {
+    display: none;
+}
+
 /* Sidebar divider */
 .sidebar .nav-divider {
     height: 1px;

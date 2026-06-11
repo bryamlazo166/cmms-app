@@ -39,6 +39,7 @@ from models import (
     WeeklyPlan, WeeklyPlanItem,
     EquipmentFlowEdge,
     HammerBatch, HammerBatchMovement,
+    Requirement,
 )
 from utils.crud_helpers import create_entry, get_entries, update_entry, delete_entry
 from utils.reporting_helpers import (
@@ -73,6 +74,7 @@ from routes.rotative_assets_routes import register_rotative_assets_routes
 from routes.hammer_batches_routes import register_hammer_batches_routes
 from routes.tools_routes import register_tools_routes
 from routes.purchasing_routes import register_purchasing_routes
+from routes.requirements_routes import register_requirements_routes
 from routes.warehouse_routes import register_warehouse_routes
 from routes.work_orders_routes import register_work_orders_routes
 from routes.production_routes import register_production_routes
@@ -267,6 +269,7 @@ _MODULE_ROUTES = {
     'avisos':           {'pages': ['/avisos'], 'api': ['/api/notices']},
     'ordenes':          {'pages': ['/ordenes'], 'api': ['/api/work-orders', '/api/work_orders', '/api/generate-preventive', '/api/pending-reports', '/api/pending-conformity', '/api/export-ots']},
     'compras':          {'pages': ['/compras'], 'api': ['/api/purchase']},
+    'requerimientos':   {'pages': ['/requerimientos'], 'api': ['/api/requirements']},
     'almacen':          {'pages': ['/almacen'], 'api': ['/api/warehouse']},
     'herramientas':     {'pages': ['/herramientas'], 'api': ['/api/tools']},
     'activos_rotativos':{'pages': ['/activos-rotativos'], 'api': ['/api/rotative-assets']},
@@ -454,6 +457,13 @@ _DEFAULT_PERMS = {
         'usuarios': {'view': False, 'edit': False},
     },
 }
+
+# El modulo 'requerimientos' (backlog tecnico) hereda por defecto los permisos
+# de 'compras' en cada rol — misma audiencia (planificacion / compras). Se puede
+# ajustar luego desde la UI de permisos por rol.
+for _role_perms in _DEFAULT_PERMS.values():
+    if 'requerimientos' not in _role_perms and 'compras' in _role_perms:
+        _role_perms['requerimientos'] = dict(_role_perms['compras'])
 
 _perms_cache = {}
 _perms_cache_ts = 0
@@ -1016,6 +1026,14 @@ register_purchasing_routes(
     WarehouseMovement=WarehouseMovement,
 )
 
+register_requirements_routes(
+    app=app,
+    db=db,
+    Requirement=Requirement,
+    WorkOrder=WorkOrder,
+    PurchaseRequest=PurchaseRequest,
+)
+
 register_admin_routes(
     app=app,
     db=db,
@@ -1048,6 +1066,14 @@ _ENSURE_INDEXES_SQL = [
     "CREATE INDEX IF NOT EXISTS ix_pr_work_order_id      ON purchase_requests(work_order_id)",
     "CREATE INDEX IF NOT EXISTS ix_pr_purchase_order_id  ON purchase_requests(purchase_order_id)",
     "CREATE INDEX IF NOT EXISTS ix_pr_status             ON purchase_requests(status)",
+    # Requerimientos (backlog tecnico). Una REQ puede originarse de un Requirement
+    # (compra sin OT): se agrega la FK y se relaja el NOT NULL de work_order_id.
+    "ALTER TABLE purchase_requests ADD COLUMN IF NOT EXISTS requirement_id INTEGER REFERENCES requirements(id)",
+    "ALTER TABLE purchase_requests ALTER COLUMN work_order_id DROP NOT NULL",
+    "CREATE INDEX IF NOT EXISTS ix_pr_requirement_id     ON purchase_requests(requirement_id)",
+    "CREATE INDEX IF NOT EXISTS ix_req_status            ON requirements(status)",
+    "CREATE INDEX IF NOT EXISTS ix_req_type              ON requirements(req_type)",
+    "CREATE INDEX IF NOT EXISTS ix_req_equipment_id      ON requirements(equipment_id)",
     "CREATE INDEX IF NOT EXISTS ix_lp_equipment_id       ON lubrication_points(equipment_id)",
     "CREATE INDEX IF NOT EXISTS ix_lp_is_active          ON lubrication_points(is_active)",
     "CREATE INDEX IF NOT EXISTS ix_mp_equipment_id       ON monitoring_points(equipment_id)",

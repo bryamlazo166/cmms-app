@@ -474,47 +474,64 @@
 })();
 
 (function () {
+    // Grupos del menu (colapsables). Los items sin 'group' van sueltos arriba.
+    // El estado abierto/cerrado se persiste en localStorage y el grupo que
+    // contiene la pagina activa se expande automaticamente.
+    const G_TRABAJO = 'Gestión de Trabajo';
+    const G_COMPRAS = 'Compras y Almacén';
+    const G_PREVENTIVOS = 'Preventivos';
+    const G_ACTIVOS = 'Activos y Planta';
+    const G_ANALISIS = 'Análisis y Gerencia';
+    const G_ADMIN = 'Administración';
+    const GROUP_ORDER = [G_TRABAJO, G_COMPRAS, G_PREVENTIVOS, G_ACTIVOS, G_ANALISIS, G_ADMIN];
+
     const MENU_ITEMS = [
         { href: '/', icon: 'fas fa-chart-line', label: 'Dashboard', tip: 'Dashboard' },
         { onclick: 'openGlobalSearch()', icon: 'fas fa-search', label: 'Buscar (⌘K)', tip: 'Busqueda global Ctrl+K' },
-        { href: '/avisos', icon: 'fas fa-bell', label: 'Avisos', tip: 'Avisos' },
-        { href: '/ordenes', icon: 'fas fa-tools', label: 'Ordenes', tip: 'Ordenes' },
-        { href: '/compras', icon: 'fas fa-shopping-cart', label: 'Compras', tip: 'Compras' },
-        { href: '/almacen', icon: 'fas fa-boxes', label: 'Almacen', tip: 'Almacen' },
-        { href: '/herramientas', icon: 'fas fa-wrench', label: 'Herramientas', tip: 'Herramientas' },
-        { href: '/activos-rotativos', icon: 'fas fa-sync-alt', label: 'Act. Rotativos', tip: 'Act. Rotativos' },
-        { href: '/martillos', icon: 'fas fa-gavel', label: 'Martillos', tip: 'Martillos FAPMETAL' },
-        { href: '/configuracion', icon: 'fas fa-sitemap', label: 'Activos', tip: 'Activos' },
-        { href: '/equipo-historial', icon: 'fas fa-book-open', label: 'Hist. Equipo', tip: 'Historial Equipo' },
-        { href: '/monitoreo', icon: 'fas fa-wave-square', label: 'Monitoreo', tip: 'Monitoreo' },
-        { href: '/lubricacion', icon: 'fas fa-oil-can', label: 'Lubricacion', tip: 'Lubricacion' },
-        { href: '/cumplimiento-preventivos', icon: 'fas fa-calendar-check', label: 'Cumplim. Preventivos', tip: 'Frecuencia real vs planificada (lubricación, inspección, monitoreo)', restricted: true },
-        { href: '/inspecciones', icon: 'fas fa-clipboard-check', label: 'Inspecciones', tip: 'Inspecciones' },
-        { href: '/espesores', icon: 'fas fa-ruler-vertical', label: 'Espesores', tip: 'Espesores UT' },
-        { href: '/paradas', icon: 'fas fa-hard-hat', label: 'Paradas', tip: 'Parada de Planta' },
-        { href: '/plantillas-paradas', icon: 'fas fa-clipboard-list', label: 'Plantillas Parada', tip: 'Plantillas reutilizables de tareas para paradas' },
-        { href: '/indicadores', icon: 'fas fa-chart-bar', label: 'Indicadores', tip: 'Indicadores Directorio', restricted: true },
-        { href: '/cockpit', icon: 'fas fa-chart-pie', label: 'Cockpit Gerencial', tip: 'Cockpit Gerencial', restricted: true },
-        { href: '/produccion', icon: 'fas fa-seedling', label: 'Produccion vs Mtto', tip: 'Confiabilidad de Produccion', restricted: true },
-        { href: '/programa-nocturno', icon: 'fas fa-moon', label: 'Programa Nocturno', tip: 'Preventivos turno noche', restricted: true },
-        { href: '/responsabilidades', icon: 'fas fa-user-tag', label: 'Responsabilidades', tip: 'Asignar responsable de mantenimiento por equipo', restricted: true },
-        { href: '/flujo-planta', icon: 'fas fa-project-diagram', label: 'Flujo de Planta', tip: 'Diagrama de flujo con disponibilidad por equipo', restricted: true },
-        { href: '/operatividad-anual', icon: 'fas fa-calendar-check', label: 'Operatividad Anual', tip: 'Grilla anual de operatividad por equipo (semanas)', restricted: true },
-        { href: '/perdidas-produccion', icon: 'fas fa-fire', label: 'Pérdidas Producción', tip: 'Sankey de horas perdidas — para presentar a jefatura', restricted: true },
-        { href: '/insights', icon: 'fas fa-brain', label: 'Resumen Ejecutivo', tip: 'Resumen IA para gerencia', restricted: true },
-        { href: '/optimizacion-preventivos', icon: 'fas fa-sliders-h', label: 'Optimizar Preventivos', tip: 'Detectar puntos sobre/sub-mantenidos', restricted: true },
-        { href: '/seguimiento', icon: 'fas fa-tasks', label: 'Seguimiento', tip: 'Seguimiento' },
-        { href: '/calendario', icon: 'fas fa-calendar-alt', label: 'Calendario', tip: 'Plan Mtto' },
-        { href: '/reportes', icon: 'fas fa-file-contract', label: 'Reportes', tip: 'Reportes' }
+
+        { group: G_TRABAJO, href: '/avisos', icon: 'fas fa-bell', label: 'Avisos', tip: 'Avisos' },
+        { group: G_TRABAJO, href: '/ordenes', icon: 'fas fa-tools', label: 'Ordenes', tip: 'Ordenes' },
+        { group: G_TRABAJO, href: '/requerimientos', icon: 'fas fa-clipboard-check', label: 'Requerimientos', tip: 'Backlog tecnico: compras especiales, fabricaciones, mejoras' },
+        { group: G_TRABAJO, href: '/calendario', icon: 'fas fa-calendar-alt', label: 'Calendario', tip: 'Plan Mtto' },
+        { group: G_TRABAJO, href: '/seguimiento', icon: 'fas fa-tasks', label: 'Seguimiento', tip: 'Seguimiento' },
+        { group: G_TRABAJO, href: '/paradas', icon: 'fas fa-hard-hat', label: 'Paradas', tip: 'Parada de Planta' },
+        { group: G_TRABAJO, href: '/plantillas-paradas', icon: 'fas fa-clipboard-list', label: 'Plantillas Parada', tip: 'Plantillas reutilizables de tareas para paradas' },
+        { group: G_TRABAJO, href: '/programa-nocturno', icon: 'fas fa-moon', label: 'Programa Nocturno', tip: 'Preventivos turno noche', restricted: true },
+
+        { group: G_COMPRAS, href: '/compras', icon: 'fas fa-shopping-cart', label: 'Compras', tip: 'Compras' },
+        { group: G_COMPRAS, href: '/almacen', icon: 'fas fa-boxes', label: 'Almacen', tip: 'Almacen' },
+        { group: G_COMPRAS, href: '/herramientas', icon: 'fas fa-wrench', label: 'Herramientas', tip: 'Herramientas' },
+        { group: G_COMPRAS, href: '/activos-rotativos', icon: 'fas fa-sync-alt', label: 'Act. Rotativos', tip: 'Act. Rotativos' },
+        { group: G_COMPRAS, href: '/martillos', icon: 'fas fa-gavel', label: 'Martillos', tip: 'Martillos FAPMETAL' },
+
+        { group: G_PREVENTIVOS, href: '/lubricacion', icon: 'fas fa-oil-can', label: 'Lubricacion', tip: 'Lubricacion' },
+        { group: G_PREVENTIVOS, href: '/monitoreo', icon: 'fas fa-wave-square', label: 'Monitoreo', tip: 'Monitoreo' },
+        { group: G_PREVENTIVOS, href: '/inspecciones', icon: 'fas fa-clipboard-check', label: 'Inspecciones', tip: 'Inspecciones' },
+        { group: G_PREVENTIVOS, href: '/espesores', icon: 'fas fa-ruler-vertical', label: 'Espesores', tip: 'Espesores UT' },
+        { group: G_PREVENTIVOS, href: '/cumplimiento-preventivos', icon: 'fas fa-calendar-check', label: 'Cumplim. Preventivos', tip: 'Frecuencia real vs planificada (lubricación, inspección, monitoreo)', restricted: true },
+        { group: G_PREVENTIVOS, href: '/optimizacion-preventivos', icon: 'fas fa-sliders-h', label: 'Optimizar Preventivos', tip: 'Detectar puntos sobre/sub-mantenidos', restricted: true },
+
+        { group: G_ACTIVOS, href: '/configuracion', icon: 'fas fa-sitemap', label: 'Activos', tip: 'Activos' },
+        { group: G_ACTIVOS, href: '/equipo-historial', icon: 'fas fa-book-open', label: 'Hist. Equipo', tip: 'Historial Equipo' },
+        { group: G_ACTIVOS, href: '/responsabilidades', icon: 'fas fa-user-tag', label: 'Responsabilidades', tip: 'Asignar responsable de mantenimiento por equipo', restricted: true },
+        { group: G_ACTIVOS, href: '/flujo-planta', icon: 'fas fa-project-diagram', label: 'Flujo de Planta', tip: 'Diagrama de flujo con disponibilidad por equipo', restricted: true },
+
+        { group: G_ANALISIS, href: '/reportes', icon: 'fas fa-file-contract', label: 'Reportes', tip: 'Reportes' },
+        { group: G_ANALISIS, href: '/indicadores', icon: 'fas fa-chart-bar', label: 'Indicadores', tip: 'Indicadores Directorio', restricted: true },
+        { group: G_ANALISIS, href: '/cockpit', icon: 'fas fa-chart-pie', label: 'Cockpit Gerencial', tip: 'Cockpit Gerencial', restricted: true },
+        { group: G_ANALISIS, href: '/produccion', icon: 'fas fa-seedling', label: 'Produccion vs Mtto', tip: 'Confiabilidad de Produccion', restricted: true },
+        { group: G_ANALISIS, href: '/operatividad-anual', icon: 'fas fa-calendar-check', label: 'Operatividad Anual', tip: 'Grilla anual de operatividad por equipo (semanas)', restricted: true },
+        { group: G_ANALISIS, href: '/perdidas-produccion', icon: 'fas fa-fire', label: 'Pérdidas Producción', tip: 'Sankey de horas perdidas — para presentar a jefatura', restricted: true },
+        { group: G_ANALISIS, href: '/insights', icon: 'fas fa-brain', label: 'Resumen Ejecutivo', tip: 'Resumen IA para gerencia', restricted: true }
     ];
 
     const ADMIN_MENU_ITEMS = [
-        { href: '/usuarios', icon: 'fas fa-users-cog', label: 'Usuarios', tip: 'Usuarios' },
-        { href: '/admin/telegram-users', icon: 'fab fa-telegram', label: 'Reporters Bot', tip: 'Usuarios autorizados del bot Telegram' },
-        { href: '/admin/bot-usage', icon: 'fas fa-robot', label: 'Uso del Bot', tip: 'Telemetría y costo del bot Telegram' },
-        { href: '/mantenimiento-bd', icon: 'fas fa-database', label: 'Mant. BD', tip: 'Mantenimiento BD' },
-        { href: '/admin/backup', icon: 'fas fa-cloud-download-alt', label: 'Backup BD', tip: 'Snapshot/restore de BD', restricted: true },
-        { href: '/configuracion-kpi', icon: 'fas fa-filter', label: 'Alcance KPIs', tip: 'Que areas/equipos entran en indicadores', restricted: true }
+        { group: G_ADMIN, href: '/usuarios', icon: 'fas fa-users-cog', label: 'Usuarios', tip: 'Usuarios' },
+        { group: G_ADMIN, href: '/admin/telegram-users', icon: 'fab fa-telegram', label: 'Reporters Bot', tip: 'Usuarios autorizados del bot Telegram' },
+        { group: G_ADMIN, href: '/admin/bot-usage', icon: 'fas fa-robot', label: 'Uso del Bot', tip: 'Telemetría y costo del bot Telegram' },
+        { group: G_ADMIN, href: '/mantenimiento-bd', icon: 'fas fa-database', label: 'Mant. BD', tip: 'Mantenimiento BD' },
+        { group: G_ADMIN, href: '/admin/backup', icon: 'fas fa-cloud-download-alt', label: 'Backup BD', tip: 'Snapshot/restore de BD', restricted: true },
+        { group: G_ADMIN, href: '/configuracion-kpi', icon: 'fas fa-filter', label: 'Alcance KPIs', tip: 'Que areas/equipos entran en indicadores', restricted: true }
     ];
 
     const ROLE_LABELS = {
@@ -545,22 +562,70 @@
         return path.startsWith(href.toLowerCase());
     }
 
+    const GROUPS_STORE_KEY = 'cmms.sidebar.groups';
+
+    function loadGroupState() {
+        try { return JSON.parse(localStorage.getItem(GROUPS_STORE_KEY) || '{}'); }
+        catch (_) { return {}; }
+    }
+
+    function saveGroupState(state) {
+        try { localStorage.setItem(GROUPS_STORE_KEY, JSON.stringify(state)); } catch (_) {}
+    }
+
+    window.cmmsToggleNavGroup = function (key) {
+        const header = document.querySelector(`.nav-group[data-group="${key}"]`);
+        const body = document.querySelector(`.nav-group-items[data-group-items="${key}"]`);
+        if (!header || !body) return;
+        const nowOpen = !header.classList.contains('open');
+        header.classList.toggle('open', nowOpen);
+        body.classList.toggle('collapsed', !nowOpen);
+        const state = loadGroupState();
+        state[key] = nowOpen ? 1 : 0;
+        saveGroupState(state);
+    };
+
+    function itemHtml(item) {
+        const active = item.href && isActive(item.href) ? 'active' : '';
+        const handler = item.onclick
+            ? `href="javascript:void(0)" onclick="${item.onclick}"`
+            : `href="${item.href}"`;
+        return `<li>
+            <a ${handler} class="${active}">
+                <i class="${item.icon}"></i>
+                <span class="links_name">${item.label}</span>
+            </a>
+            <span class="tooltip">${item.tip}</span>
+        </li>`;
+    }
+
     function renderNav(navList, extraItems, baseItems) {
         if (!navList) return;
         const items = [...(baseItems || MENU_ITEMS), ...(extraItems || [])];
-        navList.innerHTML = items.map((item) => {
-            const active = item.href && isActive(item.href) ? 'active' : '';
-            const handler = item.onclick
-                ? `href="javascript:void(0)" onclick="${item.onclick}"`
-                : `href="${item.href}"`;
-            return `<li>
-                <a ${handler} class="${active}">
-                    <i class="${item.icon}"></i>
-                    <span class="links_name">${item.label}</span>
+        const state = loadGroupState();
+
+        // Items sueltos (sin grupo) van arriba
+        let html = items.filter(i => !i.group).map(itemHtml).join('');
+
+        GROUP_ORDER.forEach(g => {
+            const groupItems = items.filter(i => i.group === g);
+            if (!groupItems.length) return;
+            const hasActive = groupItems.some(i => i.href && isActive(i.href));
+            // Abierto si contiene la pagina activa, o si el usuario lo dejo abierto.
+            // Sin estado guardado: cerrado por defecto (menu compacto).
+            const open = hasActive || state[g] === 1;
+            html += `<li class="nav-group ${open ? 'open' : ''}" data-group="${g}">
+                <a href="javascript:void(0)" onclick="cmmsToggleNavGroup('${g}')" class="nav-group-header">
+                    <span class="nav-group-title">${g}</span>
+                    <i class="fas fa-chevron-right nav-group-chevron"></i>
                 </a>
-                <span class="tooltip">${item.tip}</span>
+            </li>
+            <li class="nav-group-items ${open ? '' : 'collapsed'}" data-group-items="${g}">
+                <ul>${groupItems.map(itemHtml).join('')}</ul>
             </li>`;
-        }).join('');
+        });
+
+        navList.innerHTML = html;
     }
 
     function renderProfile(sidebar, user) {
@@ -592,6 +657,7 @@
     // Module key → sidebar href mapping
     const MODULE_TO_HREF = {
         'avisos': '/avisos', 'ordenes': '/ordenes', 'compras': '/compras',
+        'requerimientos': '/requerimientos',
         'almacen': '/almacen', 'herramientas': '/herramientas',
         'activos_rotativos': '/activos-rotativos', 'martillos': '/martillos', 'activos_config': '/configuracion',
         'responsabilidades': '/responsabilidades',

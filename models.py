@@ -837,8 +837,15 @@ class PurchaseRequest(db.Model):
     id: Mapped[int] = mapped_column(primary_key=True)
     req_code: Mapped[str] = mapped_column(String(20), unique=True, nullable=False)
     
-    work_order_id: Mapped[int] = mapped_column(ForeignKey('work_orders.id'), nullable=False)
+    # Origen de la requisicion. Tradicionalmente una REQ nace de una OT, pero
+    # tambien puede originarse de un Requerimiento del backlog (compra sin OT).
+    # Por eso work_order_id pasa a ser nullable; la ruta valida que exista al
+    # menos uno de los dos origenes (work_order_id o requirement_id).
+    work_order_id: Mapped[int | None] = mapped_column(ForeignKey('work_orders.id'), nullable=True)
     work_order = relationship("WorkOrder", backref="purchase_requests")
+
+    requirement_id: Mapped[int | None] = mapped_column(ForeignKey('requirements.id'), nullable=True)
+    requirement = relationship("Requirement", backref="purchase_requests")
     
     item_type: Mapped[str] = mapped_column(String(20), nullable=False) # 'MATERIAL', 'SERVICIO'
     
@@ -864,6 +871,8 @@ class PurchaseRequest(db.Model):
             'req_code': self.req_code,
             'work_order_id': self.work_order_id,
             'ot_code': self.work_order.code if self.work_order else None,
+            'requirement_id': self.requirement_id,
+            'requirement_code': self.requirement.code if self.requirement else None,
             'item_type': self.item_type,
             'spare_part_id': self.spare_part_id,
             'spare_part_name': self.spare_part.name if self.spare_part else None,
@@ -875,6 +884,92 @@ class PurchaseRequest(db.Model):
             'created_at': self.created_at.isoformat() if self.created_at else None,
             'purchase_order_id': self.purchase_order_id,
             'po_code': self.purchase_order.po_code if self.purchase_order else None
+        }
+
+
+class Requirement(db.Model):
+    """Backlog tecnico: necesidades reconocidas pero NO planificadas todavia.
+
+    Sirve de buzon unico para compras especiales, fabricaciones, mejoras/upgrades
+    y repuestos estrategicos que aun no estan ligados a una OT ni a un aviso.
+    Cuando llega su momento, un requerimiento se "promueve" (convierte) a una OT
+    o a una Requisicion de compra (PurchaseRequest), o se cierra manualmente.
+    """
+    __tablename__ = 'requirements'
+    __table_args__ = (
+        Index('ix_req_status', 'status'),
+        Index('ix_req_type', 'req_type'),
+        Index('ix_req_equipment_id', 'equipment_id'),
+    )
+    id: Mapped[int] = mapped_column(primary_key=True)
+    code: Mapped[str] = mapped_column(String(20), unique=True, nullable=False)  # RQM-2026-0001
+
+    title: Mapped[str] = mapped_column(String(150), nullable=False)
+    description: Mapped[str | None] = mapped_column(Text, nullable=True)
+
+    # COMPRA_ESPECIAL | FABRICACION | MEJORA | REPUESTO_ESTRATEGICO
+    req_type: Mapped[str] = mapped_column(String(30), nullable=False)
+    priority: Mapped[str] = mapped_column(String(20), nullable=False, default='MEDIA')  # BAJA, MEDIA, ALTA
+    # REGISTRADO -> EN_EVALUACION -> APROBADO -> EN_GESTION -> CERRADO / RECHAZADO
+    status: Mapped[str] = mapped_column(String(20), nullable=False, default='REGISTRADO')
+
+    # Ubicacion objetivo (opcional) — coherente con la jerarquia del CMMS
+    area_id: Mapped[int | None] = mapped_column(ForeignKey('areas.id'), nullable=True)
+    line_id: Mapped[int | None] = mapped_column(ForeignKey('lines.id'), nullable=True)
+    equipment_id: Mapped[int | None] = mapped_column(ForeignKey('equipments.id'), nullable=True)
+    area = relationship("Area")
+    line = relationship("Line")
+    equipment = relationship("Equipment")
+
+    estimated_cost: Mapped[float | None] = mapped_column(Float, nullable=True)
+    quantity: Mapped[float | None] = mapped_column(Float, nullable=True)
+    unit: Mapped[str | None] = mapped_column(String(20), nullable=True)
+    target_date: Mapped[str | None] = mapped_column(String(20), nullable=True)  # fecha objetivo YYYY-MM-DD
+    requested_by: Mapped[str | None] = mapped_column(String(100), nullable=True)
+    justification: Mapped[str | None] = mapped_column(Text, nullable=True)
+    notes: Mapped[str | None] = mapped_column(Text, nullable=True)
+
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+    closed_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+
+    # Trazabilidad de conversion
+    converted_to_type: Mapped[str | None] = mapped_column(String(20), nullable=True)  # OT | REQ | MANUAL
+    work_order_id: Mapped[int | None] = mapped_column(ForeignKey('work_orders.id'), nullable=True)
+    work_order = relationship("WorkOrder")
+    # La REQ generada se enlaza desde PurchaseRequest.requirement_id (backref
+    # 'purchase_requests'); no se duplica FK aqui para evitar dependencia circular.
+
+    def to_dict(self):
+        converted_req = self.purchase_requests[0] if getattr(self, 'purchase_requests', None) else None
+        return {
+            'id': self.id,
+            'code': self.code,
+            'title': self.title,
+            'description': self.description,
+            'req_type': self.req_type,
+            'priority': self.priority,
+            'status': self.status,
+            'area_id': self.area_id,
+            'area_name': self.area.name if self.area else None,
+            'line_id': self.line_id,
+            'line_name': self.line.name if self.line else None,
+            'equipment_id': self.equipment_id,
+            'equipment_name': self.equipment.name if self.equipment else None,
+            'equipment_tag': self.equipment.tag if self.equipment else None,
+            'estimated_cost': self.estimated_cost,
+            'quantity': self.quantity,
+            'unit': self.unit,
+            'target_date': self.target_date,
+            'requested_by': self.requested_by,
+            'justification': self.justification,
+            'notes': self.notes,
+            'created_at': self.created_at.isoformat() if self.created_at else None,
+            'closed_at': self.closed_at.isoformat() if self.closed_at else None,
+            'converted_to_type': self.converted_to_type,
+            'work_order_id': self.work_order_id,
+            'ot_code': self.work_order.code if self.work_order else None,
+            'purchase_request_id': converted_req.id if converted_req else None,
+            'req_code': converted_req.req_code if converted_req else None,
         }
 
 

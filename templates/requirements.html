@@ -1,0 +1,309 @@
+<!DOCTYPE html>
+<html lang="es">
+
+<head>
+    <meta charset="UTF-8">
+    <link rel="icon" type="image/svg+xml" href="/static/favicon.svg">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Requerimientos - CMMS</title>
+    <!-- CMMS_THEME_INIT -->
+    <script>(function(){try{var t=localStorage.getItem('cmms.theme');if(t=='management'||t=='developer'){document.documentElement.setAttribute('data-theme',t);}}catch(e){}})();</script>
+    <link rel="stylesheet" href="/static/css/style.css?v={{ v }}">
+    <link rel="stylesheet" href="/static/css/sidebar.css?v={{ v }}">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css">
+    <style>
+        .filters {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 10px;
+            align-items: center;
+            background: #181d24;
+            border: 1px solid #2f4257;
+            border-radius: 10px;
+            padding: 12px;
+            margin-bottom: 14px;
+        }
+
+        .filters select,
+        .filters input {
+            padding: 8px 10px;
+            border-radius: 8px;
+            background: rgba(255, 255, 255, .06);
+            border: 1px solid rgba(255, 255, 255, .12);
+            color: #eff6ff;
+            font-size: .88rem;
+        }
+
+        .pill {
+            padding: 3px 10px;
+            border-radius: 12px;
+            font-size: .75rem;
+            font-weight: 700;
+            white-space: nowrap;
+        }
+
+        /* Estados */
+        .st-REGISTRADO { background: #455a64; color: #fff; }
+        .st-EN_EVALUACION { background: #FF9F0A; color: #111; }
+        .st-APROBADO { background: #2196f3; color: #fff; }
+        .st-EN_GESTION { background: #7e57c2; color: #fff; }
+        .st-CERRADO { background: #4caf50; color: #fff; }
+        .st-RECHAZADO { background: #b00020; color: #fff; }
+
+        /* Tipos */
+        .ty { background: rgba(255,255,255,.08); color: #cfe3ff; border: 1px solid rgba(255,255,255,.15); }
+
+        /* Prioridad */
+        .pr-ALTA { color: #ff5a5a; font-weight: 700; }
+        .pr-MEDIA { color: #ffb300; font-weight: 700; }
+        .pr-BAJA { color: #8bc34a; font-weight: 700; }
+
+        .actions-cell button {
+            margin: 2px;
+            padding: 5px 9px;
+            font-size: .78rem;
+            border-radius: 6px;
+            border: none;
+            cursor: pointer;
+        }
+
+        .b-convert { background: #0A84FF; color: #fff; }
+        .b-edit { background: #455a64; color: #fff; }
+        .b-del { background: #b00020; color: #fff; }
+
+        .modal label { display:block; margin-top: 10px; font-size: .85rem; color:#9ab0cb; }
+        .modal input, .modal select, .modal textarea {
+            width: 100%; padding: 8px 10px; border-radius: 8px;
+            background: rgba(255,255,255,.06); border: 1px solid rgba(255,255,255,.15);
+            color: #eff6ff; font-size: .9rem; box-sizing: border-box;
+        }
+        .grid-2 { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+    </style>
+</head>
+
+<body>
+    <nav class="sidebar">
+        <div class="logo-details">
+            <i class="fas fa-industry icon"></i>
+            <div class="logo_name">CMMS Pro</div>
+            <i class="fas fa-bars" id="btn_toggle"></i>
+        </div>
+        <ul class="nav-list">
+            <li><a href="/"><i class="fas fa-chart-line"></i><span class="links_name">Dashboard</span></a><span
+                    class="tooltip">Dashboard</span></li>
+            <li><a href="/avisos"><i class="fas fa-bell"></i><span class="links_name">Avisos</span></a><span
+                    class="tooltip">Avisos</span></li>
+            <li><a href="/ordenes"><i class="fas fa-tools"></i><span class="links_name">Órdenes</span></a><span
+                    class="tooltip">Órdenes</span></li>
+            <li><a href="/requerimientos" class="active"><i class="fas fa-clipboard-check"></i><span
+                        class="links_name">Requerimientos</span></a><span class="tooltip">Requerimientos</span></li>
+            <li><a href="/compras"><i class="fas fa-shopping-cart"></i><span
+                        class="links_name">Compras</span></a><span class="tooltip">Compras</span></li>
+            <li><a href="/almacen"><i class="fas fa-boxes"></i><span class="links_name">Almacén</span></a><span
+                    class="tooltip">Almacén</span></li>
+            <li><a href="/martillos"><i class="fas fa-gavel"></i><span class="links_name">Martillos</span></a><span
+                    class="tooltip">Martillos FAPMETAL</span></li>
+            <li><a href="/configuracion"><i class="fas fa-sitemap"></i><span class="links_name">Activos</span></a><span
+                    class="tooltip">Activos</span></li>
+            <li><a href="/reportes"><i class="fas fa-file-contract"></i><span
+                        class="links_name">Reportes</span></a><span class="tooltip">Reportes</span></li>
+        </ul>
+    </nav>
+
+    <section class="home-section">
+        <div class="top-bar">
+            <h1><i class="fas fa-clipboard-check"></i> Requerimientos (Backlog Técnico)</h1>
+        </div>
+
+        <div class="main-container">
+            <div class="container-fluid">
+
+                <p style="color:#9ab0cb; max-width:820px; margin-top:0;">
+                    Buzón de necesidades reconocidas pero <b>aún no planificadas</b>: compras especiales,
+                    fabricaciones, mejoras/upgrades y repuestos estratégicos. Cuando llega su momento,
+                    convierte un requerimiento en <b>OT</b> o en <b>Requisición de compra</b>.
+                </p>
+
+                <div class="filters">
+                    <select id="fStatus" onchange="loadRequirements()">
+                        <option value="">Estado: Activos</option>
+                        <option value="REGISTRADO">Registrado</option>
+                        <option value="EN_EVALUACION">En evaluación</option>
+                        <option value="APROBADO">Aprobado</option>
+                        <option value="EN_GESTION">En gestión</option>
+                        <option value="CERRADO">Cerrado</option>
+                        <option value="RECHAZADO">Rechazado</option>
+                        <option value="__all__">Todos</option>
+                    </select>
+                    <select id="fType" onchange="loadRequirements()">
+                        <option value="">Tipo: Todos</option>
+                        <option value="COMPRA_ESPECIAL">Compra especial</option>
+                        <option value="FABRICACION">Fabricación</option>
+                        <option value="MEJORA">Mejora / Upgrade</option>
+                        <option value="REPUESTO_ESTRATEGICO">Repuesto estratégico</option>
+                    </select>
+                    <select id="fPriority" onchange="loadRequirements()">
+                        <option value="">Prioridad: Todas</option>
+                        <option value="ALTA">Alta</option>
+                        <option value="MEDIA">Media</option>
+                        <option value="BAJA">Baja</option>
+                    </select>
+                    <button class="btn-secondary" onclick="loadRequirements()"><i class="fas fa-sync"></i> Refrescar</button>
+                    <button class="btn-primary" data-perm="requerimientos.create" style="margin-left:auto;" onclick="openNew()">
+                        <i class="fas fa-plus"></i> Nuevo Requerimiento
+                    </button>
+                </div>
+
+                <div class="table-container">
+                    <table class="data-table" id="reqTable">
+                        <thead>
+                            <tr>
+                                <th>Código</th>
+                                <th>Título</th>
+                                <th>Tipo</th>
+                                <th>Equipo objetivo</th>
+                                <th>Prioridad</th>
+                                <th>Costo est.</th>
+                                <th>Fecha obj.</th>
+                                <th>Estado</th>
+                                <th>Convertido</th>
+                                <th>Acciones</th>
+                            </tr>
+                        </thead>
+                        <tbody id="reqBody">
+                            <tr><td colspan="10" style="text-align:center;padding:20px;">Cargando...</td></tr>
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+    </section>
+
+    <!-- MODAL: Crear / Editar -->
+    <dialog id="reqModal" class="modal" style="max-width:680px;">
+        <h3 id="reqModalTitle">Nuevo Requerimiento</h3>
+        <form id="reqForm" method="dialog">
+            <input type="hidden" id="reqId">
+
+            <label>Título *</label>
+            <input id="reqTitle" required placeholder="Ej: Upgrade de motor reductor línea 2">
+
+            <div class="grid-2">
+                <div>
+                    <label>Tipo *</label>
+                    <select id="reqType" required>
+                        <option value="COMPRA_ESPECIAL">Compra especial</option>
+                        <option value="FABRICACION">Fabricación</option>
+                        <option value="MEJORA">Mejora / Upgrade</option>
+                        <option value="REPUESTO_ESTRATEGICO">Repuesto estratégico</option>
+                    </select>
+                </div>
+                <div>
+                    <label>Prioridad</label>
+                    <select id="reqPriority">
+                        <option value="MEDIA">Media</option>
+                        <option value="ALTA">Alta</option>
+                        <option value="BAJA">Baja</option>
+                    </select>
+                </div>
+            </div>
+
+            <label>Descripción / Justificación técnica</label>
+            <textarea id="reqDescription" rows="3" placeholder="Qué se necesita y por qué"></textarea>
+
+            <div class="grid-2">
+                <div>
+                    <label>Equipo objetivo (opcional)</label>
+                    <select id="reqEquipment">
+                        <option value="">— Sin equipo —</option>
+                    </select>
+                </div>
+                <div>
+                    <label>Estado</label>
+                    <select id="reqStatus">
+                        <option value="REGISTRADO">Registrado</option>
+                        <option value="EN_EVALUACION">En evaluación</option>
+                        <option value="APROBADO">Aprobado</option>
+                        <option value="EN_GESTION">En gestión</option>
+                        <option value="CERRADO">Cerrado</option>
+                        <option value="RECHAZADO">Rechazado</option>
+                    </select>
+                </div>
+            </div>
+
+            <div class="grid-2">
+                <div>
+                    <label>Cantidad</label>
+                    <input id="reqQuantity" type="number" step="any" placeholder="0">
+                </div>
+                <div>
+                    <label>Unidad</label>
+                    <input id="reqUnit" placeholder="pza, kg, m, servicio...">
+                </div>
+            </div>
+
+            <div class="grid-2">
+                <div>
+                    <label>Costo estimado</label>
+                    <input id="reqCost" type="number" step="any" placeholder="0.00">
+                </div>
+                <div>
+                    <label>Fecha objetivo</label>
+                    <input id="reqTargetDate" type="date">
+                </div>
+            </div>
+
+            <div class="grid-2">
+                <div>
+                    <label>Solicitado por</label>
+                    <input id="reqRequestedBy" placeholder="Nombre">
+                </div>
+                <div></div>
+            </div>
+
+            <label>Notas</label>
+            <textarea id="reqNotes" rows="2"></textarea>
+
+            <div class="modal-actions" style="margin-top:14px;">
+                <button type="button" class="btn-secondary" onclick="document.getElementById('reqModal').close()">Cancelar</button>
+                <button type="button" class="btn-primary" onclick="withLoading(this, saveRequirement)">Guardar</button>
+            </div>
+        </form>
+    </dialog>
+
+    <!-- MODAL: Convertir -->
+    <dialog id="convertModal" class="modal" style="max-width:560px;">
+        <h3>Convertir <span id="convReqCode" style="color:#0A84FF;"></span></h3>
+        <p style="color:#9ab0cb;">Elige qué hacer con este requerimiento cuando llega su momento.</p>
+        <input type="hidden" id="convReqId">
+
+        <label style="display:block; margin-top:8px; color:#9ab0cb;">Acción</label>
+        <select id="convTarget" onchange="onConvTargetChange()">
+            <option value="OT">Convertir a Orden de Trabajo (OT)</option>
+            <option value="REQ">Convertir a Requisición de compra (sin OT)</option>
+            <option value="MANUAL">Cerrar manualmente (sin generar nada)</option>
+        </select>
+
+        <div id="convReqExtra" style="display:none;">
+            <label style="display:block; margin-top:10px; color:#9ab0cb;">Tipo de ítem</label>
+            <select id="convItemType">
+                <option value="SERVICIO">Servicio</option>
+                <option value="MATERIAL">Material</option>
+            </select>
+        </div>
+
+        <label style="display:block; margin-top:10px; color:#9ab0cb;">Descripción (opcional)</label>
+        <textarea id="convDescription" rows="2" style="width:100%;box-sizing:border-box;"
+            placeholder="Por defecto usa el título del requerimiento"></textarea>
+
+        <div class="modal-actions" style="margin-top:14px;">
+            <button type="button" class="btn-secondary" onclick="document.getElementById('convertModal').close()">Cancelar</button>
+            <button type="button" class="btn-primary" onclick="withLoading(this, doConvert)">Confirmar</button>
+        </div>
+    </dialog>
+
+    <script src="/static/js/requirements.js?v={{ v }}"></script>
+    <script src="/static/js/sidebar.js?v={{ v }}"></script>
+</body>
+
+</html>

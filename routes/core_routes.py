@@ -317,6 +317,10 @@ def register_core_routes(app, db, logger, app_build_tag,
     def purchasing_page():
         return render_template('purchasing.html')
 
+    @app.route('/requerimientos')
+    def requirements_page():
+        return render_template('requirements.html')
+
     @app.route('/seguimiento')
     def activities_page():
         return render_template('activities.html')
