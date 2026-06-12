@@ -29,6 +29,7 @@ from models import (
     LubricationPoint, LubricationExecution, MonitoringPoint, MonitoringReading,
     PhotoAttachment, OTLogEntry,
     RotativeAsset, RotativeAssetHistory, RotativeAssetSpec, RotativeAssetBOM,
+    MotorElectricalTest,
     InspectionRoute, InspectionItem, InspectionExecution, InspectionResult,
     Activity, Milestone, Notification, RolePermission,
     AuditLog,
@@ -71,6 +72,7 @@ from routes.operatividad_routes import register_operatividad_routes
 from routes.notices_routes import register_notices_routes
 from routes.reports_routes import register_reports_routes
 from routes.rotative_assets_routes import register_rotative_assets_routes
+from routes.motors_routes import register_motors_routes
 from routes.hammer_batches_routes import register_hammer_batches_routes
 from routes.tools_routes import register_tools_routes
 from routes.purchasing_routes import register_purchasing_routes
@@ -276,6 +278,7 @@ _MODULE_ROUTES = {
     'martillos':       {'pages': ['/martillos'], 'api': ['/api/hammer-batches']},
     'activos_config':   {'pages': ['/configuracion'], 'api': ['/api/areas', '/api/lines', '/api/equipments', '/api/systems', '/api/components', '/api/spare-parts', '/api/upload-excel', '/api/bulk-paste']},
     'monitoreo':        {'pages': ['/monitoreo'], 'api': ['/api/monitoring']},
+    'motores':          {'pages': ['/motores-electricos'], 'api': ['/api/motors']},
     'lubricacion':      {'pages': ['/lubricacion'], 'api': ['/api/lubrication']},
     'inspecciones':     {'pages': ['/inspecciones'], 'api': ['/api/inspection']},
     'espesores':        {'pages': ['/espesores'], 'api': ['/api/thickness']},
@@ -988,6 +991,16 @@ register_rotative_assets_routes(
     LubricationPoint=LubricationPoint,
 )
 
+register_motors_routes(
+    app=app,
+    db=db,
+    logger=logger,
+    RotativeAsset=RotativeAsset,
+    MotorElectricalTest=MotorElectricalTest,
+    MaintenanceNotice=MaintenanceNotice,
+    Equipment=Equipment,
+)
+
 register_hammer_batches_routes(
     app=app,
     db=db,
@@ -1192,6 +1205,14 @@ _ENSURE_COLUMNS = [
     ("lubrication_points", "freq_optimized_at", "VARCHAR(20)"),
     ("monitoring_points",  "freq_optimized_at", "VARCHAR(20)"),
     ("inspection_routes",  "freq_optimized_at", "VARCHAR(20)"),
+    # Motores electricos: megado (semestral + ad-hoc), corriente y temperatura.
+    ("rotative_assets", "is_electric_motor", "BOOLEAN DEFAULT false"),
+    ("rotative_assets", "megado_frequency_days", "INTEGER DEFAULT 180"),
+    ("rotative_assets", "megado_warning_days", "INTEGER DEFAULT 14"),
+    ("rotative_assets", "megado_min_mohm", "FLOAT DEFAULT 5"),
+    ("rotative_assets", "last_megado_date", "VARCHAR(20)"),
+    ("rotative_assets", "next_megado_due", "VARCHAR(20)"),
+    ("rotative_assets", "megado_status", "VARCHAR(10)"),
 ]
 
 

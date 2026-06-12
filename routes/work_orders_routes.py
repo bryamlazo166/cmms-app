@@ -77,6 +77,19 @@ def register_work_orders_routes(
                         point.next_due_date = nd
                         point.semaphore_status = sem
                     logger.info(f"Source MON-{source_id} updated: last_measurement={close_date}")
+
+            elif source_type == 'megado':
+                from models import RotativeAsset
+                asset = RotativeAsset.query.get(source_id)
+                if asset:
+                    asset.last_megado_date = close_date
+                    if _calculate_monitoring_schedule:
+                        nd, sem = _calculate_monitoring_schedule(
+                            close_date, asset.megado_frequency_days or 180,
+                            asset.megado_warning_days or 14)
+                        asset.next_megado_due = nd
+                        asset.megado_status = sem
+                    logger.info(f"Source MEGADO motor {source_id} updated: last_megado={close_date}")
         except Exception as e:
             logger.error(f"Error updating source {source_type}/{source_id}: {e}")
 
@@ -91,11 +104,13 @@ def register_work_orders_routes(
             skipped = 0
 
             # Recolecta puntos vencidos/próximos (ROJO/AMARILLO) de las 3 fuentes.
+            from models import RotativeAsset
             sources = collect_sources(
                 LubricationPoint, InspectionRoute, MonitoringPoint,
                 _calc_lub_schedule=_calculate_lubrication_schedule,
                 _calc_mon_schedule=_calculate_monitoring_schedule,
                 only_overdue=True,
+                RotativeAsset=RotativeAsset,
             )
 
             # Create AVISOS (not OTs) for sources that don't already have an open aviso/OT

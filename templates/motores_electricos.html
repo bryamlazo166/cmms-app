@@ -1,0 +1,438 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <link rel="icon" type="image/svg+xml" href="/static/favicon.svg">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Motores Eléctricos - CMMS</title>
+    <!-- CMMS_THEME_INIT -->
+    <script>(function(){try{var t=localStorage.getItem('cmms.theme');if(t=='management'||t=='developer'){document.documentElement.setAttribute('data-theme',t);}}catch(e){}})();</script>
+    <link rel="stylesheet" href="/static/css/style.css?v={{ v }}">
+    <link rel="stylesheet" href="/static/css/sidebar.css?v={{ v }}">
+    <link href="https://fonts.googleapis.com/css2?family=Roboto:wght@300;400;500;700&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css">
+    <style>
+        body{background:#0a0e14;}
+        .wrap{max-width:1600px;margin:0 auto;padding:16px;}
+        .header{background:linear-gradient(120deg,#1e2430,#151b24);border:1px solid #2d3f56;border-radius:14px;padding:16px 20px;margin-bottom:14px;}
+        .header h1{margin:0;color:#5AC8FA;font-size:1.3rem;display:flex;align-items:center;gap:10px;}
+        .header p{margin:4px 0 12px;color:#9ab0cb;font-size:.82rem;}
+        .tools{display:flex;gap:10px;align-items:center;flex-wrap:wrap;}
+        .tools label{color:#9ab0cb;font-size:.78rem;}
+        .tools select,.tools input{height:34px;background:#0f1319;color:#d5e2f5;border:1px solid #344964;border-radius:7px;padding:5px 10px;font-size:.82rem;}
+        .btn{height:34px;border:1px solid #385273;border-radius:7px;background:#193451;color:#d7e9ff;padding:0 14px;font-weight:600;cursor:pointer;font-size:.82rem;display:inline-flex;align-items:center;gap:6px;}
+        .btn.primary{background:#5AC8FA;border-color:#5AC8FA;color:#001;}
+        .btn.primary:hover{background:#7ad4fb;}
+        .btn.sm{height:28px;padding:0 9px;font-size:.74rem;}
+        .cascade{display:flex;gap:8px;align-items:flex-end;flex-wrap:wrap;margin-top:10px;padding-top:10px;border-top:1px solid #2a3a50;}
+        .cascade .fl{display:flex;flex-direction:column;gap:2px;}
+        .cascade .fl small{color:#7e93ad;font-size:.64rem;text-transform:uppercase;letter-spacing:.3px;}
+
+        .summary-row{display:grid;grid-template-columns:repeat(4,1fr);gap:10px;margin-bottom:14px;}
+        .summary-card{background:linear-gradient(135deg,#1b212b,#151a23);border:1px solid #31455f;border-radius:10px;padding:12px;position:relative;overflow:hidden;}
+        .summary-card::before{content:'';position:absolute;top:0;left:0;right:0;height:3px;background:var(--c,#30D158);}
+        .summary-card.rojo{--c:#FF453A;} .summary-card.amar{--c:#FF9F0A;}
+        .summary-card.verde{--c:#30D158;} .summary-card.taller{--c:#5AC8FA;}
+        .summary-card .lbl{font-size:.66rem;color:#9ab3d0;text-transform:uppercase;letter-spacing:.4px;font-weight:600;margin-bottom:5px;}
+        .summary-card .val{font-size:1.6rem;font-weight:700;color:#eff6ff;line-height:1;}
+        .summary-card .sub{font-size:.7rem;color:#9ab0cb;margin-top:3px;}
+
+        .tabs{display:flex;gap:4px;margin-bottom:12px;border-bottom:1px solid #2a3a50;flex-wrap:wrap;}
+        .tab{background:transparent;color:#9ab0cb;border:none;padding:10px 14px;cursor:pointer;font-size:.86rem;font-weight:600;border-bottom:2px solid transparent;}
+        .tab.active{color:#5AC8FA;border-bottom-color:#5AC8FA;}
+        .tab .count{background:rgba(255,255,255,.08);padding:1px 7px;border-radius:8px;margin-left:4px;font-size:.7rem;}
+
+        .panel{background:#181d24;border:1px solid #2f4257;border-radius:12px;padding:14px;overflow-x:auto;}
+        .rec-table{width:100%;border-collapse:collapse;font-size:.84rem;}
+        .rec-table th,.rec-table td{padding:8px 10px;border-bottom:1px solid #2a3a50;color:#d5e2f5;text-align:left;vertical-align:top;}
+        .rec-table th{color:#9ab0cb;font-weight:600;font-size:.72rem;text-transform:uppercase;background:#121821;position:sticky;top:0;}
+        .rec-table tr:hover{background:rgba(90,200,250,.04);}
+
+        .sev{display:inline-block;padding:2px 8px;border-radius:8px;font-size:.7rem;font-weight:700;white-space:nowrap;}
+        .sev.ROJO{background:rgba(255,69,58,.18);color:#ff6b61;border:1px solid rgba(255,69,58,.4);}
+        .sev.AMARILLO{background:rgba(255,159,10,.18);color:#FFA834;border:1px solid rgba(255,159,10,.4);}
+        .sev.VERDE{background:rgba(48,209,88,.18);color:#30D158;border:1px solid rgba(48,209,88,.4);}
+        .sev.PENDIENTE{background:rgba(142,142,147,.18);color:#aeb6c2;border:1px solid rgba(142,142,147,.4);}
+        .muted{color:#9ab0cb;font-size:.75rem;}
+        .loading{text-align:center;padding:40px;color:#9ab0cb;}
+        .loading i{font-size:2rem;color:#5AC8FA;}
+
+        dialog{background:#10151c;color:#d5e2f5;border:1px solid #2f4257;border-radius:12px;padding:0;max-width:560px;width:94%;}
+        dialog::backdrop{background:rgba(0,0,0,.55);}
+        .dlg-head{padding:14px 18px;border-bottom:1px solid #263545;font-weight:700;color:#5AC8FA;display:flex;justify-content:space-between;align-items:center;}
+        .dlg-body{padding:16px 18px;display:grid;gap:10px;}
+        .dlg-body .row{display:grid;grid-template-columns:1fr 1fr;gap:10px;}
+        .dlg-body label{font-size:.72rem;color:#9ab3d0;display:block;margin-bottom:3px;}
+        .dlg-body input,.dlg-body select,.dlg-body textarea{width:100%;background:#0f1319;color:#d5e2f5;border:1px solid #344964;border-radius:7px;padding:7px 9px;font-size:.84rem;}
+        .dlg-foot{padding:12px 18px;border-top:1px solid #263545;display:flex;justify-content:flex-end;gap:8px;}
+        .x{cursor:pointer;color:#9ab0cb;background:none;border:none;font-size:1.1rem;}
+        .hist-row{border-bottom:1px solid #25313f;padding:8px 0;font-size:.82rem;}
+        .chip{padding:1px 7px;border-radius:6px;font-size:.68rem;font-weight:700;}
+        .chip.MEGADO{background:rgba(90,200,250,.15);color:#5AC8FA;}
+        .chip.CORRIENTE{background:rgba(255,214,10,.15);color:#FFD60A;}
+        .chip.TEMPERATURA{background:rgba(255,69,58,.15);color:#ff6b61;}
+        @media(max-width:900px){ .summary-row{grid-template-columns:repeat(2,1fr);} .dlg-body .row{grid-template-columns:1fr;} }
+    </style>
+</head>
+<body>
+<nav class="sidebar">
+    <div class="logo-details"><i class="fas fa-industry icon"></i><div class="logo_name">CMMS Pro</div><i class="fas fa-bars" id="btn_toggle"></i></div>
+    <ul class="nav-list"></ul>
+</nav>
+
+<section class="home-section">
+    <div class="wrap">
+        <div class="header">
+            <h1><i class="fas fa-bolt"></i> Motores Eléctricos</h1>
+            <p>Megado (aislamiento, semestral + ad-hoc), corriente por fase (R/S/T) y temperatura. Incluye motores sueltos y acoplados (motorreductores, bombas, ventiladores).</p>
+            <div class="tools">
+                <input type="text" id="search" placeholder="Buscar motor / equipo / código…" style="width:240px;" oninput="renderTable()">
+                <button class="btn primary" onclick="loadMotors()"><i class="fas fa-sync"></i> Actualizar</button>
+                <button class="btn" onclick="openManage()"><i class="fas fa-cog"></i> Gestionar motores</button>
+                <button class="btn" onclick="exportCSV()"><i class="fas fa-file-csv"></i> Exportar CSV</button>
+            </div>
+            <div class="cascade">
+                <div class="fl"><small>Área</small><select id="fArea" data-label="Todas" onchange="onCascadeChange(0)"></select></div>
+                <div class="fl"><small>Línea</small><select id="fLine" data-label="Todas" onchange="onCascadeChange(1)"></select></div>
+                <div class="fl"><small>Equipo</small><select id="fEquip" data-label="Todos" onchange="onCascadeChange(2)"></select></div>
+                <button class="btn sm" onclick="clearFilters()"><i class="fas fa-eraser"></i> Limpiar</button>
+            </div>
+        </div>
+
+        <div id="loading" class="loading"><i class="fas fa-spinner fa-spin"></i><p>Cargando motores…</p></div>
+
+        <div id="content" style="display:none;">
+            <div class="summary-row">
+                <div class="summary-card rojo"><div class="lbl"><i class="fas fa-exclamation-triangle"></i> Megado vencido</div><div class="val" id="cRojo">—</div><div class="sub">Pasó el semestre (o sin megado)</div></div>
+                <div class="summary-card amar"><div class="lbl"><i class="fas fa-hourglass-half"></i> Próximo a vencer</div><div class="val" id="cAmar">—</div><div class="sub">Megado por vencer pronto</div></div>
+                <div class="summary-card verde"><div class="lbl"><i class="fas fa-check-circle"></i> Al día</div><div class="val" id="cVerde">—</div><div class="sub">Megado vigente</div></div>
+                <div class="summary-card taller"><div class="lbl"><i class="fas fa-wrench"></i> En taller</div><div class="val" id="cTaller">—</div><div class="sub">Motores fuera de servicio</div></div>
+            </div>
+
+            <div class="tabs">
+                <button class="tab active" data-cat="ROJO" onclick="setTab('ROJO')">🔴 Vencido <span class="count" id="tabRojo">0</span></button>
+                <button class="tab" data-cat="AMARILLO" onclick="setTab('AMARILLO')">🟠 Próximo <span class="count" id="tabAmar">0</span></button>
+                <button class="tab" data-cat="VERDE" onclick="setTab('VERDE')">🟢 Al día <span class="count" id="tabVerde">0</span></button>
+                <button class="tab" data-cat="PENDIENTE" onclick="setTab('PENDIENTE')">⚪ Sin megado <span class="count" id="tabPend">0</span></button>
+                <button class="tab" data-cat="all" onclick="setTab('all')">📊 Todos <span class="count" id="tabAll">0</span></button>
+            </div>
+
+            <div class="panel">
+                <table class="rec-table">
+                    <thead>
+                        <tr>
+                            <th>Megado</th>
+                            <th>Motor</th>
+                            <th>Estado / Ubicación</th>
+                            <th>Último megado</th>
+                            <th>Próx. megado</th>
+                            <th>Última corriente R/S/T (A)</th>
+                            <th>Última temp (°C)</th>
+                            <th>Registrar</th>
+                        </tr>
+                    </thead>
+                    <tbody id="recBody"><tr><td colspan="8" style="text-align:center;color:#9ab0cb;padding:30px;">Cargando…</td></tr></tbody>
+                </table>
+            </div>
+        </div>
+    </div>
+</section>
+
+<!-- MODAL: registrar prueba -->
+<dialog id="testModal">
+    <form method="dialog" onsubmit="return false;">
+        <div class="dlg-head"><span id="testTitle">Registrar</span><button type="button" class="x" onclick="document.getElementById('testModal').close()">✕</button></div>
+        <div class="dlg-body">
+            <div id="testMotorLbl" class="muted"></div>
+            <div class="row">
+                <div><label>Fecha</label><input type="date" id="tDate"></div>
+                <div><label>Contexto</label><select id="tContext">
+                    <option value="PROGRAMADO">Programado (semestral)</option>
+                    <option value="INSTALACION">Instalación (desde taller)</option>
+                    <option value="CORRECTIVO">Correctivo</option>
+                    <option value="OTRO">Otro</option>
+                </select></div>
+            </div>
+            <!-- MEGADO -->
+            <div id="grpMegado" style="display:none;">
+                <div class="row">
+                    <div><label>Aislamiento (MΩ)</label><input type="number" step="0.01" id="tMohm" placeholder="ej: 250"></div>
+                    <div><label>Voltaje de prueba (V)</label><select id="tVolt"><option value="">—</option><option value="250">250</option><option value="500">500</option><option value="1000">1000</option></select></div>
+                </div>
+                <div><label>Link de foto/informe (opcional)</label><input type="url" id="tPhoto" placeholder="https://drive.google.com/..."></div>
+            </div>
+            <!-- CORRIENTE -->
+            <div id="grpCorriente" style="display:none;">
+                <div class="row">
+                    <div><label>Corriente R (A)</label><input type="number" step="0.01" id="tR"></div>
+                    <div><label>Corriente S (A)</label><input type="number" step="0.01" id="tS"></div>
+                </div>
+                <div class="row">
+                    <div><label>Corriente T (A)</label><input type="number" step="0.01" id="tT"></div>
+                    <div></div>
+                </div>
+            </div>
+            <!-- TEMPERATURA -->
+            <div id="grpTemp" style="display:none;">
+                <div class="row">
+                    <div><label>Temperatura (°C)</label><input type="number" step="0.1" id="tTemp"></div>
+                    <div><label>Punto</label><select id="tTempPoint"><option value="">—</option><option value="Carcasa">Carcasa</option><option value="Bobinado">Bobinado</option><option value="Rodamiento DE">Rodamiento DE</option><option value="Rodamiento NDE">Rodamiento NDE</option></select></div>
+                </div>
+            </div>
+            <div class="row">
+                <div><label>Ejecutó</label><input type="text" id="tBy" placeholder="Nombre"></div>
+                <div></div>
+            </div>
+            <div><label>Notas</label><textarea id="tNotes" rows="2"></textarea></div>
+        </div>
+        <div class="dlg-foot">
+            <button type="button" class="btn" onclick="document.getElementById('testModal').close()">Cancelar</button>
+            <button type="button" class="btn primary" onclick="submitTest()"><i class="fas fa-save"></i> Guardar</button>
+        </div>
+    </form>
+</dialog>
+
+<!-- MODAL: historial -->
+<dialog id="histModal">
+    <div class="dlg-head"><span id="histTitle">Historial</span><button type="button" class="x" onclick="document.getElementById('histModal').close()">✕</button></div>
+    <div class="dlg-body" id="histBody" style="max-height:60vh;overflow:auto;"></div>
+    <div class="dlg-foot"><button type="button" class="btn" onclick="document.getElementById('histModal').close()">Cerrar</button></div>
+</dialog>
+
+<!-- MODAL: gestionar motores -->
+<dialog id="manageModal">
+    <div class="dlg-head"><span>Gestionar motores eléctricos</span><button type="button" class="x" onclick="document.getElementById('manageModal').close()">✕</button></div>
+    <div class="dlg-body">
+        <div class="muted">Marca los activos rotativos que tienen motor eléctrico a probar (motores, motorreductores, bombas, ventiladores).</div>
+        <input type="text" id="manageSearch" placeholder="Filtrar…" oninput="renderManage()">
+        <div id="manageBody" style="max-height:52vh;overflow:auto;"></div>
+    </div>
+    <div class="dlg-foot">
+        <button type="button" class="btn" onclick="document.getElementById('manageModal').close()">Cerrar</button>
+        <button type="button" class="btn primary" onclick="saveManage()"><i class="fas fa-save"></i> Guardar marcado</button>
+    </div>
+</dialog>
+
+<script src="/static/js/sidebar.js?v={{ v }}"></script>
+<script>
+let _allRows = [];
+let _activeTab = 'ROJO';
+let _manageList = [];
+const CASCADE = [
+    { id: 'fArea', field: 'area_name' },
+    { id: 'fLine', field: 'line_name' },
+    { id: 'fEquip', field: 'equipment_tag' },
+];
+const todayISO = () => new Date().toISOString().slice(0, 10);
+
+async function loadMotors() {
+    document.getElementById('loading').style.display = 'block';
+    document.getElementById('content').style.display = 'none';
+    try {
+        const r = await fetch('/api/motors');
+        const j = await r.json();
+        if (!r.ok) throw new Error(j.error || 'Error');
+        _allRows = j.rows || [];
+        const s = j.summary || {};
+        document.getElementById('cRojo').textContent = s.vencido || 0;
+        document.getElementById('cAmar').textContent = s.proximo || 0;
+        document.getElementById('cVerde').textContent = s.al_dia || 0;
+        document.getElementById('cTaller').textContent = s.en_taller || 0;
+        document.getElementById('tabRojo').textContent = s.vencido || 0;
+        document.getElementById('tabAmar').textContent = s.proximo || 0;
+        document.getElementById('tabVerde').textContent = s.al_dia || 0;
+        document.getElementById('tabPend').textContent = s.pendiente || 0;
+        document.getElementById('tabAll').textContent = _allRows.length;
+        CASCADE.forEach(c => { const el = document.getElementById(c.id); if (el) el.value = ''; });
+        populateCascades();
+        renderTable();
+        document.getElementById('loading').style.display = 'none';
+        document.getElementById('content').style.display = 'block';
+    } catch (e) {
+        document.getElementById('loading').style.display = 'none';
+        alert('Error: ' + e.message);
+    }
+}
+
+function setTab(cat) { _activeTab = cat; document.querySelectorAll('.tab').forEach(t => t.classList.toggle('active', t.dataset.cat === _activeTab)); renderTable(); }
+
+function populateCascades() {
+    CASCADE.forEach((c, idx) => {
+        const elem = document.getElementById(c.id);
+        if (!elem) return;
+        const current = elem.value;
+        let rows = _allRows;
+        for (let i = 0; i < idx; i++) {
+            const v = document.getElementById(CASCADE[i].id).value;
+            if (v) rows = rows.filter(r => (r[CASCADE[i].field] || '') === v);
+        }
+        const vals = [...new Set(rows.map(r => r[c.field]).filter(v => v))].sort((a, b) => a.localeCompare(b));
+        elem.innerHTML = `<option value="">${elem.dataset.label || 'Todos'}</option>` + vals.map(v => `<option value="${v}">${v}</option>`).join('');
+        elem.value = vals.includes(current) ? current : '';
+    });
+}
+function onCascadeChange(idx) {
+    for (let i = idx + 1; i < CASCADE.length; i++) document.getElementById(CASCADE[i].id).value = '';
+    populateCascades(); renderTable();
+}
+function clearFilters() { CASCADE.forEach(c => document.getElementById(c.id).value = ''); document.getElementById('search').value = ''; populateCascades(); renderTable(); }
+
+function _filtered() {
+    const q = (document.getElementById('search').value || '').toLowerCase().trim();
+    let rows = _activeTab === 'all' ? _allRows : _allRows.filter(r => r.megado_status === _activeTab);
+    CASCADE.forEach(c => { const v = document.getElementById(c.id).value; if (v) rows = rows.filter(r => (r[c.field] || '') === v); });
+    if (q) rows = rows.filter(r => [r.code, r.name, r.equipment_tag, r.equipment_name, r.category].some(x => (x || '').toLowerCase().includes(q)));
+    return rows;
+}
+
+function _num(x) { return (x === null || x === undefined) ? '—' : x; }
+function renderTable() {
+    const tbody = document.getElementById('recBody');
+    const rows = _filtered();
+    if (!rows.length) { tbody.innerHTML = `<tr><td colspan="8" style="text-align:center;color:#9ab0cb;padding:30px;">Sin motores con estos filtros</td></tr>`; return; }
+    tbody.innerHTML = rows.map(r => {
+        const st = r.megado_status || 'PENDIENTE';
+        const meg = r.last_megado_date ? `${r.last_megado_date}<div class="muted">${r.last_megado_mohm != null ? r.last_megado_mohm + ' MΩ' : ''}</div>` : '<span class="muted">nunca</span>';
+        const cur = (r.last_current_r != null || r.last_current_s != null || r.last_current_t != null)
+            ? `${_num(r.last_current_r)} / ${_num(r.last_current_s)} / ${_num(r.last_current_t)}<div class="muted">${r.last_current_date || ''}</div>` : '<span class="muted">—</span>';
+        const tem = r.last_temperature_c != null ? `${r.last_temperature_c} °C<div class="muted">${r.last_temp_date || ''}</div>` : '<span class="muted">—</span>';
+        const loc = r.equipment_tag ? `<b style="color:#FF9F0A;">${r.equipment_tag}</b> ${r.equipment_name || ''}<div class="muted">${r.area_name || '-'}</div>` : '<span class="muted">sin instalar</span>';
+        return `<tr>
+            <td><span class="sev ${st}">${st}</span></td>
+            <td><b style="color:#5AC8FA;">${r.code}</b><div>${r.name || ''}</div><div class="muted">${r.category || ''}</div></td>
+            <td>${r.status || '-'}<div>${loc}</div></td>
+            <td>${meg}</td>
+            <td>${r.next_megado_due && r.next_megado_due !== '-' ? r.next_megado_due : '<span class="muted">—</span>'}</td>
+            <td>${cur}</td>
+            <td>${tem}</td>
+            <td style="white-space:nowrap;">
+                <button class="btn sm" onclick="openTest(${r.id}, 'MEGADO')" title="Megado">⚡</button>
+                <button class="btn sm" onclick="openTest(${r.id}, 'CORRIENTE')" title="Corriente">A</button>
+                <button class="btn sm" onclick="openTest(${r.id}, 'TEMPERATURA')" title="Temperatura">°C</button>
+                <button class="btn sm" onclick="openHistory(${r.id})" title="Historial"><i class="fas fa-clock-rotate-left"></i></button>
+            </td>
+        </tr>`;
+    }).join('');
+}
+
+// ── Registrar prueba ─────────────────────────────────────────────────
+let _testMotorId = null, _testType = null;
+function openTest(id, type) {
+    _testMotorId = id; _testType = type;
+    const m = _allRows.find(r => r.id === id);
+    document.getElementById('testTitle').textContent = (type === 'MEGADO' ? 'Registrar megado' : type === 'CORRIENTE' ? 'Registrar corriente' : 'Registrar temperatura');
+    document.getElementById('testMotorLbl').textContent = m ? `${m.code} · ${m.name || ''}` : '';
+    document.getElementById('tDate').value = todayISO();
+    document.getElementById('tContext').value = 'PROGRAMADO';
+    ['tMohm','tVolt','tR','tS','tT','tTemp','tTempPoint','tBy','tNotes','tPhoto'].forEach(i => { const el = document.getElementById(i); if (el) el.value = ''; });
+    document.getElementById('grpMegado').style.display = type === 'MEGADO' ? 'block' : 'none';
+    document.getElementById('grpCorriente').style.display = type === 'CORRIENTE' ? 'block' : 'none';
+    document.getElementById('grpTemp').style.display = type === 'TEMPERATURA' ? 'block' : 'none';
+    document.getElementById('testModal').showModal();
+}
+async function submitTest() {
+    const body = {
+        test_type: _testType,
+        test_date: document.getElementById('tDate').value || todayISO(),
+        context: document.getElementById('tContext').value,
+        executed_by: document.getElementById('tBy').value || null,
+        notes: document.getElementById('tNotes').value || null,
+    };
+    if (_testType === 'MEGADO') {
+        body.insulation_mohm = document.getElementById('tMohm').value || null;
+        body.test_voltage_v = document.getElementById('tVolt').value || null;
+        body.photo_url = document.getElementById('tPhoto').value || null;
+    } else if (_testType === 'CORRIENTE') {
+        body.current_r = document.getElementById('tR').value || null;
+        body.current_s = document.getElementById('tS').value || null;
+        body.current_t = document.getElementById('tT').value || null;
+    } else {
+        body.temperature_c = document.getElementById('tTemp').value || null;
+        body.temp_point = document.getElementById('tTempPoint').value || null;
+    }
+    try {
+        const r = await fetch(`/api/motors/${_testMotorId}/tests`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
+        const j = await r.json();
+        if (!r.ok) throw new Error(j.error || 'Error');
+        document.getElementById('testModal').close();
+        if (_testType === 'MEGADO' && j.value_status === 'ROJO') alert('⚠️ Aislamiento por debajo del mínimo — se generó un aviso.');
+        loadMotors();
+    } catch (e) { alert('Error: ' + e.message); }
+}
+
+// ── Historial ────────────────────────────────────────────────────────
+async function openHistory(id) {
+    const m = _allRows.find(r => r.id === id);
+    document.getElementById('histTitle').textContent = 'Historial · ' + (m ? m.code : '');
+    document.getElementById('histBody').innerHTML = '<div class="muted">Cargando…</div>';
+    document.getElementById('histModal').showModal();
+    try {
+        const r = await fetch(`/api/motors/${id}/tests`);
+        const tests = await r.json();
+        if (!tests.length) { document.getElementById('histBody').innerHTML = '<div class="muted">Sin registros.</div>'; return; }
+        document.getElementById('histBody').innerHTML = tests.map(t => {
+            let val = '';
+            if (t.test_type === 'MEGADO') val = `${t.insulation_mohm != null ? t.insulation_mohm + ' MΩ' : ''}${t.test_voltage_v ? ' @ ' + t.test_voltage_v + 'V' : ''}${t.status ? ' · ' + t.status : ''}`;
+            else if (t.test_type === 'CORRIENTE') val = `R:${_num(t.current_r)} S:${_num(t.current_s)} T:${_num(t.current_t)} A`;
+            else val = `${t.temperature_c != null ? t.temperature_c + ' °C' : ''}${t.temp_point ? ' (' + t.temp_point + ')' : ''}`;
+            return `<div class="hist-row">
+                <span class="chip ${t.test_type}">${t.test_type}</span>
+                <b style="margin-left:6px;">${t.test_date}</b>
+                <span class="muted"> · ${t.context || ''}${t.executed_by ? ' · ' + t.executed_by : ''}</span>
+                <div>${val}</div>
+                ${t.notes ? `<div class="muted">${t.notes}</div>` : ''}
+                ${t.photo_url ? `<a href="${t.photo_url}" target="_blank" style="color:#5AC8FA;">Ver foto/informe</a>` : ''}
+            </div>`;
+        }).join('');
+    } catch (e) { document.getElementById('histBody').innerHTML = '<div class="muted">Error cargando historial.</div>'; }
+}
+
+// ── Gestionar motores ────────────────────────────────────────────────
+async function openManage() {
+    document.getElementById('manageBody').innerHTML = '<div class="muted">Cargando…</div>';
+    document.getElementById('manageModal').showModal();
+    try {
+        const r = await fetch('/api/motors/manage');
+        _manageList = await r.json();
+        renderManage();
+    } catch (e) { document.getElementById('manageBody').innerHTML = '<div class="muted">Error.</div>'; }
+}
+function renderManage() {
+    const q = (document.getElementById('manageSearch').value || '').toLowerCase().trim();
+    const list = q ? _manageList.filter(a => [a.code, a.name, a.category, a.equipment_tag].some(x => (x || '').toLowerCase().includes(q))) : _manageList;
+    document.getElementById('manageBody').innerHTML = list.map(a => `
+        <label class="hist-row" style="display:flex;gap:10px;align-items:center;cursor:pointer;">
+            <input type="checkbox" data-id="${a.id}" ${a.is_electric_motor ? 'checked' : ''} style="width:auto;">
+            <span><b style="color:#5AC8FA;">${a.code}</b> ${a.name || ''} <span class="muted">· ${a.category || '-'} · ${a.equipment_tag || 'sin instalar'}</span></span>
+        </label>`).join('');
+}
+async function saveManage() {
+    const checks = [...document.querySelectorAll('#manageBody input[type=checkbox]')];
+    const on = checks.filter(c => c.checked).map(c => parseInt(c.dataset.id));
+    const off = checks.filter(c => !c.checked).map(c => parseInt(c.dataset.id));
+    try {
+        if (on.length) await fetch('/api/motors/manage', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ ids: on, is_electric_motor: true }) });
+        if (off.length) await fetch('/api/motors/manage', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ ids: off, is_electric_motor: false }) });
+        document.getElementById('manageModal').close();
+        loadMotors();
+    } catch (e) { alert('Error: ' + e.message); }
+}
+
+function exportCSV() {
+    if (!_allRows.length) { alert('Sin datos.'); return; }
+    const rows = _filtered();
+    const headers = ['Codigo','Motor','Categoria','Estado','Equipo','Area','Megado_estado','Ultimo_megado','MOhm','Prox_megado','Corriente_R','Corriente_S','Corriente_T','Fecha_corriente','Temperatura_C','Fecha_temp'];
+    const esc = v => '"' + String(v == null ? '' : v).replace(/"/g, '""') + '"';
+    const lines = [headers.map(esc).join(',')];
+    rows.forEach(r => lines.push([r.code, r.name, r.category, r.status, r.equipment_tag, r.area_name, r.megado_status, r.last_megado_date, r.last_megado_mohm, r.next_megado_due, r.last_current_r, r.last_current_s, r.last_current_t, r.last_current_date, r.last_temperature_c, r.last_temp_date].map(esc).join(',')));
+    const blob = new Blob(['﻿' + lines.join('\r\n')], { type: 'text/csv;charset=utf-8;' });
+    const a = document.createElement('a'); a.href = URL.createObjectURL(blob); a.download = 'motores_electricos.csv'; a.click(); URL.revokeObjectURL(a.href);
+}
+
+window.loadMotors = loadMotors; window.setTab = setTab; window.onCascadeChange = onCascadeChange; window.clearFilters = clearFilters;
+window.openTest = openTest; window.submitTest = submitTest; window.openHistory = openHistory;
+window.openManage = openManage; window.renderManage = renderManage; window.saveManage = saveManage; window.exportCSV = exportCSV;
+document.addEventListener('DOMContentLoaded', loadMotors);
+</script>
+</body>
+</html>

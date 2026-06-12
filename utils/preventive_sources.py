@@ -117,6 +117,7 @@ def collect_sources(
     exclude=None,             # set de tuplas (source_type, source_id) a omitir
     enrich_names=False,       # True → agrega area_name, line_name, equipment_tag/name
     area_map=None, line_map=None, equip_map=None,
+    RotativeAsset=None,       # para la fuente 'megado' (motores eléctricos)
 ):
     """Recolecta puntos preventivos lub/insp/mon con filtros.
 
@@ -128,7 +129,7 @@ def collect_sources(
         (si enrich_names=True) area_name, line_name, equipment_tag, equipment_name
     """
     if source_types is None:
-        source_types = {'lubrication', 'inspection', 'monitoring'}
+        source_types = {'lubrication', 'inspection', 'monitoring', 'megado'}
     exclude = exclude or set()
 
     # Mapas por defecto si no se pasan (permite reutilizar fuera)
@@ -256,6 +257,50 @@ def collect_sources(
                 'description': build_description('monitoring', p),
             }
             sources.append(_enrich(d, aid, d['line_id'], p.equipment_id))
+
+    # Megado semestral de motores eléctricos (RotativeAsset.is_electric_motor).
+    # Un motor sin megado previo (PENDIENTE) se trata como vencido para que se
+    # genere su megado base.
+    if 'megado' in source_types and RotativeAsset:
+        for a in RotativeAsset.query.filter_by(is_electric_motor=True, is_active=True).all():
+            freq = a.megado_frequency_days or 180
+            warn = a.megado_warning_days or 14
+            try:
+                _calc = _calc_mon_schedule or _calc_lub_schedule
+                _, sem = _calc(a.last_megado_date, freq, warn) if _calc else (None, a.megado_status or 'PENDIENTE')
+            except Exception:
+                sem = a.megado_status or 'PENDIENTE'
+            sem_eff = 'ROJO' if sem == 'PENDIENTE' else sem
+            if not _should_include(sem_eff):
+                continue
+            if ('megado', a.id) in exclude:
+                continue
+            aid = _resolve_area_id(a, line_map, equip_map)
+            if not _in_area(aid):
+                continue
+            desc = f"[PREVENTIVO - MEGADO] {a.code or ''} {a.name or ''}".strip()
+            desc += f"\nMegado (aislamiento) semestral cada {freq} dias"
+            desc += (f" | Ultimo megado: {a.last_megado_date}" if a.last_megado_date
+                     else " | Sin megado previo registrado")
+            line_id = a.line_id or (equip_map.get(a.equipment_id).line_id
+                                    if a.equipment_id and equip_map.get(a.equipment_id) else None)
+            d = {
+                'source_type': 'megado',
+                'source_id': a.id,
+                'code': a.code or '',
+                'name': a.name or '(motor)',
+                'semaphore': sem_eff,
+                'frequency_days': freq,
+                'next_due_date': a.next_megado_due or '-',
+                'last_execution': a.last_megado_date or '-',
+                'area_id': aid,
+                'line_id': line_id,
+                'equipment_id': a.equipment_id,
+                'system_id': a.system_id,
+                'component_id': a.component_id,
+                'description': desc,
+            }
+            sources.append(_enrich(d, aid, line_id, a.equipment_id))
 
     # Orden: ROJO primero, luego AMARILLO, luego VERDE
     sem_rank = {'ROJO': 0, 'AMARILLO': 1, 'VERDE': 2}

@@ -1243,6 +1243,17 @@ class RotativeAsset(db.Model):
     system_id: Mapped[int | None] = mapped_column(ForeignKey('systems.id'), nullable=True)
     component_id: Mapped[int | None] = mapped_column(ForeignKey('components.id'), nullable=True)
 
+    # ── Motor eléctrico (megado / corriente / temperatura) ──────────────
+    # is_electric_motor marca activos con motor eléctrico a probar: motores
+    # sueltos y también acoplados (motorreductores, bombas, ventiladores).
+    is_electric_motor: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
+    megado_frequency_days: Mapped[int] = mapped_column(Integer, nullable=False, default=180)
+    megado_warning_days: Mapped[int] = mapped_column(Integer, nullable=False, default=14)
+    megado_min_mohm: Mapped[float | None] = mapped_column(Float, nullable=True, default=5)
+    last_megado_date: Mapped[str | None] = mapped_column(String(20), nullable=True)
+    next_megado_due: Mapped[str | None] = mapped_column(String(20), nullable=True)
+    megado_status: Mapped[str | None] = mapped_column(String(10), nullable=True)
+
     area = relationship("Area")
     line = relationship("Line")
     equipment = relationship("Equipment")
@@ -1273,9 +1284,71 @@ class RotativeAsset(db.Model):
             "line_name": self.line.name if self.line else None,
             "equipment_name": self.equipment.name if self.equipment else None,
             "system_name": self.system.name if self.system else None,
-            "component_name": self.component.name if self.component else None
+            "component_name": self.component.name if self.component else None,
+            "is_electric_motor": self.is_electric_motor,
+            "megado_frequency_days": self.megado_frequency_days,
+            "megado_warning_days": self.megado_warning_days,
+            "megado_min_mohm": self.megado_min_mohm,
+            "last_megado_date": self.last_megado_date,
+            "next_megado_due": self.next_megado_due,
+            "megado_status": self.megado_status,
         }
 
+
+class MotorElectricalTest(db.Model):
+    """Prueba eléctrica de un motor (megado / corriente / temperatura).
+    Anclada al activo rotativo (motor) para que el historial siga al motor
+    cuando se mueve entre taller y equipos."""
+    __tablename__ = 'motor_electrical_tests'
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    rotative_asset_id: Mapped[int] = mapped_column(ForeignKey('rotative_assets.id'), nullable=False)
+    test_type: Mapped[str] = mapped_column(String(20), nullable=False)   # MEGADO | CORRIENTE | TEMPERATURA
+    test_date: Mapped[str] = mapped_column(String(20), nullable=False)
+    context: Mapped[str | None] = mapped_column(String(20), nullable=True)  # PROGRAMADO|INSTALACION|CORRECTIVO|OTRO
+    # MEGADO
+    insulation_mohm: Mapped[float | None] = mapped_column(Float, nullable=True)
+    test_voltage_v: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    # CORRIENTE (por fase)
+    current_r: Mapped[float | None] = mapped_column(Float, nullable=True)
+    current_s: Mapped[float | None] = mapped_column(Float, nullable=True)
+    current_t: Mapped[float | None] = mapped_column(Float, nullable=True)
+    # TEMPERATURA
+    temperature_c: Mapped[float | None] = mapped_column(Float, nullable=True)
+    temp_point: Mapped[str | None] = mapped_column(String(40), nullable=True)
+    # Evaluación / contexto
+    status: Mapped[str | None] = mapped_column(String(10), nullable=True)   # VERDE|AMARILLO|ROJO
+    equipment_id: Mapped[int | None] = mapped_column(ForeignKey('equipments.id'), nullable=True)
+    executed_by: Mapped[str | None] = mapped_column(String(120), nullable=True)
+    notes: Mapped[str | None] = mapped_column(Text, nullable=True)
+    photo_url: Mapped[str | None] = mapped_column(String(500), nullable=True)
+    created_notice_id: Mapped[int | None] = mapped_column(ForeignKey('maintenance_notices.id'), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+
+    asset = relationship("RotativeAsset")
+
+    def to_dict(self):
+        return {
+            "id": self.id,
+            "rotative_asset_id": self.rotative_asset_id,
+            "test_type": self.test_type,
+            "test_date": self.test_date,
+            "context": self.context,
+            "insulation_mohm": self.insulation_mohm,
+            "test_voltage_v": self.test_voltage_v,
+            "current_r": self.current_r,
+            "current_s": self.current_s,
+            "current_t": self.current_t,
+            "temperature_c": self.temperature_c,
+            "temp_point": self.temp_point,
+            "status": self.status,
+            "equipment_id": self.equipment_id,
+            "executed_by": self.executed_by,
+            "notes": self.notes,
+            "photo_url": self.photo_url,
+            "created_notice_id": self.created_notice_id,
+            "created_at": self.created_at.isoformat() if self.created_at else None,
+        }
 
 
 class RotativeAssetSpec(db.Model):
