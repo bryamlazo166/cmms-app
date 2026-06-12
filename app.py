@@ -1213,6 +1213,16 @@ _ENSURE_COLUMNS = [
     ("rotative_assets", "last_megado_date", "VARCHAR(20)"),
     ("rotative_assets", "next_megado_due", "VARCHAR(20)"),
     ("rotative_assets", "megado_status", "VARCHAR(10)"),
+    # Placa del motor + ruta mensual de corriente/temperatura.
+    ("rotative_assets", "rated_hp", "FLOAT"),
+    ("rotative_assets", "rated_voltage_v", "FLOAT"),
+    ("rotative_assets", "rated_current_a", "FLOAT"),
+    ("rotative_assets", "current_alarm_pct", "FLOAT DEFAULT 110"),
+    ("rotative_assets", "measure_frequency_days", "INTEGER DEFAULT 30"),
+    ("rotative_assets", "measure_warning_days", "INTEGER DEFAULT 5"),
+    ("rotative_assets", "last_measure_date", "VARCHAR(20)"),
+    ("rotative_assets", "next_measure_due", "VARCHAR(20)"),
+    ("rotative_assets", "measure_status", "VARCHAR(10)"),
 ]
 
 

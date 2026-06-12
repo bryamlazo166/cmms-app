@@ -90,6 +90,19 @@ def register_work_orders_routes(
                         asset.next_megado_due = nd
                         asset.megado_status = sem
                     logger.info(f"Source MEGADO motor {source_id} updated: last_megado={close_date}")
+
+            elif source_type == 'motor_medicion':
+                from models import RotativeAsset
+                asset = RotativeAsset.query.get(source_id)
+                if asset:
+                    asset.last_measure_date = close_date
+                    if _calculate_monitoring_schedule:
+                        nd, sem = _calculate_monitoring_schedule(
+                            close_date, asset.measure_frequency_days or 30,
+                            asset.measure_warning_days or 5)
+                        asset.next_measure_due = nd
+                        asset.measure_status = sem
+                    logger.info(f"Source MEDICION motor {source_id} updated: last_measure={close_date}")
         except Exception as e:
             logger.error(f"Error updating source {source_type}/{source_id}: {e}")
 

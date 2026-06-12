@@ -86,7 +86,12 @@
             <h1><i class="fas fa-bolt"></i> Motores Eléctricos</h1>
             <p>Megado (aislamiento, semestral + ad-hoc), corriente por fase (R/S/T) y temperatura. Incluye motores sueltos y acoplados (motorreductores, bombas, ventiladores).</p>
             <div class="tools">
-                <input type="text" id="search" placeholder="Buscar motor / equipo / código…" style="width:240px;" oninput="renderTable()">
+                <label>Ruta:</label>
+                <select id="routeType" onchange="setRoute()">
+                    <option value="megado">Megado (semestral)</option>
+                    <option value="measure">Medición mensual (corriente/temp)</option>
+                </select>
+                <input type="text" id="search" placeholder="Buscar motor / equipo / código…" style="width:220px;" oninput="renderTable()">
                 <button class="btn primary" onclick="loadMotors()"><i class="fas fa-sync"></i> Actualizar</button>
                 <button class="btn" onclick="openManage()"><i class="fas fa-cog"></i> Gestionar motores</button>
                 <button class="btn" onclick="exportCSV()"><i class="fas fa-file-csv"></i> Exportar CSV</button>
@@ -103,7 +108,7 @@
 
         <div id="content" style="display:none;">
             <div class="summary-row">
-                <div class="summary-card rojo"><div class="lbl"><i class="fas fa-exclamation-triangle"></i> Megado vencido</div><div class="val" id="cRojo">—</div><div class="sub">Pasó el semestre (o sin megado)</div></div>
+                <div class="summary-card rojo"><div class="lbl"><i class="fas fa-exclamation-triangle"></i> <span id="lblRojo">Megado vencido</span></div><div class="val" id="cRojo">—</div><div class="sub">Vencido / sin registro</div></div>
                 <div class="summary-card amar"><div class="lbl"><i class="fas fa-hourglass-half"></i> Próximo a vencer</div><div class="val" id="cAmar">—</div><div class="sub">Megado por vencer pronto</div></div>
                 <div class="summary-card verde"><div class="lbl"><i class="fas fa-check-circle"></i> Al día</div><div class="val" id="cVerde">—</div><div class="sub">Megado vigente</div></div>
                 <div class="summary-card taller"><div class="lbl"><i class="fas fa-wrench"></i> En taller</div><div class="val" id="cTaller">—</div><div class="sub">Motores fuera de servicio</div></div>
@@ -122,13 +127,13 @@
                     <thead>
                         <tr>
                             <th>Megado</th>
-                            <th>Motor</th>
+                            <th>Medición</th>
+                            <th>Motor (HP · In)</th>
                             <th>Estado / Ubicación</th>
                             <th>Último megado</th>
-                            <th>Próx. megado</th>
-                            <th>Última corriente R/S/T (A)</th>
-                            <th>Última temp (°C)</th>
-                            <th>Registrar</th>
+                            <th>Corriente R/S/T (A)</th>
+                            <th>Temp (°C)</th>
+                            <th>Acciones</th>
                         </tr>
                     </thead>
                     <tbody id="recBody"><tr><td colspan="8" style="text-align:center;color:#9ab0cb;padding:30px;">Cargando…</td></tr></tbody>
@@ -213,11 +218,42 @@
     </div>
 </dialog>
 
+<!-- MODAL: datos de placa / configuración -->
+<dialog id="cfgModal">
+    <div class="dlg-head"><span>Datos de placa / configuración</span><button type="button" class="x" onclick="document.getElementById('cfgModal').close()">✕</button></div>
+    <div class="dlg-body">
+        <div class="muted" id="cfgMotorLbl"></div>
+        <div class="row">
+            <div><label>HP</label><input type="number" step="0.1" id="cHp"></div>
+            <div><label>Voltaje (V)</label><input type="number" step="1" id="cV"></div>
+        </div>
+        <div class="row">
+            <div><label>Corriente nominal / placa (A)</label><input type="number" step="0.1" id="cIn" placeholder="FLA de placa"></div>
+            <div><label>Sobrecarga (% de In)</label><input type="number" step="1" id="cAlarm" placeholder="110"></div>
+        </div>
+        <div class="row">
+            <div><label>Megado cada (días)</label><input type="number" step="1" id="cMegFreq" placeholder="180"></div>
+            <div><label>Megado mínimo (MΩ)</label><input type="number" step="0.1" id="cMegMin" placeholder="5"></div>
+        </div>
+        <div class="row">
+            <div><label>Medición mensual cada (días)</label><input type="number" step="1" id="cMeasFreq" placeholder="30"></div>
+            <div></div>
+        </div>
+        <div class="muted">Si no ingresas la corriente nominal, se estima desde HP y voltaje (3F). Se usa para evaluar la corriente medida como % de la nominal.</div>
+    </div>
+    <div class="dlg-foot">
+        <button type="button" class="btn" onclick="document.getElementById('cfgModal').close()">Cancelar</button>
+        <button type="button" class="btn primary" onclick="saveConfig()"><i class="fas fa-save"></i> Guardar</button>
+    </div>
+</dialog>
+
 <script src="/static/js/sidebar.js?v={{ v }}"></script>
 <script>
 let _allRows = [];
 let _activeTab = 'ROJO';
 let _manageList = [];
+let _route = 'megado';     // 'megado' | 'measure' — qué ruta gobierna tabs/resumen
+let _summary = {};
 const CASCADE = [
     { id: 'fArea', field: 'area_name' },
     { id: 'fLine', field: 'line_name' },
@@ -233,16 +269,8 @@ async function loadMotors() {
         const j = await r.json();
         if (!r.ok) throw new Error(j.error || 'Error');
         _allRows = j.rows || [];
-        const s = j.summary || {};
-        document.getElementById('cRojo').textContent = s.vencido || 0;
-        document.getElementById('cAmar').textContent = s.proximo || 0;
-        document.getElementById('cVerde').textContent = s.al_dia || 0;
-        document.getElementById('cTaller').textContent = s.en_taller || 0;
-        document.getElementById('tabRojo').textContent = s.vencido || 0;
-        document.getElementById('tabAmar').textContent = s.proximo || 0;
-        document.getElementById('tabVerde').textContent = s.al_dia || 0;
-        document.getElementById('tabPend').textContent = s.pendiente || 0;
-        document.getElementById('tabAll').textContent = _allRows.length;
+        _summary = j.summary || {};
+        applyRoute();
         CASCADE.forEach(c => { const el = document.getElementById(c.id); if (el) el.value = ''; });
         populateCascades();
         renderTable();
@@ -255,6 +283,25 @@ async function loadMotors() {
 }
 
 function setTab(cat) { _activeTab = cat; document.querySelectorAll('.tab').forEach(t => t.classList.toggle('active', t.dataset.cat === _activeTab)); renderTable(); }
+function statusField() { return _route === 'megado' ? 'megado_status' : 'measure_status'; }
+function setRoute() { _route = (document.getElementById('routeType').value === 'measure') ? 'measure' : 'megado'; applyRoute(); renderTable(); }
+function applyRoute() {
+    const s = _summary, meg = _route === 'megado';
+    const v = meg ? (s.vencido || 0) : (s.m_vencido || 0);
+    const p = meg ? (s.proximo || 0) : (s.m_proximo || 0);
+    const a = meg ? (s.al_dia || 0) : (s.m_aldia || 0);
+    const pend = meg ? (s.pendiente || 0) : (s.m_pendiente || 0);
+    document.getElementById('lblRojo').textContent = meg ? 'Megado vencido' : 'Medición vencida';
+    document.getElementById('cRojo').textContent = v;
+    document.getElementById('cAmar').textContent = p;
+    document.getElementById('cVerde').textContent = a;
+    document.getElementById('cTaller').textContent = s.en_taller || 0;
+    document.getElementById('tabRojo').textContent = v;
+    document.getElementById('tabAmar').textContent = p;
+    document.getElementById('tabVerde').textContent = a;
+    document.getElementById('tabPend').textContent = pend;
+    document.getElementById('tabAll').textContent = _allRows.length;
+}
 
 function populateCascades() {
     CASCADE.forEach((c, idx) => {
@@ -279,7 +326,7 @@ function clearFilters() { CASCADE.forEach(c => document.getElementById(c.id).val
 
 function _filtered() {
     const q = (document.getElementById('search').value || '').toLowerCase().trim();
-    let rows = _activeTab === 'all' ? _allRows : _allRows.filter(r => r.megado_status === _activeTab);
+    let rows = _activeTab === 'all' ? _allRows : _allRows.filter(r => r[statusField()] === _activeTab);
     CASCADE.forEach(c => { const v = document.getElementById(c.id).value; if (v) rows = rows.filter(r => (r[c.field] || '') === v); });
     if (q) rows = rows.filter(r => [r.code, r.name, r.equipment_tag, r.equipment_name, r.category].some(x => (x || '').toLowerCase().includes(q)));
     return rows;
@@ -291,24 +338,33 @@ function renderTable() {
     const rows = _filtered();
     if (!rows.length) { tbody.innerHTML = `<tr><td colspan="8" style="text-align:center;color:#9ab0cb;padding:30px;">Sin motores con estos filtros</td></tr>`; return; }
     tbody.innerHTML = rows.map(r => {
-        const st = r.megado_status || 'PENDIENTE';
-        const meg = r.last_megado_date ? `${r.last_megado_date}<div class="muted">${r.last_megado_mohm != null ? r.last_megado_mohm + ' MΩ' : ''}</div>` : '<span class="muted">nunca</span>';
-        const cur = (r.last_current_r != null || r.last_current_s != null || r.last_current_t != null)
-            ? `${_num(r.last_current_r)} / ${_num(r.last_current_s)} / ${_num(r.last_current_t)}<div class="muted">${r.last_current_date || ''}</div>` : '<span class="muted">—</span>';
+        const mst = r.megado_status || 'PENDIENTE';
+        const xst = r.measure_status || 'PENDIENTE';
+        const meg = r.last_megado_date ? `${r.last_megado_date}<div class="muted">${r.last_megado_mohm != null ? r.last_megado_mohm + ' MΩ' : ''}${r.next_megado_due && r.next_megado_due !== '-' ? ' · próx ' + r.next_megado_due : ''}</div>` : '<span class="muted">nunca</span>';
+        let curHtml = '<span class="muted">—</span>';
+        if (r.last_current_r != null || r.last_current_s != null || r.last_current_t != null) {
+            const c = r.last_current_overload === 'ROJO' ? '#ff6b61' : r.last_current_overload === 'AMARILLO' ? '#FFA834' : '#30D158';
+            const pct = r.last_current_load_pct != null ? `<span style="color:${c};font-weight:700;"> · ${r.last_current_load_pct}% In</span>` : '';
+            curHtml = `${_num(r.last_current_r)} / ${_num(r.last_current_s)} / ${_num(r.last_current_t)}${pct}<div class="muted">${r.last_current_date || ''}</div>`;
+        }
         const tem = r.last_temperature_c != null ? `${r.last_temperature_c} °C<div class="muted">${r.last_temp_date || ''}</div>` : '<span class="muted">—</span>';
         const loc = r.equipment_tag ? `<b style="color:#FF9F0A;">${r.equipment_tag}</b> ${r.equipment_name || ''}<div class="muted">${r.area_name || '-'}</div>` : '<span class="muted">sin instalar</span>';
+        const hp = r.rated_hp != null ? `${r.rated_hp} HP` : '';
+        const inNom = r.rated_current_a != null ? `In ${r.rated_current_a} A${r.rated_current_estimated ? '*' : ''}` : '';
+        const plate = [hp, inNom].filter(Boolean).join(' · ');
         return `<tr>
-            <td><span class="sev ${st}">${st}</span></td>
-            <td><b style="color:#5AC8FA;">${r.code}</b><div>${r.name || ''}</div><div class="muted">${r.category || ''}</div></td>
+            <td><span class="sev ${mst}">${mst}</span></td>
+            <td><span class="sev ${xst}">${xst}</span></td>
+            <td><b style="color:#5AC8FA;">${r.code}</b><div>${r.name || ''}</div><div class="muted">${plate || r.category || ''}</div></td>
             <td>${r.status || '-'}<div>${loc}</div></td>
             <td>${meg}</td>
-            <td>${r.next_megado_due && r.next_megado_due !== '-' ? r.next_megado_due : '<span class="muted">—</span>'}</td>
-            <td>${cur}</td>
+            <td>${curHtml}</td>
             <td>${tem}</td>
             <td style="white-space:nowrap;">
                 <button class="btn sm" onclick="openTest(${r.id}, 'MEGADO')" title="Megado">⚡</button>
                 <button class="btn sm" onclick="openTest(${r.id}, 'CORRIENTE')" title="Corriente">A</button>
                 <button class="btn sm" onclick="openTest(${r.id}, 'TEMPERATURA')" title="Temperatura">°C</button>
+                <button class="btn sm" onclick="openConfig(${r.id})" title="Datos de placa / config"><i class="fas fa-cog"></i></button>
                 <button class="btn sm" onclick="openHistory(${r.id})" title="Historial"><i class="fas fa-clock-rotate-left"></i></button>
             </td>
         </tr>`;
@@ -429,9 +485,38 @@ function exportCSV() {
     const a = document.createElement('a'); a.href = URL.createObjectURL(blob); a.download = 'motores_electricos.csv'; a.click(); URL.revokeObjectURL(a.href);
 }
 
-window.loadMotors = loadMotors; window.setTab = setTab; window.onCascadeChange = onCascadeChange; window.clearFilters = clearFilters;
+// ── Config / datos de placa ─────────────────────────────────────────
+let _cfgId = null;
+function openConfig(id) {
+    _cfgId = id;
+    const m = _allRows.find(r => r.id === id);
+    document.getElementById('cfgMotorLbl').textContent = m ? `${m.code} · ${m.name || ''}` : '';
+    const set = (i, v) => { document.getElementById(i).value = (v == null ? '' : v); };
+    set('cHp', m.rated_hp); set('cV', m.rated_voltage_v);
+    set('cIn', m.rated_current_estimated ? '' : m.rated_current_a);
+    set('cAlarm', m.current_alarm_pct); set('cMegFreq', m.megado_frequency_days);
+    set('cMegMin', m.megado_min_mohm); set('cMeasFreq', m.measure_frequency_days);
+    document.getElementById('cfgModal').showModal();
+}
+async function saveConfig() {
+    const val = i => { const v = document.getElementById(i).value; return v === '' ? null : v; };
+    const body = {
+        rated_hp: val('cHp'), rated_voltage_v: val('cV'), rated_current_a: val('cIn'),
+        current_alarm_pct: val('cAlarm'), megado_frequency_days: val('cMegFreq'),
+        megado_min_mohm: val('cMegMin'), measure_frequency_days: val('cMeasFreq'),
+    };
+    try {
+        const r = await fetch(`/api/motors/${_cfgId}/config`, { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
+        if (!r.ok) { const j = await r.json(); throw new Error(j.error || 'Error'); }
+        document.getElementById('cfgModal').close();
+        loadMotors();
+    } catch (e) { alert('Error: ' + e.message); }
+}
+
+window.loadMotors = loadMotors; window.setTab = setTab; window.setRoute = setRoute; window.onCascadeChange = onCascadeChange; window.clearFilters = clearFilters;
 window.openTest = openTest; window.submitTest = submitTest; window.openHistory = openHistory;
 window.openManage = openManage; window.renderManage = renderManage; window.saveManage = saveManage; window.exportCSV = exportCSV;
+window.openConfig = openConfig; window.saveConfig = saveConfig;
 document.addEventListener('DOMContentLoaded', loadMotors);
 </script>
 </body>

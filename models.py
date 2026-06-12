@@ -1253,6 +1253,17 @@ class RotativeAsset(db.Model):
     last_megado_date: Mapped[str | None] = mapped_column(String(20), nullable=True)
     next_megado_due: Mapped[str | None] = mapped_column(String(20), nullable=True)
     megado_status: Mapped[str | None] = mapped_column(String(10), nullable=True)
+    # Datos de placa del motor — para relacionar la corriente medida con la nominal.
+    rated_hp: Mapped[float | None] = mapped_column(Float, nullable=True)
+    rated_voltage_v: Mapped[float | None] = mapped_column(Float, nullable=True)
+    rated_current_a: Mapped[float | None] = mapped_column(Float, nullable=True)   # corriente nominal de placa (FLA)
+    current_alarm_pct: Mapped[float | None] = mapped_column(Float, nullable=True, default=110)  # % de In = sobrecarga (ROJO)
+    # Ruta MENSUAL de corriente y temperatura (frecuencia y semáforo de vencimiento).
+    measure_frequency_days: Mapped[int] = mapped_column(Integer, nullable=False, default=30)
+    measure_warning_days: Mapped[int] = mapped_column(Integer, nullable=False, default=5)
+    last_measure_date: Mapped[str | None] = mapped_column(String(20), nullable=True)
+    next_measure_due: Mapped[str | None] = mapped_column(String(20), nullable=True)
+    measure_status: Mapped[str | None] = mapped_column(String(10), nullable=True)
 
     area = relationship("Area")
     line = relationship("Line")
@@ -1292,6 +1303,15 @@ class RotativeAsset(db.Model):
             "last_megado_date": self.last_megado_date,
             "next_megado_due": self.next_megado_due,
             "megado_status": self.megado_status,
+            "rated_hp": self.rated_hp,
+            "rated_voltage_v": self.rated_voltage_v,
+            "rated_current_a": self.rated_current_a,
+            "current_alarm_pct": self.current_alarm_pct,
+            "measure_frequency_days": self.measure_frequency_days,
+            "measure_warning_days": self.measure_warning_days,
+            "last_measure_date": self.last_measure_date,
+            "next_measure_due": self.next_measure_due,
+            "measure_status": self.measure_status,
         }
 
 

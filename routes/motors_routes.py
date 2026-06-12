@@ -24,6 +24,43 @@ def register_motors_routes(app, db, logger, RotativeAsset, MotorElectricalTest,
             asset.megado_warning_days or 14,
         )
 
+    def _measure_schedule(asset):
+        """next_due, status de la ruta MENSUAL de corriente/temperatura."""
+        return _calculate_monitoring_schedule(
+            asset.last_measure_date,
+            asset.measure_frequency_days or 30,
+            asset.measure_warning_days or 5,
+        )
+
+    def _nominal_current(asset):
+        """Corriente nominal (placa). Si no está, la estima desde HP y voltaje
+        (3F): In ≈ HP*746 / (√3 * V * η * fp), con η≈0.88 y fp≈0.85.
+        Devuelve (amperios, estimado?)."""
+        if asset.rated_current_a:
+            return float(asset.rated_current_a), False
+        if asset.rated_hp and asset.rated_voltage_v:
+            try:
+                est = (float(asset.rated_hp) * 746.0) / (1.732 * float(asset.rated_voltage_v) * 0.88 * 0.85)
+                return round(est, 1), True
+            except Exception:
+                return None, False
+        return None, False
+
+    def _overload_status(asset, max_phase):
+        """% de carga y semáforo de la corriente medida vs la nominal."""
+        nom, _est = _nominal_current(asset)
+        if not nom or max_phase is None:
+            return None, None
+        pct = round(max_phase / nom * 100)
+        alarm = float(asset.current_alarm_pct or 110)
+        if pct >= alarm:
+            st = 'ROJO'
+        elif pct >= 100:
+            st = 'AMARILLO'
+        else:
+            st = 'VERDE'
+        return pct, st
+
     @app.route('/motores-electricos', methods=['GET'])
     def motores_electricos_page():
         return render_template('motores_electricos.html')
@@ -49,9 +86,11 @@ def register_motors_routes(app, db, logger, RotativeAsset, MotorElectricalTest,
                         last_by[key] = t
 
             rows = []
-            summary = {'vencido': 0, 'proximo': 0, 'al_dia': 0, 'pendiente': 0, 'en_taller': 0}
+            summary = {'vencido': 0, 'proximo': 0, 'al_dia': 0, 'pendiente': 0, 'en_taller': 0,
+                       'm_vencido': 0, 'm_proximo': 0, 'm_aldia': 0, 'm_pendiente': 0}
             for m in motors:
                 next_due, mstatus = _megado_schedule(m)
+                next_meas, measure_status = _measure_schedule(m)
                 meg = last_by.get((m.id, 'MEGADO'))
                 cur = last_by.get((m.id, 'CORRIENTE'))
                 tem = last_by.get((m.id, 'TEMPERATURA'))
@@ -63,8 +102,20 @@ def register_motors_routes(app, db, logger, RotativeAsset, MotorElectricalTest,
                     summary['al_dia'] += 1
                 else:
                     summary['pendiente'] += 1
+                if measure_status == 'ROJO':
+                    summary['m_vencido'] += 1
+                elif measure_status == 'AMARILLO':
+                    summary['m_proximo'] += 1
+                elif measure_status == 'VERDE':
+                    summary['m_aldia'] += 1
+                else:
+                    summary['m_pendiente'] += 1
                 if (m.status or '') in ('En Taller', 'Taller'):
                     summary['en_taller'] += 1
+                nom, nom_est = _nominal_current(m)
+                cur_phases = [cur.current_r, cur.current_s, cur.current_t] if cur else []
+                cur_max = max([p for p in cur_phases if p is not None], default=None)
+                load_pct, overload_status = _overload_status(m, cur_max)
                 rows.append({
                     'id': m.id, 'code': m.code, 'name': m.name, 'category': m.category,
                     'status': m.status,
@@ -82,8 +133,18 @@ def register_motors_routes(app, db, logger, RotativeAsset, MotorElectricalTest,
                     'last_current_r': cur.current_r if cur else None,
                     'last_current_s': cur.current_s if cur else None,
                     'last_current_t': cur.current_t if cur else None,
+                    'last_current_load_pct': load_pct,
+                    'last_current_overload': overload_status,
                     'last_temp_date': tem.test_date if tem else None,
                     'last_temperature_c': tem.temperature_c if tem else None,
+                    'rated_hp': m.rated_hp,
+                    'rated_voltage_v': m.rated_voltage_v,
+                    'rated_current_a': nom,
+                    'rated_current_estimated': nom_est,
+                    'current_alarm_pct': m.current_alarm_pct,
+                    'measure_frequency_days': m.measure_frequency_days,
+                    'next_measure_due': next_meas,
+                    'measure_status': measure_status,
                 })
             rank = {'ROJO': 0, 'AMARILLO': 1, 'PENDIENTE': 2, 'VERDE': 3}
             rows.sort(key=lambda r: (rank.get(r['megado_status'], 9), r['code'] or ''))
@@ -179,6 +240,39 @@ def register_motors_routes(app, db, logger, RotativeAsset, MotorElectricalTest,
                     notice.code = f"AV-{notice.id:04d}"
                     test.created_notice_id = notice.id
 
+            elif ttype in ('CORRIENTE', 'TEMPERATURA'):
+                # Ruta MENSUAL: actualizar la programación de medición
+                asset.last_measure_date = test_date
+                nd, sched = _measure_schedule(asset)
+                asset.next_measure_due = nd
+                asset.measure_status = sched
+                if ttype == 'CORRIENTE':
+                    # Relacionar con la placa: % de la corriente nominal
+                    phases = [test.current_r, test.current_s, test.current_t]
+                    cur_max = max([p for p in phases if p is not None], default=None)
+                    pct, ov = _overload_status(asset, cur_max)
+                    test.status = ov
+                    value_status = ov
+                    create_notice = bool(data.get('create_notice', True))
+                    if create_notice and ov == 'ROJO':
+                        nom, _e = _nominal_current(asset)
+                        notice = MaintenanceNotice(
+                            reporter_name=test.executed_by or "Tecnico Electrico",
+                            reporter_type="MOTOR",
+                            area_id=asset.area_id, line_id=asset.line_id,
+                            equipment_id=asset.equipment_id, system_id=asset.system_id,
+                            component_id=asset.component_id,
+                            description=(f"[MOTOR] {asset.code} {asset.name}: SOBRECARGA — corriente "
+                                         f"{cur_max} A ≈ {pct}% de la nominal ({nom} A)"),
+                            maintenance_type="Correctivo", priority="Alta",
+                            status="Pendiente", request_date=dt.date.today().isoformat(),
+                            rotative_asset_id=asset.id,
+                        )
+                        db.session.add(notice)
+                        db.session.flush()
+                        notice.code = f"AV-{notice.id:04d}"
+                        test.created_notice_id = notice.id
+
             db.session.add(test)
             db.session.commit()
             payload = test.to_dict()
@@ -197,15 +291,39 @@ def register_motors_routes(app, db, logger, RotativeAsset, MotorElectricalTest,
             return jsonify({"error": "Motor no encontrado"}), 404
         try:
             data = request.json or {}
+
+            def _setf(attr, key):
+                v = data.get(key)
+                if v in (None, ''):
+                    return
+                try:
+                    setattr(asset, attr, float(v))
+                except Exception:
+                    pass
+
+            def _seti(attr, key):
+                v = data.get(key)
+                if v in (None, ''):
+                    return
+                try:
+                    setattr(asset, attr, int(v))
+                except Exception:
+                    pass
+
             if 'is_electric_motor' in data:
                 asset.is_electric_motor = bool(data['is_electric_motor'])
-            if data.get('megado_frequency_days') not in (None, ''):
-                asset.megado_frequency_days = int(data['megado_frequency_days'])
-            if data.get('megado_min_mohm') not in (None, ''):
-                asset.megado_min_mohm = float(data['megado_min_mohm'])
-            next_due, status = _megado_schedule(asset)
-            asset.next_megado_due = next_due
-            asset.megado_status = status
+            _seti('megado_frequency_days', 'megado_frequency_days')
+            _setf('megado_min_mohm', 'megado_min_mohm')
+            _setf('rated_hp', 'rated_hp')
+            _setf('rated_voltage_v', 'rated_voltage_v')
+            _setf('rated_current_a', 'rated_current_a')
+            _setf('current_alarm_pct', 'current_alarm_pct')
+            _seti('measure_frequency_days', 'measure_frequency_days')
+
+            nd1, s1 = _megado_schedule(asset)
+            asset.next_megado_due, asset.megado_status = nd1, s1
+            nd2, s2 = _measure_schedule(asset)
+            asset.next_measure_due, asset.measure_status = nd2, s2
             db.session.commit()
             return jsonify(asset.to_dict())
         except Exception as e:

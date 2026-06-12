@@ -129,7 +129,7 @@ def collect_sources(
         (si enrich_names=True) area_name, line_name, equipment_tag, equipment_name
     """
     if source_types is None:
-        source_types = {'lubrication', 'inspection', 'monitoring', 'megado'}
+        source_types = {'lubrication', 'inspection', 'monitoring', 'megado', 'motor_medicion'}
     exclude = exclude or set()
 
     # Mapas por defecto si no se pasan (permite reutilizar fuera)
@@ -293,6 +293,48 @@ def collect_sources(
                 'frequency_days': freq,
                 'next_due_date': a.next_megado_due or '-',
                 'last_execution': a.last_megado_date or '-',
+                'area_id': aid,
+                'line_id': line_id,
+                'equipment_id': a.equipment_id,
+                'system_id': a.system_id,
+                'component_id': a.component_id,
+                'description': desc,
+            }
+            sources.append(_enrich(d, aid, line_id, a.equipment_id))
+
+    # Ruta MENSUAL de corriente/temperatura de motores eléctricos.
+    if 'motor_medicion' in source_types and RotativeAsset:
+        for a in RotativeAsset.query.filter_by(is_electric_motor=True, is_active=True).all():
+            freq = a.measure_frequency_days or 30
+            warn = a.measure_warning_days or 5
+            try:
+                _calc = _calc_mon_schedule or _calc_lub_schedule
+                _, sem = _calc(a.last_measure_date, freq, warn) if _calc else (None, a.measure_status or 'PENDIENTE')
+            except Exception:
+                sem = a.measure_status or 'PENDIENTE'
+            sem_eff = 'ROJO' if sem == 'PENDIENTE' else sem
+            if not _should_include(sem_eff):
+                continue
+            if ('motor_medicion', a.id) in exclude:
+                continue
+            aid = _resolve_area_id(a, line_map, equip_map)
+            if not _in_area(aid):
+                continue
+            desc = f"[PREVENTIVO - MEDICION MOTOR] {a.code or ''} {a.name or ''}".strip()
+            desc += f"\nMedir corriente (R/S/T) y temperatura, cada {freq} dias"
+            desc += (f" | Ultima medicion: {a.last_measure_date}" if a.last_measure_date
+                     else " | Sin mediciones previas")
+            line_id = a.line_id or (equip_map.get(a.equipment_id).line_id
+                                    if a.equipment_id and equip_map.get(a.equipment_id) else None)
+            d = {
+                'source_type': 'motor_medicion',
+                'source_id': a.id,
+                'code': a.code or '',
+                'name': a.name or '(motor)',
+                'semaphore': sem_eff,
+                'frequency_days': freq,
+                'next_due_date': a.next_measure_due or '-',
+                'last_execution': a.last_measure_date or '-',
                 'area_id': aid,
                 'line_id': line_id,
                 'equipment_id': a.equipment_id,
