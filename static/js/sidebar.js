@@ -218,6 +218,8 @@
         // visible cuando es instalable. Si el click llega y no hay
         // deferred prompt (ya rechazado, iOS, etc.), muestra instrucciones.
         function _injectInstallSidebarItem() {
+            return; // Boton "Instalar app" del sidebar retirado a pedido del usuario.
+            // eslint-disable-next-line no-unreachable
             if (_isAlreadyInstalled()) return;
             if (document.getElementById('cmmsInstallSidebarItem')) return;
             const navList = document.querySelector('.sidebar .nav-list');
@@ -258,6 +260,8 @@
         }
 
         function _injectFloatingInstallButton() {
+            return; // Boton flotante "Instalar app" retirado a pedido del usuario.
+            // eslint-disable-next-line no-unreachable
             if (_isAlreadyInstalled()) return;
             if (document.getElementById('cmmsInstallFab')) return;
             const fab = document.createElement('button');
@@ -301,6 +305,8 @@
         }
 
         function _showInstallBanner() {
+            return; // Banner "Instalar app" retirado a pedido del usuario.
+            // eslint-disable-next-line no-unreachable
             if (document.getElementById('cmmsInstallBanner')) return;
             const banner = document.createElement('div');
             banner.id = 'cmmsInstallBanner';
