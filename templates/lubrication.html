@@ -46,6 +46,19 @@
         .mrow.single{grid-template-columns:1fr}
         .modal-actions{display:flex;gap:8px;justify-content:flex-end;margin-top:16px}
         @media(max-width:1200px){.kpis{grid-template-columns:repeat(3,minmax(140px,1fr))}.toolbar{grid-template-columns:repeat(4,minmax(120px,1fr))}}
+        /* Vista de arbol de lubricacion (reutiliza .caret/.nested/.active de style.css) */
+        .lub-tree{max-height:560px;overflow:auto;padding:6px 4px}
+        .lub-tree ul{list-style:none;margin:0;padding:0}
+        .lub-tree .nested{padding-left:16px;border-left:1px solid rgba(255,255,255,.08);margin-left:5px}
+        .lub-tree li{padding:2px 0}
+        .lub-tree .tree-node{display:inline-flex;align-items:center;flex-wrap:wrap;gap:2px;color:#dbe8fb;font-size:.84rem;padding:2px 4px;border-radius:6px}
+        .lub-tree .tree-node:hover{background:rgba(255,255,255,.04)}
+        .lub-tree .lub-leaf{font-size:.82rem}
+        .lub-tree .node-count{display:inline-block;margin-left:6px;font-size:.68rem;color:#9ab0cb;background:rgba(255,255,255,.06);border:1px solid rgba(255,255,255,.12);border-radius:999px;padding:0 7px}
+        .lub-tree .node-count.has-red{color:#ff9690;background:rgba(244,67,54,.14);border-color:rgba(244,67,54,.35)}
+        .lub-tree-controls{display:flex;gap:8px;margin:4px 0 8px}
+        .btn-reg{height:24px;border:1px solid rgba(48,209,88,.4);border-radius:6px;background:rgba(48,209,88,.14);color:#5cd870;font-size:.72rem;font-weight:700;cursor:pointer;padding:0 8px;margin-left:8px}
+        .btn-reg:hover{background:rgba(48,209,88,.28)}
     </style>
 </head>
 <body>
@@ -122,9 +135,18 @@
         <div class="panel">
             <div style="display:flex; align-items:center; justify-content:space-between; padding-right:14px;flex-wrap:wrap;gap:10px;">
                 <h3>Puntos de Lubricacion</h3>
-                <div style="display:flex;gap:8px;align-items:center;">
+                <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;">
+                    <!-- Toggle de vista Tabla / Arbol -->
+                    <div style="display:inline-flex;gap:0;border:1px solid rgba(255,255,255,.15);border-radius:8px;overflow:hidden;">
+                        <button id="btnViewTable" class="btn-toggle-inactive active" style="border:none;border-radius:0;" onclick="setLubView('table')" title="Ver como tabla">
+                            <i class="fas fa-table"></i> Tabla
+                        </button>
+                        <button id="btnViewTree" class="btn-toggle-inactive" style="border:none;border-radius:0;border-left:1px solid rgba(255,255,255,.15);" onclick="setLubView('tree')" title="Ver como arbol de planta">
+                            <i class="fas fa-sitemap"></i> Arbol
+                        </button>
+                    </div>
                     <!-- Filtro por responsable -->
-                    <select id="fResponsible" onchange="renderPointsTable()" style="padding:6px 10px;border-radius:6px;background:rgba(255,255,255,.06);border:1px solid rgba(255,255,255,.15);color:rgba(255,255,255,.85);font-size:.84rem;">
+                    <select id="fResponsible" onchange="renderPointsView()" style="padding:6px 10px;border-radius:6px;background:rgba(255,255,255,.06);border:1px solid rgba(255,255,255,.15);color:rgba(255,255,255,.85);font-size:.84rem;">
                         <option value="">Todos los responsables</option>
                         <option value="INTERNO">🔵 Solo Internos (Mantenimiento)</option>
                         <option value="PROVEEDOR">🟢 Solo Proveedor</option>
@@ -134,7 +156,8 @@
                     </button>
                 </div>
             </div>
-            <div class="table-wrap">
+            <div id="lubTree" class="lub-tree" style="display:none"></div>
+            <div id="lubTableWrap" class="table-wrap">
                 <table>
                     <thead><tr><th>Codigo</th><th>Punto</th><th>Equipo</th><th>Sistema</th><th>Componente</th><th>Lubricante</th><th>Frecuencia</th><th>Ultimo</th><th>Proximo</th><th>Semaforo</th><th>Resp.</th><th>Accion</th></tr></thead>
                     <tbody id="tbodyPoints"><tr><td colspan="12">Cargando...</td></tr></tbody>

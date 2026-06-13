@@ -178,20 +178,35 @@ function updateKPIs(d) {
 
 function renderPoints(points) {
     lubState.points = points || [];
-    renderPointsTable();
+    renderPointsView();
     renderPointSelect();
 }
+
+// Lista de puntos que comparten tabla y arbol: aplica el filtro de responsable
+// para que ambas vistas muestren exactamente el mismo subconjunto. El filtro
+// de inactivos ya viene resuelto desde el backend (show_inactive).
+function getDisplayPoints() {
+    const respFilter = (q('fResponsible') || {}).value || '';
+    let points = lubState.points || [];
+    if (respFilter) {
+        points = points.filter(p => (p.effective_responsible_party || 'INTERNO') === respFilter);
+    }
+    return points;
+}
+
+// Re-renderiza ambas vistas (tabla + arbol) con los filtros actuales.
+function renderPointsView() {
+    renderPointsTable();
+    renderLubTree();
+}
+window.renderPointsView = renderPointsView;
 
 // Render con filtro de responsable aplicado (separado para poder re-renderizar
 // solo al cambiar el filtro sin re-fetchear).
 function renderPointsTable() {
     const tbody = q('tbodyPoints');
     if (!tbody) return;
-    const respFilter = (q('fResponsible') || {}).value || '';
-    let points = lubState.points || [];
-    if (respFilter) {
-        points = points.filter(p => (p.effective_responsible_party || 'INTERNO') === respFilter);
-    }
+    const points = getDisplayPoints();
     if (!points.length) {
         tbody.innerHTML = '<tr><td colspan="12">Sin puntos para el filtro actual.</td></tr>';
         return;
@@ -229,6 +244,178 @@ function renderPointsTable() {
     }).join('');
 }
 window.renderPointsTable = renderPointsTable;
+
+/* ──────────────────────────────────────────────────────────────
+   VISTA DE ARBOL DE PLANTA (Area → Linea → Equipo → Sistema →
+   Componente → punto). Construida en el cliente a partir de la
+   misma lista filtrada que la tabla, reutilizando el patron de
+   carets/.nested/.active del arbol de activos (static/js/app.js).
+   ────────────────────────────────────────────────────────────── */
+const _LUB_TREE_LEVELS = [
+    { icon: 'fa-industry',        color: '#7aa7d6', key: p => p.area_name || '(sin area)' },
+    { icon: 'fa-grip-lines',      color: '#7aa7d6', key: p => p.line_name || '(sin linea)' },
+    { icon: 'fa-cog',             color: '#5AC8FA', key: p => {
+        const tag = p.equipment_tag || ''; const name = p.equipment_name || '';
+        if (!tag && !name) return '(sin equipo)';
+        return name ? `${name}${tag ? ' [' + tag + ']' : ''}` : `[${tag}]`;
+    } },
+    { icon: 'fa-project-diagram', color: '#9b8cff', key: p => p.system_name || '(sin sistema)' },
+    { icon: 'fa-puzzle-piece',    color: '#FF9F0A', key: p => p.component_name || '(sin componente)' },
+];
+
+const _lubTreeSort = (a, b) => String(a).localeCompare(String(b), 'es', { numeric: true, sensitivity: 'base' });
+
+function _lubAddCaret(li, expanded) {
+    const span = document.createElement('span');
+    span.className = 'caret' + (expanded ? ' caret-down' : '');
+    span.onclick = function () {
+        const nested = this.parentElement.querySelector(':scope > .nested');
+        if (nested) nested.classList.toggle('active');
+        this.classList.toggle('caret-down');
+    };
+    li.appendChild(span);
+}
+
+function _lubCountBadge(points) {
+    const red = points.filter(p => (p.semaphore_status || '') === 'ROJO' && p.is_active !== false).length;
+    const cls = red > 0 ? 'node-count has-red' : 'node-count';
+    const txt = red > 0 ? `${points.length} · ${red}🔴` : `${points.length}`;
+    return `<span class="${cls}">${txt}</span>`;
+}
+
+function _lubBuildLevel(points, depth) {
+    const ul = document.createElement('ul');
+    if (depth > 0) ul.className = 'nested';
+
+    const cfg = _LUB_TREE_LEVELS[depth];
+    const groups = new Map();
+    points.forEach(p => {
+        const k = cfg.key(p);
+        if (!groups.has(k)) groups.set(k, []);
+        groups.get(k).push(p);
+    });
+
+    [...groups.entries()].sort((a, b) => _lubTreeSort(a[0], b[0])).forEach(([label, grp]) => {
+        const li = document.createElement('li');
+        const node = document.createElement('span');
+        node.className = 'tree-node';
+        node.innerHTML = `<i class="fas ${cfg.icon}" style="margin-right:6px;color:${cfg.color}"></i>${_esc(label)} ${_lubCountBadge(grp)}`;
+        _lubAddCaret(li, false);
+        li.appendChild(node);
+
+        const childUl = (depth < _LUB_TREE_LEVELS.length - 1)
+            ? _lubBuildLevel(grp, depth + 1)
+            : _lubBuildLeaves(grp);
+        li.appendChild(childUl);
+        ul.appendChild(li);
+    });
+    return ul;
+}
+
+function _lubBuildLeaves(points) {
+    const ul = document.createElement('ul');
+    ul.className = 'nested';
+    points.slice().sort((a, b) => _lubTreeSort(a.name || a.code || '', b.name || b.code || '')).forEach(p => {
+        const li = document.createElement('li');
+        const inactive = p.is_active === false;
+        const pill = inactive ? 'INACTIVO' : (p.semaphore_status || 'PENDIENTE');
+        const due = p.next_due_date
+            ? `<span style="color:#9ab0cb;font-size:.74rem;margin-left:8px;">vence ${_esc(p.next_due_date)}</span>` : '';
+        const lub = p.lubricant_name
+            ? `<span style="color:#7f93ad;font-size:.74rem;margin-left:8px;">· ${_esc(p.lubricant_name)}</span>` : '';
+        const reg = inactive ? '' :
+            `<button class="btn-reg" title="Registrar ejecucion en este punto" onclick="lubQuickRegister(${p.id})"><i class="fas fa-oil-can"></i> Registrar</button>`;
+        const node = document.createElement('span');
+        node.className = 'tree-node lub-leaf';
+        node.innerHTML =
+            `<i class="fas fa-oil-can" style="margin-right:6px;color:#d6a44a"></i>` +
+            `<span style="${inactive ? 'opacity:.5' : ''}">${_esc(p.name || p.code || '(sin nombre)')}</span>` +
+            `<span class="pill ${pill}" style="margin-left:8px;font-size:.68rem;padding:1px 7px;">${pill}</span>` +
+            `${due}${lub}${reg}`;
+        li.appendChild(node);
+        ul.appendChild(li);
+    });
+    return ul;
+}
+
+function renderLubTree() {
+    const cont = q('lubTree');
+    if (!cont) return;
+    const points = getDisplayPoints();
+    cont.innerHTML = '';
+
+    const controls = document.createElement('div');
+    controls.className = 'lub-tree-controls';
+    controls.innerHTML =
+        `<button class="btn secondary" onclick="lubExpandAll()"><i class="fas fa-expand-alt"></i> Expandir</button>` +
+        `<button class="btn secondary" onclick="lubCollapseAll()"><i class="fas fa-compress-alt"></i> Colapsar</button>`;
+    cont.appendChild(controls);
+
+    if (!points.length) {
+        const empty = document.createElement('p');
+        empty.style.cssText = 'color:#9ab0cb;padding:10px;';
+        empty.textContent = 'Sin puntos para el filtro actual.';
+        cont.appendChild(empty);
+        return;
+    }
+    cont.appendChild(_lubBuildLevel(points, 0));
+}
+window.renderLubTree = renderLubTree;
+
+function lubExpandAll() {
+    const cont = q('lubTree');
+    if (!cont) return;
+    cont.querySelectorAll('.nested').forEach(el => el.classList.add('active'));
+    cont.querySelectorAll('.caret').forEach(el => el.classList.add('caret-down'));
+}
+window.lubExpandAll = lubExpandAll;
+
+function lubCollapseAll() {
+    const cont = q('lubTree');
+    if (!cont) return;
+    cont.querySelectorAll('.nested').forEach(el => el.classList.remove('active'));
+    cont.querySelectorAll('.caret').forEach(el => el.classList.remove('caret-down'));
+}
+window.lubCollapseAll = lubCollapseAll;
+
+// Preselecciona un punto en el formulario de ejecucion y hace scroll al boton
+// de registro. Inserta la opcion directamente para no depender de los filtros
+// del buscador (#fEquipment / #fPointSearch).
+function lubQuickRegister(pointId) {
+    const p = (lubState.points || []).find(x => x.id === pointId);
+    const sel = q('fPoint');
+    if (sel) {
+        if (!sel.querySelector(`option[value="${pointId}"]`)) {
+            const opt = document.createElement('option');
+            opt.value = String(pointId);
+            opt.textContent = p ? _optionText(p) : `Punto ${pointId}`;
+            sel.appendChild(opt);
+        }
+        sel.value = String(pointId);
+        sel.style.outline = '2px solid #5ac8fa';
+        setTimeout(() => { sel.style.outline = ''; }, 1600);
+    }
+    if (q('fExecDate') && !q('fExecDate').value) {
+        q('fExecDate').value = new Date().toISOString().slice(0, 10);
+    }
+    const anchor = q('btnExec');
+    if (anchor) anchor.scrollIntoView({ behavior: 'smooth', block: 'center' });
+}
+window.lubQuickRegister = lubQuickRegister;
+
+// Toggle Tabla / Arbol, persiste la preferencia.
+function setLubView(view) {
+    const isTree = view === 'tree';
+    const tableWrap = q('lubTableWrap');
+    const tree = q('lubTree');
+    if (tableWrap) tableWrap.style.display = isTree ? 'none' : '';
+    if (tree) tree.style.display = isTree ? '' : 'none';
+    const btnT = q('btnViewTable'), btnR = q('btnViewTree');
+    if (btnT) btnT.classList.toggle('active', !isTree);
+    if (btnR) btnR.classList.toggle('active', isTree);
+    try { localStorage.setItem('cmms.lub.view', view); } catch (e) { /* ignore */ }
+}
+window.setLubView = setLubView;
 
 function renderExecutions(rows) {
     const tbody = q('tbodyExec');
@@ -451,6 +638,10 @@ async function boot() {
         q('btnCreate').addEventListener('click', createPoint);
         q('btnExec').addEventListener('click', registerExecution);
         if (q('fPointSearch')) q('fPointSearch').addEventListener('input', renderPointSelect);
+        // Restaurar vista preferida (tabla por defecto)
+        let savedView = 'table';
+        try { savedView = localStorage.getItem('cmms.lub.view') || 'table'; } catch (e) { /* ignore */ }
+        setLubView(savedView);
     } catch (e) {
         alert(`Error inicializando lubricacion: ${e.message}`);
     }
