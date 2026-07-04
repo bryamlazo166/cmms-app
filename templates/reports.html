@@ -75,9 +75,14 @@
 <section class="home-section"><div class="reports-wrapper">
     <header class="reports-header" style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:12px">
         <div><h1><i class="fas fa-chart-bar"></i> Reporte Ejecutivo de Mantenimiento</h1><p>Panel gerencial por area, linea y equipo. Incluye disponibilidad, cumplimiento y causas de indisponibilidad.</p></div>
-        <button onclick="withLoading(this, exportPowerBI)" data-perm="exportar.export" class="rpt-btn" style="background:linear-gradient(145deg,#1d6b35,#217a3e);border-color:#2a9d4e;color:#c8ffd4;height:42px;padding:0 18px;font-size:.88rem;white-space:nowrap">
-            <i class="fas fa-file-excel"></i> Exportar Power BI
-        </button>
+        <div style="display:flex;gap:10px;flex-wrap:wrap">
+            <button onclick="withLoading(this, exportManagement)" data-perm="exportar.export" class="rpt-btn" style="background:linear-gradient(145deg,#1a3a6b,#1e4a8e);border-color:#2a5ab0;color:#c4dcff;height:42px;padding:0 18px;font-size:.88rem;white-space:nowrap" title="Excel ejecutivo con KPIs, graficos y detalle de OTs — usa los filtros seleccionados">
+                <i class="fas fa-chart-pie"></i> Reporte Gerencial
+            </button>
+            <button onclick="withLoading(this, exportPowerBI)" data-perm="exportar.export" class="rpt-btn" style="background:linear-gradient(145deg,#1d6b35,#217a3e);border-color:#2a9d4e;color:#c8ffd4;height:42px;padding:0 18px;font-size:.88rem;white-space:nowrap" title="Excel crudo multi-hoja con todos los datos (fuente para Power BI)">
+                <i class="fas fa-file-excel"></i> Exportar Power BI
+            </button>
+        </div>
     </header>
 
     <section class="reports-toolbar">
@@ -193,11 +198,23 @@
 <script src="/static/js/reports.js?v={{ v }}"></script>
 <script>
 async function exportPowerBI() {
+    const today = new Date().toISOString().slice(0, 10);
+    await downloadExcelFrom('/api/reports/powerbi-export', `CMMS_PowerBI_${today}.xlsx`);
+}
+
+async function exportManagement() {
+    // Excel gerencial con KPIs + graficos — respeta los filtros en pantalla
+    const f = currentExecutiveFilters();
+    const name = `Reporte_Gerencial_${f.start_date || 'inicio'}_a_${f.end_date || 'fin'}.xlsx`;
+    await downloadExcelFrom(`/api/reports/management-export?${qs(f)}`, name);
+}
+
+async function downloadExcelFrom(endpoint, filename) {
     // Usamos fetch en vez de <a href> para detectar errores (401, 500, cold-start)
     // antes de descargar, asi evitamos archivos .json rotos en disco.
     let resp;
     try {
-        resp = await fetch('/api/reports/powerbi-export', {credentials: 'same-origin'});
+        resp = await fetch(endpoint, {credentials: 'same-origin'});
     } catch (e) {
         alert('No se pudo contactar el servidor.\n\n' +
               'Si la app esta en Render free tier puede estar en cold-start (espera 30-60s y reintenta).\n\n' +
@@ -230,11 +247,10 @@ async function exportPowerBI() {
         return;
     }
     const blob = await resp.blob();
-    const today = new Date().toISOString().slice(0, 10);
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a');
     a.href = url;
-    a.download = `CMMS_PowerBI_${today}.xlsx`;
+    a.download = filename;
     document.body.appendChild(a);
     a.click();
     a.remove();

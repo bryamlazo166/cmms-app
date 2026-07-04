@@ -124,6 +124,9 @@ def query_work_orders(lookups):
             'Componente': _name(lookups['comps'], o.component_id),
             'Tecnico': _name(lookups['techs'], _safe_int(o.technician_id)),
             'Proveedor': _name(lookups['provs'], o.provider_id),
+            # Fecha de solicitud: momento real del reporte (reported_at) o
+            # registro en el CMMS (request_date) del aviso vinculado.
+            'Fecha_Solicitud': (getattr(nt, 'reported_at', None) or getattr(nt, 'request_date', None)) if nt else None,
             'Fecha_Programada': o.scheduled_date,
             'Fecha_Inicio_Real': o.real_start_date,
             'Fecha_Fin_Real': o.real_end_date,

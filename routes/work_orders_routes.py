@@ -1172,7 +1172,14 @@ def register_work_orders_routes(
                 comp  = _comps_m.get(wo.component_id)  if wo.component_id else None
 
                 provider_name = _provs_m[wo.provider_id].name if wo.provider_id and wo.provider_id in _provs_m else '-'
-                notice_code   = _nots_m[wo.notice_id].code    if wo.notice_id   and wo.notice_id   in _nots_m  else '-'
+                _notice_obj   = _nots_m.get(wo.notice_id) if wo.notice_id else None
+                notice_code   = _notice_obj.code if _notice_obj else '-'
+                # Fecha de solicitud: preferimos reported_at (momento real del
+                # reporte) y caemos a request_date (registro en el CMMS).
+                fecha_solicitud = (
+                    getattr(_notice_obj, 'reported_at', None)
+                    or getattr(_notice_obj, 'request_date', None)
+                ) if _notice_obj else None
 
                 # Disciplina: 1) personal asignado / proveedor, 2) inferida del texto
                 discipline = specialty_for_ot(wo)
@@ -1215,6 +1222,7 @@ def register_work_orders_routes(
                         'Técnico Principal': wo.technician_id,
                         'Cant. Técnicos': wo.tech_count,
                         'Proveedor': provider_name,
+                        'Fecha Solicitud': fecha_solicitud,
                         'Fecha Programada': wo.scheduled_date,
                         'Duración Est. (Hr)': wo.estimated_duration,
                         'Fecha Inicio Real': wo.real_start_date,

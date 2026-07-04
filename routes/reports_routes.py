@@ -289,283 +289,286 @@ def register_reports_routes(
             return jsonify({"error": str(e)}), 500
 
 
+    def _collect_executive_payload():
+        start_date = _parse_date_flexible(request.args.get('start_date')) or (dt.date.today() - dt.timedelta(days=29))
+        end_date = _parse_date_flexible(request.args.get('end_date')) or dt.date.today()
+        if start_date > end_date:
+            start_date, end_date = end_date, start_date
+
+        area_id = request.args.get('area_id', type=int)
+        line_id = request.args.get('line_id', type=int)
+        equipment_id = request.args.get('equipment_id', type=int)
+
+        lines = Line.query.all()
+        systems = System.query.all()
+        components = Component.query.all()
+        equipments = Equipment.query.all()
+        areas = Area.query.all()
+        warehouse_items = WarehouseItem.query.with_entities(WarehouseItem.id, WarehouseItem.unit_cost).all()
+
+        area_map = {a.id: a for a in areas}
+        line_map = {l.id: l for l in lines}
+        system_map = {s.id: s for s in systems}
+        component_map = {c.id: c for c in components}
+        equipment_map = {e.id: e for e in equipments}
+        warehouse_cost = {w.id: float(w.unit_cost or 0) for w in warehouse_items}
+
+        def resolve_equipment(ot):
+            eq_id = ot.equipment_id
+            if not eq_id and ot.system_id and ot.system_id in system_map:
+                eq_id = system_map[ot.system_id].equipment_id
+            if not eq_id and ot.component_id and ot.component_id in component_map:
+                comp = component_map[ot.component_id]
+                sys = system_map.get(comp.system_id)
+                if sys:
+                    eq_id = sys.equipment_id
+            return eq_id
+
+        def ot_matches_filters(ot):
+            eq_id = resolve_equipment(ot)
+            if equipment_id and eq_id != equipment_id:
+                return False
+            ot_line_id = ot.line_id
+            if not ot_line_id and eq_id and eq_id in equipment_map:
+                ot_line_id = equipment_map[eq_id].line_id
+            if line_id and ot_line_id != line_id:
+                return False
+            ot_area_id = ot.area_id
+            if not ot_area_id and ot_line_id and ot_line_id in line_map:
+                ot_area_id = line_map[ot_line_id].area_id
+            if area_id and ot_area_id != area_id:
+                return False
+            return True
+
+        all_ots = WorkOrder.query.all()
+        window_ots = []
+        planned_ots = []
+
+        event_date_map = {}
+        scheduled_date_map = {}
+        eq_line_area_cache = {}
+        for ot in all_ots:
+            if not ot_matches_filters(ot):
+                continue
+
+            eq_id = resolve_equipment(ot)
+            line_ref = ot.line_id or (equipment_map[eq_id].line_id if eq_id and eq_id in equipment_map else None)
+            area_ref = ot.area_id or (line_map[line_ref].area_id if line_ref and line_ref in line_map else None)
+            eq_line_area_cache[ot.id] = (eq_id, line_ref, area_ref)
+
+            scheduled = _parse_date_flexible(ot.scheduled_date)
+            event_date = _parse_date_flexible(ot.real_end_date) or _parse_date_flexible(ot.real_start_date) or scheduled
+            scheduled_date_map[ot.id] = scheduled
+            event_date_map[ot.id] = event_date
+
+            if _is_in_window(scheduled, start_date, end_date):
+                planned_ots.append(ot)
+            if _is_in_window(event_date, start_date, end_date):
+                window_ots.append(ot)
+
+        ot_ids = [ot.id for ot in window_ots]
+        ot_costs = defaultdict(float)
+        if ot_ids:
+            materials = OTMaterial.query.filter(OTMaterial.work_order_id.in_(ot_ids), OTMaterial.item_type == 'warehouse').all()
+            for mat in materials:
+                ot_costs[mat.work_order_id] += float(mat.quantity or 0) * warehouse_cost.get(mat.item_id, 0)
+
+        planned_total = len(planned_ots)
+        planned_closed = len([ot for ot in planned_ots if (ot.status or '').strip().lower() == 'cerrada'])
+        preventive_count = len([ot for ot in window_ots if _normalize_maintenance_type(ot.maintenance_type) == 'preventivo'])
+        corrective_ots = [ot for ot in window_ots if _normalize_maintenance_type(ot.maintenance_type) == 'correctivo']
+        corrective_count = len(corrective_ots)
+
+        downtime_hours = sum([_safe_duration_hours(ot) for ot in corrective_ots])
+        failures = len([ot for ot in corrective_ots if _safe_duration_hours(ot) > 0])
+        total_cost = round(sum([ot_costs.get(ot.id, 0) for ot in window_ots]), 2)
+
+        filtered_equipment_ids = set([eq for eq, _, _ in eq_line_area_cache.values() if eq])
+        equipment_base = max(1, len(filtered_equipment_ids))
+        window_days = max((end_date - start_date).days + 1, 1)
+        total_hours = equipment_base * window_days * 24
+        uptime = max(total_hours - downtime_hours, 0)
+        availability = (uptime / total_hours * 100) if total_hours > 0 else 100
+        mtbf = (uptime / failures) if failures else uptime
+        mttr = (downtime_hours / failures) if failures else 0
+        compliance = (planned_closed / planned_total * 100) if planned_total else 100
+
+        def breakdown(level):
+            rows = {}
+            for ot in window_ots:
+                eq_id, line_ref, area_ref = eq_line_area_cache.get(ot.id, (None, None, None))
+                if level == "areas":
+                    key = area_ref or "NA"
+                    name = area_map[area_ref].name if area_ref and area_ref in area_map else "Sin area"
+                elif level == "lines":
+                    key = line_ref or "NA"
+                    name = line_map[line_ref].name if line_ref and line_ref in line_map else "Sin linea"
+                else:
+                    key = eq_id or "NA"
+                    if eq_id and eq_id in equipment_map:
+                        eq = equipment_map[eq_id]
+                        name = f"{eq.tag} - {eq.name}"
+                    else:
+                        name = "Sin equipo"
+
+                if key not in rows:
+                    rows[key] = {
+                        "id": key,
+                        "name": name,
+                        "planned_total": 0,
+                        "planned_closed": 0,
+                        "total_ots": 0,
+                        "preventive_count": 0,
+                        "corrective_count": 0,
+                        "downtime_hours": 0.0,
+                        "availability": 100.0,
+                        "mtbf": 0.0,
+                        "mttr": 0.0,
+                        "cost": 0.0
+                    }
+
+                row = rows[key]
+                row["total_ots"] += 1
+                if _normalize_maintenance_type(ot.maintenance_type) == "preventivo":
+                    row["preventive_count"] += 1
+                if _normalize_maintenance_type(ot.maintenance_type) == "correctivo":
+                    row["corrective_count"] += 1
+                    row["downtime_hours"] += _safe_duration_hours(ot)
+                row["cost"] += ot_costs.get(ot.id, 0)
+
+            for ot in planned_ots:
+                eq_id, line_ref, area_ref = eq_line_area_cache.get(ot.id, (None, None, None))
+                key = area_ref if level == "areas" else line_ref if level == "lines" else eq_id
+                key = key or "NA"
+                if key not in rows:
+                    continue
+                rows[key]["planned_total"] += 1
+                if (ot.status or '').strip().lower() == 'cerrada':
+                    rows[key]["planned_closed"] += 1
+
+            result = []
+            for _, row in rows.items():
+                row_hours = max(24 * window_days, row["downtime_hours"])
+                row_uptime = max(row_hours - row["downtime_hours"], 0)
+                row_failures = max(1, int(row["corrective_count"])) if row["corrective_count"] > 0 else 0
+                row["availability"] = round((row_uptime / row_hours * 100) if row_hours else 100, 2)
+                row["mtbf"] = round((row_uptime / row_failures) if row_failures else row_uptime, 2)
+                row["mttr"] = round((row["downtime_hours"] / row_failures) if row_failures else 0, 2)
+                row["downtime_hours"] = round(row["downtime_hours"], 2)
+                row["cost"] = round(row["cost"], 2)
+                row["compliance_percent"] = round((row["planned_closed"] / row["planned_total"] * 100), 1) if row["planned_total"] else 100.0
+                result.append(row)
+
+            result.sort(key=lambda x: x["name"])
+            return result
+
+        trend = []
+        month_cursor = dt.date(start_date.year, start_date.month, 1)
+        end_month = dt.date(end_date.year, end_date.month, 1)
+        while month_cursor <= end_month:
+            month_key = f"{month_cursor.year}-{month_cursor.month:02d}"
+            next_month = dt.date(month_cursor.year + (1 if month_cursor.month == 12 else 0), 1 if month_cursor.month == 12 else month_cursor.month + 1, 1)
+            month_end = next_month - dt.timedelta(days=1)
+            month_start = max(month_cursor, start_date)
+            month_finish = min(month_end, end_date)
+            mdays = max((month_finish - month_start).days + 1, 1)
+            mhours = equipment_base * mdays * 24
+
+            month_planned = [ot for ot in planned_ots if scheduled_date_map.get(ot.id) and month_start <= scheduled_date_map.get(ot.id) <= month_finish]
+            month_window = [ot for ot in window_ots if event_date_map.get(ot.id) and month_start <= event_date_map.get(ot.id) <= month_finish]
+            month_corr = [ot for ot in month_window if _normalize_maintenance_type(ot.maintenance_type) == "correctivo"]
+            month_downtime = sum([_safe_duration_hours(ot) for ot in month_corr])
+            month_uptime = max(mhours - month_downtime, 0)
+            trend.append({
+                "period": month_key,
+                "planned_total": len(month_planned),
+                "planned_closed": len([ot for ot in month_planned if (ot.status or "").strip().lower() == "cerrada"]),
+                "compliance_percent": round((len([ot for ot in month_planned if (ot.status or '').strip().lower() == 'cerrada']) / len(month_planned) * 100), 1) if month_planned else 100.0,
+                "preventive_count": len([ot for ot in month_window if _normalize_maintenance_type(ot.maintenance_type) == "preventivo"]),
+                "corrective_count": len(month_corr),
+                "downtime_hours": round(month_downtime, 2),
+                "availability": round((month_uptime / mhours * 100) if mhours else 100.0, 2)
+            })
+            month_cursor = next_month
+
+        causes = defaultdict(lambda: {"cause": "", "count": 0, "downtime_hours": 0.0, "cost": 0.0})
+        downtime_events = []
+        for ot in corrective_ots:
+            duration = _safe_duration_hours(ot)
+            if duration <= 0:
+                continue
+            key = (ot.failure_mode or "Sin clasificar").strip().lower()
+            if not causes[key]["cause"]:
+                causes[key]["cause"] = (ot.failure_mode or "Sin clasificar").strip()
+            causes[key]["count"] += 1
+            causes[key]["downtime_hours"] += duration
+            causes[key]["cost"] += ot_costs.get(ot.id, 0)
+
+            eq_id, line_ref, area_ref = eq_line_area_cache.get(ot.id, (None, None, None))
+            area_name = Area.query.get(area_ref).name if area_ref else "Sin area"
+            line_name = line_map[line_ref].name if line_ref and line_ref in line_map else "Sin linea"
+            if eq_id and eq_id in equipment_map:
+                eq = equipment_map[eq_id]
+                equipment_name = f"{eq.tag} - {eq.name}"
+            else:
+                equipment_name = "Sin equipo"
+            downtime_events.append({
+                "ot_code": ot.code or f"OT-{ot.id}",
+                "date": (event_date_map.get(ot.id).isoformat() if event_date_map.get(ot.id) else "-"),
+                "area": area_name,
+                "line": line_name,
+                "equipment": equipment_name,
+                "failure_mode": ot.failure_mode or "-",
+                "root_cause": "-",
+                "duration_hours": round(duration, 2),
+                "cost": round(ot_costs.get(ot.id, 0), 2),
+                "description": ot.description or "-"
+            })
+
+        downtime_causes = list(causes.values())
+        downtime_causes.sort(key=lambda c: c["downtime_hours"], reverse=True)
+        for c in downtime_causes:
+            c["downtime_hours"] = round(c["downtime_hours"], 2)
+            c["cost"] = round(c["cost"], 2)
+
+        downtime_events.sort(key=lambda e: e["duration_hours"], reverse=True)
+
+        return {
+            "meta": {
+                "start_date": start_date.isoformat(),
+                "end_date": end_date.isoformat(),
+                "window_days": window_days,
+                "equipment_base": equipment_base,
+                "filters": {"area_id": area_id, "line_id": line_id, "equipment_id": equipment_id}
+            },
+            "summary": {
+                "planned_total": planned_total,
+                "planned_closed": planned_closed,
+                "compliance_percent": round(compliance, 1),
+                "total_ots": len(window_ots),
+                "preventive_count": preventive_count,
+                "corrective_count": corrective_count,
+                "downtime_hours": round(downtime_hours, 2),
+                "availability": round(availability, 2),
+                "availability_loss_percent": round(max(0, 100 - availability), 2),
+                "mtbf": round(mtbf, 2),
+                "mttr": round(mttr, 2),
+                "cost": total_cost
+            },
+            "breakdown": {
+                "areas": breakdown("areas"),
+                "lines": breakdown("lines"),
+                "equipments": breakdown("equipments")
+            },
+            "trend": trend,
+            "downtime_causes": downtime_causes[:12],
+            "downtime_events": downtime_events[:100]
+        }
+
     @app.route('/api/reports/executive', methods=['GET'])
     def get_executive_reports():
         try:
-            start_date = _parse_date_flexible(request.args.get('start_date')) or (dt.date.today() - dt.timedelta(days=29))
-            end_date = _parse_date_flexible(request.args.get('end_date')) or dt.date.today()
-            if start_date > end_date:
-                start_date, end_date = end_date, start_date
-
-            area_id = request.args.get('area_id', type=int)
-            line_id = request.args.get('line_id', type=int)
-            equipment_id = request.args.get('equipment_id', type=int)
-
-            lines = Line.query.all()
-            systems = System.query.all()
-            components = Component.query.all()
-            equipments = Equipment.query.all()
-            areas = Area.query.all()
-            warehouse_items = WarehouseItem.query.with_entities(WarehouseItem.id, WarehouseItem.unit_cost).all()
-
-            area_map = {a.id: a for a in areas}
-            line_map = {l.id: l for l in lines}
-            system_map = {s.id: s for s in systems}
-            component_map = {c.id: c for c in components}
-            equipment_map = {e.id: e for e in equipments}
-            warehouse_cost = {w.id: float(w.unit_cost or 0) for w in warehouse_items}
-
-            def resolve_equipment(ot):
-                eq_id = ot.equipment_id
-                if not eq_id and ot.system_id and ot.system_id in system_map:
-                    eq_id = system_map[ot.system_id].equipment_id
-                if not eq_id and ot.component_id and ot.component_id in component_map:
-                    comp = component_map[ot.component_id]
-                    sys = system_map.get(comp.system_id)
-                    if sys:
-                        eq_id = sys.equipment_id
-                return eq_id
-
-            def ot_matches_filters(ot):
-                eq_id = resolve_equipment(ot)
-                if equipment_id and eq_id != equipment_id:
-                    return False
-                ot_line_id = ot.line_id
-                if not ot_line_id and eq_id and eq_id in equipment_map:
-                    ot_line_id = equipment_map[eq_id].line_id
-                if line_id and ot_line_id != line_id:
-                    return False
-                ot_area_id = ot.area_id
-                if not ot_area_id and ot_line_id and ot_line_id in line_map:
-                    ot_area_id = line_map[ot_line_id].area_id
-                if area_id and ot_area_id != area_id:
-                    return False
-                return True
-
-            all_ots = WorkOrder.query.all()
-            window_ots = []
-            planned_ots = []
-
-            event_date_map = {}
-            scheduled_date_map = {}
-            eq_line_area_cache = {}
-            for ot in all_ots:
-                if not ot_matches_filters(ot):
-                    continue
-
-                eq_id = resolve_equipment(ot)
-                line_ref = ot.line_id or (equipment_map[eq_id].line_id if eq_id and eq_id in equipment_map else None)
-                area_ref = ot.area_id or (line_map[line_ref].area_id if line_ref and line_ref in line_map else None)
-                eq_line_area_cache[ot.id] = (eq_id, line_ref, area_ref)
-
-                scheduled = _parse_date_flexible(ot.scheduled_date)
-                event_date = _parse_date_flexible(ot.real_end_date) or _parse_date_flexible(ot.real_start_date) or scheduled
-                scheduled_date_map[ot.id] = scheduled
-                event_date_map[ot.id] = event_date
-
-                if _is_in_window(scheduled, start_date, end_date):
-                    planned_ots.append(ot)
-                if _is_in_window(event_date, start_date, end_date):
-                    window_ots.append(ot)
-
-            ot_ids = [ot.id for ot in window_ots]
-            ot_costs = defaultdict(float)
-            if ot_ids:
-                materials = OTMaterial.query.filter(OTMaterial.work_order_id.in_(ot_ids), OTMaterial.item_type == 'warehouse').all()
-                for mat in materials:
-                    ot_costs[mat.work_order_id] += float(mat.quantity or 0) * warehouse_cost.get(mat.item_id, 0)
-
-            planned_total = len(planned_ots)
-            planned_closed = len([ot for ot in planned_ots if (ot.status or '').strip().lower() == 'cerrada'])
-            preventive_count = len([ot for ot in window_ots if _normalize_maintenance_type(ot.maintenance_type) == 'preventivo'])
-            corrective_ots = [ot for ot in window_ots if _normalize_maintenance_type(ot.maintenance_type) == 'correctivo']
-            corrective_count = len(corrective_ots)
-
-            downtime_hours = sum([_safe_duration_hours(ot) for ot in corrective_ots])
-            failures = len([ot for ot in corrective_ots if _safe_duration_hours(ot) > 0])
-            total_cost = round(sum([ot_costs.get(ot.id, 0) for ot in window_ots]), 2)
-
-            filtered_equipment_ids = set([eq for eq, _, _ in eq_line_area_cache.values() if eq])
-            equipment_base = max(1, len(filtered_equipment_ids))
-            window_days = max((end_date - start_date).days + 1, 1)
-            total_hours = equipment_base * window_days * 24
-            uptime = max(total_hours - downtime_hours, 0)
-            availability = (uptime / total_hours * 100) if total_hours > 0 else 100
-            mtbf = (uptime / failures) if failures else uptime
-            mttr = (downtime_hours / failures) if failures else 0
-            compliance = (planned_closed / planned_total * 100) if planned_total else 100
-
-            def breakdown(level):
-                rows = {}
-                for ot in window_ots:
-                    eq_id, line_ref, area_ref = eq_line_area_cache.get(ot.id, (None, None, None))
-                    if level == "areas":
-                        key = area_ref or "NA"
-                        name = area_map[area_ref].name if area_ref and area_ref in area_map else "Sin area"
-                    elif level == "lines":
-                        key = line_ref or "NA"
-                        name = line_map[line_ref].name if line_ref and line_ref in line_map else "Sin linea"
-                    else:
-                        key = eq_id or "NA"
-                        if eq_id and eq_id in equipment_map:
-                            eq = equipment_map[eq_id]
-                            name = f"{eq.tag} - {eq.name}"
-                        else:
-                            name = "Sin equipo"
-
-                    if key not in rows:
-                        rows[key] = {
-                            "id": key,
-                            "name": name,
-                            "planned_total": 0,
-                            "planned_closed": 0,
-                            "total_ots": 0,
-                            "preventive_count": 0,
-                            "corrective_count": 0,
-                            "downtime_hours": 0.0,
-                            "availability": 100.0,
-                            "mtbf": 0.0,
-                            "mttr": 0.0,
-                            "cost": 0.0
-                        }
-
-                    row = rows[key]
-                    row["total_ots"] += 1
-                    if _normalize_maintenance_type(ot.maintenance_type) == "preventivo":
-                        row["preventive_count"] += 1
-                    if _normalize_maintenance_type(ot.maintenance_type) == "correctivo":
-                        row["corrective_count"] += 1
-                        row["downtime_hours"] += _safe_duration_hours(ot)
-                    row["cost"] += ot_costs.get(ot.id, 0)
-
-                for ot in planned_ots:
-                    eq_id, line_ref, area_ref = eq_line_area_cache.get(ot.id, (None, None, None))
-                    key = area_ref if level == "areas" else line_ref if level == "lines" else eq_id
-                    key = key or "NA"
-                    if key not in rows:
-                        continue
-                    rows[key]["planned_total"] += 1
-                    if (ot.status or '').strip().lower() == 'cerrada':
-                        rows[key]["planned_closed"] += 1
-
-                result = []
-                for _, row in rows.items():
-                    row_hours = max(24 * window_days, row["downtime_hours"])
-                    row_uptime = max(row_hours - row["downtime_hours"], 0)
-                    row_failures = max(1, int(row["corrective_count"])) if row["corrective_count"] > 0 else 0
-                    row["availability"] = round((row_uptime / row_hours * 100) if row_hours else 100, 2)
-                    row["mtbf"] = round((row_uptime / row_failures) if row_failures else row_uptime, 2)
-                    row["mttr"] = round((row["downtime_hours"] / row_failures) if row_failures else 0, 2)
-                    row["downtime_hours"] = round(row["downtime_hours"], 2)
-                    row["cost"] = round(row["cost"], 2)
-                    row["compliance_percent"] = round((row["planned_closed"] / row["planned_total"] * 100), 1) if row["planned_total"] else 100.0
-                    result.append(row)
-
-                result.sort(key=lambda x: x["name"])
-                return result
-
-            trend = []
-            month_cursor = dt.date(start_date.year, start_date.month, 1)
-            end_month = dt.date(end_date.year, end_date.month, 1)
-            while month_cursor <= end_month:
-                month_key = f"{month_cursor.year}-{month_cursor.month:02d}"
-                next_month = dt.date(month_cursor.year + (1 if month_cursor.month == 12 else 0), 1 if month_cursor.month == 12 else month_cursor.month + 1, 1)
-                month_end = next_month - dt.timedelta(days=1)
-                month_start = max(month_cursor, start_date)
-                month_finish = min(month_end, end_date)
-                mdays = max((month_finish - month_start).days + 1, 1)
-                mhours = equipment_base * mdays * 24
-
-                month_planned = [ot for ot in planned_ots if scheduled_date_map.get(ot.id) and month_start <= scheduled_date_map.get(ot.id) <= month_finish]
-                month_window = [ot for ot in window_ots if event_date_map.get(ot.id) and month_start <= event_date_map.get(ot.id) <= month_finish]
-                month_corr = [ot for ot in month_window if _normalize_maintenance_type(ot.maintenance_type) == "correctivo"]
-                month_downtime = sum([_safe_duration_hours(ot) for ot in month_corr])
-                month_uptime = max(mhours - month_downtime, 0)
-                trend.append({
-                    "period": month_key,
-                    "planned_total": len(month_planned),
-                    "planned_closed": len([ot for ot in month_planned if (ot.status or "").strip().lower() == "cerrada"]),
-                    "compliance_percent": round((len([ot for ot in month_planned if (ot.status or '').strip().lower() == 'cerrada']) / len(month_planned) * 100), 1) if month_planned else 100.0,
-                    "preventive_count": len([ot for ot in month_window if _normalize_maintenance_type(ot.maintenance_type) == "preventivo"]),
-                    "corrective_count": len(month_corr),
-                    "downtime_hours": round(month_downtime, 2),
-                    "availability": round((month_uptime / mhours * 100) if mhours else 100.0, 2)
-                })
-                month_cursor = next_month
-
-            causes = defaultdict(lambda: {"cause": "", "count": 0, "downtime_hours": 0.0, "cost": 0.0})
-            downtime_events = []
-            for ot in corrective_ots:
-                duration = _safe_duration_hours(ot)
-                if duration <= 0:
-                    continue
-                key = (ot.failure_mode or "Sin clasificar").strip().lower()
-                if not causes[key]["cause"]:
-                    causes[key]["cause"] = (ot.failure_mode or "Sin clasificar").strip()
-                causes[key]["count"] += 1
-                causes[key]["downtime_hours"] += duration
-                causes[key]["cost"] += ot_costs.get(ot.id, 0)
-
-                eq_id, line_ref, area_ref = eq_line_area_cache.get(ot.id, (None, None, None))
-                area_name = Area.query.get(area_ref).name if area_ref else "Sin area"
-                line_name = line_map[line_ref].name if line_ref and line_ref in line_map else "Sin linea"
-                if eq_id and eq_id in equipment_map:
-                    eq = equipment_map[eq_id]
-                    equipment_name = f"{eq.tag} - {eq.name}"
-                else:
-                    equipment_name = "Sin equipo"
-                downtime_events.append({
-                    "ot_code": ot.code or f"OT-{ot.id}",
-                    "date": (event_date_map.get(ot.id).isoformat() if event_date_map.get(ot.id) else "-"),
-                    "area": area_name,
-                    "line": line_name,
-                    "equipment": equipment_name,
-                    "failure_mode": ot.failure_mode or "-",
-                    "root_cause": "-",
-                    "duration_hours": round(duration, 2),
-                    "cost": round(ot_costs.get(ot.id, 0), 2),
-                    "description": ot.description or "-"
-                })
-
-            downtime_causes = list(causes.values())
-            downtime_causes.sort(key=lambda c: c["downtime_hours"], reverse=True)
-            for c in downtime_causes:
-                c["downtime_hours"] = round(c["downtime_hours"], 2)
-                c["cost"] = round(c["cost"], 2)
-
-            downtime_events.sort(key=lambda e: e["duration_hours"], reverse=True)
-
-            return jsonify({
-                "meta": {
-                    "start_date": start_date.isoformat(),
-                    "end_date": end_date.isoformat(),
-                    "window_days": window_days,
-                    "equipment_base": equipment_base,
-                    "filters": {"area_id": area_id, "line_id": line_id, "equipment_id": equipment_id}
-                },
-                "summary": {
-                    "planned_total": planned_total,
-                    "planned_closed": planned_closed,
-                    "compliance_percent": round(compliance, 1),
-                    "total_ots": len(window_ots),
-                    "preventive_count": preventive_count,
-                    "corrective_count": corrective_count,
-                    "downtime_hours": round(downtime_hours, 2),
-                    "availability": round(availability, 2),
-                    "availability_loss_percent": round(max(0, 100 - availability), 2),
-                    "mtbf": round(mtbf, 2),
-                    "mttr": round(mttr, 2),
-                    "cost": total_cost
-                },
-                "breakdown": {
-                    "areas": breakdown("areas"),
-                    "lines": breakdown("lines"),
-                    "equipments": breakdown("equipments")
-                },
-                "trend": trend,
-                "downtime_causes": downtime_causes[:12],
-                "downtime_events": downtime_events[:100]
-            })
+            return jsonify(_collect_executive_payload())
         except Exception as e:
             logger.error(f"Executive report error: {e}")
             return jsonify({"error": str(e)}), 500
@@ -1155,6 +1158,32 @@ def register_reports_routes(
             )
         except Exception as e:
             logger.exception("Power BI export error")
+            return jsonify({"error": str(e)}), 500
+
+    @app.route('/api/reports/management-export', methods=['GET'])
+    @login_required
+    @limit_export
+    def export_management_excel():
+        """Excel gerencial: KPIs + graficos nativos + detalle de OTs.
+        Respeta los mismos filtros (fechas/area/linea/equipo) del reporte
+        ejecutivo en pantalla — los numeros siempre coinciden."""
+        try:
+            from utils.management_report import build_management_workbook
+            payload = _collect_executive_payload()
+            output = build_management_workbook(payload)
+            meta = payload.get('meta', {})
+            start = meta.get('start_date', 'inicio')
+            end = meta.get('end_date', 'fin')
+            audit_log('EXPORT_MASS', module='reports',
+                      detail=f"target=management_report window={start}_{end}")
+            return send_file(
+                output,
+                as_attachment=True,
+                download_name=f"Reporte_Gerencial_{start}_a_{end}.xlsx",
+                mimetype='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+            )
+        except Exception as e:
+            logger.exception("Management report export error")
             return jsonify({"error": str(e)}), 500
 
     # ── Power BI JSON Endpoints (real-time direct query) ─────────────────

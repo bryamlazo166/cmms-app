@@ -1400,6 +1400,8 @@ async function searchForExecution() {
         document.getElementById('exec-request-date').innerText = v ? v.replace('T', ' ') : '-';
     })();
     document.getElementById('exec-scheduled').innerText = ot.scheduled_date || '-';
+    document.getElementById('exec-real-start').innerText = ot.real_start_date ? String(ot.real_start_date).replace('T', ' ') : '-';
+    document.getElementById('exec-real-end').innerText = ot.real_end_date ? String(ot.real_end_date).replace('T', ' ') : '-';
     document.getElementById('exec-duration').innerText = ot.estimated_duration ? `${ot.estimated_duration} hrs` : '-';
 
     const tech = allTechnicians.find(t => t.id === parseInt(ot.technician_id));

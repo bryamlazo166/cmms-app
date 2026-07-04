@@ -109,6 +109,27 @@ def test_powerbi_export(auth_admin):
     assert 'spreadsheet' in r.content_type
 
 
+def test_management_report_export(auth_admin):
+    """Reporte gerencial: Excel con KPIs, graficos y detalle de OTs."""
+    from io import BytesIO
+    from openpyxl import load_workbook
+
+    r = auth_admin.get('/api/reports/management-export?start_date=2026-06-01&end_date=2026-07-04')
+    assert r.status_code == 200
+    assert 'spreadsheet' in r.content_type
+
+    wb = load_workbook(BytesIO(r.data))
+    for sheet in ('Resumen', 'Tendencia Mensual', 'Desglose Areas',
+                  'Pareto Fallas', 'Eventos de Paro', 'Detalle OTs'):
+        assert sheet in wb.sheetnames, f'Falta hoja {sheet}'
+
+    # La hoja Detalle OTs debe tener la cronologia completa de tiempos
+    det = wb['Detalle OTs']
+    headers = [det.cell(row=1, column=i).value for i in range(1, 19)]
+    for col in ('F. Solicitud', 'F. Programada', 'Inicio Real', 'Fin Real'):
+        assert col in headers, f'Falta columna {col}'
+
+
 def test_db_maintenance_admin_only(auth_admin, client):
     """DB maintenance should be admin-only."""
     # Admin can access
