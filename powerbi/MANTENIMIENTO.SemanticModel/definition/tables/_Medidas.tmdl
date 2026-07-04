@@ -439,6 +439,78 @@ table _Medidas
 		displayFolder: Ordenes de Trabajo
 		lineageTag: m-dur-real-total
 
+	measure 'Horas Periodo' =
+			VAR _iniCtx = MIN(DimFecha[Date])
+			VAR _finCtx = MAX(DimFecha[Date])
+			VAR _priDato = CALCULATE(MIN(FactOTs[Fecha Fin Real]), REMOVEFILTERS())
+			VAR _ultDato = CALCULATE(MAX(FactOTs[Fecha Fin Real]), REMOVEFILTERS())
+			VAR _ini = MAX(_iniCtx, _priDato)
+			VAR _fin = MIN(_finCtx, _ultDato)
+			RETURN MAX(DATEDIFF(_ini, _fin, DAY) + 1, 0) * 24
+		formatString: #,0 \h
+		displayFolder: Confiabilidad Operativa
+		lineageTag: m-op-horas-periodo
+
+	measure 'Fallas Operativas' = CALCULATE(COUNTROWS(FactOTs), FactOTs[Tipo OT] = "Correctivo", NOT ISBLANK(FactOTs[Fecha Fin Real]), USERELATIONSHIP(FactOTs[Fecha Fin Real], DimFecha[Date]))
+		formatString: #,0
+		displayFolder: Confiabilidad Operativa
+		lineageTag: m-op-fallas
+
+	measure 'Horas Paro Operativas' = CALCULATE(SUM(FactOTs[Horas de Parada]), USERELATIONSHIP(FactOTs[Fecha Fin Real], DimFecha[Date])) + 0
+		formatString: #,0.0 \h
+		displayFolder: Confiabilidad Operativa
+		lineageTag: m-op-horas-paro
+
+	measure 'Horas Reparacion Operativas' = CALCULATE(SUM(FactOTs[Duración Real]), FactOTs[Tipo OT] = "Correctivo", FactOTs[Estado OT] = "Cerrada", USERELATIONSHIP(FactOTs[Fecha Fin Real], DimFecha[Date]))
+		formatString: #,0.0 \h
+		displayFolder: Confiabilidad Operativa
+		lineageTag: m-op-horas-rep
+
+	measure 'MTBF Operativo' =
+			VAR _fallas = [Fallas Operativas]
+			RETURN DIVIDE([Horas Periodo] - [Horas Paro Operativas], _fallas, BLANK())
+		formatString: #,0.0 \h
+		displayFolder: Confiabilidad Operativa
+		lineageTag: m-op-mtbf
+
+	measure 'MTTR Operativo' = DIVIDE([Horas Reparacion Operativas], [Fallas Operativas], BLANK())
+		formatString: #,0.00 \h
+		displayFolder: Confiabilidad Operativa
+		lineageTag: m-op-mttr
+
+	measure 'Disponibilidad Operativa' = DIVIDE([Horas Periodo] - [Horas Paro Operativas], [Horas Periodo], BLANK())
+		formatString: 0.00%
+		displayFolder: Confiabilidad Operativa
+		lineageTag: m-op-disp-oper
+
+	measure 'Disponibilidad Inherente' =
+			VAR _mtbf = [MTBF Operativo]
+			VAR _mttr = [MTTR Operativo]
+			RETURN DIVIDE(_mtbf, _mtbf + _mttr, BLANK())
+		formatString: 0.00%
+		displayFolder: Confiabilidad Operativa
+		lineageTag: m-op-disp-inh
+
+	measure 'Confiabilidad 7d' = IF([MTBF Operativo] > 0, EXP(-DIVIDE(168, [MTBF Operativo], 0)), BLANK())
+		formatString: 0.00%
+		displayFolder: Confiabilidad Operativa
+		lineageTag: m-op-conf-7d
+
+	measure 'Confiabilidad 30d' = IF([MTBF Operativo] > 0, EXP(-DIVIDE(720, [MTBF Operativo], 0)), BLANK())
+		formatString: 0.00%
+		displayFolder: Confiabilidad Operativa
+		lineageTag: m-op-conf-30d
+
+	measure 'Disp Operativa Semana Anterior' = CALCULATE([Disponibilidad Operativa], DATEADD(DimFecha[Date], -7, DAY))
+		formatString: 0.00%
+		displayFolder: Confiabilidad Operativa
+		lineageTag: m-op-disp-sem-ant
+
+	measure 'Variacion Disponibilidad WoW' = [Disponibilidad Operativa] - [Disp Operativa Semana Anterior]
+		formatString: +0.00%;-0.00%;0.00%
+		displayFolder: Confiabilidad Operativa
+		lineageTag: m-op-disp-wow
+
 	column Value
 		dataType: int64
 		isHidden

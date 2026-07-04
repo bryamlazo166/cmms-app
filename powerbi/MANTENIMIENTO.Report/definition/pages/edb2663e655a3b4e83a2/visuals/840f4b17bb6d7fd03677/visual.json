@@ -5,8 +5,8 @@
     "x": 0,
     "y": 0,
     "z": 0,
-    "height": 115.59254827013415,
-    "width": 534.06683694429069
+    "height": 62,
+    "width": 314
   },
   "visual": {
     "visualType": "slicer",
@@ -40,7 +40,7 @@
             "mode": {
               "expr": {
                 "Literal": {
-                  "Value": "'Basic'"
+                  "Value": "'Dropdown'"
                 }
               }
             }

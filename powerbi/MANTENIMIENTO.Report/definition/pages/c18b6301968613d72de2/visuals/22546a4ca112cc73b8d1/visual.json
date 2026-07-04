@@ -1,15 +1,17 @@
 {
   "$schema": "https://developer.microsoft.com/json-schemas/fabric/item/report/definition/visualContainer/2.8.0/schema.json",
-  "name": "bfd68ce917883593e57c",
+  "name": "22546a4ca112cc73b8d1",
   "position": {
-    "x": 322,
-    "y": 0,
-    "z": 1,
+    "x": 644.0,
+    "y": 196,
+    "z": 1100,
     "height": 62,
-    "width": 314
+    "width": 314.0,
+    "tabOrder": 1100
   },
   "visual": {
     "visualType": "slicer",
+    "drillFilterOtherVisuals": true,
     "query": {
       "queryState": {
         "Values": {
@@ -19,14 +21,14 @@
                 "Column": {
                   "Expression": {
                     "SourceRef": {
-                      "Entity": "FactOTs"
+                      "Entity": "DimEquipos"
                     }
                   },
-                  "Property": "Estado OT"
+                  "Property": "Equipo"
                 }
               },
-              "queryRef": "FactOTs.Estado OT",
-              "nativeQueryRef": "Estado OT",
+              "queryRef": "DimEquipos.Equipo",
+              "nativeQueryRef": "Equipo",
               "active": true
             }
           ]
@@ -47,13 +49,24 @@
           }
         }
       ],
-      "general": [
+      "header": [
         {
           "properties": {
-            "orientation": {
+            "text": {
               "expr": {
                 "Literal": {
-                  "Value": "1D"
+                  "Value": "'Equipo'"
+                }
+              }
+            },
+            "fontColor": {
+              "solid": {
+                "color": {
+                  "expr": {
+                    "Literal": {
+                      "Value": "'#1A2332'"
+                    }
+                  }
                 }
               }
             }
@@ -61,24 +74,24 @@
         }
       ]
     },
-    "drillFilterOtherVisuals": true
-  },
-  "filterConfig": {
-    "filters": [
-      {
-        "name": "3146abd4932f711a8d6c",
-        "field": {
-          "Column": {
-            "Expression": {
-              "SourceRef": {
-                "Entity": "FactOTs"
+    "visualContainerObjects": {
+      "background": [
+        {
+          "properties": {
+            "color": {
+              "solid": {
+                "color": {
+                  "expr": {
+                    "Literal": {
+                      "Value": "'#E8EDF3'"
+                    }
+                  }
+                }
               }
-            },
-            "Property": "Estado OT"
+            }
           }
-        },
-        "type": "Categorical"
-      }
-    ]
+        }
+      ]
+    }
   }
 }

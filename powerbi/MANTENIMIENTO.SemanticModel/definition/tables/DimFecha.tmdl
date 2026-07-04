@@ -45,6 +45,12 @@ table DimFecha
 		summarizeBy: none
 		sourceColumn: [Año-Mes]
 
+	column Año-Semana
+		dataType: string
+		lineageTag: c-anio-semana
+		summarizeBy: none
+		sourceColumn: [Año-Semana]
+
 	column Trimestre
 		dataType: string
 		lineageTag: b699bc6cf27d400b
@@ -110,6 +116,7 @@ table DimFecha
 				    "Día Semana", WEEKDAY([Date],2),
 				    "Nombre Día", FORMAT([Date], "DDDD"),
 				    "Semana ISO", WEEKNUM([Date],21),
+				    "Año-Semana", FORMAT([Date],"YYYY") & "-S" & FORMAT(WEEKNUM([Date],21),"00"),
 				    "Es Fin Semana", IF(WEEKDAY([Date],2)>5, TRUE(), FALSE())
 				)
 

@@ -1,15 +1,17 @@
 {
   "$schema": "https://developer.microsoft.com/json-schemas/fabric/item/report/definition/visualContainer/2.8.0/schema.json",
-  "name": "99ea8541b7359ec7207f",
+  "name": "5211f4b2afce54f3d836",
   "position": {
-    "x": 966,
+    "x": 898,
     "y": 0,
-    "z": 3,
-    "height": 62,
-    "width": 314
+    "z": 100,
+    "height": 68,
+    "width": 382,
+    "tabOrder": 100
   },
   "visual": {
     "visualType": "slicer",
+    "drillFilterOtherVisuals": true,
     "query": {
       "queryState": {
         "Values": {
@@ -22,11 +24,11 @@
                       "Entity": "DimFecha"
                     }
                   },
-                  "Property": "Año"
+                  "Property": "Date"
                 }
               },
-              "queryRef": "DimFecha.Año",
-              "nativeQueryRef": "Año",
+              "queryRef": "DimFecha.Date",
+              "nativeQueryRef": "Date",
               "active": true
             }
           ]
@@ -40,20 +42,31 @@
             "mode": {
               "expr": {
                 "Literal": {
-                  "Value": "'Dropdown'"
+                  "Value": "'Between'"
                 }
               }
             }
           }
         }
       ],
-      "general": [
+      "header": [
         {
           "properties": {
-            "orientation": {
+            "text": {
               "expr": {
                 "Literal": {
-                  "Value": "1D"
+                  "Value": "'Date'"
+                }
+              }
+            },
+            "fontColor": {
+              "solid": {
+                "color": {
+                  "expr": {
+                    "Literal": {
+                      "Value": "'#1A2332'"
+                    }
+                  }
                 }
               }
             }
@@ -61,24 +74,24 @@
         }
       ]
     },
-    "drillFilterOtherVisuals": true
-  },
-  "filterConfig": {
-    "filters": [
-      {
-        "name": "6847e769dffe427bd847",
-        "field": {
-          "Column": {
-            "Expression": {
-              "SourceRef": {
-                "Entity": "DimFecha"
+    "visualContainerObjects": {
+      "background": [
+        {
+          "properties": {
+            "color": {
+              "solid": {
+                "color": {
+                  "expr": {
+                    "Literal": {
+                      "Value": "'#E8EDF3'"
+                    }
+                  }
+                }
               }
-            },
-            "Property": "Año"
+            }
           }
-        },
-        "type": "Advanced"
-      }
-    ]
+        }
+      ]
+    }
   }
 }

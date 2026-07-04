@@ -1,15 +1,17 @@
 {
   "$schema": "https://developer.microsoft.com/json-schemas/fabric/item/report/definition/visualContainer/2.8.0/schema.json",
-  "name": "bfd68ce917883593e57c",
+  "name": "43f04a5f895dd0d57ce6",
   "position": {
-    "x": 322,
-    "y": 0,
-    "z": 1,
+    "x": 966.0,
+    "y": 196,
+    "z": 1200,
     "height": 62,
-    "width": 314
+    "width": 314.0,
+    "tabOrder": 1200
   },
   "visual": {
     "visualType": "slicer",
+    "drillFilterOtherVisuals": true,
     "query": {
       "queryState": {
         "Values": {
@@ -22,11 +24,11 @@
                       "Entity": "FactOTs"
                     }
                   },
-                  "Property": "Estado OT"
+                  "Property": "Tipo OT"
                 }
               },
-              "queryRef": "FactOTs.Estado OT",
-              "nativeQueryRef": "Estado OT",
+              "queryRef": "FactOTs.Tipo OT",
+              "nativeQueryRef": "Tipo OT",
               "active": true
             }
           ]
@@ -47,13 +49,24 @@
           }
         }
       ],
-      "general": [
+      "header": [
         {
           "properties": {
-            "orientation": {
+            "text": {
               "expr": {
                 "Literal": {
-                  "Value": "1D"
+                  "Value": "'Tipo OT'"
+                }
+              }
+            },
+            "fontColor": {
+              "solid": {
+                "color": {
+                  "expr": {
+                    "Literal": {
+                      "Value": "'#1A2332'"
+                    }
+                  }
                 }
               }
             }
@@ -61,24 +74,24 @@
         }
       ]
     },
-    "drillFilterOtherVisuals": true
-  },
-  "filterConfig": {
-    "filters": [
-      {
-        "name": "3146abd4932f711a8d6c",
-        "field": {
-          "Column": {
-            "Expression": {
-              "SourceRef": {
-                "Entity": "FactOTs"
+    "visualContainerObjects": {
+      "background": [
+        {
+          "properties": {
+            "color": {
+              "solid": {
+                "color": {
+                  "expr": {
+                    "Literal": {
+                      "Value": "'#E8EDF3'"
+                    }
+                  }
+                }
               }
-            },
-            "Property": "Estado OT"
+            }
           }
-        },
-        "type": "Categorical"
-      }
-    ]
+        }
+      ]
+    }
   }
 }

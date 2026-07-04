@@ -1,0 +1,38 @@
+{
+  "$schema": "https://developer.microsoft.com/json-schemas/fabric/item/report/definition/visualContainer/2.8.0/schema.json",
+  "name": "1b4cd985ceeb6cdf15b2",
+  "position": {
+    "x": 1104.0,
+    "y": 76,
+    "z": 800,
+    "height": 112,
+    "width": 176.0,
+    "tabOrder": 800
+  },
+  "visual": {
+    "visualType": "cardVisual",
+    "drillFilterOtherVisuals": true,
+    "query": {
+      "queryState": {
+        "Data": {
+          "projections": [
+            {
+              "field": {
+                "Measure": {
+                  "Expression": {
+                    "SourceRef": {
+                      "Entity": "_Medidas"
+                    }
+                  },
+                  "Property": "Variacion Disponibilidad WoW"
+                }
+              },
+              "queryRef": "_Medidas.Variacion Disponibilidad WoW",
+              "nativeQueryRef": "Variacion Disponibilidad WoW"
+            }
+          ]
+        }
+      }
+    }
+  }
+}

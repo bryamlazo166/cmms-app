@@ -1,0 +1,187 @@
+{
+  "$schema": "https://developer.microsoft.com/json-schemas/fabric/item/report/definition/visualContainer/2.8.0/schema.json",
+  "name": "7b94e378cdba9274ade4",
+  "position": {
+    "x": 0,
+    "y": 554,
+    "z": 1500,
+    "height": 340,
+    "width": 760,
+    "tabOrder": 1500
+  },
+  "visual": {
+    "visualType": "pivotTable",
+    "drillFilterOtherVisuals": true,
+    "visualContainerObjects": {
+      "title": [
+        {
+          "properties": {
+            "show": {
+              "expr": {
+                "Literal": {
+                  "Value": "true"
+                }
+              }
+            },
+            "text": {
+              "expr": {
+                "Literal": {
+                  "Value": "'Indicadores por Área › Línea › Equipo › Sistema (drill-down)'"
+                }
+              }
+            },
+            "fontColor": {
+              "solid": {
+                "color": {
+                  "expr": {
+                    "Literal": {
+                      "Value": "'#E8EDF3'"
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      ]
+    },
+    "query": {
+      "queryState": {
+        "Rows": {
+          "projections": [
+            {
+              "field": {
+                "Column": {
+                  "Expression": {
+                    "SourceRef": {
+                      "Entity": "DimAreas"
+                    }
+                  },
+                  "Property": "Área"
+                }
+              },
+              "queryRef": "DimAreas.Área",
+              "nativeQueryRef": "Área"
+            },
+            {
+              "field": {
+                "Column": {
+                  "Expression": {
+                    "SourceRef": {
+                      "Entity": "DimLineas"
+                    }
+                  },
+                  "Property": "Línea"
+                }
+              },
+              "queryRef": "DimLineas.Línea",
+              "nativeQueryRef": "Línea"
+            },
+            {
+              "field": {
+                "Column": {
+                  "Expression": {
+                    "SourceRef": {
+                      "Entity": "DimEquipos"
+                    }
+                  },
+                  "Property": "Equipo"
+                }
+              },
+              "queryRef": "DimEquipos.Equipo",
+              "nativeQueryRef": "Equipo"
+            },
+            {
+              "field": {
+                "Column": {
+                  "Expression": {
+                    "SourceRef": {
+                      "Entity": "DimSistemas"
+                    }
+                  },
+                  "Property": "Sistema"
+                }
+              },
+              "queryRef": "DimSistemas.Sistema",
+              "nativeQueryRef": "Sistema"
+            }
+          ]
+        },
+        "Values": {
+          "projections": [
+            {
+              "field": {
+                "Measure": {
+                  "Expression": {
+                    "SourceRef": {
+                      "Entity": "_Medidas"
+                    }
+                  },
+                  "Property": "Disponibilidad Operativa"
+                }
+              },
+              "queryRef": "_Medidas.Disponibilidad Operativa",
+              "nativeQueryRef": "Disponibilidad Operativa"
+            },
+            {
+              "field": {
+                "Measure": {
+                  "Expression": {
+                    "SourceRef": {
+                      "Entity": "_Medidas"
+                    }
+                  },
+                  "Property": "MTBF Operativo"
+                }
+              },
+              "queryRef": "_Medidas.MTBF Operativo",
+              "nativeQueryRef": "MTBF Operativo"
+            },
+            {
+              "field": {
+                "Measure": {
+                  "Expression": {
+                    "SourceRef": {
+                      "Entity": "_Medidas"
+                    }
+                  },
+                  "Property": "MTTR Operativo"
+                }
+              },
+              "queryRef": "_Medidas.MTTR Operativo",
+              "nativeQueryRef": "MTTR Operativo"
+            },
+            {
+              "field": {
+                "Measure": {
+                  "Expression": {
+                    "SourceRef": {
+                      "Entity": "_Medidas"
+                    }
+                  },
+                  "Property": "Fallas Operativas"
+                }
+              },
+              "queryRef": "_Medidas.Fallas Operativas",
+              "nativeQueryRef": "Fallas Operativas"
+            },
+            {
+              "field": {
+                "Measure": {
+                  "Expression": {
+                    "SourceRef": {
+                      "Entity": "_Medidas"
+                    }
+                  },
+                  "Property": "Horas Paro Operativas"
+                }
+              },
+              "queryRef": "_Medidas.Horas Paro Operativas",
+              "nativeQueryRef": "Horas Paro Operativas"
+            }
+          ]
+        }
+      }
+    }
+  }
+}
