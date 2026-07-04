@@ -1,0 +1,93 @@
+{
+  "$schema": "https://developer.microsoft.com/json-schemas/fabric/item/report/definition/visualContainer/2.0.0/schema.json",
+  "name": "27554eba13b1af5e9258",
+  "position": {
+    "x": 20,
+    "y": 460,
+    "z": 1007,
+    "width": 1240,
+    "height": 240,
+    "tabOrder": 1007
+  },
+  "visual": {
+    "visualType": "pivotTable",
+    "query": {
+      "queryState": {
+        "Rows": {
+          "projections": [
+            {
+              "field": {
+                "Column": {
+                  "Expression": {
+                    "SourceRef": {
+                      "Entity": "FactLubricacion"
+                    }
+                  },
+                  "Property": "Código Lub"
+                }
+              },
+              "queryRef": "FactLubricacion.Código Lub",
+              "nativeQueryRef": "Código Lub"
+            },
+            {
+              "field": {
+                "Column": {
+                  "Expression": {
+                    "SourceRef": {
+                      "Entity": "DimEquipos"
+                    }
+                  },
+                  "Property": "Equipo"
+                }
+              },
+              "queryRef": "DimEquipos.Equipo",
+              "nativeQueryRef": "Equipo"
+            },
+            {
+              "field": {
+                "Column": {
+                  "Expression": {
+                    "SourceRef": {
+                      "Entity": "FactLubricacion"
+                    }
+                  },
+                  "Property": "Lubricante"
+                }
+              },
+              "queryRef": "FactLubricacion.Lubricante",
+              "nativeQueryRef": "Lubricante"
+            },
+            {
+              "field": {
+                "Column": {
+                  "Expression": {
+                    "SourceRef": {
+                      "Entity": "FactLubricacion"
+                    }
+                  },
+                  "Property": "Cantidad"
+                }
+              },
+              "queryRef": "FactLubricacion.Cantidad",
+              "nativeQueryRef": "Cantidad"
+            },
+            {
+              "field": {
+                "Column": {
+                  "Expression": {
+                    "SourceRef": {
+                      "Entity": "FactLubricacion"
+                    }
+                  },
+                  "Property": "Estado Lub"
+                }
+              },
+              "queryRef": "FactLubricacion.Estado Lub",
+              "nativeQueryRef": "Estado Lub"
+            }
+          ]
+        }
+      }
+    }
+  }
+}

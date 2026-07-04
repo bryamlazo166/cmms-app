@@ -1,0 +1,143 @@
+relationship r-fot-equipo
+	fromColumn: FactOTs.equipment_id
+	toColumn: DimEquipos.id
+
+relationship r-fot-area
+	fromColumn: FactOTs.area_id
+	toColumn: DimAreas.id
+
+relationship r-fot-linea
+	fromColumn: FactOTs.line_id
+	toColumn: DimLineas.id
+
+relationship r-fot-sistema
+	fromColumn: FactOTs.system_id
+	toColumn: DimSistemas.id
+
+relationship r-fot-componente
+	fromColumn: FactOTs.component_id
+	toColumn: DimComponentes.id
+
+relationship r-fav-equipo
+	fromColumn: FactAvisos.equipment_id
+	toColumn: DimEquipos.id
+
+relationship r-fav-area
+	fromColumn: FactAvisos.area_id
+	toColumn: DimAreas.id
+
+relationship r-fav-linea
+	fromColumn: FactAvisos.line_id
+	toColumn: DimLineas.id
+
+relationship r-fav-sistema
+	fromColumn: FactAvisos.system_id
+	toColumn: DimSistemas.id
+
+relationship r-fav-componente
+	fromColumn: FactAvisos.component_id
+	toColumn: DimComponentes.id
+
+relationship r-flub-equipo
+	fromColumn: FactLubricacion.equipment_id
+	toColumn: DimEquipos.id
+
+relationship r-flub-area
+	fromColumn: FactLubricacion.area_id
+	toColumn: DimAreas.id
+
+relationship r-flub-linea
+	fromColumn: FactLubricacion.line_id
+	toColumn: DimLineas.id
+
+relationship r-flub-sistema
+	fromColumn: FactLubricacion.system_id
+	toColumn: DimSistemas.id
+
+relationship r-flub-componente
+	fromColumn: FactLubricacion.component_id
+	toColumn: DimComponentes.id
+
+relationship r-fins-equipo
+	fromColumn: FactInspecciones.equipment_id
+	toColumn: DimEquipos.id
+
+relationship r-dlinea-darea
+	isActive: false
+	fromColumn: DimLineas.area_id
+	toColumn: DimAreas.id
+
+relationship r-dequipo-dlinea
+	isActive: false
+	fromColumn: DimEquipos.line_id
+	toColumn: DimLineas.id
+
+relationship r-dsistema-dequipo
+	isActive: false
+	fromColumn: DimSistemas.equipment_id
+	toColumn: DimEquipos.id
+
+relationship r-dcomponente-dsistema
+	isActive: false
+	fromColumn: DimComponentes.system_id
+	toColumn: DimSistemas.id
+
+relationship r-otpers-fot
+	fromColumn: ot_personnel.work_order_id
+	toColumn: FactOTs.id
+
+relationship r-otpers-tec
+	fromColumn: ot_personnel.technician_id
+	toColumn: DimTecnicos.id
+
+relationship r-otmat-fot
+	fromColumn: ot_materials.work_order_id
+	toColumn: FactOTs.id
+
+relationship r-tr-fins
+	fromColumn: thickness_readings.inspection_id
+	toColumn: FactInspecciones.id
+
+relationship r-sa-fpar
+	fromColumn: shutdown_areas.shutdown_id
+	toColumn: FactParadas.id
+
+relationship r-sa-darea
+	fromColumn: shutdown_areas.area_id
+	toColumn: DimAreas.id
+
+relationship d0731d65-32f7-b5eb-8c2e-61437df087cb
+	fromColumn: FactOTs.'Fecha Programada'
+	toColumn: DimFecha.Date
+
+relationship r-fot-fechaini
+	isActive: false
+	fromColumn: FactOTs.'Fecha Inicio Real'
+	toColumn: DimFecha.Date
+
+relationship r-fot-fechafin
+	isActive: false
+	fromColumn: FactOTs.'Fecha Fin Real'
+	toColumn: DimFecha.Date
+
+relationship r-fav-fechareporte
+	fromColumn: FactAvisos.'Fecha Reporte'
+	toColumn: DimFecha.Date
+
+relationship r-flub-proxapp
+	fromColumn: FactLubricacion.'Próxima Aplicación'
+	toColumn: DimFecha.Date
+
+relationship r-fpar-fechapar
+	fromColumn: FactParadas.'Fecha Parada'
+	toColumn: DimFecha.Date
+
+relationship r-fins-fechains
+	fromColumn: FactInspecciones.'Fecha Inspección'
+	toColumn: DimFecha.Date
+
+relationship r-fins-fechaprox
+	isActive: false
+	fromColumn: FactInspecciones.'Próxima Inspección'
+	toColumn: DimFecha.Date
+

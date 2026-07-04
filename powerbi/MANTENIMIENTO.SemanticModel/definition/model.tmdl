@@ -1,0 +1,34 @@
+model Model
+	culture: es-MX
+	defaultPowerBIDataSourceVersion: powerBI_V3
+	sourceQueryCulture: es-MX
+	dataAccessOptions
+		legacyRedirects
+		returnErrorValuesAsNull
+
+annotation __PBI_TimeIntelligenceEnabled = 0
+
+annotation PBI_ProTooling = ["DevMode"]
+
+annotation PBI_QueryOrder = ["DimAreas","DimLineas","DimEquipos","DimSistemas","DimComponentes","DimTecnicos","FactOTs","FactAvisos","FactParadas","FactLubricacion","FactInspecciones","ot_personnel","ot_materials","thickness_readings","shutdown_areas"]
+
+ref table DimFecha
+ref table DimAreas
+ref table DimLineas
+ref table DimEquipos
+ref table DimSistemas
+ref table DimComponentes
+ref table DimTecnicos
+ref table FactOTs
+ref table FactAvisos
+ref table FactParadas
+ref table FactLubricacion
+ref table FactInspecciones
+ref table ot_personnel
+ref table ot_materials
+ref table thickness_readings
+ref table shutdown_areas
+ref table _Medidas
+
+ref cultureInfo es-MX
+

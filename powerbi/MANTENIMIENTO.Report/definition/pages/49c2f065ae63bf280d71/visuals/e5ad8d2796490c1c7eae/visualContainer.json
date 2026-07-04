@@ -1,0 +1,55 @@
+{
+  "$schema": "https://developer.microsoft.com/json-schemas/fabric/item/report/definition/visualContainer/2.0.0/schema.json",
+  "name": "e5ad8d2796490c1c7eae",
+  "position": {
+    "x": 860,
+    "y": 160,
+    "z": 1007,
+    "width": 400,
+    "height": 240,
+    "tabOrder": 1007
+  },
+  "visual": {
+    "visualType": "barChart",
+    "query": {
+      "queryState": {
+        "Category": {
+          "projections": [
+            {
+              "field": {
+                "Column": {
+                  "Expression": {
+                    "SourceRef": {
+                      "Entity": "DimEquipos"
+                    }
+                  },
+                  "Property": "Equipo"
+                }
+              },
+              "queryRef": "DimEquipos.Equipo",
+              "nativeQueryRef": "Equipo"
+            }
+          ]
+        },
+        "Y": {
+          "projections": [
+            {
+              "field": {
+                "Measure": {
+                  "Expression": {
+                    "SourceRef": {
+                      "Entity": "_Medidas"
+                    }
+                  },
+                  "Property": "Total Inspecciones"
+                }
+              },
+              "queryRef": "_Medidas.Total Inspecciones",
+              "nativeQueryRef": "Total Inspecciones"
+            }
+          ]
+        }
+      }
+    }
+  }
+}

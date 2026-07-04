@@ -1,0 +1,55 @@
+{
+  "$schema": "https://developer.microsoft.com/json-schemas/fabric/item/report/definition/visualContainer/2.0.0/schema.json",
+  "name": "3cd94293080be96ad492",
+  "position": {
+    "x": 20,
+    "y": 160,
+    "z": 1004,
+    "width": 400,
+    "height": 280,
+    "tabOrder": 1004
+  },
+  "visual": {
+    "visualType": "donutChart",
+    "query": {
+      "queryState": {
+        "Category": {
+          "projections": [
+            {
+              "field": {
+                "Column": {
+                  "Expression": {
+                    "SourceRef": {
+                      "Entity": "FactParadas"
+                    }
+                  },
+                  "Property": "Tipo Parada"
+                }
+              },
+              "queryRef": "FactParadas.Tipo Parada",
+              "nativeQueryRef": "Tipo Parada"
+            }
+          ]
+        },
+        "Y": {
+          "projections": [
+            {
+              "field": {
+                "Measure": {
+                  "Expression": {
+                    "SourceRef": {
+                      "Entity": "_Medidas"
+                    }
+                  },
+                  "Property": "Total Paradas"
+                }
+              },
+              "queryRef": "_Medidas.Total Paradas",
+              "nativeQueryRef": "Total Paradas"
+            }
+          ]
+        }
+      }
+    }
+  }
+}

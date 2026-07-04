@@ -1,0 +1,55 @@
+{
+  "$schema": "https://developer.microsoft.com/json-schemas/fabric/item/report/definition/visualContainer/2.0.0/schema.json",
+  "name": "4db5cf53fdbeba58ebf2",
+  "position": {
+    "x": 20,
+    "y": 160,
+    "z": 1005,
+    "width": 400,
+    "height": 280,
+    "tabOrder": 1005
+  },
+  "visual": {
+    "visualType": "donutChart",
+    "query": {
+      "queryState": {
+        "Category": {
+          "projections": [
+            {
+              "field": {
+                "Column": {
+                  "Expression": {
+                    "SourceRef": {
+                      "Entity": "FactLubricacion"
+                    }
+                  },
+                  "Property": "Frecuencia Lub"
+                }
+              },
+              "queryRef": "FactLubricacion.Frecuencia Lub",
+              "nativeQueryRef": "Frecuencia Lub"
+            }
+          ]
+        },
+        "Y": {
+          "projections": [
+            {
+              "field": {
+                "Measure": {
+                  "Expression": {
+                    "SourceRef": {
+                      "Entity": "_Medidas"
+                    }
+                  },
+                  "Property": "Total Lubricaciones"
+                }
+              },
+              "queryRef": "_Medidas.Total Lubricaciones",
+              "nativeQueryRef": "Total Lubricaciones"
+            }
+          ]
+        }
+      }
+    }
+  }
+}

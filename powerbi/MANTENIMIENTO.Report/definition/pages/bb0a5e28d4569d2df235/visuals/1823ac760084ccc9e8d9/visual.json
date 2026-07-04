@@ -1,0 +1,135 @@
+{
+  "$schema": "https://developer.microsoft.com/json-schemas/fabric/item/report/definition/visualContainer/2.8.0/schema.json",
+  "name": "1823ac760084ccc9e8d9",
+  "position": {
+    "x": 844.26456141604308,
+    "y": 438.95904406380055,
+    "z": 12000,
+    "height": 269.22821369246435,
+    "width": 433.10625680961653,
+    "tabOrder": 12000
+  },
+  "visual": {
+    "visualType": "lineChart",
+    "query": {
+      "queryState": {
+        "Category": {
+          "projections": [
+            {
+              "field": {
+                "Column": {
+                  "Expression": {
+                    "SourceRef": {
+                      "Entity": "DimFecha"
+                    }
+                  },
+                  "Property": "Año-Mes"
+                }
+              },
+              "queryRef": "DimFecha.Año-Mes",
+              "nativeQueryRef": "Año-Mes",
+              "active": true
+            }
+          ]
+        },
+        "Y": {
+          "projections": [
+            {
+              "field": {
+                "Measure": {
+                  "Expression": {
+                    "SourceRef": {
+                      "Entity": "_Medidas"
+                    }
+                  },
+                  "Property": "Disponibilidad"
+                }
+              },
+              "queryRef": "_Medidas.Disponibilidad",
+              "nativeQueryRef": "Disponibilidad"
+            },
+            {
+              "field": {
+                "Measure": {
+                  "Expression": {
+                    "SourceRef": {
+                      "Entity": "_Medidas"
+                    }
+                  },
+                  "Property": "Cumplimiento Plan"
+                }
+              },
+              "queryRef": "_Medidas.Cumplimiento Plan",
+              "nativeQueryRef": "Cumplimiento Plan"
+            }
+          ]
+        }
+      },
+      "sortDefinition": {
+        "sort": [
+          {
+            "field": {
+              "Measure": {
+                "Expression": {
+                  "SourceRef": {
+                    "Entity": "_Medidas"
+                  }
+                },
+                "Property": "Disponibilidad"
+              }
+            },
+            "direction": "Descending"
+          }
+        ],
+        "isDefaultSort": true
+      }
+    },
+    "drillFilterOtherVisuals": true
+  },
+  "filterConfig": {
+    "filters": [
+      {
+        "name": "76791d346d7a687a532f",
+        "field": {
+          "Column": {
+            "Expression": {
+              "SourceRef": {
+                "Entity": "DimFecha"
+              }
+            },
+            "Property": "Año-Mes"
+          }
+        },
+        "type": "Categorical"
+      },
+      {
+        "name": "ce6a8166650a7668c699",
+        "field": {
+          "Measure": {
+            "Expression": {
+              "SourceRef": {
+                "Entity": "_Medidas"
+              }
+            },
+            "Property": "Disponibilidad"
+          }
+        },
+        "type": "Advanced"
+      },
+      {
+        "name": "fa36acd241549977b84a",
+        "field": {
+          "Measure": {
+            "Expression": {
+              "SourceRef": {
+                "Entity": "_Medidas"
+              }
+            },
+            "Property": "Cumplimiento Plan"
+          }
+        },
+        "type": "Advanced"
+      }
+    ]
+  }
+}

@@ -1,0 +1,59 @@
+table DimComponentes
+	lineageTag: 490a0d306d62d3cd
+
+	column id
+		dataType: int64
+		isHidden
+		isKey
+		lineageTag: 956c5d2391c7d22b
+		summarizeBy: none
+		sourceColumn: id
+
+		annotation SummarizationSetBy = Automatic
+
+	column Componente
+		dataType: string
+		lineageTag: 889143da4625f2c6
+		summarizeBy: none
+		sourceColumn: name
+
+		annotation SummarizationSetBy = Automatic
+
+	column Criticidad
+		dataType: string
+		lineageTag: d8a275f3c1024c2b
+		summarizeBy: none
+		sourceColumn: criticality
+
+		annotation SummarizationSetBy = Automatic
+
+	column system_id
+		dataType: int64
+		isHidden
+		lineageTag: 562a495cae2be368
+		summarizeBy: none
+		sourceColumn: system_id
+
+		annotation SummarizationSetBy = Automatic
+
+	column description
+		dataType: string
+		lineageTag: 11d7860f-c2b1-48b1-986c-91e825509a2b
+		summarizeBy: none
+		sourceColumn: description
+
+		annotation SummarizationSetBy = Automatic
+
+	partition DimComponentes = m
+		mode: import
+		source =
+				let
+				    Origen = Odbc.DataSource("dsn=CMMS_Supabase", [HierarchicalNavigation=true]),
+				    postgres_Database = Origen{[Name="postgres",Kind="Database"]}[Data],
+				    public_Schema = postgres_Database{[Name="public",Kind="Schema"]}[Data],
+				    components_Table = public_Schema{[Name="components",Kind="Table"]}[Data]
+				in
+				    components_Table
+
+	annotation PBI_ResultType = Table
+

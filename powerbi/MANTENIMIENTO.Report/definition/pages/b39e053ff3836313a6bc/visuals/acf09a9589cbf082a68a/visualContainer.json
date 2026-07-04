@@ -1,0 +1,93 @@
+{
+  "$schema": "https://developer.microsoft.com/json-schemas/fabric/item/report/definition/visualContainer/2.0.0/schema.json",
+  "name": "acf09a9589cbf082a68a",
+  "position": {
+    "x": 20,
+    "y": 460,
+    "z": 1008,
+    "width": 1240,
+    "height": 240,
+    "tabOrder": 1008
+  },
+  "visual": {
+    "visualType": "pivotTable",
+    "query": {
+      "queryState": {
+        "Rows": {
+          "projections": [
+            {
+              "field": {
+                "Column": {
+                  "Expression": {
+                    "SourceRef": {
+                      "Entity": "FactAvisos"
+                    }
+                  },
+                  "Property": "Código Aviso"
+                }
+              },
+              "queryRef": "FactAvisos.Código Aviso",
+              "nativeQueryRef": "Código Aviso"
+            },
+            {
+              "field": {
+                "Column": {
+                  "Expression": {
+                    "SourceRef": {
+                      "Entity": "FactAvisos"
+                    }
+                  },
+                  "Property": "Estado Aviso"
+                }
+              },
+              "queryRef": "FactAvisos.Estado Aviso",
+              "nativeQueryRef": "Estado Aviso"
+            },
+            {
+              "field": {
+                "Column": {
+                  "Expression": {
+                    "SourceRef": {
+                      "Entity": "FactAvisos"
+                    }
+                  },
+                  "Property": "Severidad Aviso"
+                }
+              },
+              "queryRef": "FactAvisos.Severidad Aviso",
+              "nativeQueryRef": "Severidad Aviso"
+            },
+            {
+              "field": {
+                "Column": {
+                  "Expression": {
+                    "SourceRef": {
+                      "Entity": "DimEquipos"
+                    }
+                  },
+                  "Property": "Equipo"
+                }
+              },
+              "queryRef": "DimEquipos.Equipo",
+              "nativeQueryRef": "Equipo"
+            },
+            {
+              "field": {
+                "Measure": {
+                  "Expression": {
+                    "SourceRef": {
+                      "Entity": "_Medidas"
+                    }
+                  },
+                  "Property": "Tiempo Respuesta Aviso"
+                }
+              },
+              "queryRef": "_Medidas.Tiempo Respuesta Aviso",
+              "nativeQueryRef": "Tiempo Respuesta Aviso"
+            }
+          ]
+        }
+      }
+    }
+  }
+}

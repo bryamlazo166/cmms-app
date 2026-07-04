@@ -1,0 +1,107 @@
+{
+  "$schema": "https://developer.microsoft.com/json-schemas/fabric/item/report/definition/visualContainer/2.8.0/schema.json",
+  "name": "31fedb6d2edf0f9de9ac",
+  "position": {
+    "x": 4.3895904406380053,
+    "y": 269.22821369246435,
+    "z": 10000,
+    "height": 438.95904406380055,
+    "width": 447.73822494507652,
+    "tabOrder": 1000
+  },
+  "visual": {
+    "visualType": "clusteredBarChart",
+    "query": {
+      "queryState": {
+        "Category": {
+          "projections": [
+            {
+              "field": {
+                "Column": {
+                  "Expression": {
+                    "SourceRef": {
+                      "Entity": "DimAreas"
+                    }
+                  },
+                  "Property": "Área"
+                }
+              },
+              "queryRef": "DimAreas.Área",
+              "nativeQueryRef": "Área",
+              "active": true
+            }
+          ]
+        },
+        "Y": {
+          "projections": [
+            {
+              "field": {
+                "Measure": {
+                  "Expression": {
+                    "SourceRef": {
+                      "Entity": "_Medidas"
+                    }
+                  },
+                  "Property": "Total OTs"
+                }
+              },
+              "queryRef": "_Medidas.Total OTs",
+              "nativeQueryRef": "Total OTs"
+            }
+          ]
+        }
+      },
+      "sortDefinition": {
+        "sort": [
+          {
+            "field": {
+              "Measure": {
+                "Expression": {
+                  "SourceRef": {
+                    "Entity": "_Medidas"
+                  }
+                },
+                "Property": "Total OTs"
+              }
+            },
+            "direction": "Descending"
+          }
+        ],
+        "isDefaultSort": true
+      }
+    },
+    "drillFilterOtherVisuals": true
+  },
+  "filterConfig": {
+    "filters": [
+      {
+        "name": "3483676dd2e6787d82b2",
+        "field": {
+          "Column": {
+            "Expression": {
+              "SourceRef": {
+                "Entity": "DimAreas"
+              }
+            },
+            "Property": "Área"
+          }
+        },
+        "type": "Categorical"
+      },
+      {
+        "name": "7555c16ad635a220adeb",
+        "field": {
+          "Measure": {
+            "Expression": {
+              "SourceRef": {
+                "Entity": "_Medidas"
+              }
+            },
+            "Property": "Total OTs"
+          }
+        },
+        "type": "Advanced"
+      }
+    ]
+  }
+}

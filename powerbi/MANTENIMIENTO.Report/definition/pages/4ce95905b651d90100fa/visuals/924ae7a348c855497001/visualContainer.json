@@ -1,0 +1,55 @@
+{
+  "$schema": "https://developer.microsoft.com/json-schemas/fabric/item/report/definition/visualContainer/2.0.0/schema.json",
+  "name": "924ae7a348c855497001",
+  "position": {
+    "x": 660,
+    "y": 160,
+    "z": 1005,
+    "width": 300,
+    "height": 280,
+    "tabOrder": 1005
+  },
+  "visual": {
+    "visualType": "donutChart",
+    "query": {
+      "queryState": {
+        "Category": {
+          "projections": [
+            {
+              "field": {
+                "Column": {
+                  "Expression": {
+                    "SourceRef": {
+                      "Entity": "FactOTs"
+                    }
+                  },
+                  "Property": "Tipo OT"
+                }
+              },
+              "queryRef": "FactOTs.Tipo OT",
+              "nativeQueryRef": "Tipo OT"
+            }
+          ]
+        },
+        "Y": {
+          "projections": [
+            {
+              "field": {
+                "Measure": {
+                  "Expression": {
+                    "SourceRef": {
+                      "Entity": "_Medidas"
+                    }
+                  },
+                  "Property": "OTs Correctivas"
+                }
+              },
+              "queryRef": "_Medidas.OTs Correctivas",
+              "nativeQueryRef": "OTs Correctivas"
+            }
+          ]
+        }
+      }
+    }
+  }
+}

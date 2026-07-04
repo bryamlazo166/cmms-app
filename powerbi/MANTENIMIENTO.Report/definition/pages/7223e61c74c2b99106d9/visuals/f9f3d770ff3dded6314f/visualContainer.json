@@ -1,0 +1,37 @@
+{
+  "$schema": "https://developer.microsoft.com/json-schemas/fabric/item/report/definition/visualContainer/2.0.0/schema.json",
+  "name": "f9f3d770ff3dded6314f",
+  "position": {
+    "x": 830,
+    "y": 20,
+    "z": 1004,
+    "width": 200,
+    "height": 120,
+    "tabOrder": 1004
+  },
+  "visual": {
+    "visualType": "card",
+    "query": {
+      "queryState": {
+        "Values": {
+          "projections": [
+            {
+              "field": {
+                "Measure": {
+                  "Expression": {
+                    "SourceRef": {
+                      "Entity": "_Medidas"
+                    }
+                  },
+                  "Property": "Tasa Cierre Técnico"
+                }
+              },
+              "queryRef": "_Medidas.Tasa Cierre Técnico",
+              "nativeQueryRef": "Tasa Cierre Técnico"
+            }
+          ]
+        }
+      }
+    }
+  }
+}

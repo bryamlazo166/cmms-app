@@ -1,0 +1,50 @@
+table DimAreas
+	lineageTag: 2a0aceadf3791b1d
+
+	column id
+		dataType: int64
+		isHidden
+		isKey
+		lineageTag: 9aab865edf7579f2
+		summarizeBy: none
+		sourceColumn: id
+
+		annotation SummarizationSetBy = Automatic
+
+	column Área
+		dataType: string
+		lineageTag: 2ab0e0d9eaf07ac7
+		summarizeBy: none
+		sourceColumn: name
+
+		annotation SummarizationSetBy = Automatic
+
+	column Descripción
+		dataType: string
+		lineageTag: 69fcc3202a3fc0c5
+		summarizeBy: none
+		sourceColumn: description
+
+		annotation SummarizationSetBy = Automatic
+
+	column include_in_kpi
+		dataType: string
+		lineageTag: 1826253e-6e32-441b-978e-a00b80e6a3b9
+		summarizeBy: none
+		sourceColumn: include_in_kpi
+
+		annotation SummarizationSetBy = Automatic
+
+	partition DimAreas = m
+		mode: import
+		source =
+				let
+				    Origen = Odbc.DataSource("dsn=CMMS_Supabase", [HierarchicalNavigation=true]),
+				    postgres_Database = Origen{[Name="postgres",Kind="Database"]}[Data],
+				    public_Schema = postgres_Database{[Name="public",Kind="Schema"]}[Data],
+				    areas_Table = public_Schema{[Name="areas",Kind="Table"]}[Data]
+				in
+				    areas_Table
+
+	annotation PBI_ResultType = Table
+

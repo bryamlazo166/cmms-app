@@ -1,0 +1,88 @@
+table ot_personnel
+	lineageTag: cd2cf571-06be-4ed7-8751-1c5b8dfce0ab
+
+	column id
+		dataType: int64
+		formatString: 0
+		lineageTag: ae432ab5-4f8b-45cc-8471-9cac18d44e20
+		summarizeBy: sum
+		sourceColumn: id
+
+		annotation SummarizationSetBy = Automatic
+
+	column work_order_id
+		dataType: int64
+		formatString: 0
+		lineageTag: c1e197ea-e9f7-447a-bb44-262fb22ae12c
+		summarizeBy: none
+		sourceColumn: work_order_id
+
+		annotation SummarizationSetBy = Automatic
+
+	column technician_id
+		dataType: int64
+		formatString: 0
+		lineageTag: f7743805-f7ec-4d44-b203-10c2018804af
+		summarizeBy: none
+		sourceColumn: technician_id
+
+		annotation SummarizationSetBy = Automatic
+
+	column specialty
+		dataType: string
+		lineageTag: d4037c50-660c-42ac-a59e-78ce90b9a7df
+		summarizeBy: none
+		sourceColumn: specialty
+
+		annotation SummarizationSetBy = Automatic
+
+	column hours_assigned
+		dataType: double
+		lineageTag: 46346729-297a-4912-82cb-d9e44bd4a697
+		summarizeBy: sum
+		sourceColumn: hours_assigned
+
+		annotation SummarizationSetBy = Automatic
+
+		annotation PBI_FormatHint = {"isGeneralNumber":true}
+
+	column hours_worked
+		dataType: double
+		lineageTag: a445f38a-7bfc-4324-8938-201433e13cbc
+		summarizeBy: sum
+		sourceColumn: hours_worked
+
+		annotation SummarizationSetBy = Automatic
+
+		annotation PBI_FormatHint = {"isGeneralNumber":true}
+
+	column attended
+		dataType: string
+		lineageTag: 0bca041c-39d4-44f0-8dc1-3d45af65e132
+		summarizeBy: none
+		sourceColumn: attended
+
+		annotation SummarizationSetBy = Automatic
+
+	column replacement_for_id
+		dataType: int64
+		formatString: 0
+		lineageTag: b0158db1-7d1e-43a4-8601-e9ac3629014e
+		summarizeBy: sum
+		sourceColumn: replacement_for_id
+
+		annotation SummarizationSetBy = Automatic
+
+	partition ot_personnel = m
+		mode: import
+		source =
+				let
+				    Origen = Odbc.DataSource("dsn=CMMS_Supabase", [HierarchicalNavigation=true]),
+				    postgres_Database = Origen{[Name="postgres",Kind="Database"]}[Data],
+				    public_Schema = postgres_Database{[Name="public",Kind="Schema"]}[Data],
+				    ot_personnel_Table = public_Schema{[Name="ot_personnel",Kind="Table"]}[Data]
+				in
+				    ot_personnel_Table
+
+	annotation PBI_ResultType = Table
+

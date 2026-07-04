@@ -1,0 +1,156 @@
+table FactInspecciones
+	lineageTag: 368f530c9e8e31f6
+
+	column id
+		dataType: int64
+		isHidden
+		isKey
+		lineageTag: 116a58db0c247a1b
+		summarizeBy: none
+		sourceColumn: id
+
+		annotation SummarizationSetBy = Automatic
+
+	column equipment_id
+		dataType: int64
+		isHidden
+		lineageTag: f166d456197b6f19
+		summarizeBy: none
+		sourceColumn: equipment_id
+
+		annotation SummarizationSetBy = Automatic
+
+	column 'Fecha Inspección'
+		dataType: dateTime
+		formatString: Short Date
+		lineageTag: bac84b8e34c65e48
+		summarizeBy: none
+		sourceColumn: inspection_date
+
+		changedProperty = DataType
+
+		annotation SummarizationSetBy = Automatic
+
+		annotation UnderlyingDateTimeDataType = Date
+
+	column 'Próxima Inspección'
+		dataType: dateTime
+		formatString: Short Date
+		lineageTag: cb95c9af45d75f59
+		summarizeBy: none
+		sourceColumn: next_due_date
+
+		changedProperty = DataType
+
+		annotation SummarizationSetBy = Automatic
+
+		annotation UnderlyingDateTimeDataType = Date
+
+	column 'Estado Inspección'
+		dataType: string
+		lineageTag: 6308f741145882f5
+		summarizeBy: none
+		sourceColumn: status
+
+		annotation SummarizationSetBy = Automatic
+
+	column Inspector
+		dataType: string
+		lineageTag: 95e01ad5ed0799ea
+		summarizeBy: none
+		sourceColumn: inspector_name
+
+		annotation SummarizationSetBy = Automatic
+
+	column Semáforo
+		dataType: string
+		lineageTag: 36be07d3f1968735
+		summarizeBy: none
+		sourceColumn: semaphore_status
+
+		annotation SummarizationSetBy = Automatic
+
+	column 'Puntos Totales'
+		dataType: int64
+		formatString: #,0
+		lineageTag: 47cf1bdf2a795846
+		summarizeBy: sum
+		sourceColumn: total_points
+
+		annotation SummarizationSetBy = Automatic
+
+	column 'Puntos Críticos'
+		dataType: int64
+		formatString: #,0
+		lineageTag: 58d02cea3b8a6957
+		summarizeBy: sum
+		sourceColumn: critical_points
+
+		annotation SummarizationSetBy = Automatic
+
+	column 'Puntos Alerta'
+		dataType: int64
+		formatString: #,0
+		lineageTag: 69e13dfb4c9b7a68
+		summarizeBy: sum
+		sourceColumn: alert_points
+
+		annotation SummarizationSetBy = Automatic
+
+	column 'Observaciones Insp'
+		dataType: string
+		lineageTag: f63b43325b4a5ed1
+		summarizeBy: none
+		sourceColumn: observations
+
+		annotation SummarizationSetBy = Automatic
+
+	column frequency_days
+		dataType: int64
+		formatString: 0
+		lineageTag: d761deba-462f-4334-960b-8c3e7a0798a5
+		summarizeBy: sum
+		sourceColumn: frequency_days
+
+		annotation SummarizationSetBy = Automatic
+
+	column created_by
+		dataType: string
+		lineageTag: b7b99688-a20f-4723-acf2-6cc7c0f07244
+		summarizeBy: none
+		sourceColumn: created_by
+
+		annotation SummarizationSetBy = Automatic
+
+	column created_at
+		dataType: dateTime
+		formatString: General Date
+		lineageTag: c311d937-3e0d-4dcf-a2d3-5ea77578ccc7
+		summarizeBy: none
+		sourceColumn: created_at
+
+		annotation SummarizationSetBy = Automatic
+
+	column pdf_url
+		dataType: string
+		lineageTag: fa9f79ed-24e2-4ba4-a26b-58a28cec95ce
+		summarizeBy: none
+		sourceColumn: pdf_url
+
+		annotation SummarizationSetBy = Automatic
+
+	partition FactInspecciones = m
+		mode: import
+		source =
+				let
+				    Origen = Odbc.DataSource("dsn=CMMS_Supabase", [HierarchicalNavigation=true]),
+				    postgres_Database = Origen{[Name="postgres",Kind="Database"]}[Data],
+				    public_Schema = postgres_Database{[Name="public",Kind="Schema"]}[Data],
+				    thickness_inspections_Table = public_Schema{[Name="thickness_inspections",Kind="Table"]}[Data],
+				    #"Valor reemplazado" = Table.ReplaceValue(thickness_inspections_Table,"T"," ",Replacer.ReplaceText,{"inspection_date"}),
+				    #"Valor reemplazado1" = Table.ReplaceValue(#"Valor reemplazado","T"," ",Replacer.ReplaceText,{"next_due_date"})
+				in
+				    #"Valor reemplazado1"
+
+	annotation PBI_ResultType = Table
+

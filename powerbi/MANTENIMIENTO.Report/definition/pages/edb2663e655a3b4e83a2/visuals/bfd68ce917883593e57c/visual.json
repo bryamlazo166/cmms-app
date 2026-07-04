@@ -1,0 +1,84 @@
+{
+  "$schema": "https://developer.microsoft.com/json-schemas/fabric/item/report/definition/visualContainer/2.8.0/schema.json",
+  "name": "bfd68ce917883593e57c",
+  "position": {
+    "x": 0,
+    "y": 115.59254827013415,
+    "z": 1,
+    "height": 109.73976101595014,
+    "width": 534.06683694429069
+  },
+  "visual": {
+    "visualType": "slicer",
+    "query": {
+      "queryState": {
+        "Values": {
+          "projections": [
+            {
+              "field": {
+                "Column": {
+                  "Expression": {
+                    "SourceRef": {
+                      "Entity": "FactOTs"
+                    }
+                  },
+                  "Property": "Estado OT"
+                }
+              },
+              "queryRef": "FactOTs.Estado OT",
+              "nativeQueryRef": "Estado OT",
+              "active": true
+            }
+          ]
+        }
+      }
+    },
+    "objects": {
+      "data": [
+        {
+          "properties": {
+            "mode": {
+              "expr": {
+                "Literal": {
+                  "Value": "'Basic'"
+                }
+              }
+            }
+          }
+        }
+      ],
+      "general": [
+        {
+          "properties": {
+            "orientation": {
+              "expr": {
+                "Literal": {
+                  "Value": "1D"
+                }
+              }
+            }
+          }
+        }
+      ]
+    },
+    "drillFilterOtherVisuals": true
+  },
+  "filterConfig": {
+    "filters": [
+      {
+        "name": "3146abd4932f711a8d6c",
+        "field": {
+          "Column": {
+            "Expression": {
+              "SourceRef": {
+                "Entity": "FactOTs"
+              }
+            },
+            "Property": "Estado OT"
+          }
+        },
+        "type": "Categorical"
+      }
+    ]
+  }
+}

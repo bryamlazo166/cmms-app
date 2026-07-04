@@ -1,0 +1,43 @@
+table DimSistemas
+	lineageTag: 9a3651f854caf031
+
+	column id
+		dataType: int64
+		isHidden
+		isKey
+		lineageTag: 4d2e6bd6adfa9450
+		summarizeBy: none
+		sourceColumn: id
+
+		annotation SummarizationSetBy = Automatic
+
+	column Sistema
+		dataType: string
+		lineageTag: 6507c906be4be3d9
+		summarizeBy: none
+		sourceColumn: name
+
+		annotation SummarizationSetBy = Automatic
+
+	column equipment_id
+		dataType: int64
+		isHidden
+		lineageTag: c1b66454f4c7a297
+		summarizeBy: none
+		sourceColumn: equipment_id
+
+		annotation SummarizationSetBy = Automatic
+
+	partition DimSistemas = m
+		mode: import
+		source =
+				let
+				    Origen = Odbc.DataSource("dsn=CMMS_Supabase", [HierarchicalNavigation=true]),
+				    postgres_Database = Origen{[Name="postgres",Kind="Database"]}[Data],
+				    public_Schema = postgres_Database{[Name="public",Kind="Schema"]}[Data],
+				    systems_Table = public_Schema{[Name="systems",Kind="Table"]}[Data]
+				in
+				    systems_Table
+
+	annotation PBI_ResultType = Table
+

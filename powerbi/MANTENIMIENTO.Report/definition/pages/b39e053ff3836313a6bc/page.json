@@ -1,0 +1,8 @@
+{
+  "$schema": "https://developer.microsoft.com/json-schemas/fabric/item/report/definition/page/2.1.0/schema.json",
+  "name": "b39e053ff3836313a6bc",
+  "displayName": "07 Avisos",
+  "displayOption": "FitToPage",
+  "height": 720,
+  "width": 1280
+}

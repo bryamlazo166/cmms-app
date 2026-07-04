@@ -1,0 +1,84 @@
+{
+  "$schema": "https://developer.microsoft.com/json-schemas/fabric/item/report/definition/visualContainer/2.8.0/schema.json",
+  "name": "399c333169633089a7d2",
+  "position": {
+    "x": 534.06683694429069,
+    "y": 0,
+    "z": 2,
+    "height": 115.59254827013415,
+    "width": 746.23037490846093
+  },
+  "visual": {
+    "visualType": "slicer",
+    "query": {
+      "queryState": {
+        "Values": {
+          "projections": [
+            {
+              "field": {
+                "Column": {
+                  "Expression": {
+                    "SourceRef": {
+                      "Entity": "DimAreas"
+                    }
+                  },
+                  "Property": "Área"
+                }
+              },
+              "queryRef": "DimAreas.Área",
+              "nativeQueryRef": "Área",
+              "active": true
+            }
+          ]
+        }
+      }
+    },
+    "objects": {
+      "data": [
+        {
+          "properties": {
+            "mode": {
+              "expr": {
+                "Literal": {
+                  "Value": "'Basic'"
+                }
+              }
+            }
+          }
+        }
+      ],
+      "general": [
+        {
+          "properties": {
+            "orientation": {
+              "expr": {
+                "Literal": {
+                  "Value": "1D"
+                }
+              }
+            }
+          }
+        }
+      ]
+    },
+    "drillFilterOtherVisuals": true
+  },
+  "filterConfig": {
+    "filters": [
+      {
+        "name": "1dd9b5c4569eb86edfef",
+        "field": {
+          "Column": {
+            "Expression": {
+              "SourceRef": {
+                "Entity": "DimAreas"
+              }
+            },
+            "Property": "Área"
+          }
+        },
+        "type": "Categorical"
+      }
+    ]
+  }
+}

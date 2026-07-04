@@ -1,0 +1,107 @@
+{
+  "$schema": "https://developer.microsoft.com/json-schemas/fabric/item/report/definition/visualContainer/2.0.0/schema.json",
+  "name": "dc903cd2e9d70d8793da",
+  "position": {
+    "x": 20,
+    "y": 480,
+    "z": 1012,
+    "width": 1240,
+    "height": 220,
+    "tabOrder": 1012
+  },
+  "visual": {
+    "visualType": "pivotTable",
+    "query": {
+      "queryState": {
+        "Rows": {
+          "projections": [
+            {
+              "field": {
+                "Column": {
+                  "Expression": {
+                    "SourceRef": {
+                      "Entity": "FactOTs"
+                    }
+                  },
+                  "Property": "Código OT"
+                }
+              },
+              "queryRef": "FactOTs.Código OT",
+              "nativeQueryRef": "Código OT"
+            },
+            {
+              "field": {
+                "Column": {
+                  "Expression": {
+                    "SourceRef": {
+                      "Entity": "FactOTs"
+                    }
+                  },
+                  "Property": "Tipo OT"
+                }
+              },
+              "queryRef": "FactOTs.Tipo OT",
+              "nativeQueryRef": "Tipo OT"
+            },
+            {
+              "field": {
+                "Column": {
+                  "Expression": {
+                    "SourceRef": {
+                      "Entity": "FactOTs"
+                    }
+                  },
+                  "Property": "Estado OT"
+                }
+              },
+              "queryRef": "FactOTs.Estado OT",
+              "nativeQueryRef": "Estado OT"
+            },
+            {
+              "field": {
+                "Column": {
+                  "Expression": {
+                    "SourceRef": {
+                      "Entity": "DimEquipos"
+                    }
+                  },
+                  "Property": "Equipo"
+                }
+              },
+              "queryRef": "DimEquipos.Equipo",
+              "nativeQueryRef": "Equipo"
+            },
+            {
+              "field": {
+                "Measure": {
+                  "Expression": {
+                    "SourceRef": {
+                      "Entity": "_Medidas"
+                    }
+                  },
+                  "Property": "Duración Real"
+                }
+              },
+              "queryRef": "_Medidas.Duración Real",
+              "nativeQueryRef": "Duración Real"
+            },
+            {
+              "field": {
+                "Measure": {
+                  "Expression": {
+                    "SourceRef": {
+                      "Entity": "_Medidas"
+                    }
+                  },
+                  "Property": "Horas Parada Total"
+                }
+              },
+              "queryRef": "_Medidas.Horas Parada Total",
+              "nativeQueryRef": "Horas Parada Total"
+            }
+          ]
+        }
+      }
+    }
+  }
+}

@@ -1,0 +1,8 @@
+{
+  "$schema": "https://developer.microsoft.com/json-schemas/fabric/item/report/definition/page/2.1.0/schema.json",
+  "name": "5071711f1f5c5870d7cd",
+  "displayName": "06 Preventivo",
+  "displayOption": "FitToPage",
+  "height": 720,
+  "width": 1280
+}

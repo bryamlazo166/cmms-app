@@ -1,0 +1,37 @@
+{
+  "$schema": "https://developer.microsoft.com/json-schemas/fabric/item/report/definition/visualContainer/2.0.0/schema.json",
+  "name": "d54b8c19335381be3d68",
+  "position": {
+    "x": 20,
+    "y": 90,
+    "z": 1004,
+    "width": 200,
+    "height": 120,
+    "tabOrder": 1004
+  },
+  "visual": {
+    "visualType": "card",
+    "query": {
+      "queryState": {
+        "Values": {
+          "projections": [
+            {
+              "field": {
+                "Measure": {
+                  "Expression": {
+                    "SourceRef": {
+                      "Entity": "_Medidas"
+                    }
+                  },
+                  "Property": "Total OTs"
+                }
+              },
+              "queryRef": "_Medidas.Total OTs",
+              "nativeQueryRef": "Total OTs"
+            }
+          ]
+        }
+      }
+    }
+  }
+}

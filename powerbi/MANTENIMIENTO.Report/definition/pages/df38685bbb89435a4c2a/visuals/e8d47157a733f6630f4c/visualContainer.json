@@ -1,0 +1,37 @@
+{
+  "$schema": "https://developer.microsoft.com/json-schemas/fabric/item/report/definition/visualContainer/2.0.0/schema.json",
+  "name": "e8d47157a733f6630f4c",
+  "position": {
+    "x": 20,
+    "y": 20,
+    "z": 1001,
+    "width": 200,
+    "height": 120,
+    "tabOrder": 1001
+  },
+  "visual": {
+    "visualType": "card",
+    "query": {
+      "queryState": {
+        "Values": {
+          "projections": [
+            {
+              "field": {
+                "Measure": {
+                  "Expression": {
+                    "SourceRef": {
+                      "Entity": "_Medidas"
+                    }
+                  },
+                  "Property": "Confiabilidad"
+                }
+              },
+              "queryRef": "_Medidas.Confiabilidad",
+              "nativeQueryRef": "Confiabilidad"
+            }
+          ]
+        }
+      }
+    }
+  }
+}

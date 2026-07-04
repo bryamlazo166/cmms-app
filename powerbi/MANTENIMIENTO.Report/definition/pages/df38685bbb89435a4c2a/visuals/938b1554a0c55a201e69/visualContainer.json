@@ -1,0 +1,37 @@
+{
+  "$schema": "https://developer.microsoft.com/json-schemas/fabric/item/report/definition/visualContainer/2.0.0/schema.json",
+  "name": "938b1554a0c55a201e69",
+  "position": {
+    "x": 560,
+    "y": 20,
+    "z": 1003,
+    "width": 200,
+    "height": 120,
+    "tabOrder": 1003
+  },
+  "visual": {
+    "visualType": "card",
+    "query": {
+      "queryState": {
+        "Values": {
+          "projections": [
+            {
+              "field": {
+                "Measure": {
+                  "Expression": {
+                    "SourceRef": {
+                      "Entity": "_Medidas"
+                    }
+                  },
+                  "Property": "Tasa de Fallas"
+                }
+              },
+              "queryRef": "_Medidas.Tasa de Fallas",
+              "nativeQueryRef": "Tasa de Fallas"
+            }
+          ]
+        }
+      }
+    }
+  }
+}

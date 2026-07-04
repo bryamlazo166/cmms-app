@@ -1,0 +1,100 @@
+table ot_materials
+	lineageTag: 6132514f-8800-4076-9573-67175132871c
+
+	column id
+		dataType: int64
+		formatString: 0
+		lineageTag: 741cb672-fbd7-464b-993c-8192ab4774d9
+		summarizeBy: sum
+		sourceColumn: id
+
+		annotation SummarizationSetBy = Automatic
+
+	column work_order_id
+		dataType: int64
+		formatString: 0
+		lineageTag: 94bc2549-8a08-4138-8625-536477b8fa18
+		summarizeBy: none
+		sourceColumn: work_order_id
+
+		annotation SummarizationSetBy = Automatic
+
+	column item_type
+		dataType: string
+		lineageTag: e859bc72-d195-46ff-87f9-f58895b4b8b3
+		summarizeBy: none
+		sourceColumn: item_type
+
+		annotation SummarizationSetBy = Automatic
+
+	column item_id
+		dataType: int64
+		formatString: 0
+		lineageTag: 595a9688-b18b-42b5-81ed-08fe62685cd4
+		summarizeBy: sum
+		sourceColumn: item_id
+
+		annotation SummarizationSetBy = Automatic
+
+	column quantity
+		dataType: int64
+		formatString: 0
+		lineageTag: 8c978a53-0cb5-439d-b18f-ad5847c0184a
+		summarizeBy: sum
+		sourceColumn: quantity
+
+		annotation SummarizationSetBy = Automatic
+
+	column is_returned
+		dataType: string
+		lineageTag: a52c83a6-e54c-409f-9664-8f729c20e295
+		summarizeBy: none
+		sourceColumn: is_returned
+
+		annotation SummarizationSetBy = Automatic
+
+	column subtype
+		dataType: string
+		lineageTag: d984a961-2b43-4368-8060-5c5dbdd3b9d7
+		summarizeBy: none
+		sourceColumn: subtype
+
+		annotation SummarizationSetBy = Automatic
+
+	column item_name_free
+		dataType: string
+		lineageTag: abfb4064-760e-47e0-8ef9-a5eeda8b0d6b
+		summarizeBy: none
+		sourceColumn: item_name_free
+
+		annotation SummarizationSetBy = Automatic
+
+	column unit
+		dataType: string
+		lineageTag: 37ef9e9f-086f-464c-a68c-a5b89a7db537
+		summarizeBy: none
+		sourceColumn: unit
+
+		annotation SummarizationSetBy = Automatic
+
+	column is_installed
+		dataType: string
+		lineageTag: 9bce1a4d-01dc-43c8-a7bc-d418aff78a62
+		summarizeBy: none
+		sourceColumn: is_installed
+
+		annotation SummarizationSetBy = Automatic
+
+	partition ot_materials = m
+		mode: import
+		source =
+				let
+				    Origen = Odbc.DataSource("dsn=CMMS_Supabase", [HierarchicalNavigation=true]),
+				    postgres_Database = Origen{[Name="postgres",Kind="Database"]}[Data],
+				    public_Schema = postgres_Database{[Name="public",Kind="Schema"]}[Data],
+				    ot_materials_Table = public_Schema{[Name="ot_materials",Kind="Table"]}[Data]
+				in
+				    ot_materials_Table
+
+	annotation PBI_ResultType = Table
+

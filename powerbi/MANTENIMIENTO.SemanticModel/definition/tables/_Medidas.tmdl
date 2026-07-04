@@ -1,0 +1,441 @@
+table _Medidas
+	lineageTag: aa2ca1b12e624257
+
+	measure 'Tarifa Hora Hombre' = 50
+		formatString: $#,0.00
+		displayFolder: Parametros
+		lineageTag: p001-tarifa-hh
+
+	measure 'Precio Promedio Material' = 100
+		formatString: $#,0.00
+		displayFolder: Parametros
+		lineageTag: p002-precio-mat
+
+	measure 'Horas Calendario' = 8760
+		formatString: #,0
+		displayFolder: Parametros
+		lineageTag: p003-horas-cal
+
+	measure 'Total OTs' = COUNTROWS(FactOTs)
+		formatString: #,0
+		displayFolder: KPIs Principales
+		lineageTag: 7c85b9476a0b4e5c
+
+	measure 'OTs Abiertas' = CALCULATE(COUNTROWS(FactOTs), FactOTs[Estado OT] <> "Cerrada")
+		formatString: #,0
+		displayFolder: KPIs Principales
+		lineageTag: c2b3b0aa7414478f
+
+	measure 'OTs Cerradas' = CALCULATE(COUNTROWS(FactOTs), FactOTs[Estado OT] = "Cerrada")
+		formatString: #,0
+		displayFolder: KPIs Principales
+		lineageTag: 2598bb431ef24bab
+
+	measure 'Horas Parada Total' = SUM(FactOTs[Horas de Parada])
+		formatString: #,0.0 \h
+		displayFolder: KPIs Principales
+		lineageTag: eb4b868e19504a97
+
+	measure MTTR =
+			VAR _Cerradas = CALCULATE(COUNTROWS(FactOTs), FactOTs[Estado OT] = "Cerrada")
+			VAR _DuracionCerradas = CALCULATE(SUM(FactOTs[Duración Real]), FactOTs[Estado OT] = "Cerrada")
+			RETURN DIVIDE(_DuracionCerradas, _Cerradas, BLANK())
+		formatString: #,0.00 \h
+		displayFolder: KPIs Principales
+		lineageTag: 92ef5aac626a4c78
+
+	measure MTBF =
+			VAR _Fallas = CALCULATE(COUNTROWS(FactOTs), FactOTs[Tipo OT] = "Correctivo")
+			VAR _Paradas = CALCULATE(SUM(FactOTs[Horas de Parada]), FactOTs[Tipo OT] = "Correctivo")
+			RETURN DIVIDE([Horas Calendario] - _Paradas, _Fallas, BLANK())
+		formatString: #,0.00 \h
+		displayFolder: KPIs Principales
+		lineageTag: 4bb6d31c7f144baa
+
+	measure Disponibilidad =
+			VAR _MTBF = [MTBF]
+			VAR _MTTR = [MTTR]
+			RETURN DIVIDE(_MTBF, _MTBF + _MTTR, 0)
+		formatString: 0.00%;-0.00%;0.00%
+		displayFolder: KPIs Principales
+		lineageTag: 7ae66552b31c4c98
+
+	measure Confiabilidad =
+			VAR _MTBF = [MTBF]
+			VAR _t = 720
+			RETURN IF(_MTBF > 0, EXP(-DIVIDE(_t, _MTBF, 0)), BLANK())
+		formatString: 0.00%;-0.00%;0.00%
+		displayFolder: KPIs Principales
+		lineageTag: 1be2dca2b47544a7
+
+	measure 'Horas MO Total' = SUM(ot_personnel[hours_worked])
+		formatString: #,0.0 \h
+		displayFolder: Costos
+		lineageTag: m-hh-mo
+
+	measure 'Cantidad Materiales' = SUM(ot_materials[quantity])
+		formatString: #,0
+		displayFolder: Costos
+		lineageTag: m-qty-mat
+
+	measure 'Costo Mano de Obra' = [Horas MO Total] * [Tarifa Hora Hombre]
+		formatString: $#,0.00
+		displayFolder: Costos
+		lineageTag: 52b36b15f669475c
+
+	measure 'Costo Materiales' = [Cantidad Materiales] * [Precio Promedio Material]
+		formatString: $#,0.00
+		displayFolder: Costos
+		lineageTag: c85cb373ab1f4562
+
+	measure 'Costo Total Mantenimiento' = [Costo Mano de Obra] + [Costo Materiales]
+		formatString: $#,0.00
+		displayFolder: Costos
+		lineageTag: 8d12fb4b904c438d
+
+	measure 'Costo Promedio por OT' = DIVIDE([Costo Total Mantenimiento], [Total OTs], 0)
+		formatString: $#,0.00
+		displayFolder: Costos
+		lineageTag: m-costo-prom-ot
+
+	measure '% Costo Correctivo' =
+			VAR _Correctivo = CALCULATE([Costo Total Mantenimiento], FactOTs[Tipo OT] = "Correctivo")
+			RETURN DIVIDE(_Correctivo, [Costo Total Mantenimiento], 0)
+		formatString: 0.0%
+		displayFolder: Costos
+		lineageTag: m-pct-cost-corr
+
+	measure 'OTs Correctivas' = CALCULATE(COUNTROWS(FactOTs), FactOTs[Tipo OT] = "Correctivo")
+		formatString: #,0
+		displayFolder: Ordenes de Trabajo
+		lineageTag: 00d42a3371e64e88
+
+	measure 'OTs Preventivas' = CALCULATE(COUNTROWS(FactOTs), FactOTs[Tipo OT] = "Preventivo")
+		formatString: #,0
+		displayFolder: Ordenes de Trabajo
+		lineageTag: 60f6323cdf4247e1
+
+	measure 'OTs Predictivas' = CALCULATE(COUNTROWS(FactOTs), FactOTs[Tipo OT] = "Predictivo")
+		formatString: #,0
+		displayFolder: Ordenes de Trabajo
+		lineageTag: 633b736fa5874cfa
+
+	measure 'Ratio Preventivo vs Correctivo' = DIVIDE([OTs Preventivas], [OTs Correctivas], BLANK())
+		formatString: 0.00
+		displayFolder: Ordenes de Trabajo
+		lineageTag: 876bd0b9928246f0
+
+	measure '% OTs con Parada' = DIVIDE(CALCULATE(COUNTROWS(FactOTs), FactOTs[Parada Producción] = "true"), COUNTROWS(FactOTs), 0)
+		formatString: 0.0%
+		displayFolder: Ordenes de Trabajo
+		lineageTag: bf6cd9e39f044290
+
+	measure 'Cumplimiento Plan' =
+			VAR _Plan = CALCULATE(COUNTROWS(FactOTs), FactOTs[Tipo OT] <> "Correctivo")
+			VAR _PlanCerrado = CALCULATE(COUNTROWS(FactOTs), FactOTs[Tipo OT] <> "Correctivo", FactOTs[Estado OT] = "Cerrada")
+			RETURN DIVIDE(_PlanCerrado, _Plan, 0)
+		formatString: 0.0%
+		displayFolder: Ordenes de Trabajo
+		lineageTag: e2f2072770354bc7
+
+	measure 'Duración Promedio OT' = AVERAGE(FactOTs[Duración Real])
+		formatString: #,0.00 \h
+		displayFolder: Ordenes de Trabajo
+		lineageTag: 57a01f329a974647
+
+	measure 'Backlog OTs' = CALCULATE(COUNTROWS(FactOTs), FactOTs[Estado OT] IN {"Pendiente", "En Proceso", "Programada"})
+		formatString: #,0
+		displayFolder: Ordenes de Trabajo
+		lineageTag: 0d5bbb499bf740fd
+
+	measure 'Total Fallas' = CALCULATE(COUNTROWS(FactOTs), FactOTs[Tipo OT] = "Correctivo")
+		formatString: #,0
+		displayFolder: Confiabilidad
+		lineageTag: da17054a438242e7
+
+	measure 'Tasa de Fallas' = DIVIDE(1, [MTBF], 0)
+		formatString: 0.0000
+		displayFolder: Confiabilidad
+		lineageTag: c255918989ae4e13
+
+	measure 'MTBF por Equipo' =
+			VAR _Fallas = CALCULATE(COUNTROWS(FactOTs), FactOTs[Tipo OT] = "Correctivo")
+			VAR _Paradas = CALCULATE(SUM(FactOTs[Horas de Parada]), FactOTs[Tipo OT] = "Correctivo")
+			RETURN DIVIDE([Horas Calendario] - _Paradas, _Fallas, BLANK())
+		formatString: #,0.00 \h
+		displayFolder: Confiabilidad
+		lineageTag: 046bb9f588944fa8
+
+	measure 'MTTR por Equipo' =
+			VAR _Cerradas = CALCULATE(COUNTROWS(FactOTs), FactOTs[Estado OT] = "Cerrada")
+			VAR _DuracionCerradas = CALCULATE(SUM(FactOTs[Duración Real]), FactOTs[Estado OT] = "Cerrada")
+			RETURN DIVIDE(_DuracionCerradas, _Cerradas, BLANK())
+		formatString: #,0.00 \h
+		displayFolder: Confiabilidad
+		lineageTag: 2ada7cc3cfe1499a
+
+	measure 'Disponibilidad por Equipo' =
+			VAR _MTBFe = [MTBF por Equipo]
+			VAR _MTTRe = [MTTR por Equipo]
+			RETURN DIVIDE(_MTBFe, _MTBFe + _MTTRe, 0)
+		formatString: 0.00%
+		displayFolder: Confiabilidad
+		lineageTag: 2fa20494aa71498a
+
+	measure 'Fallas por Modo' = CALCULATE(COUNTROWS(FactOTs), NOT(ISBLANK(FactOTs[Modo Falla])), FactOTs[Tipo OT] = "Correctivo")
+		formatString: #,0
+		displayFolder: Confiabilidad
+		lineageTag: 246cd067dd724ba4
+
+	measure 'Ranking Equipo Fallas' = RANKX(ALL(DimEquipos[Equipo]), [Total Fallas], , DESC, Dense)
+		formatString: #,0
+		displayFolder: Confiabilidad
+		lineageTag: 9cb2329271484e97
+
+	measure 'Pareto Fallas Acumulado' =
+			VAR _ActualEq = SELECTEDVALUE(DimEquipos[Equipo])
+			VAR _All = CALCULATE([Total Fallas], ALL(DimEquipos))
+			VAR _RankActual = [Ranking Equipo Fallas]
+			VAR _AcumActual =
+				SUMX(
+					FILTER(ALL(DimEquipos[Equipo]), [Ranking Equipo Fallas] <= _RankActual),
+					[Total Fallas]
+				)
+			RETURN DIVIDE(_AcumActual, _All, 0)
+		formatString: 0.0%
+		displayFolder: Confiabilidad
+		lineageTag: 3f0ed06f47294b0f
+
+	measure 'OEE Estimado' =
+			VAR _Disp = [Disponibilidad]
+			VAR _Rend = 0.85
+			VAR _Cal = 0.95
+			RETURN _Disp * _Rend * _Cal
+		formatString: 0.00%
+		displayFolder: Confiabilidad
+		lineageTag: 1f3160827fc64be6
+
+	measure 'OTs por Técnico' = DIVIDE([Total OTs], DISTINCTCOUNT(DimTecnicos[Técnico]), 0)
+		formatString: #,0.0
+		displayFolder: Técnicos
+		lineageTag: 1a598126acd34276
+
+	measure 'Horas por Técnico' = DIVIDE(SUM(FactOTs[Duración Real]), DISTINCTCOUNT(DimTecnicos[Técnico]), 0)
+		formatString: #,0.0 \h
+		displayFolder: Técnicos
+		lineageTag: f15c38ddfc7848c3
+
+	measure 'Eficiencia Técnico' = DIVIDE(SUM(FactOTs[Duración Estimada]), SUM(FactOTs[Duración Real]), 0)
+		formatString: 0.0%
+		displayFolder: Técnicos
+		lineageTag: 1e247b46f50d45e5
+
+	measure 'Tasa Cierre Técnico' = DIVIDE(CALCULATE(COUNTROWS(FactOTs), FactOTs[Estado OT] = "Cerrada"), COUNTROWS(FactOTs), 0)
+		formatString: 0.0%
+		displayFolder: Técnicos
+		lineageTag: 18b8261443f84232
+
+	measure 'Costo por Técnico' = DIVIDE([Costo Total Mantenimiento], DISTINCTCOUNT(DimTecnicos[Técnico]), 0)
+		formatString: $#,0.00
+		displayFolder: Técnicos
+		lineageTag: 1cef6b6d97f24ded
+
+	measure 'Total Lubricaciones' = COUNTROWS(FactLubricacion)
+		formatString: #,0
+		displayFolder: Lubricación
+		lineageTag: 3c0f30f0f4674665
+
+	measure 'Lubricaciones Completadas' = CALCULATE(COUNTROWS(FactLubricacion), FactLubricacion[Estado Lub] = "Al día")
+		formatString: #,0
+		displayFolder: Lubricación
+		lineageTag: 6f048b30d33a4b88
+
+	measure '% Cumplimiento Lubricación' = DIVIDE([Lubricaciones Completadas], [Total Lubricaciones], 0)
+		formatString: 0.0%
+		displayFolder: Lubricación
+		lineageTag: 3f94c41ab42448e3
+
+	measure 'Cantidad Total Lubricante' = SUM(FactLubricacion[Cantidad])
+		formatString: #,0.00
+		displayFolder: Lubricación
+		lineageTag: 553ab19f573f4ce6
+
+	measure 'Lubricaciones Pendientes' = CALCULATE(COUNTROWS(FactLubricacion), FactLubricacion[Estado Lub] = "Próximo")
+		formatString: #,0
+		displayFolder: Lubricación
+		lineageTag: 44108afd52f94227
+
+	measure 'Lubricaciones Vencidas' = CALCULATE(COUNTROWS(FactLubricacion), FactLubricacion[Estado Lub] = "Vencido")
+		formatString: #,0
+		displayFolder: Lubricación
+		lineageTag: 7fd31615ba2e4575
+
+	measure 'Lubricaciones Críticas' = CALCULATE(COUNTROWS(FactLubricacion), FactLubricacion[Estado Lub] = "Vencido")
+		formatString: #,0
+		displayFolder: Lubricación
+		lineageTag: m-lub-criticas
+
+	measure 'Total Avisos' = COUNTROWS(FactAvisos)
+		formatString: #,0
+		displayFolder: Avisos
+		lineageTag: 30dd08d6845a4092
+
+	measure 'Avisos Abiertos' = CALCULATE(COUNTROWS(FactAvisos), FactAvisos[Estado Aviso] <> "Cerrado", FactAvisos[Estado Aviso] <> "Cancelado")
+		formatString: #,0
+		displayFolder: Avisos
+		lineageTag: a6a9786e64444fb3
+
+	measure 'Avisos con OT' = CALCULATE(COUNTROWS(FactAvisos), NOT(ISBLANK(FactAvisos[Número OT Aviso])), FactAvisos[Número OT Aviso] <> "")
+		formatString: #,0
+		displayFolder: Avisos
+		lineageTag: bd4917f2a5434633
+
+	measure '% Conversión Aviso a OT' = DIVIDE([Avisos con OT], [Total Avisos], 0)
+		formatString: 0.0%
+		displayFolder: Avisos
+		lineageTag: b0b3ab1588ee459d
+
+	measure 'Tiempo Respuesta Aviso (h)' =
+			AVERAGEX(
+				FILTER(FactAvisos, NOT(ISBLANK(FactAvisos[Fecha Evaluación])) && NOT(ISBLANK(FactAvisos[Fecha Reporte]))),
+				DATEDIFF(FactAvisos[Fecha Reporte], FactAvisos[Fecha Evaluación], HOUR)
+			)
+		formatString: #,0.0 \h
+		displayFolder: Avisos
+		lineageTag: 17fdfb61370b4b9d
+
+	measure 'Avisos Críticos' = CALCULATE(COUNTROWS(FactAvisos), FactAvisos[Severidad Aviso] IN {"Crítica", "Critica", "Alta"})
+		formatString: #,0
+		displayFolder: Avisos
+		lineageTag: a85056d4572a4ec2
+
+	measure 'Total Paradas' = COUNTROWS(FactParadas)
+		formatString: #,0
+		displayFolder: Paradas de Planta
+		lineageTag: c404044e8df34bb3
+
+	measure 'Horas Parada Planta' = SUM(FactParadas[Horas Totales])
+		formatString: #,0.0 \h
+		displayFolder: Paradas de Planta
+		lineageTag: 20050141ff4a40f4
+
+	measure 'Overtime Paradas' = SUM(FactParadas[Overtime])
+		formatString: #,0.0 \h
+		displayFolder: Paradas de Planta
+		lineageTag: 94cc70767ab7481e
+
+	measure 'Paradas Completadas' = CALCULATE(COUNTROWS(FactParadas), FactParadas[Estado Parada] = "Completada")
+		formatString: #,0
+		displayFolder: Paradas de Planta
+		lineageTag: e1eba75fcd9741fa
+
+	measure '% Cumplimiento Parada' =
+			VAR _Real = SUM(FactParadas[Horas Totales])
+			VAR _Over = SUM(FactParadas[Horas Overtime])
+			RETURN 1 - DIVIDE(_Over, _Real, 0)
+		formatString: 0.0%
+		displayFolder: Paradas de Planta
+		lineageTag: 0a22600f8e08455f
+
+	measure 'OTs Mes Anterior' = CALCULATE([Total OTs], DATEADD(DimFecha[Date], -1, MONTH))
+		formatString: #,0
+		displayFolder: Tendencias
+		lineageTag: 5c2cf746fd6e4c90
+
+	measure 'Variación OTs MoM' =
+			VAR _Actual = [Total OTs]
+			VAR _Anterior = [OTs Mes Anterior]
+			RETURN DIVIDE(_Actual - _Anterior, _Anterior, 0)
+		formatString: +0.0%;-0.0%;0.0%
+		displayFolder: Tendencias
+		lineageTag: 5a3b7bbcbb7f4d00
+
+	measure 'Disponibilidad Mes Anterior' = CALCULATE([Disponibilidad], DATEADD(DimFecha[Date], -1, MONTH))
+		formatString: 0.00%
+		displayFolder: Tendencias
+		lineageTag: b570f0f46b5347e9
+
+	measure 'Tendencia Disponibilidad' =
+			VAR _Actual = [Disponibilidad]
+			VAR _Anterior = [Disponibilidad Mes Anterior]
+			RETURN _Actual - _Anterior
+		formatString: +0.00%;-0.00%;0.00%
+		displayFolder: Tendencias
+		lineageTag: 158bc920f88a421a
+
+	measure 'Costo Mes Anterior' = CALCULATE([Costo Total Mantenimiento], DATEADD(DimFecha[Date], -1, MONTH))
+		formatString: $#,0.00
+		displayFolder: Tendencias
+		lineageTag: m-costo-mes-ant
+
+	measure 'Variación Costo MoM' =
+			VAR _A = [Costo Total Mantenimiento]
+			VAR _P = [Costo Mes Anterior]
+			RETURN DIVIDE(_A - _P, _P, 0)
+		formatString: +0.0%;-0.0%;0.0%
+		displayFolder: Tendencias
+		lineageTag: m-var-costo-mom
+
+	measure 'Total Inspecciones' = COUNTROWS(FactInspecciones)
+		formatString: #,0
+		displayFolder: Inspecciones
+		lineageTag: 9cb660ce17404e51
+
+	measure 'Inspecciones Completadas' = CALCULATE(COUNTROWS(FactInspecciones), FactInspecciones[Estado Inspección] IN {"Completada","Completado","Cerrada"})
+		formatString: #,0
+		displayFolder: Inspecciones
+		lineageTag: 44c812169ed74cbb
+
+	measure '% Cumplimiento Inspecciones' = DIVIDE([Inspecciones Completadas], [Total Inspecciones], 0)
+		formatString: 0.0%
+		displayFolder: Inspecciones
+		lineageTag: 90e72a7dab264dc7
+
+	measure 'Puntos Críticos Total' = SUM(FactInspecciones[Puntos Críticos])
+		formatString: #,0
+		displayFolder: Inspecciones
+		lineageTag: 3ba2bf4d0f43448a
+
+	measure 'Puntos Alerta Total' = SUM(FactInspecciones[Puntos Alerta])
+		formatString: #,0
+		displayFolder: Inspecciones
+		lineageTag: m-puntos-alerta
+
+	measure '% Puntos Críticos' = DIVIDE([Puntos Críticos Total], SUM(FactInspecciones[Puntos Totales]), 0)
+		formatString: 0.0%
+		displayFolder: Inspecciones
+		lineageTag: 9326ffc1a98e40b6
+
+	measure 'Espesor Promedio (mm)' = AVERAGE(thickness_readings[value_mm])
+		formatString: #,0.00
+		displayFolder: Inspecciones
+		lineageTag: 036b81388ee64ba6
+
+	measure 'Espesor Mínimo (mm)' = MIN(thickness_readings[value_mm])
+		formatString: #,0.00
+		displayFolder: Inspecciones
+		lineageTag: m-esp-min
+
+	measure 'Lecturas Críticas' = CALCULATE(COUNTROWS(thickness_readings), thickness_readings[is_critical] = "true")
+		formatString: #,0
+		displayFolder: Inspecciones
+		lineageTag: m-lect-crit
+
+	measure 'Lecturas Alerta' = CALCULATE(COUNTROWS(thickness_readings), thickness_readings[is_alert] = "true")
+		formatString: #,0
+		displayFolder: Inspecciones
+		lineageTag: m-lect-alerta
+
+	column Value
+		dataType: int64
+		isHidden
+		lineageTag: c3fc33842b5c4744
+		summarizeBy: none
+		sourceColumn: [Value]
+
+	partition _Medidas-4045ece21ffe4fe1 = calculated
+		mode: import
+		source = ROW("Value", 1)
+
+	annotation PBI_ResultType = {"type":"table"}
+

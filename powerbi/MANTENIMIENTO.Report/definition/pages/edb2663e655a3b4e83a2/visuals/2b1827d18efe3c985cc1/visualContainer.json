@@ -1,0 +1,55 @@
+{
+  "$schema": "https://developer.microsoft.com/json-schemas/fabric/item/report/definition/visualContainer/2.0.0/schema.json",
+  "name": "2b1827d18efe3c985cc1",
+  "position": {
+    "x": 440,
+    "y": 220,
+    "z": 1010,
+    "width": 400,
+    "height": 240,
+    "tabOrder": 1010
+  },
+  "visual": {
+    "visualType": "barChart",
+    "query": {
+      "queryState": {
+        "Category": {
+          "projections": [
+            {
+              "field": {
+                "Column": {
+                  "Expression": {
+                    "SourceRef": {
+                      "Entity": "DimEquipos"
+                    }
+                  },
+                  "Property": "Equipo"
+                }
+              },
+              "queryRef": "DimEquipos.Equipo",
+              "nativeQueryRef": "Equipo"
+            }
+          ]
+        },
+        "Y": {
+          "projections": [
+            {
+              "field": {
+                "Measure": {
+                  "Expression": {
+                    "SourceRef": {
+                      "Entity": "_Medidas"
+                    }
+                  },
+                  "Property": "Total OTs"
+                }
+              },
+              "queryRef": "_Medidas.Total OTs",
+              "nativeQueryRef": "Total OTs"
+            }
+          ]
+        }
+      }
+    }
+  }
+}

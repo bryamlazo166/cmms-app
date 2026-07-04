@@ -1,0 +1,314 @@
+table FactAvisos
+	lineageTag: b473f8d878ba5007
+
+	column id
+		dataType: int64
+		isHidden
+		isKey
+		lineageTag: 35fb319cc6530a78
+		summarizeBy: none
+		sourceColumn: id
+
+		annotation SummarizationSetBy = Automatic
+
+	column 'Código Aviso'
+		dataType: string
+		lineageTag: 9375f5669b69ccf8
+		summarizeBy: none
+		sourceColumn: code
+
+		annotation SummarizationSetBy = Automatic
+
+	column 'Estado Aviso'
+		dataType: string
+		lineageTag: 250dd02bd2b309c1
+		summarizeBy: none
+		sourceColumn: status
+
+		annotation SummarizationSetBy = Automatic
+
+	column 'Severidad Aviso'
+		dataType: string
+		lineageTag: e287132215e0bc5f
+		summarizeBy: none
+		sourceColumn: criticality
+
+		annotation SummarizationSetBy = Automatic
+
+	column Prioridad
+		dataType: string
+		lineageTag: 60a1f3c91d7e4823
+		summarizeBy: none
+		sourceColumn: priority
+
+		annotation SummarizationSetBy = Automatic
+
+	column 'Tipo Mantenimiento'
+		dataType: string
+		lineageTag: 7c1d4b2e8a5f4f1a
+		summarizeBy: none
+		sourceColumn: maintenance_type
+
+		annotation SummarizationSetBy = Automatic
+
+	column 'Modo Falla Aviso'
+		dataType: string
+		lineageTag: 4b8c1e3a5d2f4791
+		summarizeBy: none
+		sourceColumn: failure_mode
+
+		annotation SummarizationSetBy = Automatic
+
+	column 'Número OT Aviso'
+		dataType: string
+		lineageTag: 2571cd6a4f9ef8e7
+		summarizeBy: none
+		sourceColumn: ot_number
+
+		annotation SummarizationSetBy = Automatic
+
+	column 'Fecha Reporte'
+		dataType: dateTime
+		formatString: Long Date
+		lineageTag: db056fdced4820a1
+		summarizeBy: none
+		sourceColumn: request_date
+
+		changedProperty = DataType
+
+		annotation SummarizationSetBy = Automatic
+
+		annotation UnderlyingDateTimeDataType = Date
+
+	column 'Descripción Aviso'
+		dataType: string
+		lineageTag: e10f540e96b8dbff
+		summarizeBy: none
+		sourceColumn: description
+
+		annotation SummarizationSetBy = Automatic
+
+	column 'Reportado Por'
+		dataType: string
+		lineageTag: 2b4c6d8e1f3a4c59
+		summarizeBy: none
+		sourceColumn: reporter_name
+
+		annotation SummarizationSetBy = Automatic
+
+	column equipment_id
+		dataType: int64
+		isHidden
+		lineageTag: abbf431c5db83348
+		summarizeBy: none
+		sourceColumn: equipment_id
+
+		annotation SummarizationSetBy = Automatic
+
+	column area_id
+		dataType: int64
+		isHidden
+		lineageTag: 5a3c1b9e7d2f4904
+		summarizeBy: none
+		sourceColumn: area_id
+
+		annotation SummarizationSetBy = Automatic
+
+	column line_id
+		dataType: int64
+		isHidden
+		lineageTag: 6c4d2a8f1e3b4815
+		summarizeBy: none
+		sourceColumn: line_id
+
+		annotation SummarizationSetBy = Automatic
+
+	column system_id
+		dataType: int64
+		isHidden
+		lineageTag: 7d5e3b9a2f4c4926
+		summarizeBy: none
+		sourceColumn: system_id
+
+		annotation SummarizationSetBy = Automatic
+
+	column component_id
+		dataType: int64
+		isHidden
+		lineageTag: 8e6f4c1b3a5d4a37
+		summarizeBy: none
+		sourceColumn: component_id
+
+		annotation SummarizationSetBy = Automatic
+
+	column reporter_type
+		dataType: string
+		lineageTag: 26c9ca8e-bf3c-4458-8c66-0d28d7e0600c
+		summarizeBy: none
+		sourceColumn: reporter_type
+
+		annotation SummarizationSetBy = Automatic
+
+	column provider_id
+		dataType: int64
+		formatString: 0
+		lineageTag: 73c1535a-9be4-4947-b893-1c77825678ea
+		summarizeBy: sum
+		sourceColumn: provider_id
+
+		annotation SummarizationSetBy = Automatic
+
+	column specialty
+		dataType: string
+		lineageTag: 058d2080-ed24-45cc-8548-e121a9733e64
+		summarizeBy: none
+		sourceColumn: specialty
+
+		annotation SummarizationSetBy = Automatic
+
+	column shift
+		dataType: string
+		lineageTag: cb9d649d-edc3-458e-b09c-043e39989942
+		summarizeBy: none
+		sourceColumn: shift
+
+		annotation SummarizationSetBy = Automatic
+
+	column treatment_date
+		dataType: dateTime
+		formatString: Long Date
+		lineageTag: 72599b74-801a-416b-b45a-057b8f0d5a1c
+		summarizeBy: none
+		sourceColumn: treatment_date
+
+		changedProperty = DataType
+
+		annotation SummarizationSetBy = Automatic
+
+		annotation UnderlyingDateTimeDataType = Date
+
+	column planning_date
+		dataType: dateTime
+		formatString: Long Date
+		lineageTag: 2ad6d550-f41e-40ef-ad40-f8417981de0a
+		summarizeBy: none
+		sourceColumn: planning_date
+
+		changedProperty = DataType
+
+		annotation SummarizationSetBy = Automatic
+
+		annotation UnderlyingDateTimeDataType = Date
+
+	column cancellation_reason
+		dataType: string
+		lineageTag: 039d6b44-83f0-4879-84b9-3c80b0a95066
+		summarizeBy: none
+		sourceColumn: cancellation_reason
+
+		annotation SummarizationSetBy = Automatic
+
+	column rotable_asset_id
+		dataType: int64
+		formatString: 0
+		lineageTag: 1901bed4-ec10-4ae5-88b2-504fe95e785d
+		summarizeBy: sum
+		sourceColumn: rotable_asset_id
+
+		annotation SummarizationSetBy = Automatic
+
+	column source_type
+		dataType: string
+		lineageTag: b35a6984-96ad-436a-b304-7b158c94d9dc
+		summarizeBy: none
+		sourceColumn: source_type
+
+		annotation SummarizationSetBy = Automatic
+
+	column source_id
+		dataType: int64
+		formatString: 0
+		lineageTag: 1d493230-7ff9-41af-b544-681d2a0b131f
+		summarizeBy: sum
+		sourceColumn: source_id
+
+		annotation SummarizationSetBy = Automatic
+
+	column rotative_asset_id
+		dataType: int64
+		formatString: 0
+		lineageTag: fc86f399-701f-4747-b854-78ccdedd1ef2
+		summarizeBy: sum
+		sourceColumn: rotative_asset_id
+
+		annotation SummarizationSetBy = Automatic
+
+	column scope
+		dataType: string
+		lineageTag: ded33ade-b34b-4d34-be85-e42d71b2b411
+		summarizeBy: none
+		sourceColumn: scope
+
+		annotation SummarizationSetBy = Automatic
+
+	column free_location
+		dataType: string
+		lineageTag: c5ab6a84-f88a-4e96-a7f4-6653ce20711b
+		summarizeBy: none
+		sourceColumn: free_location
+
+		annotation SummarizationSetBy = Automatic
+
+	column failure_category
+		dataType: string
+		lineageTag: 5df3e49e-3df6-448b-ad00-6a5198831452
+		summarizeBy: none
+		sourceColumn: failure_category
+
+		annotation SummarizationSetBy = Automatic
+
+	column blockage_object
+		dataType: string
+		lineageTag: bd1492e8-de60-42ab-9844-8f571732bbc7
+		summarizeBy: none
+		sourceColumn: blockage_object
+
+		annotation SummarizationSetBy = Automatic
+
+	column closed_date
+		dataType: string
+		lineageTag: 990950c8-a57c-4e91-b613-0de5f416b6d2
+		summarizeBy: none
+		sourceColumn: closed_date
+
+		annotation SummarizationSetBy = Automatic
+
+	column reported_at
+		dataType: string
+		lineageTag: 544b558b-e6fb-40ac-a1f7-0ebc1a6c7c1d
+		summarizeBy: none
+		sourceColumn: reported_at
+
+		annotation SummarizationSetBy = Automatic
+
+	column report_channel
+		dataType: string
+		lineageTag: 3d8c52fa-d956-49bd-950f-5018a3a41c1e
+		summarizeBy: none
+		sourceColumn: report_channel
+
+		annotation SummarizationSetBy = Automatic
+
+	partition FactAvisos = m
+		mode: import
+		source =
+				let
+				    Origen = Odbc.DataSource("dsn=CMMS_Supabase", [HierarchicalNavigation=true]),
+				    postgres_Database = Origen{[Name="postgres",Kind="Database"]}[Data],
+				    public_Schema = postgres_Database{[Name="public",Kind="Schema"]}[Data],
+				    maintenance_notices_Table = public_Schema{[Name="maintenance_notices",Kind="Table"]}[Data]
+				in
+				    maintenance_notices_Table
+
+	annotation PBI_ResultType = Table
+

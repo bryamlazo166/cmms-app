@@ -1,0 +1,55 @@
+{
+  "$schema": "https://developer.microsoft.com/json-schemas/fabric/item/report/definition/visualContainer/2.0.0/schema.json",
+  "name": "626d1356071eee61ed75",
+  "position": {
+    "x": 440,
+    "y": 160,
+    "z": 1006,
+    "width": 400,
+    "height": 280,
+    "tabOrder": 1006
+  },
+  "visual": {
+    "visualType": "donutChart",
+    "query": {
+      "queryState": {
+        "Category": {
+          "projections": [
+            {
+              "field": {
+                "Column": {
+                  "Expression": {
+                    "SourceRef": {
+                      "Entity": "FactAvisos"
+                    }
+                  },
+                  "Property": "Severidad Aviso"
+                }
+              },
+              "queryRef": "FactAvisos.Severidad Aviso",
+              "nativeQueryRef": "Severidad Aviso"
+            }
+          ]
+        },
+        "Y": {
+          "projections": [
+            {
+              "field": {
+                "Measure": {
+                  "Expression": {
+                    "SourceRef": {
+                      "Entity": "_Medidas"
+                    }
+                  },
+                  "Property": "Total Avisos"
+                }
+              },
+              "queryRef": "_Medidas.Total Avisos",
+              "nativeQueryRef": "Total Avisos"
+            }
+          ]
+        }
+      }
+    }
+  }
+}

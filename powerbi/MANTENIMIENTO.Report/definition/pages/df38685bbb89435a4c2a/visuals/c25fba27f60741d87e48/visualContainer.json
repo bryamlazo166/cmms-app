@@ -1,0 +1,37 @@
+{
+  "$schema": "https://developer.microsoft.com/json-schemas/fabric/item/report/definition/visualContainer/2.0.0/schema.json",
+  "name": "c25fba27f60741d87e48",
+  "position": {
+    "x": 830,
+    "y": 20,
+    "z": 1004,
+    "width": 200,
+    "height": 120,
+    "tabOrder": 1004
+  },
+  "visual": {
+    "visualType": "card",
+    "query": {
+      "queryState": {
+        "Values": {
+          "projections": [
+            {
+              "field": {
+                "Measure": {
+                  "Expression": {
+                    "SourceRef": {
+                      "Entity": "_Medidas"
+                    }
+                  },
+                  "Property": "OEE Estimado"
+                }
+              },
+              "queryRef": "_Medidas.OEE Estimado",
+              "nativeQueryRef": "OEE Estimado"
+            }
+          ]
+        }
+      }
+    }
+  }
+}

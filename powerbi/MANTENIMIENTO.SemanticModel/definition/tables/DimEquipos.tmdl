@@ -1,0 +1,149 @@
+table DimEquipos
+	lineageTag: df571ff72df69048
+
+	column id
+		dataType: int64
+		isHidden
+		isKey
+		lineageTag: 598d5c5b24f8e856
+		summarizeBy: none
+		sourceColumn: id
+
+		annotation SummarizationSetBy = Automatic
+
+	column Equipo
+		dataType: string
+		lineageTag: eed2d0be89a5d5ab
+		summarizeBy: none
+		sourceColumn: name
+
+		annotation SummarizationSetBy = Automatic
+
+	column TAG
+		dataType: string
+		lineageTag: 55916b9c997e3488
+		summarizeBy: none
+		sourceColumn: tag
+
+		annotation SummarizationSetBy = Automatic
+
+	column Criticidad
+		dataType: string
+		lineageTag: b4a9371168811078
+		summarizeBy: none
+		sourceColumn: criticality
+
+		annotation SummarizationSetBy = Automatic
+
+	column line_id
+		dataType: int64
+		isHidden
+		lineageTag: f69f90480f0e439d
+		summarizeBy: none
+		sourceColumn: line_id
+
+		annotation SummarizationSetBy = Automatic
+
+	column description
+		dataType: string
+		lineageTag: c5cfb280-0f27-4f9a-ad51-ea140b2351a0
+		summarizeBy: none
+		sourceColumn: description
+
+		annotation SummarizationSetBy = Automatic
+
+	column include_in_kpi
+		dataType: string
+		lineageTag: cedc21dc-7945-4c52-9559-48842e038f1d
+		summarizeBy: none
+		sourceColumn: include_in_kpi
+
+		annotation SummarizationSetBy = Automatic
+
+	column capacity_tm
+		dataType: double
+		lineageTag: e76f85b3-dced-4fcf-ad9e-93728309af1f
+		summarizeBy: sum
+		sourceColumn: capacity_tm
+
+		annotation SummarizationSetBy = Automatic
+
+		annotation PBI_FormatHint = {"isGeneralNumber":true}
+
+	column shift_hours_per_day
+		dataType: double
+		lineageTag: bb46e76c-e3ce-45a7-b66d-f6bd79c7be7f
+		summarizeBy: sum
+		sourceColumn: shift_hours_per_day
+
+		annotation SummarizationSetBy = Automatic
+
+		annotation PBI_FormatHint = {"isGeneralNumber":true}
+
+	column work_days_per_week
+		dataType: int64
+		formatString: 0
+		lineageTag: 73d909e8-1bd4-4450-ba38-cab5ba93641c
+		summarizeBy: sum
+		sourceColumn: work_days_per_week
+
+		annotation SummarizationSetBy = Automatic
+
+	column yield_factor
+		dataType: double
+		lineageTag: f8290aec-c5be-4c15-81dc-c78e213c6a61
+		summarizeBy: sum
+		sourceColumn: yield_factor
+
+		annotation SummarizationSetBy = Automatic
+
+		annotation PBI_FormatHint = {"isGeneralNumber":true}
+
+	column default_responsible_party
+		dataType: string
+		lineageTag: a14465f4-7d5f-4312-9302-c53f401836f5
+		summarizeBy: none
+		sourceColumn: default_responsible_party
+
+		annotation SummarizationSetBy = Automatic
+
+	column default_provider_id
+		dataType: int64
+		formatString: 0
+		lineageTag: 6b801f6e-16ff-46c8-a9ad-ddf9b06ace23
+		summarizeBy: sum
+		sourceColumn: default_provider_id
+
+		annotation SummarizationSetBy = Automatic
+
+	column process_order
+		dataType: int64
+		formatString: 0
+		lineageTag: 6ac1c147-23a4-4b0e-b370-837d5780e6ec
+		summarizeBy: sum
+		sourceColumn: process_order
+
+		annotation SummarizationSetBy = Automatic
+
+	column feeds_into_equipment_id
+		dataType: int64
+		formatString: 0
+		lineageTag: 6f1e19b2-0a64-4fd0-9edf-84a0c1bd7f7d
+		summarizeBy: sum
+		sourceColumn: feeds_into_equipment_id
+
+		annotation SummarizationSetBy = Automatic
+
+	partition DimEquipos = m
+		mode: import
+		source =
+				let
+				    Origen = Odbc.DataSource("dsn=CMMS_Supabase", [HierarchicalNavigation=true]),
+				    postgres_Database = Origen{[Name="postgres",Kind="Database"]}[Data],
+				    public_Schema = postgres_Database{[Name="public",Kind="Schema"]}[Data],
+				    equipments_Table = public_Schema{[Name="equipments",Kind="Table"]}[Data]
+				in
+				    equipments_Table
+
+	annotation PBI_ResultType = Table
+

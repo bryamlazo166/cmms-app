@@ -1,0 +1,37 @@
+{
+  "$schema": "https://developer.microsoft.com/json-schemas/fabric/item/report/definition/visualContainer/2.0.0/schema.json",
+  "name": "eacf29e8a85357a99bd4",
+  "position": {
+    "x": 340,
+    "y": 20,
+    "z": 1002,
+    "width": 200,
+    "height": 120,
+    "tabOrder": 1002
+  },
+  "visual": {
+    "visualType": "card",
+    "query": {
+      "queryState": {
+        "Values": {
+          "projections": [
+            {
+              "field": {
+                "Measure": {
+                  "Expression": {
+                    "SourceRef": {
+                      "Entity": "_Medidas"
+                    }
+                  },
+                  "Property": "Horas Parada Planta"
+                }
+              },
+              "queryRef": "_Medidas.Horas Parada Planta",
+              "nativeQueryRef": "Horas Parada Planta"
+            }
+          ]
+        }
+      }
+    }
+  }
+}

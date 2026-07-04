@@ -1,0 +1,74 @@
+{
+  "$schema": "https://developer.microsoft.com/json-schemas/fabric/item/report/definition/visualContainer/2.8.0/schema.json",
+  "name": "e23dcfe2fe02e7dae0c6",
+  "position": {
+    "x": 1021.3113758551094,
+    "y": 119.98213871077215,
+    "z": 7000,
+    "height": 131.68771321914016,
+    "width": 256.0594423705503,
+    "tabOrder": 9000
+  },
+  "visual": {
+    "visualType": "cardVisual",
+    "query": {
+      "queryState": {
+        "Data": {
+          "projections": [
+            {
+              "field": {
+                "Measure": {
+                  "Expression": {
+                    "SourceRef": {
+                      "Entity": "_Medidas"
+                    }
+                  },
+                  "Property": "Costo Total Mantenimiento"
+                }
+              },
+              "queryRef": "_Medidas.Costo Total Mantenimiento",
+              "nativeQueryRef": "Costo Total Mantenimiento"
+            }
+          ]
+        }
+      },
+      "sortDefinition": {
+        "sort": [
+          {
+            "field": {
+              "Measure": {
+                "Expression": {
+                  "SourceRef": {
+                    "Entity": "_Medidas"
+                  }
+                },
+                "Property": "Costo Total Mantenimiento"
+              }
+            },
+            "direction": "Descending"
+          }
+        ],
+        "isDefaultSort": true
+      }
+    },
+    "drillFilterOtherVisuals": true
+  },
+  "filterConfig": {
+    "filters": [
+      {
+        "name": "ec92c2d27c9accc4ce3c",
+        "field": {
+          "Measure": {
+            "Expression": {
+              "SourceRef": {
+                "Entity": "_Medidas"
+              }
+            },
+            "Property": "Costo Total Mantenimiento"
+          }
+        },
+        "type": "Advanced"
+      }
+    ]
+  }
+}

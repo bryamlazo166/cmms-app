@@ -253,15 +253,17 @@ def register_notices_routes(
 
             resp = update_entry(MaintenanceNotice, id, data)
 
-            # Propagar el arbol de equipos del aviso a la OT vinculada (si no
-            # esta cerrada) para que reportes/tableros la ubiquen en el area
-            # correcta. Antes la OT quedaba con el arbol viejo ("SIN AREA").
+            # Propagar el arbol de equipos del aviso a la OT vinculada para que
+            # reportes/tableros la ubiquen en el area correcta. Aplica tambien a
+            # OTs cerradas: corregir la taxonomia es una correccion de datos
+            # historicos, no un cambio de flujo (antes se omitian las cerradas y
+            # las correcciones del aviso nunca llegaban a la OT).
             try:
                 TREE = ('area_id', 'line_id', 'equipment_id', 'system_id', 'component_id')
                 if any(k in data for k in TREE):
                     notice = MaintenanceNotice.query.get(id)
                     wo = getattr(notice, 'work_order', None) if notice else None
-                    if wo and (wo.status or '') != 'Cerrada':
+                    if wo:
                         changed = False
                         for f in TREE:
                             nv = getattr(notice, f, None)

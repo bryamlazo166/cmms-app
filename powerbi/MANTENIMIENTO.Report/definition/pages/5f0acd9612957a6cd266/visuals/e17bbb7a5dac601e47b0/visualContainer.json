@@ -1,0 +1,93 @@
+{
+  "$schema": "https://developer.microsoft.com/json-schemas/fabric/item/report/definition/visualContainer/2.0.0/schema.json",
+  "name": "e17bbb7a5dac601e47b0",
+  "position": {
+    "x": 20,
+    "y": 460,
+    "z": 1007,
+    "width": 1240,
+    "height": 240,
+    "tabOrder": 1007
+  },
+  "visual": {
+    "visualType": "pivotTable",
+    "query": {
+      "queryState": {
+        "Rows": {
+          "projections": [
+            {
+              "field": {
+                "Column": {
+                  "Expression": {
+                    "SourceRef": {
+                      "Entity": "DimAreas"
+                    }
+                  },
+                  "Property": "Área"
+                }
+              },
+              "queryRef": "DimAreas.Área",
+              "nativeQueryRef": "Área"
+            },
+            {
+              "field": {
+                "Column": {
+                  "Expression": {
+                    "SourceRef": {
+                      "Entity": "DimEquipos"
+                    }
+                  },
+                  "Property": "Equipo"
+                }
+              },
+              "queryRef": "DimEquipos.Equipo",
+              "nativeQueryRef": "Equipo"
+            },
+            {
+              "field": {
+                "Measure": {
+                  "Expression": {
+                    "SourceRef": {
+                      "Entity": "_Medidas"
+                    }
+                  },
+                  "Property": "Disponibilidad por Equipo"
+                }
+              },
+              "queryRef": "_Medidas.Disponibilidad por Equipo",
+              "nativeQueryRef": "Disponibilidad por Equipo"
+            },
+            {
+              "field": {
+                "Measure": {
+                  "Expression": {
+                    "SourceRef": {
+                      "Entity": "_Medidas"
+                    }
+                  },
+                  "Property": "MTBF por Equipo"
+                }
+              },
+              "queryRef": "_Medidas.MTBF por Equipo",
+              "nativeQueryRef": "MTBF por Equipo"
+            },
+            {
+              "field": {
+                "Measure": {
+                  "Expression": {
+                    "SourceRef": {
+                      "Entity": "_Medidas"
+                    }
+                  },
+                  "Property": "MTTR por Equipo"
+                }
+              },
+              "queryRef": "_Medidas.MTTR por Equipo",
+              "nativeQueryRef": "MTTR por Equipo"
+            }
+          ]
+        }
+      }
+    }
+  }
+}

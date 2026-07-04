@@ -1,0 +1,325 @@
+table FactOTs
+	lineageTag: 1b8d535051ebb0ab
+
+	column id
+		dataType: int64
+		isHidden
+		isKey
+		lineageTag: 6e7205fd535c243c
+		summarizeBy: none
+		sourceColumn: id
+
+		annotation SummarizationSetBy = Automatic
+
+	column 'Código OT'
+		dataType: string
+		lineageTag: ccefd79fdd475b1f
+		summarizeBy: none
+		sourceColumn: code
+
+		annotation SummarizationSetBy = Automatic
+
+	column 'Tipo OT'
+		dataType: string
+		lineageTag: 958e7008df109630
+		summarizeBy: none
+		sourceColumn: maintenance_type
+
+		annotation SummarizationSetBy = Automatic
+
+	column 'Estado OT'
+		dataType: string
+		lineageTag: 712903a0d9cebcfc
+		summarizeBy: none
+		sourceColumn: status
+
+		annotation SummarizationSetBy = Automatic
+
+	column 'Modo Falla'
+		dataType: string
+		lineageTag: 0c2508f4954f4286
+		summarizeBy: none
+		sourceColumn: failure_mode
+
+		annotation SummarizationSetBy = Automatic
+
+	column 'Descripción OT'
+		dataType: string
+		lineageTag: 41432c2cacfbcff0
+		summarizeBy: none
+		sourceColumn: description
+
+		annotation SummarizationSetBy = Automatic
+
+	column equipment_id
+		dataType: int64
+		isHidden
+		lineageTag: b7e0b08e839962af
+		summarizeBy: none
+		sourceColumn: equipment_id
+
+		annotation SummarizationSetBy = Automatic
+
+	column area_id
+		dataType: int64
+		isHidden
+		lineageTag: 7c35ea76e64d61fb
+		summarizeBy: none
+		sourceColumn: area_id
+
+		annotation SummarizationSetBy = Automatic
+
+	column line_id
+		dataType: int64
+		isHidden
+		lineageTag: faf3d7dbe4eba641
+		summarizeBy: none
+		sourceColumn: line_id
+
+		annotation SummarizationSetBy = Automatic
+
+	column system_id
+		dataType: int64
+		isHidden
+		lineageTag: 60530854e5b02742
+		summarizeBy: none
+		sourceColumn: system_id
+
+		annotation SummarizationSetBy = Automatic
+
+	column component_id
+		dataType: int64
+		isHidden
+		lineageTag: 0f72c295a8da6fd6
+		summarizeBy: none
+		sourceColumn: component_id
+
+		annotation SummarizationSetBy = Automatic
+
+	column technician_id
+		dataType: string
+		isHidden
+		lineageTag: 0b35a28b915ff460
+		summarizeBy: none
+		sourceColumn: technician_id
+
+		annotation SummarizationSetBy = Automatic
+
+	column 'Fecha Programada'
+		dataType: dateTime
+		formatString: Long Date
+		lineageTag: 511dde56e2382e45
+		summarizeBy: none
+		sourceColumn: scheduled_date
+
+		changedProperty = DataType
+
+		annotation SummarizationSetBy = Automatic
+
+		annotation UnderlyingDateTimeDataType = Date
+
+	column 'Fecha Inicio Real'
+		dataType: dateTime
+		formatString: General Date
+		lineageTag: 9da69bdf1e9b4eaf
+		summarizeBy: none
+		sourceColumn: real_start_date
+
+		changedProperty = DataType
+
+		annotation SummarizationSetBy = Automatic
+
+	column 'Fecha Fin Real'
+		dataType: dateTime
+		formatString: General Date
+		lineageTag: 45b3729ba38bc7d8
+		summarizeBy: none
+		sourceColumn: real_end_date
+
+		changedProperty = DataType
+
+		annotation SummarizationSetBy = Automatic
+
+	column 'Duración Estimada'
+		dataType: double
+		formatString: #,0.00
+		lineageTag: 740c9b6ffe1c25d7
+		summarizeBy: sum
+		sourceColumn: estimated_duration
+
+		annotation SummarizationSetBy = Automatic
+
+	column 'Duración Real'
+		dataType: double
+		formatString: #,0.00
+		lineageTag: a5814c4a9cfcaac7
+		summarizeBy: sum
+		sourceColumn: real_duration
+
+		annotation SummarizationSetBy = Automatic
+
+	column 'Horas de Parada'
+		dataType: double
+		formatString: #,0.00
+		lineageTag: 0f7a93e1e45267b5
+		summarizeBy: sum
+		sourceColumn: downtime_hours
+
+		annotation SummarizationSetBy = Automatic
+
+	column 'Parada Producción'
+		dataType: string
+		lineageTag: 83c408723d563364
+		summarizeBy: none
+		sourceColumn: caused_downtime
+
+		annotation SummarizationSetBy = Automatic
+
+	column notice_id
+		dataType: int64
+		formatString: 0
+		lineageTag: 0e7b110f-5670-476b-b6fc-9db1a6010df6
+		summarizeBy: sum
+		sourceColumn: notice_id
+
+		annotation SummarizationSetBy = Automatic
+
+	column provider_id
+		dataType: int64
+		formatString: 0
+		lineageTag: 01472a57-10e5-4a81-a706-08bb18095ffe
+		summarizeBy: sum
+		sourceColumn: provider_id
+
+		annotation SummarizationSetBy = Automatic
+
+	column tech_count
+		dataType: int64
+		formatString: 0
+		lineageTag: df1a918d-5aaa-44d2-a0f2-e0876fa1cced
+		summarizeBy: sum
+		sourceColumn: tech_count
+
+		annotation SummarizationSetBy = Automatic
+
+	column execution_comments
+		dataType: string
+		lineageTag: 8a91631b-bb40-4543-ae03-e4652e5621d1
+		summarizeBy: none
+		sourceColumn: execution_comments
+
+		annotation SummarizationSetBy = Automatic
+
+	column rotable_asset_id
+		dataType: int64
+		formatString: 0
+		lineageTag: 9bd58acd-71bb-4909-a6f7-0a3573465ed0
+		summarizeBy: sum
+		sourceColumn: rotable_asset_id
+
+		annotation SummarizationSetBy = Automatic
+
+	column source_type
+		dataType: string
+		lineageTag: 962b8b14-24e2-4066-a8b2-b501223f6dd3
+		summarizeBy: none
+		sourceColumn: source_type
+
+		annotation SummarizationSetBy = Automatic
+
+	column source_id
+		dataType: int64
+		formatString: 0
+		lineageTag: 9e323af5-69c7-4f90-9d27-1240c2e7eace
+		summarizeBy: sum
+		sourceColumn: source_id
+
+		annotation SummarizationSetBy = Automatic
+
+	column rotative_asset_id
+		dataType: int64
+		formatString: 0
+		lineageTag: b8728399-867b-4ca7-bd8e-172bcef25e0e
+		summarizeBy: sum
+		sourceColumn: rotative_asset_id
+
+		annotation SummarizationSetBy = Automatic
+
+	column report_required
+		dataType: string
+		lineageTag: a3910a6a-5e46-4273-a107-0df2c71f19be
+		summarizeBy: none
+		sourceColumn: report_required
+
+		annotation SummarizationSetBy = Automatic
+
+	column report_status
+		dataType: string
+		lineageTag: eb4b8c01-4b46-4b51-9b28-577ee3152bb2
+		summarizeBy: none
+		sourceColumn: report_status
+
+		annotation SummarizationSetBy = Automatic
+
+	column report_due_date
+		dataType: dateTime
+		formatString: Long Date
+		lineageTag: ece9253d-44bf-498c-aeb0-807dc6932e02
+		summarizeBy: none
+		sourceColumn: report_due_date
+
+		changedProperty = DataType
+
+		annotation SummarizationSetBy = Automatic
+
+		annotation UnderlyingDateTimeDataType = Date
+
+	column report_received_date
+		dataType: dateTime
+		formatString: Long Date
+		lineageTag: 0f1ff4b5-47ca-408c-bad2-c80a6d655720
+		summarizeBy: none
+		sourceColumn: report_received_date
+
+		changedProperty = DataType
+
+		annotation SummarizationSetBy = Automatic
+
+		annotation UnderlyingDateTimeDataType = Date
+
+	column shutdown_id
+		dataType: int64
+		formatString: 0
+		lineageTag: 8b067bcd-46f4-4ad5-8975-ec93d252446a
+		summarizeBy: sum
+		sourceColumn: shutdown_id
+
+		annotation SummarizationSetBy = Automatic
+
+	column report_url
+		dataType: string
+		lineageTag: ab7ef7c2-7c3b-49b0-9f15-c9c1cb152f10
+		summarizeBy: none
+		sourceColumn: report_url
+
+		annotation SummarizationSetBy = Automatic
+
+	partition FactOTs = m
+		mode: import
+		source =
+				let
+				    Origen = Odbc.DataSource("dsn=CMMS_Supabase", [HierarchicalNavigation=true]),
+				    postgres_Database = Origen{[Name="postgres",Kind="Database"]}[Data],
+				    public_Schema = postgres_Database{[Name="public",Kind="Schema"]}[Data],
+				    work_orders_Table = public_Schema{[Name="work_orders",Kind="Table"]}[Data],
+				    #"Valor reemplazado" = Table.ReplaceValue(work_orders_Table,"T"," ",Replacer.ReplaceText,{"real_start_date"}),
+				    #"Valor reemplazado1" = Table.ReplaceValue(#"Valor reemplazado","T"," ",Replacer.ReplaceText,{"real_end_date"}),
+				    #"Valor reemplazado2" = Table.ReplaceValue(#"Valor reemplazado1","T"," ",Replacer.ReplaceText,{"report_received_date"}),
+				    #"Valor reemplazado3" = Table.ReplaceValue(#"Valor reemplazado2","T"," ",Replacer.ReplaceText,{"report_due_date"})
+				in
+				    #"Valor reemplazado3"
+
+	annotation PBI_ResultType = Table
+
+	annotation PBI_NavigationStepName = Navegación
+

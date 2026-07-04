@@ -1,0 +1,107 @@
+{
+  "$schema": "https://developer.microsoft.com/json-schemas/fabric/item/report/definition/visualContainer/2.0.0/schema.json",
+  "name": "a19f01b168e1b5dff83a",
+  "position": {
+    "x": 20,
+    "y": 460,
+    "z": 1007,
+    "width": 1240,
+    "height": 240,
+    "tabOrder": 1007
+  },
+  "visual": {
+    "visualType": "pivotTable",
+    "query": {
+      "queryState": {
+        "Rows": {
+          "projections": [
+            {
+              "field": {
+                "Column": {
+                  "Expression": {
+                    "SourceRef": {
+                      "Entity": "DimTecnicos"
+                    }
+                  },
+                  "Property": "Técnico"
+                }
+              },
+              "queryRef": "DimTecnicos.Técnico",
+              "nativeQueryRef": "Técnico"
+            },
+            {
+              "field": {
+                "Column": {
+                  "Expression": {
+                    "SourceRef": {
+                      "Entity": "DimTecnicos"
+                    }
+                  },
+                  "Property": "Especialidad"
+                }
+              },
+              "queryRef": "DimTecnicos.Especialidad",
+              "nativeQueryRef": "Especialidad"
+            },
+            {
+              "field": {
+                "Measure": {
+                  "Expression": {
+                    "SourceRef": {
+                      "Entity": "_Medidas"
+                    }
+                  },
+                  "Property": "OTs por Técnico"
+                }
+              },
+              "queryRef": "_Medidas.OTs por Técnico",
+              "nativeQueryRef": "OTs por Técnico"
+            },
+            {
+              "field": {
+                "Measure": {
+                  "Expression": {
+                    "SourceRef": {
+                      "Entity": "_Medidas"
+                    }
+                  },
+                  "Property": "Horas por Técnico"
+                }
+              },
+              "queryRef": "_Medidas.Horas por Técnico",
+              "nativeQueryRef": "Horas por Técnico"
+            },
+            {
+              "field": {
+                "Measure": {
+                  "Expression": {
+                    "SourceRef": {
+                      "Entity": "_Medidas"
+                    }
+                  },
+                  "Property": "Eficiencia Técnico"
+                }
+              },
+              "queryRef": "_Medidas.Eficiencia Técnico",
+              "nativeQueryRef": "Eficiencia Técnico"
+            },
+            {
+              "field": {
+                "Measure": {
+                  "Expression": {
+                    "SourceRef": {
+                      "Entity": "_Medidas"
+                    }
+                  },
+                  "Property": "Costo por Técnico"
+                }
+              },
+              "queryRef": "_Medidas.Costo por Técnico",
+              "nativeQueryRef": "Costo por Técnico"
+            }
+          ]
+        }
+      }
+    }
+  }
+}

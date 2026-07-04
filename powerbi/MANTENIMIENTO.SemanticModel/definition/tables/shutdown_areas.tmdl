@@ -1,0 +1,43 @@
+table shutdown_areas
+	lineageTag: 49b910ee-885e-4bf5-83b8-4a42a6784eeb
+
+	column id
+		dataType: int64
+		formatString: 0
+		lineageTag: e74c40b5-6e9e-4160-a59f-b8da504ffe65
+		summarizeBy: sum
+		sourceColumn: id
+
+		annotation SummarizationSetBy = Automatic
+
+	column shutdown_id
+		dataType: int64
+		formatString: 0
+		lineageTag: d0af02f4-d3b7-4bc2-a52e-e9e73fcf3a17
+		summarizeBy: none
+		sourceColumn: shutdown_id
+
+		annotation SummarizationSetBy = Automatic
+
+	column area_id
+		dataType: int64
+		formatString: 0
+		lineageTag: fa716fcd-5f78-4cd1-bdea-daa13ef3ebe1
+		summarizeBy: none
+		sourceColumn: area_id
+
+		annotation SummarizationSetBy = Automatic
+
+	partition shutdown_areas = m
+		mode: import
+		source =
+				let
+				    Origen = Odbc.DataSource("dsn=CMMS_Supabase", [HierarchicalNavigation=true]),
+				    postgres_Database = Origen{[Name="postgres",Kind="Database"]}[Data],
+				    public_Schema = postgres_Database{[Name="public",Kind="Schema"]}[Data],
+				    shutdown_areas_Table = public_Schema{[Name="shutdown_areas",Kind="Table"]}[Data]
+				in
+				    shutdown_areas_Table
+
+	annotation PBI_ResultType = Table
+

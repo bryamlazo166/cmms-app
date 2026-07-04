@@ -1,0 +1,272 @@
+table FactLubricacion
+	lineageTag: 4d5c381337496e67
+
+	column id
+		dataType: int64
+		isHidden
+		isKey
+		lineageTag: 2a6e0a1e34ca13a4
+		summarizeBy: none
+		sourceColumn: id
+
+		annotation SummarizationSetBy = Automatic
+
+	column 'Código Lub'
+		dataType: string
+		lineageTag: ad2adeb4d132c81d
+		summarizeBy: none
+		sourceColumn: code
+
+		annotation SummarizationSetBy = Automatic
+
+	column 'Punto Lubricación'
+		dataType: string
+		lineageTag: 6c4d2a8f1e3b4815
+		summarizeBy: none
+		sourceColumn: name
+
+		annotation SummarizationSetBy = Automatic
+
+	column Tarea
+		dataType: string
+		lineageTag: 7d5e3b9a2f4c4926
+		summarizeBy: none
+		sourceColumn: task_name
+
+		annotation SummarizationSetBy = Automatic
+
+	column 'Tipo Tarea'
+		dataType: string
+		lineageTag: 9f7a5d2c4b6e4b48
+		summarizeBy: none
+		sourceColumn: task_type
+
+		annotation SummarizationSetBy = Automatic
+
+	column Lubricante
+		dataType: string
+		lineageTag: 672bbc5cf1c910fd
+		summarizeBy: none
+		sourceColumn: lubricant_name
+
+		annotation SummarizationSetBy = Automatic
+
+	column Grado
+		dataType: string
+		lineageTag: 125c7db9a3f49ef9
+		summarizeBy: none
+		sourceColumn: lubricant_grade
+
+		annotation SummarizationSetBy = Automatic
+
+	column Cantidad
+		dataType: double
+		formatString: #,0.00
+		lineageTag: 95a563493fc4fd56
+		summarizeBy: sum
+		sourceColumn: quantity_nominal
+
+		annotation SummarizationSetBy = Automatic
+
+	column 'Estado Lub'
+		dataType: string
+		lineageTag: 2dd3540a2054a36f
+		summarizeBy: none
+		sourceColumn: semaphore_status
+
+		annotation SummarizationSetBy = Automatic
+
+	column 'Próxima Aplicación'
+		dataType: dateTime
+		formatString: Long Date
+		lineageTag: daa489f7c7899e64
+		summarizeBy: none
+		sourceColumn: next_due_date
+
+		changedProperty = DataType
+
+		annotation SummarizationSetBy = Automatic
+
+		annotation UnderlyingDateTimeDataType = Date
+
+	column equipment_id
+		dataType: int64
+		isHidden
+		lineageTag: 21981e8c293c3913
+		summarizeBy: none
+		sourceColumn: equipment_id
+
+		annotation SummarizationSetBy = Automatic
+
+	column area_id
+		dataType: int64
+		isHidden
+		lineageTag: a1b8c2e9f4d54a59
+		summarizeBy: none
+		sourceColumn: area_id
+
+		annotation SummarizationSetBy = Automatic
+
+	column line_id
+		dataType: int64
+		isHidden
+		lineageTag: b2c9d3fa15e64b6a
+		summarizeBy: none
+		sourceColumn: line_id
+
+		annotation SummarizationSetBy = Automatic
+
+	column system_id
+		dataType: int64
+		isHidden
+		lineageTag: c3da4e0b26f74c7b
+		summarizeBy: none
+		sourceColumn: system_id
+
+		annotation SummarizationSetBy = Automatic
+
+	column component_id
+		dataType: int64
+		isHidden
+		lineageTag: d4eb5f1c3708497c
+		summarizeBy: none
+		sourceColumn: component_id
+
+		annotation SummarizationSetBy = Automatic
+
+	column task_group
+		dataType: string
+		lineageTag: d51f390c-9607-41f0-9577-53afd0bf357f
+		summarizeBy: none
+		sourceColumn: task_group
+
+		annotation SummarizationSetBy = Automatic
+
+	column rotable_asset_id
+		dataType: int64
+		formatString: 0
+		lineageTag: 4b843019-01f6-4ac7-82bf-b554218430c2
+		summarizeBy: sum
+		sourceColumn: rotable_asset_id
+
+		annotation SummarizationSetBy = Automatic
+
+	column quantity_unit
+		dataType: string
+		lineageTag: 242ea7aa-d094-46d7-81d2-17065f43700e
+		summarizeBy: none
+		sourceColumn: quantity_unit
+
+		annotation SummarizationSetBy = Automatic
+
+	column frequency_days
+		dataType: int64
+		formatString: 0
+		lineageTag: ac2c2f1c-1fa9-457f-a5c3-d2d9e4ee05a5
+		summarizeBy: sum
+		sourceColumn: frequency_days
+
+		annotation SummarizationSetBy = Automatic
+
+	column warning_days
+		dataType: int64
+		formatString: 0
+		lineageTag: 9d5c4a55-fa08-4c8f-be9a-31c441d0e7a7
+		summarizeBy: sum
+		sourceColumn: warning_days
+
+		annotation SummarizationSetBy = Automatic
+
+	column reset_cycle_on_topup
+		dataType: string
+		lineageTag: 92b5dc5c-37cc-4e71-9603-15062549d9c0
+		summarizeBy: none
+		sourceColumn: reset_cycle_on_topup
+
+		annotation SummarizationSetBy = Automatic
+
+	column last_service_date
+		dataType: dateTime
+		formatString: Long Date
+		lineageTag: 7e3cf5dd-8ccb-4ce3-b95c-a8a7d591f3ea
+		summarizeBy: none
+		sourceColumn: last_service_date
+
+		changedProperty = DataType
+
+		annotation SummarizationSetBy = Automatic
+
+		annotation UnderlyingDateTimeDataType = Date
+
+	column notes
+		dataType: string
+		lineageTag: afb47f8f-4968-482e-b7fe-aba871ba9ae3
+		summarizeBy: none
+		sourceColumn: notes
+
+		annotation SummarizationSetBy = Automatic
+
+	column is_active
+		dataType: string
+		lineageTag: f7256fcc-28d2-4a4a-ae7a-917321d81fa9
+		summarizeBy: none
+		sourceColumn: is_active
+
+		annotation SummarizationSetBy = Automatic
+
+	column created_at
+		dataType: dateTime
+		formatString: General Date
+		lineageTag: 69b662e2-8c05-47d5-8d47-3aa32009038c
+		summarizeBy: none
+		sourceColumn: created_at
+
+		annotation SummarizationSetBy = Automatic
+
+	column updated_at
+		dataType: dateTime
+		formatString: General Date
+		lineageTag: fc470233-0298-4168-aae0-5eb00bc55fc3
+		summarizeBy: none
+		sourceColumn: updated_at
+
+		annotation SummarizationSetBy = Automatic
+
+	column description
+		dataType: string
+		lineageTag: b66e28b7-8a70-413f-bfc2-bbf8776824b9
+		summarizeBy: none
+		sourceColumn: description
+
+		annotation SummarizationSetBy = Automatic
+
+	column responsible_party_override
+		dataType: string
+		lineageTag: 9fc3f267-64e1-48a0-a1b2-52ead6f96cc6
+		summarizeBy: none
+		sourceColumn: responsible_party_override
+
+		annotation SummarizationSetBy = Automatic
+
+	column provider_id_override
+		dataType: int64
+		formatString: 0
+		lineageTag: 46bc40f2-9514-401d-a958-25b8c3226713
+		summarizeBy: sum
+		sourceColumn: provider_id_override
+
+		annotation SummarizationSetBy = Automatic
+
+	partition FactLubricacion = m
+		mode: import
+		source =
+				let
+				    Origen = Odbc.DataSource("dsn=CMMS_Supabase", [HierarchicalNavigation=true]),
+				    postgres_Database = Origen{[Name="postgres",Kind="Database"]}[Data],
+				    public_Schema = postgres_Database{[Name="public",Kind="Schema"]}[Data],
+				    lubrication_points_Table = public_Schema{[Name="lubrication_points",Kind="Table"]}[Data]
+				in
+				    lubrication_points_Table
+
+	annotation PBI_ResultType = Table
+

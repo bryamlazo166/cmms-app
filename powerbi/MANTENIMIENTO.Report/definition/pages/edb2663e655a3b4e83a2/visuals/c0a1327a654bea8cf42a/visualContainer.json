@@ -1,0 +1,37 @@
+{
+  "$schema": "https://developer.microsoft.com/json-schemas/fabric/item/report/definition/visualContainer/2.0.0/schema.json",
+  "name": "c0a1327a654bea8cf42a",
+  "position": {
+    "x": 20,
+    "y": 20,
+    "z": 1001,
+    "width": 160,
+    "height": 50,
+    "tabOrder": 1001
+  },
+  "visual": {
+    "visualType": "slicer",
+    "query": {
+      "queryState": {
+        "Values": {
+          "projections": [
+            {
+              "field": {
+                "Column": {
+                  "Expression": {
+                    "SourceRef": {
+                      "Entity": "FactOTs"
+                    }
+                  },
+                  "Property": "Tipo OT"
+                }
+              },
+              "queryRef": "FactOTs.Tipo OT",
+              "nativeQueryRef": "Tipo OT"
+            }
+          ]
+        }
+      }
+    }
+  }
+}

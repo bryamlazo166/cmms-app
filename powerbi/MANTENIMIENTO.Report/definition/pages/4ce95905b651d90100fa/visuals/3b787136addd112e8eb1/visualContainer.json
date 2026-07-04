@@ -1,0 +1,55 @@
+{
+  "$schema": "https://developer.microsoft.com/json-schemas/fabric/item/report/definition/visualContainer/2.0.0/schema.json",
+  "name": "3b787136addd112e8eb1",
+  "position": {
+    "x": 980,
+    "y": 160,
+    "z": 1006,
+    "width": 280,
+    "height": 280,
+    "tabOrder": 1006
+  },
+  "visual": {
+    "visualType": "barChart",
+    "query": {
+      "queryState": {
+        "Category": {
+          "projections": [
+            {
+              "field": {
+                "Column": {
+                  "Expression": {
+                    "SourceRef": {
+                      "Entity": "FactOTs"
+                    }
+                  },
+                  "Property": "Modo Falla"
+                }
+              },
+              "queryRef": "FactOTs.Modo Falla",
+              "nativeQueryRef": "Modo Falla"
+            }
+          ]
+        },
+        "Y": {
+          "projections": [
+            {
+              "field": {
+                "Measure": {
+                  "Expression": {
+                    "SourceRef": {
+                      "Entity": "_Medidas"
+                    }
+                  },
+                  "Property": "Fallas por Modo"
+                }
+              },
+              "queryRef": "_Medidas.Fallas por Modo",
+              "nativeQueryRef": "Fallas por Modo"
+            }
+          ]
+        }
+      }
+    }
+  }
+}

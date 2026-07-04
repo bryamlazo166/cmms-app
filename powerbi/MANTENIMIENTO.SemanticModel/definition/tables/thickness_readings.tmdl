@@ -1,0 +1,69 @@
+table thickness_readings
+	lineageTag: 34e90f67-d164-4248-93c4-2be353580b38
+
+	column id
+		dataType: int64
+		formatString: 0
+		lineageTag: 4c3ee8f0-c946-48d3-921a-e92326ecadc2
+		summarizeBy: sum
+		sourceColumn: id
+
+		annotation SummarizationSetBy = Automatic
+
+	column inspection_id
+		dataType: int64
+		formatString: 0
+		lineageTag: de56c609-86d1-4b33-8b71-857ddd55914c
+		summarizeBy: none
+		sourceColumn: inspection_id
+
+		annotation SummarizationSetBy = Automatic
+
+	column point_id
+		dataType: int64
+		formatString: 0
+		lineageTag: e8d2e4b6-b3da-4f2c-ba41-a0fff6df8772
+		summarizeBy: sum
+		sourceColumn: point_id
+
+		annotation SummarizationSetBy = Automatic
+
+	column value_mm
+		dataType: double
+		lineageTag: ce5f38a9-bdf2-4399-b9d6-640ed3adda9b
+		summarizeBy: sum
+		sourceColumn: value_mm
+
+		annotation SummarizationSetBy = Automatic
+
+		annotation PBI_FormatHint = {"isGeneralNumber":true}
+
+	column is_critical
+		dataType: string
+		lineageTag: d66ca234-6829-448e-90ba-b71f97d84d08
+		summarizeBy: none
+		sourceColumn: is_critical
+
+		annotation SummarizationSetBy = Automatic
+
+	column is_alert
+		dataType: string
+		lineageTag: 6f485a3d-6e43-436b-ac05-c737568f5382
+		summarizeBy: none
+		sourceColumn: is_alert
+
+		annotation SummarizationSetBy = Automatic
+
+	partition thickness_readings = m
+		mode: import
+		source =
+				let
+				    Origen = Odbc.DataSource("dsn=CMMS_Supabase", [HierarchicalNavigation=true]),
+				    postgres_Database = Origen{[Name="postgres",Kind="Database"]}[Data],
+				    public_Schema = postgres_Database{[Name="public",Kind="Schema"]}[Data],
+				    thickness_readings_Table = public_Schema{[Name="thickness_readings",Kind="Table"]}[Data]
+				in
+				    thickness_readings_Table
+
+	annotation PBI_ResultType = Table
+

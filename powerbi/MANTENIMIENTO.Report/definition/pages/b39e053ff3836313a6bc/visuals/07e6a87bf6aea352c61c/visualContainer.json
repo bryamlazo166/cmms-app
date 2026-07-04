@@ -1,0 +1,37 @@
+{
+  "$schema": "https://developer.microsoft.com/json-schemas/fabric/item/report/definition/visualContainer/2.0.0/schema.json",
+  "name": "07e6a87bf6aea352c61c",
+  "position": {
+    "x": 560,
+    "y": 20,
+    "z": 1003,
+    "width": 200,
+    "height": 120,
+    "tabOrder": 1003
+  },
+  "visual": {
+    "visualType": "card",
+    "query": {
+      "queryState": {
+        "Values": {
+          "projections": [
+            {
+              "field": {
+                "Measure": {
+                  "Expression": {
+                    "SourceRef": {
+                      "Entity": "_Medidas"
+                    }
+                  },
+                  "Property": "Avisos con OT"
+                }
+              },
+              "queryRef": "_Medidas.Avisos con OT",
+              "nativeQueryRef": "Avisos con OT"
+            }
+          ]
+        }
+      }
+    }
+  }
+}

@@ -1,0 +1,117 @@
+table DimFecha
+	lineageTag: c3ff23f396d3452f
+
+	column Date
+		dataType: dateTime
+		isKey
+		formatString: dd/MM/yyyy
+		lineageTag: a35a28ca04cf4842
+		summarizeBy: none
+		sourceColumn: [Date]
+
+	column Año
+		dataType: int64
+		lineageTag: 50703f1bc96e4446
+		summarizeBy: none
+		sourceColumn: [Año]
+
+		annotation SummarizationSetBy = Automatic
+
+	column Mes
+		dataType: int64
+		lineageTag: b8e3bb89330c4300
+		summarizeBy: none
+		sourceColumn: [Mes]
+
+		annotation SummarizationSetBy = Automatic
+
+	column 'Nombre Mes'
+		dataType: string
+		lineageTag: bf8d9887d3824843
+		summarizeBy: none
+		sourceColumn: [Nombre Mes]
+		sortByColumn: Mes
+
+	column 'Mes Corto'
+		dataType: string
+		lineageTag: 1f564faa86004358
+		summarizeBy: none
+		sourceColumn: [Mes Corto]
+		sortByColumn: Mes
+
+	column Año-Mes
+		dataType: string
+		lineageTag: 4a22d5b9fd9c4341
+		summarizeBy: none
+		sourceColumn: [Año-Mes]
+
+	column Trimestre
+		dataType: string
+		lineageTag: b699bc6cf27d400b
+		summarizeBy: none
+		sourceColumn: [Trimestre]
+
+	column Año-Trimestre
+		dataType: string
+		lineageTag: 99c9878a1bed4504
+		summarizeBy: none
+		sourceColumn: [Año-Trimestre]
+
+	column Día
+		dataType: int64
+		lineageTag: c2e5cfb2e38b487c
+		summarizeBy: none
+		sourceColumn: [Día]
+
+		annotation SummarizationSetBy = Automatic
+
+	column 'Día Semana'
+		dataType: int64
+		lineageTag: 8a9f2b7baedf4bce
+		summarizeBy: none
+		sourceColumn: [Día Semana]
+
+		annotation SummarizationSetBy = Automatic
+
+	column 'Nombre Día'
+		dataType: string
+		lineageTag: 291faa0ef66b45bb
+		summarizeBy: none
+		sourceColumn: [Nombre Día]
+		sortByColumn: 'Día Semana'
+
+	column 'Semana ISO'
+		dataType: int64
+		lineageTag: b2f5b9c133e44097
+		summarizeBy: none
+		sourceColumn: [Semana ISO]
+
+		annotation SummarizationSetBy = Automatic
+
+	column 'Es Fin Semana'
+		dataType: boolean
+		lineageTag: 908e70d891f940e3
+		summarizeBy: none
+		sourceColumn: [Es Fin Semana]
+
+	partition DimFecha-374c11d2b2684fe0 = calculated
+		mode: import
+		source =
+				ADDCOLUMNS(
+				    CALENDAR(DATE(2024,1,1), DATE(2030,12,31)),
+				    "Año", YEAR([Date]),
+				    "Mes", MONTH([Date]),
+				    "Nombre Mes", FORMAT([Date], "MMMM"),
+				    "Mes Corto", FORMAT([Date], "MMM"),
+				    "Año-Mes", FORMAT([Date], "YYYY-MM"),
+				    "Trimestre", "Q" & FORMAT([Date], "Q"),
+				    "Año-Trimestre", FORMAT([Date], "YYYY") & "-Q" & FORMAT([Date], "Q"),
+				    "Día", DAY([Date]),
+				    "Día Semana", WEEKDAY([Date],2),
+				    "Nombre Día", FORMAT([Date], "DDDD"),
+				    "Semana ISO", WEEKNUM([Date],21),
+				    "Es Fin Semana", IF(WEEKDAY([Date],2)>5, TRUE(), FALSE())
+				)
+
+	annotation PBI_ResultType = {"type":"table"}
+

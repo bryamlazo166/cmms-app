@@ -1,0 +1,55 @@
+{
+  "$schema": "https://developer.microsoft.com/json-schemas/fabric/item/report/definition/visualContainer/2.0.0/schema.json",
+  "name": "b91b5403d716f2c6acfe",
+  "position": {
+    "x": 660,
+    "y": 160,
+    "z": 1004,
+    "width": 600,
+    "height": 280,
+    "tabOrder": 1004
+  },
+  "visual": {
+    "visualType": "lineChart",
+    "query": {
+      "queryState": {
+        "Category": {
+          "projections": [
+            {
+              "field": {
+                "Column": {
+                  "Expression": {
+                    "SourceRef": {
+                      "Entity": "DimFecha"
+                    }
+                  },
+                  "Property": "Año-Mes"
+                }
+              },
+              "queryRef": "DimFecha.Año-Mes",
+              "nativeQueryRef": "Año-Mes"
+            }
+          ]
+        },
+        "Y": {
+          "projections": [
+            {
+              "field": {
+                "Measure": {
+                  "Expression": {
+                    "SourceRef": {
+                      "Entity": "_Medidas"
+                    }
+                  },
+                  "Property": "OTs Predictivas"
+                }
+              },
+              "queryRef": "_Medidas.OTs Predictivas",
+              "nativeQueryRef": "OTs Predictivas"
+            }
+          ]
+        }
+      }
+    }
+  }
+}

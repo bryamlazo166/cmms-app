@@ -1,0 +1,144 @@
+table FactParadas
+	lineageTag: f8ea7de49074350d
+
+	column id
+		dataType: int64
+		isHidden
+		isKey
+		lineageTag: 5a161fa4c6a0137e
+		summarizeBy: none
+		sourceColumn: id
+
+		annotation SummarizationSetBy = Automatic
+
+	column 'Nombre Parada'
+		dataType: string
+		lineageTag: c74974bd03f9a363
+		summarizeBy: none
+		sourceColumn: name
+
+		annotation SummarizationSetBy = Automatic
+
+	column 'Tipo Parada'
+		dataType: string
+		lineageTag: 29e3d50cfc2ffac9
+		summarizeBy: none
+		sourceColumn: shutdown_type
+
+		annotation SummarizationSetBy = Automatic
+
+	column 'Estado Parada'
+		dataType: string
+		lineageTag: aa071aedd87c586e
+		summarizeBy: none
+		sourceColumn: status
+
+		annotation SummarizationSetBy = Automatic
+
+	column 'Fecha Parada'
+		dataType: dateTime
+		formatString: Short Date
+		lineageTag: 6cc0d0cd13ef0c45
+		summarizeBy: none
+		sourceColumn: shutdown_date
+
+		changedProperty = DataType
+
+		annotation SummarizationSetBy = Automatic
+
+		annotation UnderlyingDateTimeDataType = Date
+
+	column 'Hora Inicio'
+		dataType: dateTime
+		formatString: General Date
+		lineageTag: 7dd1e1de24f01d56
+		summarizeBy: none
+		sourceColumn: start_time
+
+		changedProperty = DataType
+
+		annotation SummarizationSetBy = Automatic
+
+	column 'Hora Fin'
+		dataType: dateTime
+		formatString: General Date
+		lineageTag: 8ee2f2ef35012e67
+		summarizeBy: none
+		sourceColumn: end_time
+
+		changedProperty = DataType
+
+		annotation SummarizationSetBy = Automatic
+
+	column Observaciones
+		dataType: string
+		lineageTag: 8c00374f1a97dfca
+		summarizeBy: none
+		sourceColumn: observations
+
+		annotation SummarizationSetBy = Automatic
+
+	column overtime
+		dataType: string
+		lineageTag: f7fd8cbd-3882-484c-b6c6-3ce47b4382da
+		summarizeBy: none
+		sourceColumn: overtime
+
+		annotation SummarizationSetBy = Automatic
+
+	column production_requirements
+		dataType: string
+		lineageTag: 9b1a7852-16cf-4771-b5e4-3b679b655fc8
+		summarizeBy: none
+		sourceColumn: production_requirements
+
+		annotation SummarizationSetBy = Automatic
+
+	column created_by
+		dataType: string
+		lineageTag: 0e44d320-1eb9-4fa1-85c9-108749944a2a
+		summarizeBy: none
+		sourceColumn: created_by
+
+		annotation SummarizationSetBy = Automatic
+
+	column created_at
+		dataType: dateTime
+		formatString: General Date
+		lineageTag: 46ba2750-a478-49aa-9da3-b0608084c495
+		summarizeBy: none
+		sourceColumn: created_at
+
+		annotation SummarizationSetBy = Automatic
+
+	column code
+		dataType: string
+		lineageTag: 8d4b4b64-c2d1-4579-8c94-07c8826860f7
+		summarizeBy: none
+		sourceColumn: code
+
+		annotation SummarizationSetBy = Automatic
+
+	column is_planned
+		dataType: string
+		lineageTag: 8d72b661-f282-4f2e-808b-753ac3aac918
+		summarizeBy: none
+		sourceColumn: is_planned
+
+		annotation SummarizationSetBy = Automatic
+
+	partition FactParadas = m
+		mode: import
+		source =
+				let
+				    Origen = Odbc.DataSource("dsn=CMMS_Supabase", [HierarchicalNavigation=true]),
+				    postgres_Database = Origen{[Name="postgres",Kind="Database"]}[Data],
+				    public_Schema = postgres_Database{[Name="public",Kind="Schema"]}[Data],
+				    shutdowns_Table = public_Schema{[Name="shutdowns",Kind="Table"]}[Data],
+				    #"Valor reemplazado" = Table.ReplaceValue(shutdowns_Table,"T"," ",Replacer.ReplaceText,{"start_time"}),
+				    #"Valor reemplazado1" = Table.ReplaceValue(#"Valor reemplazado","T"," ",Replacer.ReplaceText,{"end_time"})
+				in
+				    #"Valor reemplazado1"
+
+	annotation PBI_ResultType = Table
+

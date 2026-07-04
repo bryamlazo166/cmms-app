@@ -1,0 +1,69 @@
+{
+  "$schema": "https://developer.microsoft.com/json-schemas/fabric/item/report/definition/visualContainer/2.0.0/schema.json",
+  "name": "64ce56b3dfc8197d27a8",
+  "position": {
+    "x": 20,
+    "y": 460,
+    "z": 1007,
+    "width": 1240,
+    "height": 240,
+    "tabOrder": 1007
+  },
+  "visual": {
+    "visualType": "lineChart",
+    "query": {
+      "queryState": {
+        "Category": {
+          "projections": [
+            {
+              "field": {
+                "Column": {
+                  "Expression": {
+                    "SourceRef": {
+                      "Entity": "DimFecha"
+                    }
+                  },
+                  "Property": "Año-Mes"
+                }
+              },
+              "queryRef": "DimFecha.Año-Mes",
+              "nativeQueryRef": "Año-Mes"
+            }
+          ]
+        },
+        "Y": {
+          "projections": [
+            {
+              "field": {
+                "Measure": {
+                  "Expression": {
+                    "SourceRef": {
+                      "Entity": "_Medidas"
+                    }
+                  },
+                  "Property": "OTs Preventivas"
+                }
+              },
+              "queryRef": "_Medidas.OTs Preventivas",
+              "nativeQueryRef": "OTs Preventivas"
+            },
+            {
+              "field": {
+                "Measure": {
+                  "Expression": {
+                    "SourceRef": {
+                      "Entity": "_Medidas"
+                    }
+                  },
+                  "Property": "OTs Correctivas"
+                }
+              },
+              "queryRef": "_Medidas.OTs Correctivas",
+              "nativeQueryRef": "OTs Correctivas"
+            }
+          ]
+        }
+      }
+    }
+  }
+}

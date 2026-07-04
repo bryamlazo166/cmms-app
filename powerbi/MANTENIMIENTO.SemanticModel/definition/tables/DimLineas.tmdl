@@ -1,0 +1,51 @@
+table DimLineas
+	lineageTag: d7e3e15ec8e33473
+
+	column id
+		dataType: int64
+		isHidden
+		isKey
+		lineageTag: e71529f50ced4071
+		summarizeBy: none
+		sourceColumn: id
+
+		annotation SummarizationSetBy = Automatic
+
+	column Línea
+		dataType: string
+		lineageTag: df15a6e0369087dc
+		summarizeBy: none
+		sourceColumn: name
+
+		annotation SummarizationSetBy = Automatic
+
+	column area_id
+		dataType: int64
+		isHidden
+		lineageTag: ea061d8ee04b191b
+		summarizeBy: none
+		sourceColumn: area_id
+
+		annotation SummarizationSetBy = Automatic
+
+	column description
+		dataType: string
+		lineageTag: b4f9d999-73ed-4112-8394-63da027da633
+		summarizeBy: none
+		sourceColumn: description
+
+		annotation SummarizationSetBy = Automatic
+
+	partition DimLineas = m
+		mode: import
+		source =
+				let
+				    Origen = Odbc.DataSource("dsn=CMMS_Supabase", [HierarchicalNavigation=true]),
+				    postgres_Database = Origen{[Name="postgres",Kind="Database"]}[Data],
+				    public_Schema = postgres_Database{[Name="public",Kind="Schema"]}[Data],
+				    lines_Table = public_Schema{[Name="lines",Kind="Table"]}[Data]
+				in
+				    lines_Table
+
+	annotation PBI_ResultType = Table
+

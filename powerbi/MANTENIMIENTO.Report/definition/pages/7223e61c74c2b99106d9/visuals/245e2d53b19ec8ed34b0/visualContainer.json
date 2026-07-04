@@ -1,0 +1,55 @@
+{
+  "$schema": "https://developer.microsoft.com/json-schemas/fabric/item/report/definition/visualContainer/2.0.0/schema.json",
+  "name": "245e2d53b19ec8ed34b0",
+  "position": {
+    "x": 660,
+    "y": 160,
+    "z": 1006,
+    "width": 600,
+    "height": 280,
+    "tabOrder": 1006
+  },
+  "visual": {
+    "visualType": "barChart",
+    "query": {
+      "queryState": {
+        "Category": {
+          "projections": [
+            {
+              "field": {
+                "Column": {
+                  "Expression": {
+                    "SourceRef": {
+                      "Entity": "DimTecnicos"
+                    }
+                  },
+                  "Property": "Especialidad"
+                }
+              },
+              "queryRef": "DimTecnicos.Especialidad",
+              "nativeQueryRef": "Especialidad"
+            }
+          ]
+        },
+        "Y": {
+          "projections": [
+            {
+              "field": {
+                "Measure": {
+                  "Expression": {
+                    "SourceRef": {
+                      "Entity": "_Medidas"
+                    }
+                  },
+                  "Property": "Total OTs"
+                }
+              },
+              "queryRef": "_Medidas.Total OTs",
+              "nativeQueryRef": "Total OTs"
+            }
+          ]
+        }
+      }
+    }
+  }
+}

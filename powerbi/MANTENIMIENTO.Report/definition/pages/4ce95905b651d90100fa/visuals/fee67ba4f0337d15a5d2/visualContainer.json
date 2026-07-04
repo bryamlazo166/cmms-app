@@ -1,0 +1,55 @@
+{
+  "$schema": "https://developer.microsoft.com/json-schemas/fabric/item/report/definition/visualContainer/2.0.0/schema.json",
+  "name": "fee67ba4f0337d15a5d2",
+  "position": {
+    "x": 20,
+    "y": 460,
+    "z": 1007,
+    "width": 1240,
+    "height": 240,
+    "tabOrder": 1007
+  },
+  "visual": {
+    "visualType": "lineChart",
+    "query": {
+      "queryState": {
+        "Category": {
+          "projections": [
+            {
+              "field": {
+                "Column": {
+                  "Expression": {
+                    "SourceRef": {
+                      "Entity": "DimFecha"
+                    }
+                  },
+                  "Property": "Año-Mes"
+                }
+              },
+              "queryRef": "DimFecha.Año-Mes",
+              "nativeQueryRef": "Año-Mes"
+            }
+          ]
+        },
+        "Y": {
+          "projections": [
+            {
+              "field": {
+                "Measure": {
+                  "Expression": {
+                    "SourceRef": {
+                      "Entity": "_Medidas"
+                    }
+                  },
+                  "Property": "Total Fallas"
+                }
+              },
+              "queryRef": "_Medidas.Total Fallas",
+              "nativeQueryRef": "Total Fallas"
+            }
+          ]
+        }
+      }
+    }
+  }
+}

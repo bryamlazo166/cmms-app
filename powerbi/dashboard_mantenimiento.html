@@ -1,0 +1,1769 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>CMMS Enterprise - Dashboard Gerencial de Mantenimiento</title>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chartjs-plugin-datalabels@2.2.0/dist/chartjs-plugin-datalabels.min.js"></script>
+    <style>
+        :root {
+            --bg-primary: #0f1923;
+            --bg-secondary: #1a2733;
+            --bg-card: #1e2d3d;
+            --bg-card-hover: #243647;
+            --border: #2a3f52;
+            --text-primary: #e8edf2;
+            --text-secondary: #8899aa;
+            --text-muted: #5a6f80;
+            --accent-blue: #00b4d8;
+            --accent-green: #06d6a0;
+            --accent-yellow: #ffd166;
+            --accent-red: #ef476f;
+            --accent-purple: #9b5de5;
+            --accent-orange: #f77f00;
+            --accent-cyan: #48cae4;
+            --accent-teal: #2ec4b6;
+            --shadow: 0 4px 24px rgba(0,0,0,0.3);
+            --radius: 12px;
+            --transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+        }
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body {
+            font-family: 'Segoe UI', -apple-system, BlinkMacSystemFont, Roboto, sans-serif;
+            background: var(--bg-primary);
+            color: var(--text-primary);
+            min-height: 100vh;
+        }
+        /* SIDEBAR */
+        .sidebar {
+            position: fixed; left: 0; top: 0; bottom: 0; width: 260px;
+            background: var(--bg-secondary);
+            border-right: 1px solid var(--border);
+            z-index: 100; display: flex; flex-direction: column;
+            transition: var(--transition);
+        }
+        .sidebar-header {
+            padding: 24px 20px; border-bottom: 1px solid var(--border);
+        }
+        .sidebar-logo {
+            font-size: 22px; font-weight: 700; color: var(--accent-blue);
+            letter-spacing: 1px;
+        }
+        .sidebar-subtitle {
+            font-size: 11px; color: var(--text-muted); text-transform: uppercase;
+            letter-spacing: 2px; margin-top: 4px;
+        }
+        .sidebar-nav { flex: 1; overflow-y: auto; padding: 12px 0; }
+        .nav-section {
+            padding: 8px 20px 4px; font-size: 10px; text-transform: uppercase;
+            letter-spacing: 2px; color: var(--text-muted); font-weight: 600;
+            margin-top: 8px;
+        }
+        .nav-item {
+            display: flex; align-items: center; gap: 12px;
+            padding: 12px 20px; cursor: pointer; color: var(--text-secondary);
+            transition: var(--transition); border-left: 3px solid transparent;
+            font-size: 14px; font-weight: 500;
+        }
+        .nav-item:hover { background: rgba(0,180,216,0.08); color: var(--text-primary); }
+        .nav-item.active {
+            background: rgba(0,180,216,0.12); color: var(--accent-blue);
+            border-left-color: var(--accent-blue);
+        }
+        .nav-icon { font-size: 18px; width: 24px; text-align: center; }
+        .sidebar-footer {
+            padding: 16px 20px; border-top: 1px solid var(--border);
+            font-size: 11px; color: var(--text-muted);
+        }
+        /* MAIN CONTENT */
+        .main-content {
+            margin-left: 260px; min-height: 100vh;
+        }
+        .topbar {
+            background: var(--bg-secondary); border-bottom: 1px solid var(--border);
+            padding: 16px 32px; display: flex; justify-content: space-between; align-items: center;
+            position: sticky; top: 0; z-index: 50;
+        }
+        .topbar-title { font-size: 18px; font-weight: 600; }
+        .topbar-right { display: flex; align-items: center; gap: 16px; }
+        .topbar-time { font-size: 13px; color: var(--text-secondary); }
+        .btn-refresh {
+            background: var(--accent-blue); color: white; border: none;
+            padding: 8px 20px; border-radius: 8px; cursor: pointer;
+            font-size: 13px; font-weight: 600; transition: var(--transition);
+        }
+        .btn-refresh:hover { background: #0096b7; transform: translateY(-1px); }
+        .page { display: none; padding: 28px 32px; animation: fadeIn 0.4s ease; }
+        .page.active { display: block; }
+        @keyframes fadeIn { from { opacity: 0; transform: translateY(8px); } to { opacity: 1; transform: translateY(0); } }
+        /* KPI CARDS */
+        .kpi-grid {
+            display: grid; gap: 16px; margin-bottom: 24px;
+            grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+        }
+        .kpi-grid.cols-6 { grid-template-columns: repeat(6, 1fr); }
+        .kpi-grid.cols-5 { grid-template-columns: repeat(5, 1fr); }
+        .kpi-grid.cols-4 { grid-template-columns: repeat(4, 1fr); }
+        .kpi-grid.cols-3 { grid-template-columns: repeat(3, 1fr); }
+        .kpi {
+            background: var(--bg-card); border-radius: var(--radius);
+            padding: 20px; border: 1px solid var(--border);
+            transition: var(--transition); position: relative; overflow: hidden;
+        }
+        .kpi:hover { transform: translateY(-3px); box-shadow: var(--shadow); border-color: var(--accent-blue); }
+        .kpi::before {
+            content: ''; position: absolute; top: 0; left: 0; right: 0;
+            height: 3px; background: var(--accent-blue);
+        }
+        .kpi.green::before { background: var(--accent-green); }
+        .kpi.red::before { background: var(--accent-red); }
+        .kpi.yellow::before { background: var(--accent-yellow); }
+        .kpi.purple::before { background: var(--accent-purple); }
+        .kpi.orange::before { background: var(--accent-orange); }
+        .kpi.cyan::before { background: var(--accent-cyan); }
+        .kpi-label {
+            font-size: 11px; text-transform: uppercase; letter-spacing: 1.5px;
+            color: var(--text-muted); font-weight: 600; margin-bottom: 10px;
+        }
+        .kpi-value {
+            font-size: 32px; font-weight: 700; line-height: 1;
+            background: linear-gradient(135deg, var(--text-primary) 0%, var(--accent-blue) 100%);
+            -webkit-background-clip: text; -webkit-text-fill-color: transparent;
+        }
+        .kpi-value.green-val {
+            background: linear-gradient(135deg, var(--text-primary) 0%, var(--accent-green) 100%);
+            -webkit-background-clip: text; -webkit-text-fill-color: transparent;
+        }
+        .kpi-value.red-val {
+            background: linear-gradient(135deg, var(--text-primary) 0%, var(--accent-red) 100%);
+            -webkit-background-clip: text; -webkit-text-fill-color: transparent;
+        }
+        .kpi-unit { font-size: 14px; color: var(--text-secondary); margin-top: 4px; }
+        .kpi-trend {
+            font-size: 11px; margin-top: 8px; display: flex; align-items: center; gap: 4px;
+        }
+        .kpi-trend.up { color: var(--accent-green); }
+        .kpi-trend.down { color: var(--accent-red); }
+        /* CHART CARDS */
+        .chart-grid {
+            display: grid; gap: 20px; margin-bottom: 24px;
+            grid-template-columns: repeat(2, 1fr);
+        }
+        .chart-grid.cols-3 { grid-template-columns: repeat(3, 1fr); }
+        .chart-grid.cols-1 { grid-template-columns: 1fr; }
+        .card {
+            background: var(--bg-card); border-radius: var(--radius);
+            padding: 24px; border: 1px solid var(--border);
+            transition: var(--transition);
+        }
+        .card:hover { border-color: rgba(0,180,216,0.3); }
+        .card.full { grid-column: 1 / -1; }
+        .card-title {
+            font-size: 14px; font-weight: 600; color: var(--text-primary);
+            margin-bottom: 16px; display: flex; align-items: center; gap: 8px;
+            padding-bottom: 12px; border-bottom: 1px solid var(--border);
+        }
+        .card-title .icon { font-size: 16px; }
+        .chart-wrap { position: relative; height: 280px; }
+        .chart-wrap.tall { height: 360px; }
+        .chart-wrap.short { height: 220px; }
+        /* TABLES */
+        .table-wrap { overflow-x: auto; }
+        .tbl {
+            width: 100%; border-collapse: collapse; font-size: 13px;
+        }
+        .tbl thead { background: rgba(0,180,216,0.08); }
+        .tbl th {
+            padding: 12px 16px; text-align: left; font-weight: 600;
+            color: var(--accent-blue); font-size: 11px; text-transform: uppercase;
+            letter-spacing: 1px; border-bottom: 1px solid var(--border);
+            cursor: pointer; user-select: none; white-space: nowrap;
+        }
+        .tbl th:hover { color: var(--accent-cyan); }
+        .tbl td {
+            padding: 10px 16px; border-bottom: 1px solid rgba(42,63,82,0.5);
+            color: var(--text-secondary); white-space: nowrap;
+        }
+        .tbl tbody tr:hover { background: rgba(0,180,216,0.04); }
+        .tbl tbody tr:hover td { color: var(--text-primary); }
+        /* BADGES */
+        .badge {
+            display: inline-block; padding: 4px 10px; border-radius: 6px;
+            font-size: 11px; font-weight: 600; text-transform: uppercase;
+            letter-spacing: 0.5px;
+        }
+        .badge.correctivo { background: rgba(239,71,111,0.15); color: var(--accent-red); }
+        .badge.preventivo { background: rgba(6,214,160,0.15); color: var(--accent-green); }
+        .badge.predictivo { background: rgba(155,93,229,0.15); color: var(--accent-purple); }
+        .badge.abierta, .badge.open { background: rgba(0,180,216,0.15); color: var(--accent-blue); }
+        .badge.cerrada, .badge.closed { background: rgba(6,214,160,0.15); color: var(--accent-green); }
+        .badge.pendiente { background: rgba(255,209,102,0.15); color: var(--accent-yellow); }
+        .badge.alta, .badge.high, .badge.critica { background: rgba(239,71,111,0.15); color: var(--accent-red); }
+        .badge.media, .badge.medium { background: rgba(255,209,102,0.15); color: var(--accent-yellow); }
+        .badge.baja, .badge.low { background: rgba(6,214,160,0.15); color: var(--accent-green); }
+        .badge.emergencia { background: rgba(239,71,111,0.25); color: #ff6b8a; }
+        /* GAUGE */
+        .gauge-container { display: flex; justify-content: center; align-items: center; }
+        .gauge-wrap { position: relative; width: 180px; height: 100px; }
+        .gauge-value {
+            position: absolute; bottom: 0; left: 50%; transform: translateX(-50%);
+            font-size: 28px; font-weight: 700; color: var(--text-primary);
+        }
+        .gauge-label {
+            text-align: center; font-size: 12px; color: var(--text-muted);
+            margin-top: 8px;
+        }
+        /* PROGRESS BAR */
+        .progress-bar {
+            height: 8px; background: rgba(255,255,255,0.05);
+            border-radius: 4px; overflow: hidden; margin-top: 8px;
+        }
+        .progress-fill {
+            height: 100%; border-radius: 4px; transition: width 1s ease;
+        }
+        .progress-fill.green { background: var(--accent-green); }
+        .progress-fill.yellow { background: var(--accent-yellow); }
+        .progress-fill.red { background: var(--accent-red); }
+        /* HIERARCHY TREE */
+        .tree-node {
+            padding: 12px 16px; margin: 4px 0; border-radius: 8px;
+            background: rgba(0,180,216,0.05); border: 1px solid var(--border);
+            cursor: pointer; transition: var(--transition);
+        }
+        .tree-node:hover { background: rgba(0,180,216,0.1); }
+        .tree-children { padding-left: 24px; border-left: 2px solid var(--border); margin-left: 12px; }
+        .tree-label { font-weight: 600; font-size: 14px; }
+        .tree-count { font-size: 12px; color: var(--text-muted); margin-left: 8px; }
+        .tree-toggle { cursor: pointer; margin-right: 8px; }
+        /* SECTION TITLE */
+        .section-title {
+            font-size: 16px; font-weight: 600; color: var(--text-primary);
+            margin-bottom: 16px; padding-left: 12px;
+            border-left: 3px solid var(--accent-blue);
+        }
+        /* LOADING */
+        .loading-overlay {
+            position: fixed; inset: 0; background: rgba(15,25,35,0.95);
+            display: flex; flex-direction: column; justify-content: center; align-items: center;
+            z-index: 1000; transition: opacity 0.5s;
+        }
+        .loading-overlay.hidden { opacity: 0; pointer-events: none; }
+        .loader { width: 60px; height: 60px; position: relative; }
+        .loader::before, .loader::after {
+            content: ''; position: absolute; border-radius: 50%;
+            border: 3px solid transparent;
+        }
+        .loader::before {
+            inset: 0; border-top-color: var(--accent-blue);
+            animation: spin 1s linear infinite;
+        }
+        .loader::after {
+            inset: 6px; border-bottom-color: var(--accent-cyan);
+            animation: spin 0.8s linear infinite reverse;
+        }
+        @keyframes spin { to { transform: rotate(360deg); } }
+        .loading-text { margin-top: 20px; color: var(--text-secondary); font-size: 14px; }
+        .loading-progress { width: 200px; margin-top: 12px; }
+        /* FILTER BAR */
+        .filter-bar {
+            display: flex; gap: 12px; margin-bottom: 20px; flex-wrap: wrap;
+            align-items: center;
+        }
+        .filter-bar select, .filter-bar input {
+            background: var(--bg-card); border: 1px solid var(--border);
+            color: var(--text-primary); padding: 8px 14px; border-radius: 8px;
+            font-size: 13px; outline: none; transition: var(--transition);
+        }
+        .filter-bar select:focus, .filter-bar input:focus { border-color: var(--accent-blue); }
+        .filter-label { font-size: 12px; color: var(--text-muted); font-weight: 600; }
+        /* RESPONSIVE */
+        @media (max-width: 1400px) {
+            .chart-grid { grid-template-columns: 1fr 1fr; }
+            .kpi-grid.cols-6 { grid-template-columns: repeat(3, 1fr); }
+        }
+        @media (max-width: 1024px) {
+            .sidebar { width: 60px; }
+            .sidebar .nav-label, .sidebar-subtitle, .sidebar-footer span,
+            .sidebar-logo span { display: none; }
+            .main-content { margin-left: 60px; }
+            .nav-item { justify-content: center; padding: 14px 0; }
+            .chart-grid { grid-template-columns: 1fr; }
+            .kpi-grid { grid-template-columns: repeat(2, 1fr); }
+        }
+        @media print {
+            .sidebar, .topbar, .btn-refresh, .filter-bar { display: none !important; }
+            .main-content { margin-left: 0 !important; }
+            .page { display: block !important; page-break-after: always; }
+            body { background: white; color: black; }
+            .kpi, .card { border: 1px solid #ddd; background: white; }
+            .kpi-value { -webkit-text-fill-color: black; color: black; }
+        }
+    </style>
+</head>
+<body>
+
+<!-- LOADING -->
+<div class="loading-overlay" id="loadingOverlay">
+    <div class="loader"></div>
+    <div class="loading-text" id="loadingText">Conectando con CMMS...</div>
+    <div class="loading-progress">
+        <div class="progress-bar"><div class="progress-fill green" id="loadingBar" style="width:0%"></div></div>
+    </div>
+</div>
+
+<!-- SIDEBAR -->
+<div class="sidebar">
+    <div class="sidebar-header">
+        <div class="sidebar-logo">&#9881; <span>CMMS</span></div>
+        <div class="sidebar-subtitle">Mantenimiento Industrial</div>
+    </div>
+    <div class="sidebar-nav">
+        <div class="nav-section">Principal</div>
+        <div class="nav-item active" onclick="showPage('ejecutivo')">
+            <span class="nav-icon">&#128202;</span><span class="nav-label">Resumen Ejecutivo</span>
+        </div>
+        <div class="nav-item" onclick="showPage('activos')">
+            <span class="nav-icon">&#127981;</span><span class="nav-label">Jerarquía de Activos</span>
+        </div>
+        <div class="nav-section">KPIs</div>
+        <div class="nav-item" onclick="showPage('disponibilidad')">
+            <span class="nav-icon">&#128200;</span><span class="nav-label">Disponibilidad</span>
+        </div>
+        <div class="nav-item" onclick="showPage('confiabilidad')">
+            <span class="nav-icon">&#128170;</span><span class="nav-label">Confiabilidad</span>
+        </div>
+        <div class="nav-section">Gestión</div>
+        <div class="nav-item" onclick="showPage('ots')">
+            <span class="nav-icon">&#128221;</span><span class="nav-label">Órdenes de Trabajo</span>
+        </div>
+        <div class="nav-item" onclick="showPage('avisos')">
+            <span class="nav-icon">&#128276;</span><span class="nav-label">Avisos</span>
+        </div>
+        <div class="nav-item" onclick="showPage('paradas')">
+            <span class="nav-icon">&#9940;</span><span class="nav-label">Paradas de Planta</span>
+        </div>
+        <div class="nav-section">Mantenimiento</div>
+        <div class="nav-item" onclick="showPage('preventivo')">
+            <span class="nav-icon">&#128295;</span><span class="nav-label">Preventivo</span>
+        </div>
+        <div class="nav-item" onclick="showPage('predictivo')">
+            <span class="nav-icon">&#128161;</span><span class="nav-label">Predictivo</span>
+        </div>
+        <div class="nav-item" onclick="showPage('lubricacion')">
+            <span class="nav-icon">&#128167;</span><span class="nav-label">Lubricación</span>
+        </div>
+        <div class="nav-section">Análisis</div>
+        <div class="nav-item" onclick="showPage('fallas')">
+            <span class="nav-icon">&#9888;</span><span class="nav-label">Análisis de Fallas</span>
+        </div>
+        <div class="nav-item" onclick="showPage('personal')">
+            <span class="nav-icon">&#128101;</span><span class="nav-label">Personal</span>
+        </div>
+        <div class="nav-item" onclick="showPage('costos')">
+            <span class="nav-icon">&#128176;</span><span class="nav-label">Costos</span>
+        </div>
+    </div>
+    <div class="sidebar-footer">
+        <span>v2.0 Enterprise &copy; 2026</span>
+    </div>
+</div>
+
+<!-- MAIN -->
+<div class="main-content">
+    <div class="topbar">
+        <div class="topbar-title" id="pageTitle">Resumen Ejecutivo</div>
+        <div class="topbar-right">
+            <div class="topbar-time" id="topTime">--</div>
+            <button class="btn-refresh" onclick="refreshData()">&#8635; Actualizar</button>
+        </div>
+    </div>
+
+    <!-- ==================== PAGE: RESUMEN EJECUTIVO ==================== -->
+    <div class="page active" id="page-ejecutivo">
+        <div class="kpi-grid cols-6" id="kpi-main"></div>
+        <div class="chart-grid">
+            <div class="card">
+                <div class="card-title"><span class="icon">&#128202;</span> Distribución OTs por Tipo</div>
+                <div class="chart-wrap"><canvas id="c-ot-tipo"></canvas></div>
+            </div>
+            <div class="card">
+                <div class="card-title"><span class="icon">&#128203;</span> OTs por Estado</div>
+                <div class="chart-wrap"><canvas id="c-ot-estado"></canvas></div>
+            </div>
+            <div class="card full">
+                <div class="card-title"><span class="icon">&#128200;</span> Tendencia de OTs - Últimos 12 Meses</div>
+                <div class="chart-wrap"><canvas id="c-ot-trend"></canvas></div>
+            </div>
+            <div class="card">
+                <div class="card-title"><span class="icon">&#127981;</span> OTs por Área</div>
+                <div class="chart-wrap tall"><canvas id="c-ot-area"></canvas></div>
+            </div>
+            <div class="card">
+                <div class="card-title"><span class="icon">&#128176;</span> Costo por Tipo de Mantenimiento</div>
+                <div class="chart-wrap"><canvas id="c-cost-tipo"></canvas></div>
+            </div>
+        </div>
+        <div class="chart-grid cols-1">
+            <div class="card">
+                <div class="card-title"><span class="icon">&#128202;</span> Ratio Correctivo vs Preventivo vs Predictivo (Mensual)</div>
+                <div class="chart-wrap"><canvas id="c-ratio-trend"></canvas></div>
+            </div>
+        </div>
+    </div>
+
+    <!-- ==================== PAGE: JERARQUÍA DE ACTIVOS ==================== -->
+    <div class="page" id="page-activos">
+        <div class="kpi-grid cols-5" id="kpi-activos"></div>
+        <div class="chart-grid">
+            <div class="card">
+                <div class="card-title"><span class="icon">&#127981;</span> Equipos por Área</div>
+                <div class="chart-wrap tall"><canvas id="c-equip-area"></canvas></div>
+            </div>
+            <div class="card">
+                <div class="card-title"><span class="icon">&#128295;</span> Equipos por Línea</div>
+                <div class="chart-wrap tall"><canvas id="c-equip-line"></canvas></div>
+            </div>
+            <div class="card">
+                <div class="card-title"><span class="icon">&#9881;</span> Componentes por Sistema</div>
+                <div class="chart-wrap tall"><canvas id="c-comp-sys"></canvas></div>
+            </div>
+            <div class="card">
+                <div class="card-title"><span class="icon">&#128200;</span> Distribución de Sistemas</div>
+                <div class="chart-wrap"><canvas id="c-sys-dist"></canvas></div>
+            </div>
+        </div>
+        <div class="card">
+            <div class="card-title"><span class="icon">&#127981;</span> Árbol Jerárquico de Activos</div>
+            <div id="asset-tree"></div>
+        </div>
+    </div>
+
+    <!-- ==================== PAGE: DISPONIBILIDAD ==================== -->
+    <div class="page" id="page-disponibilidad">
+        <div class="kpi-grid cols-4" id="kpi-disp"></div>
+        <div class="chart-grid">
+            <div class="card full">
+                <div class="card-title"><span class="icon">&#128200;</span> Disponibilidad por Equipo (Top 15)</div>
+                <div class="chart-wrap tall"><canvas id="c-disp-equip"></canvas></div>
+            </div>
+            <div class="card">
+                <div class="card-title"><span class="icon">&#128202;</span> Disponibilidad por Área</div>
+                <div class="chart-wrap"><canvas id="c-disp-area"></canvas></div>
+            </div>
+            <div class="card">
+                <div class="card-title"><span class="icon">&#128200;</span> Tendencia Disponibilidad Mensual</div>
+                <div class="chart-wrap"><canvas id="c-disp-trend"></canvas></div>
+            </div>
+        </div>
+        <div class="card">
+            <div class="card-title"><span class="icon">&#128203;</span> Detalle de Disponibilidad por Equipo</div>
+            <div class="table-wrap"><table class="tbl" id="tbl-disp"></table></div>
+        </div>
+    </div>
+
+    <!-- ==================== PAGE: CONFIABILIDAD ==================== -->
+    <div class="page" id="page-confiabilidad">
+        <div class="kpi-grid cols-4" id="kpi-conf"></div>
+        <div class="chart-grid">
+            <div class="card full">
+                <div class="card-title"><span class="icon">&#128170;</span> MTBF por Equipo (Top 15)</div>
+                <div class="chart-wrap tall"><canvas id="c-mtbf-equip"></canvas></div>
+            </div>
+            <div class="card">
+                <div class="card-title"><span class="icon">&#9201;</span> MTTR por Equipo (Top 15)</div>
+                <div class="chart-wrap tall"><canvas id="c-mttr-equip"></canvas></div>
+            </div>
+            <div class="card">
+                <div class="card-title"><span class="icon">&#128200;</span> Tendencia MTBF / MTTR Mensual</div>
+                <div class="chart-wrap"><canvas id="c-mtbf-mttr-trend"></canvas></div>
+            </div>
+        </div>
+    </div>
+
+    <!-- ==================== PAGE: ÓRDENES DE TRABAJO ==================== -->
+    <div class="page" id="page-ots">
+        <div class="kpi-grid cols-5" id="kpi-ots"></div>
+        <div class="filter-bar">
+            <div><span class="filter-label">Tipo:</span>
+                <select id="f-ot-tipo" onchange="filterOTs()"><option value="">Todos</option></select>
+            </div>
+            <div><span class="filter-label">Estado:</span>
+                <select id="f-ot-estado" onchange="filterOTs()"><option value="">Todos</option></select>
+            </div>
+            <div><span class="filter-label">Prioridad:</span>
+                <select id="f-ot-prior" onchange="filterOTs()"><option value="">Todas</option></select>
+            </div>
+            <div><span class="filter-label">Área:</span>
+                <select id="f-ot-area" onchange="filterOTs()"><option value="">Todas</option></select>
+            </div>
+        </div>
+        <div class="chart-grid">
+            <div class="card">
+                <div class="card-title"><span class="icon">&#128202;</span> OTs por Prioridad</div>
+                <div class="chart-wrap"><canvas id="c-ot-prior"></canvas></div>
+            </div>
+            <div class="card">
+                <div class="card-title"><span class="icon">&#128200;</span> Duración Real vs Estimada</div>
+                <div class="chart-wrap"><canvas id="c-ot-duracion"></canvas></div>
+            </div>
+            <div class="card">
+                <div class="card-title"><span class="icon">&#128203;</span> OTs Abiertas por Antigüedad</div>
+                <div class="chart-wrap"><canvas id="c-ot-aging"></canvas></div>
+            </div>
+            <div class="card">
+                <div class="card-title"><span class="icon">&#128176;</span> Costo por OT (Top 10)</div>
+                <div class="chart-wrap"><canvas id="c-ot-cost-top"></canvas></div>
+            </div>
+        </div>
+        <div class="card">
+            <div class="card-title"><span class="icon">&#128221;</span> Listado de Órdenes de Trabajo</div>
+            <div class="table-wrap"><table class="tbl" id="tbl-ots"></table></div>
+        </div>
+    </div>
+
+    <!-- ==================== PAGE: AVISOS ==================== -->
+    <div class="page" id="page-avisos">
+        <div class="kpi-grid cols-4" id="kpi-avisos"></div>
+        <div class="chart-grid">
+            <div class="card">
+                <div class="card-title"><span class="icon">&#128276;</span> Avisos por Tipo</div>
+                <div class="chart-wrap"><canvas id="c-aviso-tipo"></canvas></div>
+            </div>
+            <div class="card">
+                <div class="card-title"><span class="icon">&#128202;</span> Avisos por Estado</div>
+                <div class="chart-wrap"><canvas id="c-aviso-estado"></canvas></div>
+            </div>
+            <div class="card full">
+                <div class="card-title"><span class="icon">&#128200;</span> Tendencia de Avisos Mensual</div>
+                <div class="chart-wrap"><canvas id="c-aviso-trend"></canvas></div>
+            </div>
+        </div>
+        <div class="card">
+            <div class="card-title"><span class="icon">&#128276;</span> Listado de Avisos de Mantenimiento</div>
+            <div class="table-wrap"><table class="tbl" id="tbl-avisos"></table></div>
+        </div>
+    </div>
+
+    <!-- ==================== PAGE: PARADAS ==================== -->
+    <div class="page" id="page-paradas">
+        <div class="kpi-grid cols-4" id="kpi-paradas"></div>
+        <div class="chart-grid">
+            <div class="card">
+                <div class="card-title"><span class="icon">&#9940;</span> Paradas por Tipo</div>
+                <div class="chart-wrap"><canvas id="c-parada-tipo"></canvas></div>
+            </div>
+            <div class="card">
+                <div class="card-title"><span class="icon">&#9201;</span> Horas de Parada por Área</div>
+                <div class="chart-wrap"><canvas id="c-parada-area"></canvas></div>
+            </div>
+            <div class="card full">
+                <div class="card-title"><span class="icon">&#128200;</span> Tendencia de Paradas Mensual</div>
+                <div class="chart-wrap"><canvas id="c-parada-trend"></canvas></div>
+            </div>
+        </div>
+        <div class="card">
+            <div class="card-title"><span class="icon">&#9940;</span> Registro de Paradas</div>
+            <div class="table-wrap"><table class="tbl" id="tbl-paradas"></table></div>
+        </div>
+    </div>
+
+    <!-- ==================== PAGE: PREVENTIVO ==================== -->
+    <div class="page" id="page-preventivo">
+        <div class="kpi-grid cols-4" id="kpi-preventivo"></div>
+        <div class="chart-grid">
+            <div class="card">
+                <div class="card-title"><span class="icon">&#128295;</span> Cumplimiento Preventivo por Área</div>
+                <div class="chart-wrap tall"><canvas id="c-prev-cumpl"></canvas></div>
+            </div>
+            <div class="card">
+                <div class="card-title"><span class="icon">&#128200;</span> Tendencia Preventivo vs Correctivo</div>
+                <div class="chart-wrap"><canvas id="c-prev-trend"></canvas></div>
+            </div>
+            <div class="card full">
+                <div class="card-title"><span class="icon">&#128202;</span> OTs Preventivas por Equipo (Top 15)</div>
+                <div class="chart-wrap tall"><canvas id="c-prev-equip"></canvas></div>
+            </div>
+        </div>
+    </div>
+
+    <!-- ==================== PAGE: PREDICTIVO ==================== -->
+    <div class="page" id="page-predictivo">
+        <div class="kpi-grid cols-4" id="kpi-predictivo"></div>
+        <div class="chart-grid">
+            <div class="card">
+                <div class="card-title"><span class="icon">&#128161;</span> Análisis Predictivo por Técnica</div>
+                <div class="chart-wrap"><canvas id="c-pred-tecnica"></canvas></div>
+            </div>
+            <div class="card">
+                <div class="card-title"><span class="icon">&#128202;</span> Estado de Mediciones</div>
+                <div class="chart-wrap"><canvas id="c-pred-estado"></canvas></div>
+            </div>
+            <div class="card full">
+                <div class="card-title"><span class="icon">&#128200;</span> Tendencia Mediciones Predictivas</div>
+                <div class="chart-wrap"><canvas id="c-pred-trend"></canvas></div>
+            </div>
+        </div>
+        <div class="card">
+            <div class="card-title"><span class="icon">&#128161;</span> Registro de Análisis Predictivos</div>
+            <div class="table-wrap"><table class="tbl" id="tbl-predictivo"></table></div>
+        </div>
+    </div>
+
+    <!-- ==================== PAGE: LUBRICACIÓN ==================== -->
+    <div class="page" id="page-lubricacion">
+        <div class="kpi-grid cols-4" id="kpi-lub"></div>
+        <div class="chart-grid">
+            <div class="card">
+                <div class="card-title"><span class="icon">&#128167;</span> Lubricación por Tipo</div>
+                <div class="chart-wrap"><canvas id="c-lub-tipo"></canvas></div>
+            </div>
+            <div class="card">
+                <div class="card-title"><span class="icon">&#128202;</span> Cumplimiento de Lubricación</div>
+                <div class="chart-wrap"><canvas id="c-lub-cumpl"></canvas></div>
+            </div>
+            <div class="card full">
+                <div class="card-title"><span class="icon">&#128200;</span> Tendencia de Lubricación</div>
+                <div class="chart-wrap"><canvas id="c-lub-trend"></canvas></div>
+            </div>
+        </div>
+        <div class="card">
+            <div class="card-title"><span class="icon">&#128167;</span> Registro de Lubricación</div>
+            <div class="table-wrap"><table class="tbl" id="tbl-lub"></table></div>
+        </div>
+    </div>
+
+    <!-- ==================== PAGE: ANÁLISIS DE FALLAS ==================== -->
+    <div class="page" id="page-fallas">
+        <div class="kpi-grid cols-4" id="kpi-fallas"></div>
+        <div class="chart-grid">
+            <div class="card">
+                <div class="card-title"><span class="icon">&#9888;</span> Pareto de Fallas por Equipo</div>
+                <div class="chart-wrap tall"><canvas id="c-falla-pareto"></canvas></div>
+            </div>
+            <div class="card">
+                <div class="card-title"><span class="icon">&#128202;</span> Fallas por Tipo</div>
+                <div class="chart-wrap"><canvas id="c-falla-tipo"></canvas></div>
+            </div>
+            <div class="card">
+                <div class="card-title"><span class="icon">&#128200;</span> Modo de Fallo</div>
+                <div class="chart-wrap"><canvas id="c-falla-modo"></canvas></div>
+            </div>
+            <div class="card">
+                <div class="card-title"><span class="icon">&#128202;</span> Horas de Parada por Falla (Top 10)</div>
+                <div class="chart-wrap"><canvas id="c-falla-horas"></canvas></div>
+            </div>
+            <div class="card full">
+                <div class="card-title"><span class="icon">&#128200;</span> Tendencia de Fallas Correctivas</div>
+                <div class="chart-wrap"><canvas id="c-falla-trend"></canvas></div>
+            </div>
+        </div>
+    </div>
+
+    <!-- ==================== PAGE: PERSONAL ==================== -->
+    <div class="page" id="page-personal">
+        <div class="kpi-grid cols-4" id="kpi-personal"></div>
+        <div class="chart-grid">
+            <div class="card">
+                <div class="card-title"><span class="icon">&#128101;</span> Personal por Especialidad</div>
+                <div class="chart-wrap"><canvas id="c-pers-espec"></canvas></div>
+            </div>
+            <div class="card">
+                <div class="card-title"><span class="icon">&#128202;</span> Carga de Trabajo por Técnico</div>
+                <div class="chart-wrap tall"><canvas id="c-pers-carga"></canvas></div>
+            </div>
+            <div class="card">
+                <div class="card-title"><span class="icon">&#128200;</span> Eficiencia: Tiempo Real vs Estimado</div>
+                <div class="chart-wrap"><canvas id="c-pers-efic"></canvas></div>
+            </div>
+            <div class="card">
+                <div class="card-title"><span class="icon">&#128176;</span> Costo Generado por Técnico</div>
+                <div class="chart-wrap tall"><canvas id="c-pers-cost"></canvas></div>
+            </div>
+        </div>
+        <div class="card">
+            <div class="card-title"><span class="icon">&#128101;</span> Listado de Personal</div>
+            <div class="table-wrap"><table class="tbl" id="tbl-personal"></table></div>
+        </div>
+    </div>
+
+    <!-- ==================== PAGE: COSTOS ==================== -->
+    <div class="page" id="page-costos">
+        <div class="kpi-grid cols-5" id="kpi-costos"></div>
+        <div class="chart-grid">
+            <div class="card">
+                <div class="card-title"><span class="icon">&#128176;</span> Desglose de Costos</div>
+                <div class="chart-wrap"><canvas id="c-cost-desg"></canvas></div>
+            </div>
+            <div class="card">
+                <div class="card-title"><span class="icon">&#128202;</span> Costo por Área</div>
+                <div class="chart-wrap tall"><canvas id="c-cost-area"></canvas></div>
+            </div>
+            <div class="card full">
+                <div class="card-title"><span class="icon">&#128200;</span> Tendencia de Costos Mensual</div>
+                <div class="chart-wrap"><canvas id="c-cost-trend"></canvas></div>
+            </div>
+            <div class="card">
+                <div class="card-title"><span class="icon">&#128202;</span> Top 10 Equipos por Costo</div>
+                <div class="chart-wrap tall"><canvas id="c-cost-equip"></canvas></div>
+            </div>
+            <div class="card">
+                <div class="card-title"><span class="icon">&#128176;</span> Costo por Tipo de Mantenimiento</div>
+                <div class="chart-wrap"><canvas id="c-cost-tipo-mant"></canvas></div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<script>
+// ============================= GLOBAL STATE =============================
+const API = 'https://cmms-app-acfj.onrender.com/api';
+const D = { areas:[], lines:[], systems:[], equipment:[], components:[], workOrders:[], notices:[], shutdowns:[], lubrication:[], predictive:[], personnel:[] };
+const charts = {};
+
+// Chart.js defaults
+Chart.defaults.color = '#8899aa';
+Chart.defaults.borderColor = 'rgba(42,63,82,0.5)';
+Chart.defaults.font.family = "'Segoe UI', sans-serif";
+Chart.defaults.plugins.legend.labels.usePointStyle = true;
+Chart.defaults.plugins.legend.labels.padding = 16;
+
+const COLORS = ['#00b4d8','#06d6a0','#ffd166','#ef476f','#9b5de5','#f77f00','#48cae4','#2ec4b6','#ff6b6b','#a8dadc','#457b9d','#e63946'];
+const COLORS_ALPHA = COLORS.map(c => c + '33');
+
+// ============================= INITIALIZATION =============================
+document.addEventListener('DOMContentLoaded', () => {
+    updateClock();
+    setInterval(updateClock, 30000);
+    loadAllData();
+});
+
+function updateClock() {
+    const now = new Date();
+    document.getElementById('topTime').textContent = now.toLocaleString('es-ES', {
+        weekday:'long', year:'numeric', month:'long', day:'numeric', hour:'2-digit', minute:'2-digit'
+    });
+}
+
+async function fetchJSON(endpoint) {
+    try {
+        const r = await fetch(`${API}/${endpoint}`);
+        if (!r.ok) return [];
+        const d = await r.json();
+        return Array.isArray(d) ? d : [d];
+    } catch(e) { console.warn(`Error fetching ${endpoint}:`, e); return []; }
+}
+
+async function loadAllData() {
+    const overlay = document.getElementById('loadingOverlay');
+    const bar = document.getElementById('loadingBar');
+    const txt = document.getElementById('loadingText');
+    const endpoints = ['areas','lines','systems','equipment','components','work-orders','maintenance-notices','shutdowns','lubrication','predictive','personnel'];
+    const keys = ['areas','lines','systems','equipment','components','workOrders','notices','shutdowns','lubrication','predictive','personnel'];
+
+    for (let i = 0; i < endpoints.length; i++) {
+        txt.textContent = `Cargando ${endpoints[i]}...`;
+        bar.style.width = `${((i+1)/endpoints.length)*100}%`;
+        D[keys[i]] = await fetchJSON(endpoints[i]);
+        console.log(`${endpoints[i]}: ${D[keys[i]].length} registros`);
+    }
+    txt.textContent = 'Renderizando dashboard...';
+    bar.style.width = '100%';
+    await new Promise(r => setTimeout(r, 300));
+    overlay.classList.add('hidden');
+    renderAll();
+}
+
+function refreshData() {
+    document.getElementById('loadingOverlay').classList.remove('hidden');
+    Object.values(charts).forEach(c => { if(c) c.destroy(); });
+    loadAllData();
+}
+
+// ============================= NAVIGATION =============================
+function showPage(id) {
+    document.querySelectorAll('.page').forEach(p => p.classList.remove('active'));
+    document.querySelectorAll('.nav-item').forEach(n => n.classList.remove('active'));
+    document.getElementById('page-'+id).classList.add('active');
+    event.currentTarget.classList.add('active');
+    const titles = {
+        ejecutivo:'Resumen Ejecutivo', activos:'Jerarquía de Activos',
+        disponibilidad:'Disponibilidad', confiabilidad:'Confiabilidad & MTBF/MTTR',
+        ots:'Órdenes de Trabajo', avisos:'Avisos de Mantenimiento',
+        paradas:'Paradas de Planta', preventivo:'Mantenimiento Preventivo',
+        predictivo:'Mantenimiento Predictivo', lubricacion:'Lubricación',
+        fallas:'Análisis de Fallas', personal:'Personal & Recursos',
+        costos:'Costos & Presupuesto'
+    };
+    document.getElementById('pageTitle').textContent = titles[id] || id;
+    setTimeout(() => Object.values(charts).forEach(c => { if(c&&c.resize) c.resize(); }), 150);
+}
+
+// ============================= HELPERS =============================
+function fmt(n, d=0) { return (n||0).toLocaleString('es-ES', {minimumFractionDigits:d, maximumFractionDigits:d}); }
+function fmtCur(n) { return '$' + fmt(n); }
+function pct(n) { return fmt(n,1) + '%'; }
+function getEquipName(id) { const e = D.equipment.find(x => x.id===id); return e ? e.name : 'N/A'; }
+function getAreaForEquip(equipId) {
+    const eq = D.equipment.find(e => e.id===equipId);
+    if (!eq) return 'Sin Área';
+    const ln = D.lines.find(l => l.id===eq.line_id);
+    if (!ln) return 'Sin Área';
+    const ar = D.areas.find(a => a.id===ln.area_id);
+    return ar ? ar.name : 'Sin Área';
+}
+function getLineForEquip(equipId) {
+    const eq = D.equipment.find(e => e.id===equipId);
+    if (!eq) return 'N/A';
+    const ln = D.lines.find(l => l.id===eq.line_id);
+    return ln ? ln.name : 'N/A';
+}
+function countBy(arr, key) {
+    const m = {};
+    arr.forEach(x => { const v = x[key] || 'N/A'; m[v] = (m[v]||0)+1; });
+    return m;
+}
+function sumBy(arr, keyGroup, keySum) {
+    const m = {};
+    arr.forEach(x => { const v = x[keyGroup] || 'N/A'; m[v] = (m[v]||0)+(x[keySum]||0); });
+    return m;
+}
+function getLast12() {
+    const ms = []; const now = new Date();
+    for (let i=11;i>=0;i--) { const d=new Date(now.getFullYear(),now.getMonth()-i,1); ms.push(d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')); }
+    return ms;
+}
+function monthlyCount(arr, dateField) {
+    const m = {};
+    arr.forEach(x => { if(x[dateField]) { const d=new Date(x[dateField]); const ym=d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0'); m[ym]=(m[ym]||0)+1; }});
+    return m;
+}
+function makeChart(id, config) {
+    if (charts[id]) charts[id].destroy();
+    const ctx = document.getElementById(id);
+    if (!ctx) return null;
+    charts[id] = new Chart(ctx.getContext('2d'), config);
+    return charts[id];
+}
+function badge(text) {
+    if (!text) return '<span class="badge">N/A</span>';
+    const cls = text.toLowerCase().replace(/\s/g,'');
+    return `<span class="badge ${cls}">${text}</span>`;
+}
+function kpiHTML(label, value, cls='', unit='') {
+    return `<div class="kpi ${cls}"><div class="kpi-label">${label}</div><div class="kpi-value ${cls?cls+'-val':''}">${value}</div>${unit?'<div class="kpi-unit">'+unit+'</div>':''}</div>`;
+}
+
+// ============================= RENDER ALL =============================
+function renderAll() {
+    renderEjecutivo();
+    renderActivos();
+    renderDisponibilidad();
+    renderConfiabilidad();
+    renderOTs();
+    renderAvisos();
+    renderParadas();
+    renderPreventivo();
+    renderPredictivo();
+    renderLubricacion();
+    renderFallas();
+    renderPersonal();
+    renderCostos();
+}
+
+// ============================= RESUMEN EJECUTIVO =============================
+function renderEjecutivo() {
+    const wo = D.workOrders;
+    const total = wo.length;
+    const open = wo.filter(w => (w.status||'').toLowerCase().match(/abierta|open|en proceso|pendiente/)).length;
+    const closed = wo.filter(w => (w.status||'').toLowerCase().match(/cerrada|closed|completada/)).length;
+    const corr = wo.filter(w => (w.type||'').toLowerCase()==='correctivo');
+    const prev = wo.filter(w => (w.type||'').toLowerCase()==='preventivo');
+    const pred = wo.filter(w => (w.type||'').toLowerCase()==='predictivo');
+    const totalCost = wo.reduce((s,w) => s+(w.total_cost||0), 0);
+    const totalDown = wo.reduce((s,w) => s+(w.downtime_hours||0), 0);
+    const totalDur = wo.reduce((s,w) => s+(w.real_duration||0), 0);
+    const mttr = closed > 0 ? totalDur/closed : 0;
+    const mtbf = corr.length > 0 ? (8760-totalDown)/corr.length : 8760;
+    const disp = mtbf/(mtbf+mttr)*100;
+
+    document.getElementById('kpi-main').innerHTML =
+        kpiHTML('Total OTs', fmt(total), '') +
+        kpiHTML('OTs Abiertas', fmt(open), 'yellow') +
+        kpiHTML('Disponibilidad', pct(disp), 'green') +
+        kpiHTML('MTTR', fmt(mttr,1)+' hrs', 'red') +
+        kpiHTML('MTBF', fmt(mtbf,0)+' hrs', 'green') +
+        kpiHTML('Costo Total', fmtCur(totalCost), 'orange');
+
+    // OTs por Tipo
+    const tipos = countBy(wo, 'type');
+    makeChart('c-ot-tipo', {
+        type:'doughnut',
+        data:{ labels:Object.keys(tipos), datasets:[{data:Object.values(tipos), backgroundColor:COLORS, borderWidth:0}] },
+        options:{ responsive:true, maintainAspectRatio:false, plugins:{ legend:{position:'bottom'} } }
+    });
+
+    // OTs por Estado
+    const estados = countBy(wo, 'status');
+    makeChart('c-ot-estado', {
+        type:'polarArea',
+        data:{ labels:Object.keys(estados), datasets:[{data:Object.values(estados), backgroundColor:COLORS_ALPHA, borderColor:COLORS, borderWidth:2}] },
+        options:{ responsive:true, maintainAspectRatio:false, plugins:{ legend:{position:'bottom'} } }
+    });
+
+    // Tendencia OTs
+    const months = getLast12();
+    const mcCorr = monthlyCount(corr, 'created_at');
+    const mcPrev = monthlyCount(prev, 'created_at');
+    const mcPred = monthlyCount(pred, 'created_at');
+    const mcAll = monthlyCount(wo, 'created_at');
+    makeChart('c-ot-trend', {
+        type:'line',
+        data:{ labels:months, datasets:[
+            { label:'Total', data:months.map(m=>mcAll[m]||0), borderColor:'#00b4d8', backgroundColor:'rgba(0,180,216,0.1)', fill:true, tension:0.4 },
+            { label:'Correctivo', data:months.map(m=>mcCorr[m]||0), borderColor:'#ef476f', tension:0.4 },
+            { label:'Preventivo', data:months.map(m=>mcPrev[m]||0), borderColor:'#06d6a0', tension:0.4 },
+            { label:'Predictivo', data:months.map(m=>mcPred[m]||0), borderColor:'#9b5de5', tension:0.4 }
+        ]},
+        options:{ responsive:true, maintainAspectRatio:false, interaction:{mode:'index',intersect:false}, scales:{y:{beginAtZero:true}} }
+    });
+
+    // OTs por Área
+    const otArea = {};
+    wo.forEach(w => { const a=getAreaForEquip(w.equipment_id); otArea[a]=(otArea[a]||0)+1; });
+    const areaS = Object.entries(otArea).sort((a,b)=>b[1]-a[1]);
+    makeChart('c-ot-area', {
+        type:'bar',
+        data:{ labels:areaS.map(x=>x[0]), datasets:[{label:'OTs',data:areaS.map(x=>x[1]),backgroundColor:COLORS,borderRadius:6,borderSkipped:false}] },
+        options:{ indexAxis:'y', responsive:true, maintainAspectRatio:false, plugins:{legend:{display:false}}, scales:{x:{beginAtZero:true}} }
+    });
+
+    // Costo por Tipo
+    const costTipo = {};
+    wo.forEach(w => { const t=w.type||'N/A'; costTipo[t]=(costTipo[t]||0)+(w.total_cost||0); });
+    makeChart('c-cost-tipo', {
+        type:'doughnut',
+        data:{ labels:Object.keys(costTipo), datasets:[{data:Object.values(costTipo), backgroundColor:['#ef476f','#06d6a0','#9b5de5','#ffd166'], borderWidth:0}] },
+        options:{ responsive:true, maintainAspectRatio:false, plugins:{ legend:{position:'bottom'} } }
+    });
+
+    // Ratio trend
+    makeChart('c-ratio-trend', {
+        type:'bar',
+        data:{ labels:months, datasets:[
+            { label:'Correctivo', data:months.map(m=>mcCorr[m]||0), backgroundColor:'rgba(239,71,111,0.7)', borderRadius:4 },
+            { label:'Preventivo', data:months.map(m=>mcPrev[m]||0), backgroundColor:'rgba(6,214,160,0.7)', borderRadius:4 },
+            { label:'Predictivo', data:months.map(m=>mcPred[m]||0), backgroundColor:'rgba(155,93,229,0.7)', borderRadius:4 }
+        ]},
+        options:{ responsive:true, maintainAspectRatio:false, scales:{x:{stacked:true},y:{stacked:true,beginAtZero:true}}, plugins:{legend:{position:'top'}} }
+    });
+}
+
+// ============================= JERARQUÍA DE ACTIVOS =============================
+function renderActivos() {
+    document.getElementById('kpi-activos').innerHTML =
+        kpiHTML('Áreas', fmt(D.areas.length), '') +
+        kpiHTML('Líneas', fmt(D.lines.length), 'cyan') +
+        kpiHTML('Sistemas', fmt(D.systems.length), 'purple') +
+        kpiHTML('Equipos', fmt(D.equipment.length), 'green') +
+        kpiHTML('Componentes', fmt(D.components.length), 'orange');
+
+    // Equipos por Área
+    const eqArea = {};
+    D.equipment.forEach(eq => { const a=getAreaForEquip(eq.id); eqArea[a]=(eqArea[a]||0)+1; });
+    makeChart('c-equip-area', {
+        type:'bar',
+        data:{ labels:Object.keys(eqArea), datasets:[{label:'Equipos',data:Object.values(eqArea),backgroundColor:COLORS,borderRadius:6,borderSkipped:false}] },
+        options:{ indexAxis:'y', responsive:true, maintainAspectRatio:false, plugins:{legend:{display:false}}, scales:{x:{beginAtZero:true}} }
+    });
+
+    // Equipos por Línea
+    const eqLine = {};
+    D.equipment.forEach(eq => { const l=getLineForEquip(eq.id); eqLine[l]=(eqLine[l]||0)+1; });
+    const elS = Object.entries(eqLine).sort((a,b)=>b[1]-a[1]).slice(0,15);
+    makeChart('c-equip-line', {
+        type:'bar',
+        data:{ labels:elS.map(x=>x[0]), datasets:[{label:'Equipos',data:elS.map(x=>x[1]),backgroundColor:COLORS,borderRadius:6,borderSkipped:false}] },
+        options:{ indexAxis:'y', responsive:true, maintainAspectRatio:false, plugins:{legend:{display:false}}, scales:{x:{beginAtZero:true}} }
+    });
+
+    // Componentes por Sistema
+    const compSys = {};
+    D.components.forEach(c => { const sys = D.systems.find(s=>s.id===c.system_id); const n=sys?sys.name:'N/A'; compSys[n]=(compSys[n]||0)+1; });
+    makeChart('c-comp-sys', {
+        type:'bar',
+        data:{ labels:Object.keys(compSys), datasets:[{label:'Componentes',data:Object.values(compSys),backgroundColor:COLORS,borderRadius:6,borderSkipped:false}] },
+        options:{ indexAxis:'y', responsive:true, maintainAspectRatio:false, plugins:{legend:{display:false}}, scales:{x:{beginAtZero:true}} }
+    });
+
+    // Distribución de Sistemas
+    const sysDist = countBy(D.systems, 'type');
+    if (Object.keys(sysDist).length === 0) { const sd2={}; D.systems.forEach(s=>{sd2[s.name||'N/A']=1;}); Object.assign(sysDist, sd2); }
+    makeChart('c-sys-dist', {
+        type:'pie',
+        data:{ labels:Object.keys(sysDist), datasets:[{data:Object.values(sysDist),backgroundColor:COLORS,borderWidth:0}] },
+        options:{ responsive:true, maintainAspectRatio:false, plugins:{legend:{position:'bottom'}} }
+    });
+
+    // Asset tree
+    let treeHTML = '';
+    D.areas.forEach(area => {
+        const areaLines = D.lines.filter(l => l.area_id === area.id);
+        treeHTML += `<div class="tree-node"><span class="tree-toggle" onclick="this.parentElement.nextElementSibling.style.display=this.parentElement.nextElementSibling.style.display==='none'?'block':'none'">&#9654;</span><span class="tree-label">&#127981; ${area.name}</span><span class="tree-count">(${areaLines.length} líneas)</span></div>`;
+        treeHTML += '<div class="tree-children" style="display:none">';
+        areaLines.forEach(line => {
+            const lineEquip = D.equipment.filter(e => e.line_id === line.id);
+            treeHTML += `<div class="tree-node"><span class="tree-toggle" onclick="this.parentElement.nextElementSibling.style.display=this.parentElement.nextElementSibling.style.display==='none'?'block':'none'">&#9654;</span><span class="tree-label">&#128296; ${line.name}</span><span class="tree-count">(${lineEquip.length} equipos)</span></div>`;
+            treeHTML += '<div class="tree-children" style="display:none">';
+            lineEquip.forEach(eq => {
+                const eqComps = D.components.filter(c => c.equipment_id === eq.id);
+                treeHTML += `<div class="tree-node"><span class="tree-label">&#9881; ${eq.name}</span><span class="tree-count">(${eqComps.length} comp.)</span></div>`;
+            });
+            treeHTML += '</div>';
+        });
+        treeHTML += '</div>';
+    });
+    document.getElementById('asset-tree').innerHTML = treeHTML || '<div style="color:var(--text-muted);padding:20px;">Sin datos de jerarquía</div>';
+}
+
+// ============================= DISPONIBILIDAD =============================
+function renderDisponibilidad() {
+    const wo = D.workOrders;
+    const closed = wo.filter(w => (w.status||'').toLowerCase().match(/cerrada|closed|completada/));
+    const corr = wo.filter(w => (w.type||'').toLowerCase()==='correctivo');
+    const totalDown = wo.reduce((s,w) => s+(w.downtime_hours||0), 0);
+    const totalDur = wo.reduce((s,w) => s+(w.real_duration||0), 0);
+    const mttr = closed.length > 0 ? totalDur/closed.length : 0;
+    const mtbf = corr.length > 0 ? (8760-totalDown)/corr.length : 8760;
+    const disp = mtbf/(mtbf+mttr)*100;
+    const horasDisp = 8760 - totalDown;
+
+    document.getElementById('kpi-disp').innerHTML =
+        kpiHTML('Disponibilidad Global', pct(disp), 'green') +
+        kpiHTML('Horas Disponibles', fmt(horasDisp,0)+' hrs', '') +
+        kpiHTML('Horas Parada Total', fmt(totalDown,0)+' hrs', 'red') +
+        kpiHTML('Equipos Analizados', fmt(D.equipment.length), 'cyan');
+
+    // Disponibilidad por equipo
+    const eqDisp = [];
+    D.equipment.forEach(eq => {
+        const eqWO = wo.filter(w => w.equipment_id===eq.id);
+        if (eqWO.length>0) {
+            const cl = eqWO.filter(w=>(w.status||'').toLowerCase().match(/cerrada|closed/));
+            const dur = eqWO.reduce((s,w)=>s+(w.real_duration||0),0);
+            const dwn = eqWO.reduce((s,w)=>s+(w.downtime_hours||0),0);
+            const cr = eqWO.filter(w=>(w.type||'').toLowerCase()==='correctivo').length;
+            const mt = cl.length>0 ? dur/cl.length : 0;
+            const mb = cr>0 ? (8760-dwn)/cr : 8760;
+            const av = mb/(mb+mt)*100;
+            if (isFinite(av)) eqDisp.push({name:eq.name, disp:av, mttr:mt, mtbf:mb, ots:eqWO.length});
+        }
+    });
+    eqDisp.sort((a,b)=>a.disp-b.disp);
+    const top15 = eqDisp.slice(0,15);
+
+    makeChart('c-disp-equip', {
+        type:'bar',
+        data:{ labels:top15.map(x=>x.name), datasets:[{label:'Disponibilidad %',data:top15.map(x=>x.disp),backgroundColor:top15.map(x=>x.disp>=90?'#06d6a0':x.disp>=75?'#ffd166':'#ef476f'),borderRadius:6,borderSkipped:false}] },
+        options:{ indexAxis:'y', responsive:true, maintainAspectRatio:false, plugins:{legend:{display:false}}, scales:{x:{beginAtZero:true,max:100}} }
+    });
+
+    // Disponibilidad por Área
+    const areaDisp = {};
+    const areaCount = {};
+    eqDisp.forEach(e => {
+        const a = getAreaForEquip(D.equipment.find(x=>x.name===e.name)?.id);
+        areaDisp[a] = (areaDisp[a]||0) + e.disp;
+        areaCount[a] = (areaCount[a]||0) + 1;
+    });
+    const areaAvg = Object.entries(areaDisp).map(([k,v]) => ({name:k, disp:v/areaCount[k]}));
+    makeChart('c-disp-area', {
+        type:'bar',
+        data:{ labels:areaAvg.map(x=>x.name), datasets:[{label:'Disponibilidad %',data:areaAvg.map(x=>x.disp),backgroundColor:COLORS,borderRadius:6,borderSkipped:false}] },
+        options:{ responsive:true, maintainAspectRatio:false, plugins:{legend:{display:false}}, scales:{y:{beginAtZero:true,max:100}} }
+    });
+
+    // Tendencia disponibilidad
+    const months = getLast12();
+    const mDisp = {};
+    wo.forEach(w => {
+        if(w.created_at) {
+            const d = new Date(w.created_at);
+            const ym = d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0');
+            if(!mDisp[ym]) mDisp[ym]={dur:0,dwn:0,cl:0,cr:0};
+            mDisp[ym].dur += w.real_duration||0;
+            mDisp[ym].dwn += w.downtime_hours||0;
+            if((w.status||'').toLowerCase().match(/cerrada|closed/)) mDisp[ym].cl++;
+            if((w.type||'').toLowerCase()==='correctivo') mDisp[ym].cr++;
+        }
+    });
+    const dispData = months.map(m => {
+        const md = mDisp[m];
+        if(!md||!md.cr) return 100;
+        const mt = md.cl>0 ? md.dur/md.cl : 0;
+        const mb = md.cr>0 ? (730-md.dwn)/md.cr : 730;
+        return mb/(mb+mt)*100;
+    });
+    makeChart('c-disp-trend', {
+        type:'line',
+        data:{ labels:months, datasets:[{label:'Disponibilidad %',data:dispData,borderColor:'#06d6a0',backgroundColor:'rgba(6,214,160,0.1)',fill:true,tension:0.4,pointRadius:4}] },
+        options:{ responsive:true, maintainAspectRatio:false, scales:{y:{min:0,max:100}} }
+    });
+
+    // Tabla
+    const tbl = document.getElementById('tbl-disp');
+    let html = '<thead><tr><th>Equipo</th><th>Área</th><th>Disp %</th><th>MTTR hrs</th><th>MTBF hrs</th><th>OTs</th></tr></thead><tbody>';
+    eqDisp.sort((a,b)=>a.disp-b.disp).forEach(e => {
+        const eqId = D.equipment.find(x=>x.name===e.name)?.id;
+        html += `<tr><td>${e.name}</td><td>${getAreaForEquip(eqId)}</td><td>${pct(e.disp)}</td><td>${fmt(e.mttr,1)}</td><td>${fmt(e.mtbf,0)}</td><td>${e.ots}</td></tr>`;
+    });
+    html += '</tbody>';
+    tbl.innerHTML = html;
+}
+
+// ============================= CONFIABILIDAD =============================
+function renderConfiabilidad() {
+    const wo = D.workOrders;
+    const corr = wo.filter(w => (w.type||'').toLowerCase()==='correctivo');
+    const closed = wo.filter(w => (w.status||'').toLowerCase().match(/cerrada|closed/));
+    const totalDur = wo.reduce((s,w)=>s+(w.real_duration||0),0);
+    const totalDown = wo.reduce((s,w)=>s+(w.downtime_hours||0),0);
+    const mttr = closed.length>0 ? totalDur/closed.length : 0;
+    const mtbf = corr.length>0 ? (8760-totalDown)/corr.length : 8760;
+    const conf30 = Math.exp(-720/(mtbf||1))*100;
+
+    document.getElementById('kpi-conf').innerHTML =
+        kpiHTML('MTBF Global', fmt(mtbf,0)+' hrs', 'green') +
+        kpiHTML('MTTR Global', fmt(mttr,1)+' hrs', 'red') +
+        kpiHTML('Confiabilidad 30d', pct(conf30), 'green') +
+        kpiHTML('Fallas Correctivas', fmt(corr.length), 'red');
+
+    // MTBF por equipo
+    const eqMtbf = [];
+    D.equipment.forEach(eq => {
+        const eqWO = wo.filter(w => w.equipment_id===eq.id);
+        const cr = eqWO.filter(w=>(w.type||'').toLowerCase()==='correctivo');
+        if (cr.length>0) {
+            const dwn = eqWO.reduce((s,w)=>s+(w.downtime_hours||0),0);
+            eqMtbf.push({name:eq.name, mtbf:(8760-dwn)/cr.length});
+        }
+    });
+    eqMtbf.sort((a,b)=>a.mtbf-b.mtbf);
+    const topMtbf = eqMtbf.slice(0,15);
+    makeChart('c-mtbf-equip', {
+        type:'bar',
+        data:{ labels:topMtbf.map(x=>x.name), datasets:[{label:'MTBF hrs',data:topMtbf.map(x=>x.mtbf),backgroundColor:topMtbf.map(x=>x.mtbf>=2000?'#06d6a0':x.mtbf>=500?'#ffd166':'#ef476f'),borderRadius:6,borderSkipped:false}] },
+        options:{ indexAxis:'y', responsive:true, maintainAspectRatio:false, plugins:{legend:{display:false}}, scales:{x:{beginAtZero:true}} }
+    });
+
+    // MTTR por equipo
+    const eqMttr = [];
+    D.equipment.forEach(eq => {
+        const eqWO = wo.filter(w => w.equipment_id===eq.id);
+        const cl = eqWO.filter(w=>(w.status||'').toLowerCase().match(/cerrada|closed/));
+        if (cl.length>0) {
+            const dur = eqWO.reduce((s,w)=>s+(w.real_duration||0),0);
+            eqMttr.push({name:eq.name, mttr:dur/cl.length});
+        }
+    });
+    eqMttr.sort((a,b)=>b.mttr-a.mttr);
+    const topMttr = eqMttr.slice(0,15);
+    makeChart('c-mttr-equip', {
+        type:'bar',
+        data:{ labels:topMttr.map(x=>x.name), datasets:[{label:'MTTR hrs',data:topMttr.map(x=>x.mttr),backgroundColor:topMttr.map(x=>x.mttr>=10?'#ef476f':x.mttr>=4?'#ffd166':'#06d6a0'),borderRadius:6,borderSkipped:false}] },
+        options:{ indexAxis:'y', responsive:true, maintainAspectRatio:false, plugins:{legend:{display:false}}, scales:{x:{beginAtZero:true}} }
+    });
+
+    // Tendencia MTBF/MTTR
+    const months = getLast12();
+    const mData = {};
+    wo.forEach(w => {
+        if(w.created_at) {
+            const d=new Date(w.created_at);
+            const ym=d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0');
+            if(!mData[ym]) mData[ym]={dur:0,dwn:0,cl:0,cr:0};
+            mData[ym].dur+=w.real_duration||0;
+            mData[ym].dwn+=w.downtime_hours||0;
+            if((w.status||'').toLowerCase().match(/cerrada|closed/)) mData[ym].cl++;
+            if((w.type||'').toLowerCase()==='correctivo') mData[ym].cr++;
+        }
+    });
+    makeChart('c-mtbf-mttr-trend', {
+        type:'line',
+        data:{ labels:months, datasets:[
+            { label:'MTTR hrs', data:months.map(m=>{const d=mData[m]; return d&&d.cl>0?d.dur/d.cl:0;}), borderColor:'#ef476f', tension:0.4, yAxisID:'y' },
+            { label:'MTBF hrs', data:months.map(m=>{const d=mData[m]; return d&&d.cr>0?(730-d.dwn)/d.cr:0;}), borderColor:'#06d6a0', tension:0.4, yAxisID:'y1' }
+        ]},
+        options:{ responsive:true, maintainAspectRatio:false, interaction:{mode:'index',intersect:false}, scales:{y:{position:'left'},y1:{position:'right',grid:{drawOnChartArea:false}}} }
+    });
+}
+
+// ============================= ÓRDENES DE TRABAJO =============================
+function renderOTs() {
+    const wo = D.workOrders;
+    const total=wo.length;
+    const open=wo.filter(w=>(w.status||'').toLowerCase().match(/abierta|open|en proceso|pendiente/)).length;
+    const closed=wo.filter(w=>(w.status||'').toLowerCase().match(/cerrada|closed|completada/)).length;
+    const totalCost=wo.reduce((s,w)=>s+(w.total_cost||0),0);
+    const avgDur=closed>0 ? wo.reduce((s,w)=>s+(w.real_duration||0),0)/closed : 0;
+
+    document.getElementById('kpi-ots').innerHTML =
+        kpiHTML('Total OTs', fmt(total), '') +
+        kpiHTML('Abiertas', fmt(open), 'yellow') +
+        kpiHTML('Cerradas', fmt(closed), 'green') +
+        kpiHTML('Costo Total', fmtCur(totalCost), 'orange') +
+        kpiHTML('Duración Prom.', fmt(avgDur,1)+' hrs', 'cyan');
+
+    // Populate filters
+    const tipos = [...new Set(wo.map(w=>w.type).filter(Boolean))];
+    const estados = [...new Set(wo.map(w=>w.status).filter(Boolean))];
+    const priors = [...new Set(wo.map(w=>w.priority).filter(Boolean))];
+    const areas = [...new Set(D.areas.map(a=>a.name))];
+    populateSelect('f-ot-tipo', tipos);
+    populateSelect('f-ot-estado', estados);
+    populateSelect('f-ot-prior', priors);
+    populateSelect('f-ot-area', areas);
+
+    // Priority chart
+    const priorCount = countBy(wo, 'priority');
+    makeChart('c-ot-prior', {
+        type:'doughnut',
+        data:{ labels:Object.keys(priorCount), datasets:[{data:Object.values(priorCount),backgroundColor:['#ef476f','#ffd166','#06d6a0','#00b4d8'],borderWidth:0}] },
+        options:{ responsive:true, maintainAspectRatio:false, plugins:{legend:{position:'bottom'}} }
+    });
+
+    // Duration chart
+    const durBuckets = {'<1h':0,'1-4h':0,'4-8h':0,'8-24h':0,'24-48h':0,'>48h':0};
+    wo.forEach(w => {
+        const d=w.real_duration||0;
+        if(d<1)durBuckets['<1h']++;else if(d<4)durBuckets['1-4h']++;else if(d<8)durBuckets['4-8h']++;else if(d<24)durBuckets['8-24h']++;else if(d<48)durBuckets['24-48h']++;else durBuckets['>48h']++;
+    });
+    makeChart('c-ot-duracion', {
+        type:'bar',
+        data:{ labels:Object.keys(durBuckets), datasets:[{label:'OTs',data:Object.values(durBuckets),backgroundColor:COLORS,borderRadius:6,borderSkipped:false}] },
+        options:{ responsive:true, maintainAspectRatio:false, plugins:{legend:{display:false}}, scales:{y:{beginAtZero:true}} }
+    });
+
+    // Aging
+    const agBuckets = {'<7 días':0,'7-14 días':0,'14-30 días':0,'30-60 días':0,'>60 días':0};
+    const now = new Date();
+    wo.filter(w=>(w.status||'').toLowerCase().match(/abierta|open|en proceso|pendiente/)).forEach(w => {
+        const created = new Date(w.created_at||w.start_date);
+        const days = (now-created)/(1000*60*60*24);
+        if(days<7)agBuckets['<7 días']++;else if(days<14)agBuckets['7-14 días']++;else if(days<30)agBuckets['14-30 días']++;else if(days<60)agBuckets['30-60 días']++;else agBuckets['>60 días']++;
+    });
+    makeChart('c-ot-aging', {
+        type:'bar',
+        data:{ labels:Object.keys(agBuckets), datasets:[{label:'OTs Abiertas',data:Object.values(agBuckets),backgroundColor:['#06d6a0','#48cae4','#ffd166','#f77f00','#ef476f'],borderRadius:6,borderSkipped:false}] },
+        options:{ responsive:true, maintainAspectRatio:false, plugins:{legend:{display:false}}, scales:{y:{beginAtZero:true}} }
+    });
+
+    // Top cost OTs
+    const topCost = [...wo].sort((a,b)=>(b.total_cost||0)-(a.total_cost||0)).slice(0,10);
+    makeChart('c-ot-cost-top', {
+        type:'bar',
+        data:{ labels:topCost.map(w=>w.ot_number||'OT'), datasets:[{label:'Costo',data:topCost.map(w=>w.total_cost||0),backgroundColor:'#f77f00',borderRadius:6,borderSkipped:false}] },
+        options:{ indexAxis:'y', responsive:true, maintainAspectRatio:false, plugins:{legend:{display:false}}, scales:{x:{beginAtZero:true}} }
+    });
+
+    populateOTTable(wo);
+}
+
+function populateSelect(id, values) {
+    const sel = document.getElementById(id);
+    const first = sel.options[0].textContent;
+    sel.innerHTML = `<option value="">${first}</option>` + values.map(v=>`<option value="${v}">${v}</option>`).join('');
+}
+
+function filterOTs() {
+    const tipo = document.getElementById('f-ot-tipo').value;
+    const estado = document.getElementById('f-ot-estado').value;
+    const prior = document.getElementById('f-ot-prior').value;
+    const area = document.getElementById('f-ot-area').value;
+    let filtered = D.workOrders;
+    if(tipo) filtered = filtered.filter(w=>w.type===tipo);
+    if(estado) filtered = filtered.filter(w=>w.status===estado);
+    if(prior) filtered = filtered.filter(w=>w.priority===prior);
+    if(area) filtered = filtered.filter(w=>getAreaForEquip(w.equipment_id)===area);
+    populateOTTable(filtered);
+}
+
+function populateOTTable(data) {
+    const tbl = document.getElementById('tbl-ots');
+    let html = '<thead><tr><th>OT #</th><th>Tipo</th><th>Estado</th><th>Prioridad</th><th>Equipo</th><th>Área</th><th>Duración hrs</th><th>Costo</th><th>Fecha</th></tr></thead><tbody>';
+    data.forEach(w => {
+        html += `<tr><td>${w.ot_number||'N/A'}</td><td>${badge(w.type)}</td><td>${badge(w.status)}</td><td>${badge(w.priority)}</td><td>${getEquipName(w.equipment_id)}</td><td>${getAreaForEquip(w.equipment_id)}</td><td>${fmt(w.real_duration||0,1)}</td><td>${fmtCur(w.total_cost||0)}</td><td>${w.start_date?new Date(w.start_date).toLocaleDateString('es-ES'):'N/A'}</td></tr>`;
+    });
+    html += '</tbody>';
+    tbl.innerHTML = html || '<tbody><tr><td colspan="9" style="text-align:center;color:var(--text-muted)">Sin datos</td></tr></tbody>';
+}
+
+// ============================= AVISOS =============================
+function renderAvisos() {
+    const av = D.notices;
+    const total = av.length;
+    const open = av.filter(a=>(a.status||'').toLowerCase().match(/abierta|open|pendiente/)).length;
+    const closed = av.filter(a=>(a.status||'').toLowerCase().match(/cerrada|closed|completada/)).length;
+    const urgent = av.filter(a=>(a.priority||'').toLowerCase().match(/alta|high|urgente|critica|emergencia/)).length;
+
+    document.getElementById('kpi-avisos').innerHTML =
+        kpiHTML('Total Avisos', fmt(total), '') +
+        kpiHTML('Pendientes', fmt(open), 'yellow') +
+        kpiHTML('Cerrados', fmt(closed), 'green') +
+        kpiHTML('Urgentes', fmt(urgent), 'red');
+
+    const tipoCount = countBy(av, 'type');
+    makeChart('c-aviso-tipo', {
+        type:'doughnut',
+        data:{ labels:Object.keys(tipoCount), datasets:[{data:Object.values(tipoCount),backgroundColor:COLORS,borderWidth:0}] },
+        options:{ responsive:true, maintainAspectRatio:false, plugins:{legend:{position:'bottom'}} }
+    });
+
+    const estCount = countBy(av, 'status');
+    makeChart('c-aviso-estado', {
+        type:'polarArea',
+        data:{ labels:Object.keys(estCount), datasets:[{data:Object.values(estCount),backgroundColor:COLORS_ALPHA,borderColor:COLORS,borderWidth:2}] },
+        options:{ responsive:true, maintainAspectRatio:false, plugins:{legend:{position:'bottom'}} }
+    });
+
+    const months = getLast12();
+    const mc = monthlyCount(av, 'created_at');
+    makeChart('c-aviso-trend', {
+        type:'line',
+        data:{ labels:months, datasets:[{label:'Avisos',data:months.map(m=>mc[m]||0),borderColor:'#ffd166',backgroundColor:'rgba(255,209,102,0.1)',fill:true,tension:0.4}] },
+        options:{ responsive:true, maintainAspectRatio:false, scales:{y:{beginAtZero:true}} }
+    });
+
+    const tbl = document.getElementById('tbl-avisos');
+    let html = '<thead><tr><th>#</th><th>Tipo</th><th>Estado</th><th>Prioridad</th><th>Equipo</th><th>Descripción</th><th>Fecha</th></tr></thead><tbody>';
+    av.forEach((a,i) => {
+        html += `<tr><td>${a.notice_number||i+1}</td><td>${badge(a.type)}</td><td>${badge(a.status)}</td><td>${badge(a.priority)}</td><td>${getEquipName(a.equipment_id)}</td><td>${(a.description||'').substring(0,50)}</td><td>${a.created_at?new Date(a.created_at).toLocaleDateString('es-ES'):'N/A'}</td></tr>`;
+    });
+    html += '</tbody>';
+    tbl.innerHTML = html;
+}
+
+// ============================= PARADAS =============================
+function renderParadas() {
+    const sh = D.shutdowns;
+    const total = sh.length;
+    const totalHrs = sh.reduce((s,x)=>s+(x.duration_hours||x.hours||0),0);
+    const planned = sh.filter(x=>(x.type||'').toLowerCase().match(/planificada|planned/)).length;
+    const unplanned = total - planned;
+
+    document.getElementById('kpi-paradas').innerHTML =
+        kpiHTML('Total Paradas', fmt(total), '') +
+        kpiHTML('Horas Totales', fmt(totalHrs,0)+' hrs', 'red') +
+        kpiHTML('Planificadas', fmt(planned), 'green') +
+        kpiHTML('No Planificadas', fmt(unplanned), 'red');
+
+    const tipoCount = countBy(sh, 'type');
+    makeChart('c-parada-tipo', {
+        type:'doughnut',
+        data:{ labels:Object.keys(tipoCount), datasets:[{data:Object.values(tipoCount),backgroundColor:['#06d6a0','#ef476f','#ffd166','#9b5de5'],borderWidth:0}] },
+        options:{ responsive:true, maintainAspectRatio:false, plugins:{legend:{position:'bottom'}} }
+    });
+
+    const areaHrs = {};
+    sh.forEach(x => { const a = getAreaForEquip(x.equipment_id); areaHrs[a]=(areaHrs[a]||0)+(x.duration_hours||x.hours||0); });
+    makeChart('c-parada-area', {
+        type:'bar',
+        data:{ labels:Object.keys(areaHrs), datasets:[{label:'Horas',data:Object.values(areaHrs),backgroundColor:COLORS,borderRadius:6,borderSkipped:false}] },
+        options:{ indexAxis:'y', responsive:true, maintainAspectRatio:false, plugins:{legend:{display:false}}, scales:{x:{beginAtZero:true}} }
+    });
+
+    const months = getLast12();
+    const mc = monthlyCount(sh, 'start_date');
+    makeChart('c-parada-trend', {
+        type:'bar',
+        data:{ labels:months, datasets:[{label:'Paradas',data:months.map(m=>mc[m]||0),backgroundColor:'rgba(239,71,111,0.6)',borderRadius:6,borderSkipped:false}] },
+        options:{ responsive:true, maintainAspectRatio:false, scales:{y:{beginAtZero:true}} }
+    });
+
+    const tbl = document.getElementById('tbl-paradas');
+    let html = '<thead><tr><th>#</th><th>Tipo</th><th>Equipo</th><th>Horas</th><th>Motivo</th><th>Fecha Inicio</th></tr></thead><tbody>';
+    sh.forEach((x,i) => {
+        html += `<tr><td>${i+1}</td><td>${badge(x.type)}</td><td>${getEquipName(x.equipment_id)}</td><td>${fmt(x.duration_hours||x.hours||0,1)}</td><td>${(x.reason||x.description||'').substring(0,50)}</td><td>${x.start_date?new Date(x.start_date).toLocaleDateString('es-ES'):'N/A'}</td></tr>`;
+    });
+    html += '</tbody>';
+    tbl.innerHTML = html;
+}
+
+// ============================= PREVENTIVO =============================
+function renderPreventivo() {
+    const wo = D.workOrders;
+    const prev = wo.filter(w=>(w.type||'').toLowerCase()==='preventivo');
+    const corr = wo.filter(w=>(w.type||'').toLowerCase()==='correctivo');
+    const prevClosed = prev.filter(w=>(w.status||'').toLowerCase().match(/cerrada|closed/));
+    const ratio = wo.length>0 ? (prev.length/wo.length*100) : 0;
+    const compliance = prev.length>0 ? (prevClosed.length/prev.length*100) : 0;
+
+    document.getElementById('kpi-preventivo').innerHTML =
+        kpiHTML('OTs Preventivas', fmt(prev.length), 'green') +
+        kpiHTML('Ratio Prev/Total', pct(ratio), ratio>=50?'green':'yellow') +
+        kpiHTML('Cumplimiento', pct(compliance), 'cyan') +
+        kpiHTML('Prev vs Corr', prev.length+'/'+corr.length, '');
+
+    // Cumplimiento por área
+    const areaPrev = {};
+    const areaPrevCl = {};
+    prev.forEach(w => {
+        const a = getAreaForEquip(w.equipment_id);
+        areaPrev[a] = (areaPrev[a]||0)+1;
+        if((w.status||'').toLowerCase().match(/cerrada|closed/)) areaPrevCl[a]=(areaPrevCl[a]||0)+1;
+    });
+    const areaComp = Object.entries(areaPrev).map(([k,v])=>({name:k,pct:(areaPrevCl[k]||0)/v*100}));
+    makeChart('c-prev-cumpl', {
+        type:'bar',
+        data:{ labels:areaComp.map(x=>x.name), datasets:[{label:'Cumplimiento %',data:areaComp.map(x=>x.pct),backgroundColor:areaComp.map(x=>x.pct>=80?'#06d6a0':x.pct>=50?'#ffd166':'#ef476f'),borderRadius:6,borderSkipped:false}] },
+        options:{ indexAxis:'y', responsive:true, maintainAspectRatio:false, plugins:{legend:{display:false}}, scales:{x:{beginAtZero:true,max:100}} }
+    });
+
+    // Tendencia prev vs corr
+    const months = getLast12();
+    const mcP = monthlyCount(prev, 'created_at');
+    const mcC = monthlyCount(corr, 'created_at');
+    makeChart('c-prev-trend', {
+        type:'line',
+        data:{ labels:months, datasets:[
+            { label:'Preventivo', data:months.map(m=>mcP[m]||0), borderColor:'#06d6a0', backgroundColor:'rgba(6,214,160,0.1)', fill:true, tension:0.4 },
+            { label:'Correctivo', data:months.map(m=>mcC[m]||0), borderColor:'#ef476f', backgroundColor:'rgba(239,71,111,0.1)', fill:true, tension:0.4 }
+        ]},
+        options:{ responsive:true, maintainAspectRatio:false, scales:{y:{beginAtZero:true}} }
+    });
+
+    // Prev por equipo
+    const eqPrev = {};
+    prev.forEach(w => { const n=getEquipName(w.equipment_id); eqPrev[n]=(eqPrev[n]||0)+1; });
+    const epS = Object.entries(eqPrev).sort((a,b)=>b[1]-a[1]).slice(0,15);
+    makeChart('c-prev-equip', {
+        type:'bar',
+        data:{ labels:epS.map(x=>x[0]), datasets:[{label:'OTs Preventivas',data:epS.map(x=>x[1]),backgroundColor:'#06d6a0',borderRadius:6,borderSkipped:false}] },
+        options:{ indexAxis:'y', responsive:true, maintainAspectRatio:false, plugins:{legend:{display:false}}, scales:{x:{beginAtZero:true}} }
+    });
+}
+
+// ============================= PREDICTIVO =============================
+function renderPredictivo() {
+    const pd = D.predictive;
+    const total = pd.length;
+    const normal = pd.filter(x=>(x.status||x.result||'').toLowerCase().match(/normal|ok|bueno/)).length;
+    const alert = pd.filter(x=>(x.status||x.result||'').toLowerCase().match(/alerta|warning|anormal/)).length;
+    const crit = pd.filter(x=>(x.status||x.result||'').toLowerCase().match(/critico|critical|danger/)).length;
+
+    document.getElementById('kpi-predictivo').innerHTML =
+        kpiHTML('Total Análisis', fmt(total), '') +
+        kpiHTML('Normal', fmt(normal), 'green') +
+        kpiHTML('Alerta', fmt(alert), 'yellow') +
+        kpiHTML('Crítico', fmt(crit), 'red');
+
+    const tecnica = countBy(pd, 'technique');
+    makeChart('c-pred-tecnica', {
+        type:'doughnut',
+        data:{ labels:Object.keys(tecnica), datasets:[{data:Object.values(tecnica),backgroundColor:COLORS,borderWidth:0}] },
+        options:{ responsive:true, maintainAspectRatio:false, plugins:{legend:{position:'bottom'}} }
+    });
+
+    const estado = countBy(pd, 'status');
+    makeChart('c-pred-estado', {
+        type:'polarArea',
+        data:{ labels:Object.keys(estado), datasets:[{data:Object.values(estado),backgroundColor:COLORS_ALPHA,borderColor:COLORS,borderWidth:2}] },
+        options:{ responsive:true, maintainAspectRatio:false, plugins:{legend:{position:'bottom'}} }
+    });
+
+    const months = getLast12();
+    const mc = monthlyCount(pd, 'date');
+    makeChart('c-pred-trend', {
+        type:'line',
+        data:{ labels:months, datasets:[{label:'Análisis',data:months.map(m=>mc[m]||0),borderColor:'#9b5de5',backgroundColor:'rgba(155,93,229,0.1)',fill:true,tension:0.4}] },
+        options:{ responsive:true, maintainAspectRatio:false, scales:{y:{beginAtZero:true}} }
+    });
+
+    const tbl = document.getElementById('tbl-predictivo');
+    let html = '<thead><tr><th>#</th><th>Técnica</th><th>Equipo</th><th>Resultado</th><th>Valor</th><th>Fecha</th></tr></thead><tbody>';
+    pd.forEach((x,i) => {
+        html += `<tr><td>${i+1}</td><td>${x.technique||'N/A'}</td><td>${getEquipName(x.equipment_id)}</td><td>${badge(x.status||x.result)}</td><td>${x.value||x.measurement||'N/A'}</td><td>${x.date?new Date(x.date).toLocaleDateString('es-ES'):'N/A'}</td></tr>`;
+    });
+    html += '</tbody>';
+    tbl.innerHTML = html;
+}
+
+// ============================= LUBRICACIÓN =============================
+function renderLubricacion() {
+    const lb = D.lubrication;
+    const total = lb.length;
+    const done = lb.filter(x=>(x.status||'').toLowerCase().match(/completada|realizada|done|cerrada/)).length;
+    const pend = total - done;
+    const compliance = total>0 ? (done/total*100) : 0;
+
+    document.getElementById('kpi-lub').innerHTML =
+        kpiHTML('Total Lubricaciones', fmt(total), '') +
+        kpiHTML('Realizadas', fmt(done), 'green') +
+        kpiHTML('Pendientes', fmt(pend), 'yellow') +
+        kpiHTML('Cumplimiento', pct(compliance), compliance>=80?'green':'yellow');
+
+    const tipoCount = countBy(lb, 'lubricant_type');
+    makeChart('c-lub-tipo', {
+        type:'doughnut',
+        data:{ labels:Object.keys(tipoCount), datasets:[{data:Object.values(tipoCount),backgroundColor:COLORS,borderWidth:0}] },
+        options:{ responsive:true, maintainAspectRatio:false, plugins:{legend:{position:'bottom'}} }
+    });
+
+    const estCount = countBy(lb, 'status');
+    makeChart('c-lub-cumpl', {
+        type:'pie',
+        data:{ labels:Object.keys(estCount), datasets:[{data:Object.values(estCount),backgroundColor:['#06d6a0','#ffd166','#ef476f','#9b5de5'],borderWidth:0}] },
+        options:{ responsive:true, maintainAspectRatio:false, plugins:{legend:{position:'bottom'}} }
+    });
+
+    const months = getLast12();
+    const mc = monthlyCount(lb, 'date');
+    makeChart('c-lub-trend', {
+        type:'bar',
+        data:{ labels:months, datasets:[{label:'Lubricaciones',data:months.map(m=>mc[m]||0),backgroundColor:'rgba(72,202,228,0.6)',borderRadius:6,borderSkipped:false}] },
+        options:{ responsive:true, maintainAspectRatio:false, scales:{y:{beginAtZero:true}} }
+    });
+
+    const tbl = document.getElementById('tbl-lub');
+    let html = '<thead><tr><th>#</th><th>Equipo</th><th>Lubricante</th><th>Cantidad</th><th>Estado</th><th>Fecha</th></tr></thead><tbody>';
+    lb.forEach((x,i) => {
+        html += `<tr><td>${i+1}</td><td>${getEquipName(x.equipment_id)}</td><td>${x.lubricant_type||x.lubricant||'N/A'}</td><td>${x.quantity||'N/A'}</td><td>${badge(x.status)}</td><td>${x.date?new Date(x.date).toLocaleDateString('es-ES'):'N/A'}</td></tr>`;
+    });
+    html += '</tbody>';
+    tbl.innerHTML = html;
+}
+
+// ============================= ANÁLISIS DE FALLAS =============================
+function renderFallas() {
+    const corr = D.workOrders.filter(w=>(w.type||'').toLowerCase()==='correctivo');
+    const totalDown = corr.reduce((s,w)=>s+(w.downtime_hours||0),0);
+    const avgDown = corr.length>0 ? totalDown/corr.length : 0;
+    const totalCostCorr = corr.reduce((s,w)=>s+(w.total_cost||0),0);
+
+    document.getElementById('kpi-fallas').innerHTML =
+        kpiHTML('Fallas Correctivas', fmt(corr.length), 'red') +
+        kpiHTML('Horas Parada Total', fmt(totalDown,0)+' hrs', 'red') +
+        kpiHTML('Prom. Parada/Falla', fmt(avgDown,1)+' hrs', 'yellow') +
+        kpiHTML('Costo por Fallas', fmtCur(totalCostCorr), 'orange');
+
+    // Pareto por equipo
+    const eqFallas = {};
+    corr.forEach(w => { const n=getEquipName(w.equipment_id); eqFallas[n]=(eqFallas[n]||0)+1; });
+    const sorted = Object.entries(eqFallas).sort((a,b)=>b[1]-a[1]).slice(0,12);
+    const cumPct = [];
+    let cumSum = 0;
+    const totalF = sorted.reduce((s,x)=>s+x[1],0);
+    sorted.forEach(x => { cumSum+=x[1]; cumPct.push(cumSum/totalF*100); });
+    makeChart('c-falla-pareto', {
+        type:'bar',
+        data:{ labels:sorted.map(x=>x[0]), datasets:[
+            {label:'Fallas',data:sorted.map(x=>x[1]),backgroundColor:'#ef476f',borderRadius:6,borderSkipped:false,yAxisID:'y'},
+            {label:'% Acumulado',data:cumPct,type:'line',borderColor:'#ffd166',tension:0.4,pointRadius:4,yAxisID:'y1'}
+        ]},
+        options:{ responsive:true, maintainAspectRatio:false, scales:{y:{beginAtZero:true,position:'left'},y1:{beginAtZero:true,max:100,position:'right',grid:{drawOnChartArea:false}}} }
+    });
+
+    // Fallas por tipo
+    const ftipo = countBy(corr, 'failure_type');
+    makeChart('c-falla-tipo', {
+        type:'doughnut',
+        data:{ labels:Object.keys(ftipo), datasets:[{data:Object.values(ftipo),backgroundColor:COLORS,borderWidth:0}] },
+        options:{ responsive:true, maintainAspectRatio:false, plugins:{legend:{position:'bottom'}} }
+    });
+
+    // Modo de fallo
+    const fmodo = countBy(corr, 'failure_mode');
+    makeChart('c-falla-modo', {
+        type:'bar',
+        data:{ labels:Object.keys(fmodo), datasets:[{label:'Fallas',data:Object.values(fmodo),backgroundColor:COLORS,borderRadius:6,borderSkipped:false}] },
+        options:{ indexAxis:'y', responsive:true, maintainAspectRatio:false, plugins:{legend:{display:false}}, scales:{x:{beginAtZero:true}} }
+    });
+
+    // Horas parada por equipo
+    const eqDown = {};
+    corr.forEach(w => { const n=getEquipName(w.equipment_id); eqDown[n]=(eqDown[n]||0)+(w.downtime_hours||0); });
+    const sortDown = Object.entries(eqDown).sort((a,b)=>b[1]-a[1]).slice(0,10);
+    makeChart('c-falla-horas', {
+        type:'bar',
+        data:{ labels:sortDown.map(x=>x[0]), datasets:[{label:'Horas Parada',data:sortDown.map(x=>x[1]),backgroundColor:'#f77f00',borderRadius:6,borderSkipped:false}] },
+        options:{ indexAxis:'y', responsive:true, maintainAspectRatio:false, plugins:{legend:{display:false}}, scales:{x:{beginAtZero:true}} }
+    });
+
+    // Tendencia fallas
+    const months = getLast12();
+    const mc = monthlyCount(corr, 'created_at');
+    makeChart('c-falla-trend', {
+        type:'line',
+        data:{ labels:months, datasets:[{label:'Fallas',data:months.map(m=>mc[m]||0),borderColor:'#ef476f',backgroundColor:'rgba(239,71,111,0.1)',fill:true,tension:0.4,pointRadius:4}] },
+        options:{ responsive:true, maintainAspectRatio:false, scales:{y:{beginAtZero:true}} }
+    });
+}
+
+// ============================= PERSONAL =============================
+function renderPersonal() {
+    const pers = D.personnel;
+    const total = pers.length;
+    const specs = countBy(pers, 'specialty');
+    const active = pers.filter(p=>(p.status||'').toLowerCase().match(/activo|active/)).length;
+
+    document.getElementById('kpi-personal').innerHTML =
+        kpiHTML('Total Personal', fmt(total), '') +
+        kpiHTML('Activos', fmt(active||total), 'green') +
+        kpiHTML('Especialidades', fmt(Object.keys(specs).length), 'purple') +
+        kpiHTML('OTs/Técnico Prom.', fmt(D.workOrders.length/(total||1),1), 'cyan');
+
+    // Por especialidad
+    makeChart('c-pers-espec', {
+        type:'doughnut',
+        data:{ labels:Object.keys(specs), datasets:[{data:Object.values(specs),backgroundColor:COLORS,borderWidth:0}] },
+        options:{ responsive:true, maintainAspectRatio:false, plugins:{legend:{position:'bottom'}} }
+    });
+
+    // Carga de trabajo
+    const techOTs = {};
+    D.workOrders.forEach(w => {
+        const techId = w.assigned_to || w.technician_id;
+        if(techId) {
+            const tech = pers.find(p=>p.id===techId);
+            const name = tech ? tech.name : 'Técnico '+techId;
+            techOTs[name] = (techOTs[name]||0)+1;
+        }
+    });
+    if (Object.keys(techOTs).length === 0) {
+        pers.forEach(p => { techOTs[p.name||'Técnico'] = Math.floor(D.workOrders.length/(pers.length||1)); });
+    }
+    const sortTech = Object.entries(techOTs).sort((a,b)=>b[1]-a[1]).slice(0,15);
+    makeChart('c-pers-carga', {
+        type:'bar',
+        data:{ labels:sortTech.map(x=>x[0]), datasets:[{label:'OTs Asignadas',data:sortTech.map(x=>x[1]),backgroundColor:COLORS,borderRadius:6,borderSkipped:false}] },
+        options:{ indexAxis:'y', responsive:true, maintainAspectRatio:false, plugins:{legend:{display:false}}, scales:{x:{beginAtZero:true}} }
+    });
+
+    // Eficiencia
+    const techEff = {};
+    D.workOrders.forEach(w => {
+        const techId = w.assigned_to || w.technician_id;
+        if(techId && w.estimated_duration && w.real_duration) {
+            const tech = pers.find(p=>p.id===techId);
+            const name = tech ? tech.name : 'Técnico '+techId;
+            if(!techEff[name]) techEff[name]={est:0,real:0};
+            techEff[name].est += w.estimated_duration;
+            techEff[name].real += w.real_duration;
+        }
+    });
+    const effData = Object.entries(techEff).slice(0,10);
+    makeChart('c-pers-efic', {
+        type:'bar',
+        data:{ labels:effData.map(x=>x[0]), datasets:[
+            {label:'Estimado hrs',data:effData.map(x=>x[1].est),backgroundColor:'rgba(0,180,216,0.6)',borderRadius:4},
+            {label:'Real hrs',data:effData.map(x=>x[1].real),backgroundColor:'rgba(239,71,111,0.6)',borderRadius:4}
+        ]},
+        options:{ responsive:true, maintainAspectRatio:false, scales:{y:{beginAtZero:true}} }
+    });
+
+    // Costo por técnico
+    const techCost = {};
+    D.workOrders.forEach(w => {
+        const techId = w.assigned_to || w.technician_id;
+        if(techId) {
+            const tech = pers.find(p=>p.id===techId);
+            const name = tech ? tech.name : 'Técnico '+techId;
+            techCost[name] = (techCost[name]||0)+(w.total_cost||0);
+        }
+    });
+    const sortCost = Object.entries(techCost).sort((a,b)=>b[1]-a[1]).slice(0,10);
+    makeChart('c-pers-cost', {
+        type:'bar',
+        data:{ labels:sortCost.map(x=>x[0]), datasets:[{label:'Costo Total',data:sortCost.map(x=>x[1]),backgroundColor:'#f77f00',borderRadius:6,borderSkipped:false}] },
+        options:{ indexAxis:'y', responsive:true, maintainAspectRatio:false, plugins:{legend:{display:false}}, scales:{x:{beginAtZero:true}} }
+    });
+
+    // Tabla personal
+    const tbl = document.getElementById('tbl-personal');
+    let html = '<thead><tr><th>Nombre</th><th>Especialidad</th><th>Turno</th><th>Estado</th><th>Email</th></tr></thead><tbody>';
+    pers.forEach(p => {
+        html += `<tr><td>${p.name||'N/A'}</td><td>${p.specialty||p.role||'N/A'}</td><td>${p.shift||p.turn||'N/A'}</td><td>${badge(p.status||'Activo')}</td><td>${p.email||'N/A'}</td></tr>`;
+    });
+    html += '</tbody>';
+    tbl.innerHTML = html;
+}
+
+// ============================= COSTOS =============================
+function renderCostos() {
+    const wo = D.workOrders;
+    const totalCost = wo.reduce((s,w)=>s+(w.total_cost||0),0);
+    const laborCost = wo.reduce((s,w)=>s+(w.labor_cost||0),0);
+    const matCost = wo.reduce((s,w)=>s+(w.material_cost||0),0);
+    const otherCost = totalCost - laborCost - matCost;
+    const avgCost = wo.length>0 ? totalCost/wo.length : 0;
+    const corrCost = wo.filter(w=>(w.type||'').toLowerCase()==='correctivo').reduce((s,w)=>s+(w.total_cost||0),0);
+
+    document.getElementById('kpi-costos').innerHTML =
+        kpiHTML('Costo Total', fmtCur(totalCost), 'orange') +
+        kpiHTML('Mano de Obra', fmtCur(laborCost), '') +
+        kpiHTML('Materiales', fmtCur(matCost), 'cyan') +
+        kpiHTML('Costo Prom/OT', fmtCur(avgCost), '') +
+        kpiHTML('Costo Correctivo', fmtCur(corrCost), 'red');
+
+    // Desglose
+    makeChart('c-cost-desg', {
+        type:'doughnut',
+        data:{ labels:['Mano de Obra','Materiales','Otros'], datasets:[{data:[laborCost,matCost,Math.max(0,otherCost)],backgroundColor:['#00b4d8','#06d6a0','#ffd166'],borderWidth:0}] },
+        options:{ responsive:true, maintainAspectRatio:false, plugins:{legend:{position:'bottom'}} }
+    });
+
+    // Costo por área
+    const costArea = {};
+    wo.forEach(w => { const a=getAreaForEquip(w.equipment_id); costArea[a]=(costArea[a]||0)+(w.total_cost||0); });
+    const caS = Object.entries(costArea).sort((a,b)=>b[1]-a[1]);
+    makeChart('c-cost-area', {
+        type:'bar',
+        data:{ labels:caS.map(x=>x[0]), datasets:[{label:'Costo',data:caS.map(x=>x[1]),backgroundColor:COLORS,borderRadius:6,borderSkipped:false}] },
+        options:{ indexAxis:'y', responsive:true, maintainAspectRatio:false, plugins:{legend:{display:false}}, scales:{x:{beginAtZero:true}} }
+    });
+
+    // Tendencia costos
+    const months = getLast12();
+    const mCost = {};
+    wo.forEach(w => {
+        if(w.created_at) {
+            const d=new Date(w.created_at);
+            const ym=d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0');
+            if(!mCost[ym]) mCost[ym]={total:0,labor:0,mat:0};
+            mCost[ym].total += w.total_cost||0;
+            mCost[ym].labor += w.labor_cost||0;
+            mCost[ym].mat += w.material_cost||0;
+        }
+    });
+    makeChart('c-cost-trend', {
+        type:'line',
+        data:{ labels:months, datasets:[
+            {label:'Total',data:months.map(m=>(mCost[m]||{}).total||0),borderColor:'#f77f00',backgroundColor:'rgba(247,127,0,0.1)',fill:true,tension:0.4},
+            {label:'Mano de Obra',data:months.map(m=>(mCost[m]||{}).labor||0),borderColor:'#00b4d8',tension:0.4},
+            {label:'Materiales',data:months.map(m=>(mCost[m]||{}).mat||0),borderColor:'#06d6a0',tension:0.4}
+        ]},
+        options:{ responsive:true, maintainAspectRatio:false, interaction:{mode:'index',intersect:false}, scales:{y:{beginAtZero:true}} }
+    });
+
+    // Top equipos por costo
+    const costEq = {};
+    wo.forEach(w => { const n=getEquipName(w.equipment_id); costEq[n]=(costEq[n]||0)+(w.total_cost||0); });
+    const ceS = Object.entries(costEq).sort((a,b)=>b[1]-a[1]).slice(0,10);
+    makeChart('c-cost-equip', {
+        type:'bar',
+        data:{ labels:ceS.map(x=>x[0]), datasets:[{label:'Costo',data:ceS.map(x=>x[1]),backgroundColor:COLORS,borderRadius:6,borderSkipped:false}] },
+        options:{ indexAxis:'y', responsive:true, maintainAspectRatio:false, plugins:{legend:{display:false}}, scales:{x:{beginAtZero:true}} }
+    });
+
+    // Costo por tipo mantenimiento
+    const costTipo = {};
+    wo.forEach(w => { const t=w.type||'N/A'; costTipo[t]=(costTipo[t]||0)+(w.total_cost||0); });
+    makeChart('c-cost-tipo-mant', {
+        type:'pie',
+        data:{ labels:Object.keys(costTipo), datasets:[{data:Object.values(costTipo),backgroundColor:['#ef476f','#06d6a0','#9b5de5','#ffd166'],borderWidth:0}] },
+        options:{ responsive:true, maintainAspectRatio:false, plugins:{legend:{position:'bottom'}} }
+    });
+}
+</script>
+</body>
+</html>

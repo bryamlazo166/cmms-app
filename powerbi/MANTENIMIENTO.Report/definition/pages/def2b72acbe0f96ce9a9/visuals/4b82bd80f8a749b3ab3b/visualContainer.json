@@ -1,0 +1,55 @@
+{
+  "$schema": "https://developer.microsoft.com/json-schemas/fabric/item/report/definition/visualContainer/2.0.0/schema.json",
+  "name": "4b82bd80f8a749b3ab3b",
+  "position": {
+    "x": 860,
+    "y": 160,
+    "z": 1006,
+    "width": 400,
+    "height": 280,
+    "tabOrder": 1006
+  },
+  "visual": {
+    "visualType": "lineChart",
+    "query": {
+      "queryState": {
+        "Category": {
+          "projections": [
+            {
+              "field": {
+                "Column": {
+                  "Expression": {
+                    "SourceRef": {
+                      "Entity": "DimFecha"
+                    }
+                  },
+                  "Property": "Año-Mes"
+                }
+              },
+              "queryRef": "DimFecha.Año-Mes",
+              "nativeQueryRef": "Año-Mes"
+            }
+          ]
+        },
+        "Y": {
+          "projections": [
+            {
+              "field": {
+                "Measure": {
+                  "Expression": {
+                    "SourceRef": {
+                      "Entity": "_Medidas"
+                    }
+                  },
+                  "Property": "Total Paradas"
+                }
+              },
+              "queryRef": "_Medidas.Total Paradas",
+              "nativeQueryRef": "Total Paradas"
+            }
+          ]
+        }
+      }
+    }
+  }
+}
