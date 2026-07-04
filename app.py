@@ -41,6 +41,7 @@ from models import (
     EquipmentFlowEdge,
     HammerBatch, HammerBatchMovement,
     Requirement,
+    RentalEquipment, RentalHorometerReading, RentalFailure,
 )
 from utils.crud_helpers import create_entry, get_entries, update_entry, delete_entry
 from utils.reporting_helpers import (
@@ -82,6 +83,7 @@ from routes.work_orders_routes import register_work_orders_routes
 from routes.production_routes import register_production_routes
 from routes.weekly_plan_routes import register_weekly_plan_routes
 from routes.insights_routes import register_insights_routes
+from routes.rental_routes import register_rental_routes
 
 # Nivel configurable via env. En produccion default = INFO (NUNCA DEBUG)
 # porque urllib3.connectionpool en DEBUG loguea cada URL que peticionamos,
@@ -244,7 +246,10 @@ _ASSET_VERSION = datetime.now().strftime('%Y%m%d%H%M%S')
 @app.context_processor
 def inject_globals():
     role = getattr(current_user, 'role', 'viewer') if current_user.is_authenticated else 'viewer'
-    perms = _DEFAULT_PERMS.get(role, {}) if role != 'admin' else {}
+    # Usar los permisos efectivos (BD con fallback a defaults) para que lo
+    # configurado en la matriz de permisos tambien gobierne lo que ven los
+    # templates, no solo el bloqueo de rutas/API.
+    perms = _load_role_perms(role) if role != 'admin' else {}
     def can_view(mod):
         return role == 'admin' or perms.get(mod, {}).get('view', False)
     def can_edit(mod):
@@ -275,6 +280,7 @@ _MODULE_ROUTES = {
     'almacen':          {'pages': ['/almacen'], 'api': ['/api/warehouse']},
     'herramientas':     {'pages': ['/herramientas'], 'api': ['/api/tools']},
     'activos_rotativos':{'pages': ['/activos-rotativos'], 'api': ['/api/rotative-assets']},
+    'equipos_alquilados':{'pages': ['/equipos-alquilados'], 'api': ['/api/rental']},
     'martillos':       {'pages': ['/martillos'], 'api': ['/api/hammer-batches']},
     'activos_config':   {'pages': ['/configuracion'], 'api': ['/api/areas', '/api/lines', '/api/equipments', '/api/systems', '/api/components', '/api/spare-parts', '/api/upload-excel', '/api/bulk-paste']},
     'monitoreo':        {'pages': ['/monitoreo'], 'api': ['/api/monitoring']},
@@ -459,14 +465,100 @@ _DEFAULT_PERMS = {
         'historial_equipo': {'view': True, 'edit': False}, 'exportar': {'view': True, 'edit': False},
         'usuarios': {'view': False, 'edit': False},
     },
+    # Asistente de mantenimiento: apoya al planner con registro de datos.
+    'asistente': {
+        'avisos': {'view': True, 'edit': True}, 'ordenes': {'view': True, 'edit': True},
+        'compras': {'view': True, 'edit': True}, 'almacen': {'view': True, 'edit': False},
+        'herramientas': {'view': True, 'edit': False}, 'lubricacion': {'view': True, 'edit': True},
+        'inspecciones': {'view': True, 'edit': True}, 'monitoreo': {'view': True, 'edit': True},
+        'espesores': {'view': True, 'edit': False},
+        'produccion': {'view': True, 'edit': False},
+        'paradas': {'view': True, 'edit': False},
+        'plantillas_paradas': {'view': True, 'edit': False},
+        'programa_nocturno': {'view': True, 'edit': False},
+        'flujo_planta': {'view': False, 'edit': False},
+        'perdidas_produccion': {'view': False, 'edit': False},
+        'insights': {'view': False, 'edit': False},
+        'seguimiento': {'view': True, 'edit': True},
+        'calendario': {'view': True, 'edit': False},
+        'reportes': {'view': True, 'edit': False},
+        'activos_rotativos': {'view': True, 'edit': False}, 'activos_config': {'view': True, 'edit': False},
+        'responsabilidades': {'view': False, 'edit': False},
+        'martillos': {'view': True, 'edit': False},
+        'requerimientos': {'view': True, 'edit': True},
+        'motores': {'view': True, 'edit': False},
+        'equipos_alquilados': {'view': True, 'edit': True},
+        'historial_equipo': {'view': True, 'edit': False}, 'exportar': {'view': False, 'edit': False},
+        'usuarios': {'view': False, 'edit': False},
+    },
+    # Practicante: solo lectura; unicamente crea/edita avisos.
+    'practicante': {
+        'avisos': {'view': True, 'edit': True}, 'ordenes': {'view': True, 'edit': False},
+        'compras': {'view': False, 'edit': False}, 'almacen': {'view': False, 'edit': False},
+        'herramientas': {'view': True, 'edit': False}, 'lubricacion': {'view': True, 'edit': False},
+        'inspecciones': {'view': True, 'edit': False}, 'monitoreo': {'view': True, 'edit': False},
+        'espesores': {'view': True, 'edit': False},
+        'produccion': {'view': False, 'edit': False},
+        'paradas': {'view': True, 'edit': False},
+        'plantillas_paradas': {'view': False, 'edit': False},
+        'programa_nocturno': {'view': True, 'edit': False},
+        'flujo_planta': {'view': False, 'edit': False},
+        'perdidas_produccion': {'view': False, 'edit': False},
+        'insights': {'view': False, 'edit': False},
+        'seguimiento': {'view': False, 'edit': False},
+        'calendario': {'view': True, 'edit': False},
+        'reportes': {'view': False, 'edit': False},
+        'activos_rotativos': {'view': True, 'edit': False}, 'activos_config': {'view': True, 'edit': False},
+        'responsabilidades': {'view': False, 'edit': False},
+        'martillos': {'view': True, 'edit': False},
+        'requerimientos': {'view': False, 'edit': False},
+        'motores': {'view': True, 'edit': False},
+        'equipos_alquilados': {'view': True, 'edit': False},
+        'historial_equipo': {'view': True, 'edit': False}, 'exportar': {'view': False, 'edit': False},
+        'usuarios': {'view': False, 'edit': False},
+    },
+    # Automotriz: responsable de equipos moviles / alquilados.
+    'automotriz': {
+        'avisos': {'view': True, 'edit': True}, 'ordenes': {'view': True, 'edit': True},
+        'compras': {'view': False, 'edit': False}, 'almacen': {'view': False, 'edit': False},
+        'herramientas': {'view': True, 'edit': False}, 'lubricacion': {'view': True, 'edit': True},
+        'inspecciones': {'view': True, 'edit': True}, 'monitoreo': {'view': True, 'edit': False},
+        'espesores': {'view': False, 'edit': False},
+        'produccion': {'view': False, 'edit': False},
+        'paradas': {'view': True, 'edit': False},
+        'plantillas_paradas': {'view': False, 'edit': False},
+        'programa_nocturno': {'view': False, 'edit': False},
+        'flujo_planta': {'view': False, 'edit': False},
+        'perdidas_produccion': {'view': False, 'edit': False},
+        'insights': {'view': False, 'edit': False},
+        'seguimiento': {'view': False, 'edit': False},
+        'calendario': {'view': True, 'edit': False},
+        'reportes': {'view': False, 'edit': False},
+        'activos_rotativos': {'view': False, 'edit': False}, 'activos_config': {'view': False, 'edit': False},
+        'responsabilidades': {'view': False, 'edit': False},
+        'martillos': {'view': False, 'edit': False},
+        'requerimientos': {'view': False, 'edit': False},
+        'motores': {'view': False, 'edit': False},
+        'equipos_alquilados': {'view': True, 'edit': True},
+        'historial_equipo': {'view': True, 'edit': False}, 'exportar': {'view': False, 'edit': False},
+        'usuarios': {'view': False, 'edit': False},
+    },
 }
 
-# El modulo 'requerimientos' (backlog tecnico) hereda por defecto los permisos
-# de 'compras' en cada rol — misma audiencia (planificacion / compras). Se puede
-# ajustar luego desde la UI de permisos por rol.
+# Modulos agregados despues de definidos los DEFAULTS originales: heredan del
+# modulo mas afin en los roles donde no esten definidos explicitamente (un
+# modulo ausente en defaults expande a view=True, lo que abre acceso de mas).
+#   requerimientos (backlog tecnico) <- compras (misma audiencia)
+#   motores <- monitoreo | equipos_alquilados <- ordenes
+_INHERIT_MODULE_DEFAULTS = {
+    'requerimientos': 'compras',
+    'motores': 'monitoreo',
+    'equipos_alquilados': 'ordenes',
+}
 for _role_perms in _DEFAULT_PERMS.values():
-    if 'requerimientos' not in _role_perms and 'compras' in _role_perms:
-        _role_perms['requerimientos'] = dict(_role_perms['compras'])
+    for _mod, _src in _INHERIT_MODULE_DEFAULTS.items():
+        if _mod not in _role_perms and _src in _role_perms:
+            _role_perms[_mod] = dict(_role_perms[_src])
 
 _perms_cache = {}
 _perms_cache_ts = 0
@@ -1016,6 +1108,15 @@ register_tools_routes(
     app=app,
     db=db,
     Tool=Tool,
+)
+
+register_rental_routes(
+    app=app,
+    db=db,
+    logger=logger,
+    RentalEquipment=RentalEquipment,
+    RentalHorometerReading=RentalHorometerReading,
+    RentalFailure=RentalFailure,
 )
 
 register_data_import_routes(

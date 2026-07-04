@@ -519,6 +519,7 @@
         { group: G_PREVENTIVOS, href: '/optimizacion-preventivos', icon: 'fas fa-sliders-h', label: 'Optimizar Preventivos', tip: 'Detectar puntos sobre/sub-mantenidos', restricted: true },
 
         { group: G_ACTIVOS, href: '/configuracion', icon: 'fas fa-sitemap', label: 'Activos', tip: 'Activos' },
+        { group: G_ACTIVOS, href: '/equipos-alquilados', icon: 'fas fa-truck-pickup', label: 'Equipos Alquilados', tip: 'Montacargas y minicargadores alquilados: horometros, fallas y responsabilidad' },
         { group: G_ACTIVOS, href: '/equipo-historial', icon: 'fas fa-book-open', label: 'Hist. Equipo', tip: 'Historial Equipo' },
         { group: G_ACTIVOS, href: '/responsabilidades', icon: 'fas fa-user-tag', label: 'Responsabilidades', tip: 'Asignar responsable de mantenimiento por equipo', restricted: true },
         { group: G_ACTIVOS, href: '/flujo-planta', icon: 'fas fa-project-diagram', label: 'Flujo de Planta', tip: 'Diagrama de flujo con disponibilidad por equipo', restricted: true },
@@ -544,7 +545,8 @@
     const ROLE_LABELS = {
         admin: 'Administrador', jefe_mtto: 'Jefe de Mantenimiento', planner: 'Planner',
         supervisor: 'Supervisor', tecnico: 'Técnico', operador: 'Operador',
-        almacenero: 'Almacenero', gerencia: 'Gerencia', viewer: 'Solo Lectura'
+        almacenero: 'Almacenero', gerencia: 'Gerencia', asistente: 'Asistente',
+        practicante: 'Practicante', automotriz: 'Automotriz', viewer: 'Solo Lectura'
     };
     const AVATAR_COLORS = ['#0A84FF', '#30D158', '#FF9F0A', '#BF5AF2', '#5AC8FA', '#FF375F', '#FF9F0A'];
 
@@ -667,6 +669,7 @@
         'requerimientos': '/requerimientos',
         'almacen': '/almacen', 'herramientas': '/herramientas',
         'activos_rotativos': '/activos-rotativos', 'martillos': '/martillos', 'activos_config': '/configuracion',
+        'equipos_alquilados': '/equipos-alquilados',
         'responsabilidades': '/responsabilidades',
         'monitoreo': '/monitoreo', 'lubricacion': '/lubricacion',
         'inspecciones': '/inspecciones', 'espesores': '/espesores',
@@ -820,6 +823,46 @@
                     document.addEventListener('dragstart', (e) => {
                         if (insideProtected(e.target)) e.preventDefault();
                     });
+
+                    // ── Bloqueo global de copia/descarga (no-admin) ─────────
+                    // Ctrl/Cmd + C/X (copiar), S (guardar pagina), U (ver
+                    // codigo fuente), P (imprimir/PDF) y F12 / Ctrl+Shift+I/J/C
+                    // (DevTools). Disuasivo: el objetivo es que un usuario
+                    // normal no pueda copiarse los datos ni el modulo.
+                    const BLOCKED_KEYS = new Set(['c', 'x', 's', 'u', 'p']);
+                    const inFormField = (el) =>
+                        el && el.nodeType === 1 && ['INPUT', 'TEXTAREA', 'SELECT'].includes(el.tagName);
+                    document.addEventListener('keydown', (e) => {
+                        const k = (e.key || '').toLowerCase();
+                        const ctrl = e.ctrlKey || e.metaKey;
+                        // Ctrl+C/X se permite dentro de campos de formulario
+                        // (el usuario copia/corta lo que el mismo escribio).
+                        if (ctrl && !e.shiftKey && BLOCKED_KEYS.has(k)) {
+                            if (['c', 'x'].includes(k) && inFormField(e.target)) return;
+                            e.preventDefault();
+                            e.stopPropagation();
+                            return;
+                        }
+                        if (ctrl && e.shiftKey && ['i', 'j', 'c'].includes(k)) {
+                            e.preventDefault();
+                            e.stopPropagation();
+                            return;
+                        }
+                        if (k === 'f12') {
+                            e.preventDefault();
+                            e.stopPropagation();
+                        }
+                    }, true);
+                    // Copia via menu del navegador / extensiones: vaciar el
+                    // portapapeles tambien fuera de tablas.
+                    document.addEventListener('copy', (e) => {
+                        const t = e.target;
+                        const isFormField = t && (t.tagName === 'INPUT' || t.tagName === 'TEXTAREA');
+                        if (!isFormField) {
+                            e.preventDefault();
+                            try { e.clipboardData && e.clipboardData.setData('text/plain', ''); } catch (_) {}
+                        }
+                    }, true);
                 }
             } catch (_) {}
 

@@ -7,6 +7,14 @@ from utils.audit import audit_log
 from utils.rate_limit import limit_login
 
 
+# Roles validos para cuentas de usuario. Debe mantenerse alineado con ROLES
+# (matriz de permisos) + admin/viewer, y con los <option> de users.html.
+VALID_USER_ROLES = (
+    'admin', 'jefe_mtto', 'planner', 'supervisor', 'tecnico', 'operador',
+    'almacenero', 'gerencia', 'asistente', 'practicante', 'automotriz', 'viewer',
+)
+
+
 def _is_safe_redirect(target):
     """Acepta solo URLs relativas al propio host (sin scheme/netloc).
     Bloquea redirecciones a dominios externos (Open Redirect)."""
@@ -101,8 +109,8 @@ def register_auth_routes(app, db, logger, User, RolePermission=None):
             return jsonify({"error": "username es obligatorio."}), 400
         if not password or len(password) < 6:
             return jsonify({"error": "La contraseña debe tener al menos 6 caracteres."}), 400
-        if role not in ('admin', 'supervisor', 'tecnico', 'viewer'):
-            return jsonify({"error": "Rol inválido. Usa: admin, supervisor, tecnico, viewer."}), 400
+        if role not in VALID_USER_ROLES:
+            return jsonify({"error": f"Rol inválido. Usa uno de: {', '.join(VALID_USER_ROLES)}."}), 400
         if User.query.filter_by(username=username).first():
             return jsonify({"error": f"El usuario '{username}' ya existe."}), 409
 
@@ -141,7 +149,7 @@ def register_auth_routes(app, db, logger, User, RolePermission=None):
 
         if 'full_name' in data:
             user.full_name = (data['full_name'] or '').strip() or None
-        if 'role' in data and data['role'] in ('admin', 'supervisor', 'tecnico', 'viewer'):
+        if 'role' in data and data['role'] in VALID_USER_ROLES:
             user.role = data['role']
         if 'active' in data:
             user.active = bool(data['active'])
@@ -216,7 +224,10 @@ def register_auth_routes(app, db, logger, User, RolePermission=None):
         {'key': 'activos_config', 'label': 'Arbol de Equipos'},
         {'key': 'responsabilidades', 'label': 'Responsabilidades Equipos'},
         {'key': 'monitoreo', 'label': 'Monitoreo'},
+        {'key': 'motores', 'label': 'Motores Electricos'},
         {'key': 'lubricacion', 'label': 'Lubricacion'},
+        {'key': 'requerimientos', 'label': 'Requerimientos'},
+        {'key': 'equipos_alquilados', 'label': 'Equipos Alquilados'},
         {'key': 'inspecciones', 'label': 'Inspecciones'},
         {'key': 'espesores', 'label': 'Inspeccion Espesores UT'},
         {'key': 'cockpit', 'label': 'Cockpit Gerencial'},
@@ -236,7 +247,8 @@ def register_auth_routes(app, db, logger, User, RolePermission=None):
         {'key': 'usuarios', 'label': 'Gestion Usuarios'},
     ]
 
-    ROLES = ['jefe_mtto', 'planner', 'supervisor', 'tecnico', 'operador', 'almacenero', 'gerencia']
+    ROLES = ['jefe_mtto', 'planner', 'supervisor', 'tecnico', 'operador',
+             'almacenero', 'gerencia', 'asistente', 'practicante', 'automotriz']
 
     # Default permissions per role (mirrors _DEFAULT_PERMS in app.py)
     DEFAULTS = {
@@ -408,7 +420,107 @@ def register_auth_routes(app, db, logger, User, RolePermission=None):
             'historial_equipo': {'view': True, 'edit': False}, 'exportar': {'view': True, 'edit': False},
             'usuarios': {'view': False, 'edit': False},
         },
+        # Asistente de mantenimiento: apoya al planner con registro de datos.
+        # Puede crear/editar en modulos operativos, sin acceso gerencial.
+        'asistente': {
+            'avisos': {'view': True, 'edit': True}, 'ordenes': {'view': True, 'edit': True},
+            'proveedores': {'view': True, 'edit': True}, 'tecnicos': {'view': True, 'edit': True},
+            'compras': {'view': True, 'edit': True}, 'almacen': {'view': True, 'edit': False},
+            'herramientas': {'view': True, 'edit': False}, 'lubricacion': {'view': True, 'edit': True},
+            'inspecciones': {'view': True, 'edit': True}, 'monitoreo': {'view': True, 'edit': True},
+            'espesores': {'view': True, 'edit': False}, 'cockpit': {'view': False, 'edit': False},
+            'indicadores': {'view': False, 'edit': False},
+            'produccion': {'view': True, 'edit': False},
+            'paradas': {'view': True, 'edit': False},
+            'plantillas_paradas': {'view': True, 'edit': False},
+            'programa_nocturno': {'view': True, 'edit': False},
+            'flujo_planta': {'view': False, 'edit': False},
+            'perdidas_produccion': {'view': False, 'edit': False},
+            'insights': {'view': False, 'edit': False},
+            'seguimiento': {'view': True, 'edit': True},
+            'calendario': {'view': True, 'edit': False},
+            'reportes': {'view': True, 'edit': False},
+            'activos_rotativos': {'view': True, 'edit': False}, 'activos_config': {'view': True, 'edit': False},
+            'responsabilidades': {'view': False, 'edit': False},
+            'martillos': {'view': True, 'edit': False},
+            'requerimientos': {'view': True, 'edit': True},
+            'motores': {'view': True, 'edit': False},
+            'equipos_alquilados': {'view': True, 'edit': True},
+            'historial_equipo': {'view': True, 'edit': False}, 'exportar': {'view': False, 'edit': False},
+            'usuarios': {'view': False, 'edit': False},
+        },
+        # Practicante: solo lectura en modulos operativos; unicamente puede
+        # crear/editar avisos (reportar lo que observa en planta).
+        'practicante': {
+            'avisos': {'view': True, 'edit': True}, 'ordenes': {'view': True, 'edit': False},
+            'proveedores': {'view': True, 'edit': False}, 'tecnicos': {'view': True, 'edit': False},
+            'compras': {'view': False, 'edit': False}, 'almacen': {'view': False, 'edit': False},
+            'herramientas': {'view': True, 'edit': False}, 'lubricacion': {'view': True, 'edit': False},
+            'inspecciones': {'view': True, 'edit': False}, 'monitoreo': {'view': True, 'edit': False},
+            'espesores': {'view': True, 'edit': False}, 'cockpit': {'view': False, 'edit': False},
+            'indicadores': {'view': False, 'edit': False},
+            'produccion': {'view': False, 'edit': False},
+            'paradas': {'view': True, 'edit': False},
+            'plantillas_paradas': {'view': False, 'edit': False},
+            'programa_nocturno': {'view': True, 'edit': False},
+            'flujo_planta': {'view': False, 'edit': False},
+            'perdidas_produccion': {'view': False, 'edit': False},
+            'insights': {'view': False, 'edit': False},
+            'seguimiento': {'view': False, 'edit': False},
+            'calendario': {'view': True, 'edit': False},
+            'reportes': {'view': False, 'edit': False},
+            'activos_rotativos': {'view': True, 'edit': False}, 'activos_config': {'view': True, 'edit': False},
+            'responsabilidades': {'view': False, 'edit': False},
+            'martillos': {'view': True, 'edit': False},
+            'requerimientos': {'view': False, 'edit': False},
+            'motores': {'view': True, 'edit': False},
+            'equipos_alquilados': {'view': True, 'edit': False},
+            'historial_equipo': {'view': True, 'edit': False}, 'exportar': {'view': False, 'edit': False},
+            'usuarios': {'view': False, 'edit': False},
+        },
+        # Automotriz: responsable de equipos moviles / alquilados (montacargas,
+        # minicargadores). Gestiona ese modulo y reporta avisos/OTs asociados.
+        'automotriz': {
+            'avisos': {'view': True, 'edit': True}, 'ordenes': {'view': True, 'edit': True},
+            'proveedores': {'view': True, 'edit': False}, 'tecnicos': {'view': True, 'edit': False},
+            'compras': {'view': False, 'edit': False}, 'almacen': {'view': False, 'edit': False},
+            'herramientas': {'view': True, 'edit': False}, 'lubricacion': {'view': True, 'edit': True},
+            'inspecciones': {'view': True, 'edit': True}, 'monitoreo': {'view': True, 'edit': False},
+            'espesores': {'view': False, 'edit': False}, 'cockpit': {'view': False, 'edit': False},
+            'indicadores': {'view': False, 'edit': False},
+            'produccion': {'view': False, 'edit': False},
+            'paradas': {'view': True, 'edit': False},
+            'plantillas_paradas': {'view': False, 'edit': False},
+            'programa_nocturno': {'view': False, 'edit': False},
+            'flujo_planta': {'view': False, 'edit': False},
+            'perdidas_produccion': {'view': False, 'edit': False},
+            'insights': {'view': False, 'edit': False},
+            'seguimiento': {'view': False, 'edit': False},
+            'calendario': {'view': True, 'edit': False},
+            'reportes': {'view': False, 'edit': False},
+            'activos_rotativos': {'view': False, 'edit': False}, 'activos_config': {'view': False, 'edit': False},
+            'responsabilidades': {'view': False, 'edit': False},
+            'martillos': {'view': False, 'edit': False},
+            'requerimientos': {'view': False, 'edit': False},
+            'motores': {'view': False, 'edit': False},
+            'equipos_alquilados': {'view': True, 'edit': True},
+            'historial_equipo': {'view': True, 'edit': False}, 'exportar': {'view': False, 'edit': False},
+            'usuarios': {'view': False, 'edit': False},
+        },
     }
+
+    # Modulos agregados a la matriz despues de definidos los DEFAULTS de los
+    # roles originales: heredan del modulo mas afin para no dejar huecos
+    # (un modulo ausente en DEFAULTS expande a view=True, lo que abre de mas).
+    _INHERIT_MODULE_DEFAULTS = {
+        'requerimientos': 'compras',
+        'motores': 'monitoreo',
+        'equipos_alquilados': 'ordenes',
+    }
+    for _role_perms in DEFAULTS.values():
+        for _mod, _src in _INHERIT_MODULE_DEFAULTS.items():
+            if _mod not in _role_perms and _src in _role_perms:
+                _role_perms[_mod] = dict(_role_perms[_src])
 
     PERM_ACTIONS = ('view', 'create', 'edit', 'delete', 'export', 'import',
                     'close', 'approve', 'edit_ot', 'adjust_hours')

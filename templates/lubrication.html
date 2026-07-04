@@ -104,7 +104,7 @@
             </div>
             <div class="toolbar" style="grid-template-columns:repeat(8,minmax(110px,1fr));margin-top:6px;">
                 <div><label>Fecha ejecucion</label><input id="fExecDate" type="date"></div>
-                <div><label>Ejecutado por</label><input id="fBy" type="text" placeholder="Tecnico"></div>
+                <div><label>Ejecutado por</label><select id="fBy"><option value="FAPMETAL" selected>FAPMETAL</option><option value="MANTENIMIENTO">MANTENIMIENTO</option></select></div>
                 <div>
                     <label>Tipo servicio <small style="color:#888">Relleno NO reinicia el ciclo</small></label>
                     <select id="fActionType">
@@ -156,6 +156,21 @@
                     </button>
                 </div>
             </div>
+            <!-- Filtros de la lista de puntos (aplican a tabla y arbol) -->
+            <div class="toolbar" style="grid-template-columns:repeat(8,minmax(110px,1fr));margin-top:10px;">
+                <div style="grid-column:span 2"><label>Buscar <span id="tfCount" style="color:#666;text-transform:none;"></span></label><input id="tfSearch" type="search" placeholder="Codigo, punto, equipo, componente..." autocomplete="off"></div>
+                <div><label>Area</label><select id="tfArea"><option value="">Todas</option></select></div>
+                <div><label>Equipo</label><select id="tfEquipment"><option value="">Todos</option></select></div>
+                <div><label>Sistema</label><select id="tfSystem"><option value="">Todos</option></select></div>
+                <div><label>Lubricante</label><select id="tfLubricant"><option value="">Todos</option></select></div>
+                <div><label>Frecuencia</label><select id="tfFreq"><option value="">Todas</option></select></div>
+                <div><label>Semaforo</label><select id="tfSema"><option value="">Todos</option><option value="ROJO">🔴 Rojo</option><option value="AMARILLO">🟡 Amarillo</option><option value="VERDE">🟢 Verde</option><option value="PENDIENTE">⚪ Pendiente</option></select></div>
+            </div>
+            <div class="toolbar" style="grid-template-columns:repeat(8,minmax(110px,1fr));margin-top:4px;">
+                <div><label>Componente</label><select id="tfComponent"><option value="">Todos</option></select></div>
+                <div><label>Vence en (dias)</label><select id="tfDue"><option value="">Cualquiera</option><option value="vencido">Ya vencidos</option><option value="7">≤ 7 dias</option><option value="15">≤ 15 dias</option><option value="30">≤ 30 dias</option></select></div>
+                <div><label>&nbsp;</label><button class="btn secondary" id="btnClearFilters" type="button"><i class="fas fa-eraser"></i> Limpiar filtros</button></div>
+            </div>
             <div id="lubTree" class="lub-tree" style="display:none"></div>
             <div id="lubTableWrap" class="table-wrap">
                 <table>
@@ -205,7 +220,7 @@
     </div>
 </section>
 <script src="/static/js/sidebar.js?v={{ v }}"></script>
-<script src="/static/js/lubrication.js"></script>
+<script src="/static/js/lubrication.js?v={{ v }}"></script>
 </body>
 </html>
 

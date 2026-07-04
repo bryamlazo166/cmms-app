@@ -1,0 +1,589 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <link rel="icon" type="image/svg+xml" href="/static/favicon.svg">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Equipos Alquilados - CMMS</title>
+    <!-- CMMS_THEME_INIT -->
+    <script>(function(){try{var t=localStorage.getItem('cmms.theme');if(t=='management'||t=='developer'){document.documentElement.setAttribute('data-theme',t);}}catch(e){}})();</script>
+    <link rel="stylesheet" href="/static/css/style.css?v={{ v }}">
+    <link rel="stylesheet" href="/static/css/sidebar.css?v={{ v }}">
+    <link href="https://fonts.googleapis.com/css2?family=Roboto:wght@300;400;500;700&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css">
+    <style>
+        .wrap{max-width:1500px;margin:0 auto;padding:16px}
+        .header{background:linear-gradient(120deg,#1e2430,#151b24);border:1px solid #2d3f56;border-radius:12px;padding:16px;margin-bottom:12px}
+        .kpis{display:grid;grid-template-columns:repeat(6,minmax(140px,1fr));gap:10px;margin-bottom:12px}
+        .kpi{background:#1b212b;border:1px solid #31455f;border-radius:10px;padding:10px}.kpi .lbl{font-size:.75rem;color:#9ab3d0;text-transform:uppercase}.kpi .val{font-size:1.6rem;font-weight:700;color:#eff6ff;margin-top:6px}
+        .panel{background:#181d24;border:1px solid #2f4257;border-radius:12px;padding:12px;margin-bottom:12px}
+        .panel h3{margin:0 0 10px;color:#eff6ff}
+        .toolbar{display:grid;grid-template-columns:repeat(8,minmax(110px,1fr));gap:8px;align-items:end;margin-bottom:10px}
+        .toolbar label{display:block;font-size:.72rem;color:#9ab0cb;margin-bottom:4px;text-transform:uppercase}
+        .toolbar input,.toolbar select,.mrow input,.mrow select,.mrow textarea{width:100%;height:36px;background:#0f1319;color:#d5e2f5;border:1px solid #344964;border-radius:8px;padding:6px 8px}
+        .btn{height:36px;border:1px solid #385273;border-radius:8px;background:#193451;color:#d7e9ff;padding:0 12px;font-weight:600;cursor:pointer}
+        .btn.secondary{background:#2a2d35;border-color:#4a5361;color:#d6d8de}
+        .btn.warn{background:#4a1f1c;border-color:#7a3b34;color:#ffb4ab}
+        .table-wrap{max-height:460px;overflow:auto}
+        table{width:100%;border-collapse:collapse} th{position:sticky;top:0;background:#243047;color:#9fe5ff;text-align:left;padding:8px;font-size:.76rem;border-bottom:1px solid #3a4f68;z-index:1}
+        td{padding:8px;color:#dbe8fb;font-size:.82rem;border-bottom:1px solid rgba(255,255,255,.08)}
+        .pill{display:inline-block;padding:2px 8px;border-radius:999px;font-size:.74rem;font-weight:700}
+        .OPERATIVO{background:rgba(67,160,71,.22);color:#8df39d}
+        .EN_FALLA{background:rgba(244,67,54,.24);color:#ff9690}
+        .EN_REPARACION{background:rgba(255,193,7,.22);color:#ffd966}
+        .FUERA_SERVICIO{background:rgba(255,255,255,.1);color:#bdc7d8}
+        .DEVUELTO{background:rgba(255,255,255,.08);color:rgba(255,255,255,.4)}
+        .REPORTADA{background:rgba(244,67,54,.24);color:#ff9690}
+        .ATENDIDA{background:rgba(255,193,7,.22);color:#ffd966}
+        .RESUELTA{background:rgba(67,160,71,.22);color:#8df39d}
+        .resp-NUESTRA{background:rgba(255,159,10,.2);color:#ffb340}
+        .resp-PROVEEDOR{background:rgba(10,132,255,.2);color:#5ac8fa}
+        .resp-COMPARTIDA{background:rgba(191,90,242,.2);color:#d77af5}
+        .resp-SIN_DEFINIR{background:rgba(255,255,255,.08);color:#9ab0cb}
+        .repeat-badge{background:rgba(244,67,54,.28);color:#ff9690;border:1px solid rgba(244,67,54,.5);padding:1px 7px;border-radius:999px;font-size:.68rem;font-weight:700}
+        .btn-icon{height:28px;width:28px;border:none;border-radius:6px;cursor:pointer;font-size:.8rem;display:inline-flex;align-items:center;justify-content:center;margin-right:3px}
+        .btn-edit{background:rgba(10,132,255,.18);color:#5ac8fa}.btn-edit:hover{background:rgba(10,132,255,.35)}
+        .btn-del{background:rgba(255,69,58,.16);color:#ff6b61}.btn-del:hover{background:rgba(255,69,58,.32)}
+        .btn-hor{background:rgba(48,209,88,.16);color:#5cd870}.btn-hor:hover{background:rgba(48,209,88,.32)}
+        .btn-fail{background:rgba(255,159,10,.16);color:#ffb340}.btn-fail:hover{background:rgba(255,159,10,.32)}
+        .lifebar{background:rgba(255,255,255,.08);border-radius:999px;height:8px;width:110px;overflow:hidden;display:inline-block;vertical-align:middle}
+        .lifebar>div{height:100%;border-radius:999px}
+        .alert-item{display:flex;gap:10px;align-items:flex-start;padding:8px 10px;border-radius:8px;margin-bottom:6px;font-size:.84rem}
+        .alert-ROJO{background:rgba(244,67,54,.12);border:1px solid rgba(244,67,54,.35);color:#ffd2ce}
+        .alert-AMARILLO{background:rgba(255,193,7,.10);border:1px solid rgba(255,193,7,.30);color:#ffe9a8}
+        .modal-overlay2{display:none;position:fixed;inset:0;z-index:9999;background:rgba(0,0,0,.72);backdrop-filter:blur(4px);align-items:center;justify-content:center}
+        .modal-overlay2.open{display:flex}
+        .modal-box{background:#1c1c1e;border:1px solid rgba(255,255,255,.11);border-radius:14px;padding:22px;width:min(640px,96vw);max-height:92vh;overflow-y:auto}
+        .modal-box h2{margin:0 0 14px;font-size:1.05rem;color:#eff6ff}
+        .mrow{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:10px}
+        .mrow label{display:block;font-size:.7rem;color:#9ab0cb;margin-bottom:3px;text-transform:uppercase}
+        .mrow.single{grid-template-columns:1fr}
+        .mrow textarea{height:64px;resize:vertical;padding-top:8px}
+        .modal-actions{display:flex;gap:8px;justify-content:flex-end;margin-top:14px}
+        .hint{font-size:.7rem;color:#7f93ad;margin-top:2px}
+        @media(max-width:1200px){.kpis{grid-template-columns:repeat(3,minmax(130px,1fr))}.toolbar{grid-template-columns:repeat(4,minmax(110px,1fr))}}
+    </style>
+</head>
+<body>
+<nav class="sidebar">
+    <div class="logo-details"><i class="fas fa-industry icon"></i><div class="logo_name">CMMS Pro</div><i class="fas fa-bars" id="btn_toggle"></i></div>
+    <ul class="nav-list">
+        <li><a href="/"><i class="fas fa-chart-line"></i><span class="links_name">Dashboard</span></a></li>
+        <li><a href="/avisos"><i class="fas fa-bell"></i><span class="links_name">Avisos</span></a></li>
+        <li><a href="/ordenes"><i class="fas fa-tools"></i><span class="links_name">Ordenes</span></a></li>
+        <li><a href="/equipos-alquilados"><i class="fas fa-truck-pickup"></i><span class="links_name">Eq. Alquilados</span></a></li>
+        <li><a href="/lubricacion"><i class="fas fa-oil-can"></i><span class="links_name">Lubricacion</span></a></li>
+        <li><a href="/reportes"><i class="fas fa-file-contract"></i><span class="links_name">Reportes</span></a></li>
+    </ul>
+</nav>
+<section class="home-section">
+    <div class="wrap">
+        <div class="header">
+            <h1><i class="fas fa-truck-pickup"></i> Equipos Alquilados</h1>
+            <p>Montacargas y minicargadores de terceros: horometros, fallas repetitivas y responsabilidad — datos duros para sustentar reclamos al proveedor y exigir el cambio de unidad a las 4000 h.</p>
+        </div>
+
+        <div class="kpis">
+            <div class="kpi"><div class="lbl">Equipos</div><div class="val" id="kTotal">0</div></div>
+            <div class="kpi"><div class="lbl">Operativos</div><div class="val" id="kOper" style="color:#8df39d">0</div></div>
+            <div class="kpi"><div class="lbl">En falla / reparacion</div><div class="val" id="kFalla" style="color:#ff9690">0</div></div>
+            <div class="kpi"><div class="lbl">Fallas 30 dias</div><div class="val" id="kF30">0</div></div>
+            <div class="kpi"><div class="lbl">Fallas repetidas</div><div class="val" id="kRep" style="color:#ffb340">0</div></div>
+            <div class="kpi"><div class="lbl">Por cambiar (&ge;90%)</div><div class="val" id="kRepl" style="color:#ffd966">0</div></div>
+        </div>
+
+        <div class="panel" id="alertsPanel" style="display:none">
+            <h3><i class="fas fa-triangle-exclamation" style="color:#ffb340"></i> Alertas para reclamo / accion</h3>
+            <div id="alertsList"></div>
+        </div>
+
+        <div class="panel">
+            <div style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:10px;">
+                <h3>Flota Alquilada</h3>
+                <div style="display:flex;gap:8px;flex-wrap:wrap;">
+                    <button class="btn" data-perm="equipos_alquilados.create" onclick="openEqModal()"><i class="fas fa-plus"></i> Nuevo Equipo</button>
+                    <button class="btn secondary" data-perm="equipos_alquilados.export" onclick="location.href='/api/rental/failures/export'"><i class="fas fa-file-excel"></i> Exportar Fallas</button>
+                </div>
+            </div>
+            <div class="table-wrap">
+                <table>
+                    <thead><tr>
+                        <th>Codigo</th><th>Equipo</th><th>Tipo</th><th>Ubicacion</th>
+                        <th>Horometro</th><th>Vida util</th><th>Restante (h)</th>
+                        <th>Fallas 30d/90d</th><th>Repetidas</th><th>MTBF (h)</th>
+                        <th>Paradas prod.</th><th>Estado</th><th>Accion</th>
+                    </tr></thead>
+                    <tbody id="tbodyEq"><tr><td colspan="13">Cargando...</td></tr></tbody>
+                </table>
+            </div>
+        </div>
+
+        <div class="panel">
+            <div style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:10px;">
+                <h3>Historial de Fallas</h3>
+                <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:end;">
+                    <div><label style="display:block;font-size:.7rem;color:#9ab0cb;text-transform:uppercase;margin-bottom:3px">Equipo</label>
+                        <select id="filFailEq" onchange="renderFailures()" style="height:32px;background:#0f1319;color:#d5e2f5;border:1px solid #344964;border-radius:8px;padding:4px 8px"><option value="">Todos</option></select></div>
+                    <div><label style="display:block;font-size:.7rem;color:#9ab0cb;text-transform:uppercase;margin-bottom:3px">Sistema</label>
+                        <select id="filFailSys" onchange="renderFailures()" style="height:32px;background:#0f1319;color:#d5e2f5;border:1px solid #344964;border-radius:8px;padding:4px 8px"><option value="">Todos</option></select></div>
+                    <div><label style="display:block;font-size:.7rem;color:#9ab0cb;text-transform:uppercase;margin-bottom:3px">Responsable (prov.)</label>
+                        <select id="filFailResp" onchange="renderFailures()" style="height:32px;background:#0f1319;color:#d5e2f5;border:1px solid #344964;border-radius:8px;padding:4px 8px"><option value="">Todos</option></select></div>
+                    <button class="btn" data-perm="equipos_alquilados.create" onclick="openFailModal()"><i class="fas fa-plus"></i> Registrar Falla</button>
+                </div>
+            </div>
+            <div class="table-wrap" style="max-height:400px">
+                <table>
+                    <thead><tr>
+                        <th>Fecha</th><th>Equipo</th><th>Sistema</th><th>Descripcion</th>
+                        <th>Horom.</th><th>Horas parada</th><th>Paralizo</th>
+                        <th>Resp. proveedor</th><th>Resp. nuestra</th><th>Repetida</th>
+                        <th>Formato</th><th>Estado</th><th>Accion</th>
+                    </tr></thead>
+                    <tbody id="tbodyFail"><tr><td colspan="13">Cargando...</td></tr></tbody>
+                </table>
+            </div>
+        </div>
+    </div>
+</section>
+
+<!-- Modal Equipo -->
+<div class="modal-overlay2" id="eqModal">
+    <div class="modal-box">
+        <h2 id="eqModalTitle"><i class="fas fa-truck-pickup"></i> Nuevo Equipo Alquilado</h2>
+        <input type="hidden" id="mEqId">
+        <div class="mrow">
+            <div><label>Nombre *</label><input id="mName" type="text" placeholder="Ej: Montacarga 2.5 Ton"></div>
+            <div><label>Tipo</label><select id="mType"><option value="MONTACARGA">Montacarga</option><option value="MINICARGADOR">Minicargador</option><option value="OTRO">Otro</option></select></div>
+        </div>
+        <div class="mrow">
+            <div><label>Marca</label><input id="mBrand" type="text"></div>
+            <div><label>Modelo</label><input id="mModel" type="text"></div>
+        </div>
+        <div class="mrow">
+            <div><label>Serie</label><input id="mSerial" type="text"></div>
+            <div><label>Proveedor</label><input id="mProvider" type="text" value="RDRENTAL"></div>
+        </div>
+        <div class="mrow">
+            <div><label>Ubicacion / area</label><input id="mLocation" type="text" placeholder="Ej: Descarga materia prima"></div>
+            <div><label>Inicio alquiler</label><input id="mStart" type="date"></div>
+        </div>
+        <div class="mrow">
+            <div><label>Horometro inicial (llegada)</label><input id="mHorInit" type="number" step="0.1" min="0" value="0"></div>
+            <div><label>Horometro actual</label><input id="mHorCur" type="number" step="0.1" min="0" value="0"></div>
+        </div>
+        <div class="mrow">
+            <div><label>Cambio de unidad a las (h)</label><input id="mReplace" type="number" step="1" min="1" value="4000"></div>
+            <div><label>Costo mensual (opcional)</label><input id="mCost" type="number" step="0.01" min="0"></div>
+        </div>
+        <div class="mrow">
+            <div><label>Estado</label><select id="mStatus"><option value="OPERATIVO">Operativo</option><option value="EN_FALLA">En falla</option><option value="EN_REPARACION">En reparacion</option><option value="FUERA_SERVICIO">Fuera de servicio</option><option value="DEVUELTO">Devuelto</option></select></div>
+            <div><label>Notas</label><input id="mNotes" type="text"></div>
+        </div>
+        <div class="modal-actions">
+            <button class="btn secondary" onclick="closeModal('eqModal')">Cancelar</button>
+            <button class="btn" onclick="withLoading(this, saveEquipment)"><i class="fas fa-save"></i> Guardar</button>
+        </div>
+    </div>
+</div>
+
+<!-- Modal Horometro -->
+<div class="modal-overlay2" id="horModal">
+    <div class="modal-box">
+        <h2><i class="fas fa-stopwatch"></i> Registrar Horometro — <span id="horEqLabel"></span></h2>
+        <input type="hidden" id="hEqId">
+        <div class="mrow">
+            <div><label>Fecha</label><input id="hDate" type="date"></div>
+            <div><label>Horometro (h) *</label><input id="hValue" type="number" step="0.1" min="0"></div>
+        </div>
+        <div class="mrow single"><div><label>Notas</label><input id="hNotes" type="text" placeholder="Ej: lectura semanal"></div></div>
+        <p class="hint">Registra la lectura al menos 1 vez por semana. Con esto se calcula el % de vida y el MTBF en horas reales.</p>
+        <div class="table-wrap" style="max-height:200px;margin-top:8px">
+            <table>
+                <thead><tr><th>Fecha</th><th>Horometro</th><th>Notas</th><th>Por</th><th></th></tr></thead>
+                <tbody id="tbodyHor"><tr><td colspan="5">-</td></tr></tbody>
+            </table>
+        </div>
+        <div class="modal-actions">
+            <button class="btn secondary" onclick="closeModal('horModal')">Cerrar</button>
+            <button class="btn" onclick="withLoading(this, saveHorometer)"><i class="fas fa-save"></i> Registrar</button>
+        </div>
+    </div>
+</div>
+
+<!-- Modal Falla -->
+<div class="modal-overlay2" id="failModal">
+    <div class="modal-box">
+        <h2 id="failModalTitle"><i class="fas fa-triangle-exclamation"></i> Registrar Falla</h2>
+        <input type="hidden" id="fId">
+        <div class="mrow">
+            <div><label>Equipo *</label><select id="fEq"></select></div>
+            <div><label>Sistema afectado *</label><select id="fSystem"></select></div>
+        </div>
+        <div class="mrow single"><div><label>Descripcion de la falla *</label><textarea id="fDesc" placeholder="Ej: fuga de aceite hidraulico por manguera del mastil"></textarea></div></div>
+        <div class="mrow">
+            <div><label>Fecha reporte</label><input id="fRepDate" type="date"></div>
+            <div><label>Fecha atencion proveedor</label><input id="fAttDate" type="date"></div>
+        </div>
+        <div class="mrow">
+            <div><label>Fecha solucion</label><input id="fResDate" type="date"></div>
+            <div><label>Horometro en la falla</label><input id="fHor" type="number" step="0.1" min="0"></div>
+        </div>
+        <div class="mrow">
+            <div><label>Horas de parada del equipo</label><input id="fDown" type="number" step="0.5" min="0"></div>
+            <div><label>Paralizo produccion?</label><select id="fStopped"><option value="0">No</option><option value="1">Si</option></select></div>
+        </div>
+        <div class="mrow single"><div><label>Impacto en produccion</label><input id="fImpact" type="text" placeholder="Ej: paralizo descarga de materia prima 3 h"></div></div>
+        <div class="mrow">
+            <div><label>Nro formato del proveedor</label><input id="fRepCode" type="text" placeholder="Ej: RD-2026-0145"></div>
+            <div><label>Estado</label><select id="fStatus"><option value="REPORTADA">Reportada</option><option value="ATENDIDA">Atendida</option><option value="RESUELTA">Resuelta</option></select></div>
+        </div>
+        <div class="mrow">
+            <div><label>Responsable segun proveedor</label><select id="fRespProv"></select></div>
+            <div><label>Responsable segun nosotros</label><select id="fRespOurs"></select></div>
+        </div>
+        <div class="mrow single"><div><label>Sustento de nuestra evaluacion</label><textarea id="fRespNotes" placeholder="Ej: la manguera ya habia sido cambiada por ellos hace 12 dias — falla repetida por mala reparacion"></textarea></div></div>
+        <div class="modal-actions">
+            <button class="btn secondary" onclick="closeModal('failModal')">Cancelar</button>
+            <button class="btn" onclick="withLoading(this, saveFailure)"><i class="fas fa-save"></i> Guardar</button>
+        </div>
+    </div>
+</div>
+
+<script src="/static/js/sidebar.js?v={{ v }}"></script>
+<script>
+const state = { items: [], failures: [], systems: [], responsibilities: [] };
+function q(id){ return document.getElementById(id); }
+function esc(s){ return String(s==null?'':s).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c])); }
+function fnum(v,d=0){ return Number(v||0).toLocaleString('es-PE',{minimumFractionDigits:d,maximumFractionDigits:d}); }
+async function jget(url, opts){
+    const r = await fetch(url, opts);
+    const d = await r.json().catch(()=>({}));
+    if(!r.ok || d.error) throw new Error(d.error || `HTTP ${r.status}`);
+    return d;
+}
+function closeModal(id){ q(id).classList.remove('open'); }
+const RESP_LABEL = { NUESTRA:'Nuestra', PROVEEDOR:'Proveedor', COMPARTIDA:'Compartida', SIN_DEFINIR:'Sin definir' };
+
+async function loadDashboard(){
+    const d = await jget('/api/rental/dashboard');
+    state.items = d.items || [];
+    state.systems = d.failure_systems || [];
+    state.responsibilities = d.responsibilities || [];
+    q('kTotal').textContent = d.kpi.total;
+    q('kOper').textContent = d.kpi.operativos;
+    q('kFalla').textContent = d.kpi.en_falla;
+    q('kF30').textContent = d.kpi.failures_30d;
+    q('kRep').textContent = d.kpi.repeated_total;
+    q('kRepl').textContent = d.kpi.replacement_due;
+    renderAlerts(d.alerts || []);
+    renderEquipments();
+    fillFailureSelectors();
+}
+
+function renderAlerts(alerts){
+    const panel = q('alertsPanel');
+    if(!alerts.length){ panel.style.display='none'; return; }
+    panel.style.display='';
+    q('alertsList').innerHTML = alerts.map(a=>`
+        <div class="alert-item alert-${a.level}">
+            <i class="fas ${a.level==='ROJO'?'fa-circle-exclamation':'fa-triangle-exclamation'}" style="margin-top:2px"></i>
+            <div>${esc(a.message)}</div>
+        </div>`).join('');
+}
+
+function lifebar(pct){
+    if(pct==null) return '-';
+    const color = pct>=100 ? '#ff453a' : pct>=90 ? '#ffd60a' : pct>=70 ? '#ff9f0a' : '#30d158';
+    const w = Math.min(pct,100);
+    return `<span class="lifebar" title="${pct}%"><div style="width:${w}%;background:${color}"></div></span> <span style="font-size:.76rem">${fnum(pct,1)}%</span>`;
+}
+
+function renderEquipments(){
+    const tbody = q('tbodyEq');
+    if(!state.items.length){ tbody.innerHTML = '<tr><td colspan="13">Sin equipos registrados. Crea el primero con "Nuevo Equipo".</td></tr>'; return; }
+    tbody.innerHTML = state.items.map(e=>`
+        <tr>
+            <td>${esc(e.code)}</td>
+            <td title="${esc((e.brand||'')+' '+(e.model||'')+' '+(e.serial_number||''))}">${esc(e.name)}</td>
+            <td>${esc(e.equipment_type)}</td>
+            <td>${esc(e.location||'-')}</td>
+            <td>${fnum(e.current_horometer,1)} h<br><span style="font-size:.68rem;color:#7f93ad">${esc(e.horometer_updated_at||'sin lectura')}</span></td>
+            <td>${lifebar(e.life_pct)}</td>
+            <td>${e.hours_to_replacement!=null?fnum(e.hours_to_replacement):'-'}</td>
+            <td>${e.failures_30d} / ${e.failures_90d}</td>
+            <td>${e.repeated_count?`<span class="repeat-badge">${e.repeated_count} ⚠</span>`:'0'}</td>
+            <td>${e.mtbf_hours!=null?fnum(e.mtbf_hours,1):'-'}</td>
+            <td>${e.production_stops||0}</td>
+            <td><span class="pill ${esc(e.status)}">${esc(e.status.replace('_',' '))}</span></td>
+            <td style="white-space:nowrap">
+                <button class="btn-icon btn-hor" title="Registrar horometro" data-perm="equipos_alquilados.create" onclick="openHorModal(${e.id})"><i class="fas fa-stopwatch"></i></button>
+                <button class="btn-icon btn-fail" title="Registrar falla" data-perm="equipos_alquilados.create" onclick="openFailModal(${e.id})"><i class="fas fa-triangle-exclamation"></i></button>
+                <button class="btn-icon btn-edit" title="Editar" data-perm="equipos_alquilados.edit" onclick="openEqModal(${e.id})"><i class="fas fa-pen"></i></button>
+                <button class="btn-icon btn-del" title="Desactivar" data-perm="equipos_alquilados.delete" onclick="toggleEquipment(${e.id})"><i class="fas fa-ban"></i></button>
+            </td>
+        </tr>`).join('');
+    if(window.CMMS_PERMS) window.CMMS_PERMS.applyToDom(tbody);
+}
+
+function fillFailureSelectors(){
+    const eqOpts = state.items.map(e=>`<option value="${e.id}">${esc(e.code)} — ${esc(e.name)}</option>`).join('');
+    q('fEq').innerHTML = '<option value="">Seleccione</option>' + eqOpts;
+    q('filFailEq').innerHTML = '<option value="">Todos</option>' + eqOpts;
+    q('fSystem').innerHTML = state.systems.map(s=>`<option value="${s}">${s.replace('_',' ')}</option>`).join('');
+    q('filFailSys').innerHTML = '<option value="">Todos</option>' + state.systems.map(s=>`<option value="${s}">${s.replace('_',' ')}</option>`).join('');
+    const respOpts = state.responsibilities.map(r=>`<option value="${r}">${RESP_LABEL[r]||r}</option>`).join('');
+    q('fRespProv').innerHTML = respOpts;
+    q('fRespOurs').innerHTML = respOpts;
+    q('filFailResp').innerHTML = '<option value="">Todos</option>' + respOpts;
+}
+
+async function loadFailures(){
+    state.failures = await jget('/api/rental/failures');
+    renderFailures();
+}
+
+function renderFailures(){
+    const tbody = q('tbodyFail');
+    let rows = state.failures;
+    const fe = q('filFailEq').value, fs = q('filFailSys').value, fr = q('filFailResp').value;
+    if(fe) rows = rows.filter(f=>String(f.rental_id)===fe);
+    if(fs) rows = rows.filter(f=>f.failure_system===fs);
+    if(fr) rows = rows.filter(f=>f.provider_responsibility===fr);
+    if(!rows.length){ tbody.innerHTML = '<tr><td colspan="13">Sin fallas para el filtro actual.</td></tr>'; return; }
+    tbody.innerHTML = rows.map(f=>`
+        <tr>
+            <td>${esc(f.reported_date)}</td>
+            <td>${esc(f.rental_code||'-')}</td>
+            <td>${esc((f.failure_system||'').replace('_',' '))}</td>
+            <td title="${esc(f.description)}">${esc((f.description||'').slice(0,60))}${(f.description||'').length>60?'…':''}</td>
+            <td>${f.horometer_at_failure!=null?fnum(f.horometer_at_failure):'-'}</td>
+            <td>${f.downtime_hours!=null?fnum(f.downtime_hours,1):'-'}</td>
+            <td>${f.production_stopped?'<span class="repeat-badge">SI</span>':'No'}</td>
+            <td><span class="pill resp-${esc(f.provider_responsibility)}">${RESP_LABEL[f.provider_responsibility]||f.provider_responsibility}</span></td>
+            <td><span class="pill resp-${esc(f.our_assessment)}">${RESP_LABEL[f.our_assessment]||f.our_assessment}</span></td>
+            <td>${f.is_repeat?'<span class="repeat-badge">REPETIDA</span>':'-'}</td>
+            <td>${esc(f.provider_report_code||'-')}</td>
+            <td><span class="pill ${esc(f.status)}">${esc(f.status)}</span></td>
+            <td style="white-space:nowrap">
+                <button class="btn-icon btn-edit" title="Editar" data-perm="equipos_alquilados.edit" onclick="openFailModalEdit(${f.id})"><i class="fas fa-pen"></i></button>
+                <button class="btn-icon btn-del" title="Eliminar" data-perm="equipos_alquilados.delete" onclick="deleteFailure(${f.id})"><i class="fas fa-trash"></i></button>
+            </td>
+        </tr>`).join('');
+    if(window.CMMS_PERMS) window.CMMS_PERMS.applyToDom(tbody);
+}
+
+// ── Equipo ────────────────────────────────────────────────────────────────
+function openEqModal(id){
+    const e = id ? state.items.find(x=>x.id===id) : null;
+    q('eqModalTitle').innerHTML = e ? '<i class="fas fa-pen"></i> Editar Equipo' : '<i class="fas fa-truck-pickup"></i> Nuevo Equipo Alquilado';
+    q('mEqId').value = e ? e.id : '';
+    q('mName').value = e ? e.name : '';
+    q('mType').value = e ? e.equipment_type : 'MONTACARGA';
+    q('mBrand').value = e ? (e.brand||'') : '';
+    q('mModel').value = e ? (e.model||'') : '';
+    q('mSerial').value = e ? (e.serial_number||'') : '';
+    q('mProvider').value = e ? (e.provider_name||'RDRENTAL') : 'RDRENTAL';
+    q('mLocation').value = e ? (e.location||'') : '';
+    q('mStart').value = e ? (e.start_date||'') : '';
+    q('mHorInit').value = e ? (e.initial_horometer||0) : 0;
+    q('mHorCur').value = e ? (e.current_horometer||0) : 0;
+    q('mReplace').value = e ? (e.replacement_hours||4000) : 4000;
+    q('mCost').value = e && e.monthly_cost!=null ? e.monthly_cost : '';
+    q('mStatus').value = e ? e.status : 'OPERATIVO';
+    q('mNotes').value = e ? (e.notes||'') : '';
+    q('eqModal').classList.add('open');
+}
+window.openEqModal = openEqModal;
+
+async function saveEquipment(){
+    const id = q('mEqId').value;
+    const payload = {
+        name: q('mName').value.trim(),
+        equipment_type: q('mType').value,
+        brand: q('mBrand').value.trim(),
+        model: q('mModel').value.trim(),
+        serial_number: q('mSerial').value.trim(),
+        provider_name: q('mProvider').value.trim() || 'RDRENTAL',
+        location: q('mLocation').value.trim(),
+        start_date: q('mStart').value || null,
+        initial_horometer: Number(q('mHorInit').value || 0),
+        current_horometer: Number(q('mHorCur').value || 0),
+        replacement_hours: Number(q('mReplace').value || 4000),
+        monthly_cost: q('mCost').value ? Number(q('mCost').value) : null,
+        status: q('mStatus').value,
+        notes: q('mNotes').value.trim(),
+    };
+    if(!payload.name){ alert('El nombre es obligatorio.'); return; }
+    try{
+        await jget(id ? `/api/rental/equipments/${id}` : '/api/rental/equipments', {
+            method: id ? 'PUT' : 'POST',
+            headers: {'Content-Type':'application/json'},
+            body: JSON.stringify(payload)
+        });
+        closeModal('eqModal');
+        await refreshAll();
+    }catch(e){ alert('Error: '+e.message); }
+}
+
+async function toggleEquipment(id){
+    if(!confirm('¿Desactivar/reactivar este equipo? El historial de fallas se conserva.')) return;
+    try{
+        await jget(`/api/rental/equipments/${id}`, { method:'DELETE' });
+        await refreshAll();
+    }catch(e){ alert('Error: '+e.message); }
+}
+window.toggleEquipment = toggleEquipment;
+
+// ── Horometro ─────────────────────────────────────────────────────────────
+async function openHorModal(id){
+    const e = state.items.find(x=>x.id===id);
+    if(!e) return;
+    q('hEqId').value = id;
+    q('horEqLabel').textContent = `${e.code} ${e.name}`;
+    q('hDate').value = new Date().toISOString().slice(0,10);
+    q('hValue').value = '';
+    q('hNotes').value = '';
+    q('horModal').classList.add('open');
+    await loadHorHistory(id);
+}
+window.openHorModal = openHorModal;
+
+async function loadHorHistory(id){
+    try{
+        const rows = await jget(`/api/rental/equipments/${id}/horometer`);
+        q('tbodyHor').innerHTML = rows.length ? rows.map(r=>`
+            <tr><td>${esc(r.reading_date)}</td><td>${fnum(r.horometer,1)} h</td>
+            <td>${esc(r.notes||'-')}</td><td>${esc(r.created_by||'-')}</td>
+            <td><button class="btn-icon btn-del" title="Eliminar" onclick="deleteHorReading(${r.id})"><i class="fas fa-trash"></i></button></td></tr>`).join('')
+            : '<tr><td colspan="5">Sin lecturas aun.</td></tr>';
+    }catch(_){ q('tbodyHor').innerHTML = '<tr><td colspan="5">Error cargando historial.</td></tr>'; }
+}
+
+async function saveHorometer(){
+    const id = q('hEqId').value;
+    if(!q('hValue').value){ alert('Ingresa el horometro.'); return; }
+    try{
+        await jget(`/api/rental/equipments/${id}/horometer`, {
+            method:'POST', headers:{'Content-Type':'application/json'},
+            body: JSON.stringify({
+                reading_date: q('hDate').value,
+                horometer: Number(q('hValue').value),
+                notes: q('hNotes').value.trim(),
+            })
+        });
+        q('hValue').value=''; q('hNotes').value='';
+        await loadHorHistory(id);
+        await loadDashboard();
+    }catch(e){ alert('Error: '+e.message); }
+}
+
+async function deleteHorReading(readingId){
+    if(!confirm('¿Eliminar esta lectura?')) return;
+    try{
+        await jget(`/api/rental/horometer/${readingId}`, { method:'DELETE' });
+        await loadHorHistory(q('hEqId').value);
+        await loadDashboard();
+    }catch(e){ alert('Error: '+e.message); }
+}
+window.deleteHorReading = deleteHorReading;
+
+// ── Fallas ────────────────────────────────────────────────────────────────
+function _resetFailModal(){
+    q('fId').value=''; q('fDesc').value=''; q('fAttDate').value=''; q('fResDate').value='';
+    q('fHor').value=''; q('fDown').value=''; q('fStopped').value='0'; q('fImpact').value='';
+    q('fRepCode').value=''; q('fStatus').value='REPORTADA';
+    q('fRespProv').value='SIN_DEFINIR'; q('fRespOurs').value='SIN_DEFINIR'; q('fRespNotes').value='';
+    q('fRepDate').value = new Date().toISOString().slice(0,10);
+}
+function openFailModal(rentalId){
+    _resetFailModal();
+    q('failModalTitle').innerHTML = '<i class="fas fa-triangle-exclamation"></i> Registrar Falla';
+    if(rentalId){
+        q('fEq').value = String(rentalId);
+        const e = state.items.find(x=>x.id===rentalId);
+        if(e && e.current_horometer) q('fHor').value = e.current_horometer;
+    } else {
+        q('fEq').value = '';
+    }
+    q('failModal').classList.add('open');
+}
+window.openFailModal = openFailModal;
+
+function openFailModalEdit(id){
+    const f = state.failures.find(x=>x.id===id);
+    if(!f) return;
+    _resetFailModal();
+    q('failModalTitle').innerHTML = '<i class="fas fa-pen"></i> Editar Falla';
+    q('fId').value = f.id;
+    q('fEq').value = String(f.rental_id);
+    q('fSystem').value = f.failure_system;
+    q('fDesc').value = f.description || '';
+    q('fRepDate').value = f.reported_date || '';
+    q('fAttDate').value = f.attended_date || '';
+    q('fResDate').value = f.resolved_date || '';
+    q('fHor').value = f.horometer_at_failure != null ? f.horometer_at_failure : '';
+    q('fDown').value = f.downtime_hours != null ? f.downtime_hours : '';
+    q('fStopped').value = f.production_stopped ? '1' : '0';
+    q('fImpact').value = f.production_impact || '';
+    q('fRepCode').value = f.provider_report_code || '';
+    q('fStatus').value = f.status || 'REPORTADA';
+    q('fRespProv').value = f.provider_responsibility || 'SIN_DEFINIR';
+    q('fRespOurs').value = f.our_assessment || 'SIN_DEFINIR';
+    q('fRespNotes').value = f.our_assessment_notes || '';
+    q('failModal').classList.add('open');
+}
+window.openFailModalEdit = openFailModalEdit;
+
+async function saveFailure(){
+    const id = q('fId').value;
+    const payload = {
+        rental_id: Number(q('fEq').value || 0),
+        failure_system: q('fSystem').value,
+        description: q('fDesc').value.trim(),
+        reported_date: q('fRepDate').value,
+        attended_date: q('fAttDate').value || null,
+        resolved_date: q('fResDate').value || null,
+        horometer_at_failure: q('fHor').value ? Number(q('fHor').value) : null,
+        downtime_hours: q('fDown').value ? Number(q('fDown').value) : null,
+        production_stopped: q('fStopped').value === '1',
+        production_impact: q('fImpact').value.trim(),
+        provider_report_code: q('fRepCode').value.trim(),
+        provider_responsibility: q('fRespProv').value,
+        our_assessment: q('fRespOurs').value,
+        our_assessment_notes: q('fRespNotes').value.trim(),
+        status: q('fStatus').value,
+    };
+    if(!payload.rental_id){ alert('Selecciona el equipo.'); return; }
+    if(!payload.description){ alert('Describe la falla.'); return; }
+    try{
+        await jget(id ? `/api/rental/failures/${id}` : '/api/rental/failures', {
+            method: id ? 'PUT' : 'POST',
+            headers: {'Content-Type':'application/json'},
+            body: JSON.stringify(payload)
+        });
+        closeModal('failModal');
+        await refreshAll();
+    }catch(e){ alert('Error: '+e.message); }
+}
+
+async function deleteFailure(id){
+    if(!confirm('¿Eliminar esta falla del historial? Se pierde el sustento asociado.')) return;
+    try{
+        await jget(`/api/rental/failures/${id}`, { method:'DELETE' });
+        await refreshAll();
+    }catch(e){ alert('Error: '+e.message); }
+}
+window.deleteFailure = deleteFailure;
+
+async function refreshAll(){
+    await loadDashboard();
+    await loadFailures();
+}
+
+document.addEventListener('DOMContentLoaded', async ()=>{
+    try{ await refreshAll(); }
+    catch(e){ alert('Error inicializando: '+e.message); }
+});
+</script>
+</body>
+</html>

@@ -192,6 +192,9 @@
                 <option value="tecnico">Tecnico</option>
                 <option value="supervisor">Supervisor</option>
                 <option value="planner">Planner</option>
+                <option value="asistente">Asistente</option>
+                <option value="practicante">Practicante</option>
+                <option value="automotriz">Automotriz</option>
                 <option value="almacenero">Almacenero</option>
                 <option value="jefe_mtto">Jefe de Mantenimiento</option>
                 <option value="gerencia">Gerencia</option>
@@ -223,7 +226,12 @@
 <script>
 let editingId = null;
 
-const ROLE_LABELS = { admin: 'Administrador', supervisor: 'Supervisor', tecnico: 'Técnico', viewer: 'Solo Lectura' };
+const ROLE_LABELS = {
+    admin: 'Administrador', jefe_mtto: 'Jefe de Mantenimiento', planner: 'Planner',
+    supervisor: 'Supervisor', tecnico: 'Técnico', operador: 'Operador',
+    almacenero: 'Almacenero', gerencia: 'Gerencia', asistente: 'Asistente',
+    practicante: 'Practicante', automotriz: 'Automotriz', viewer: 'Solo Lectura'
+};
 const AVATAR_COLORS = ['#0A84FF','#30D158','#FF9F0A','#BF5AF2','#FF453A','#5AC8FA','#FF375F'];
 
 function avatarColor(name) {
@@ -417,11 +425,13 @@ function renderPermissions(data) {
 
     const ROLE_LABELS = {
         jefe_mtto: 'Jefe Mtto', planner: 'Planner', supervisor: 'Supervisor',
-        tecnico: 'Tecnico', operador: 'Operador', almacenero: 'Almacenero', gerencia: 'Gerencia'
+        tecnico: 'Tecnico', operador: 'Operador', almacenero: 'Almacenero', gerencia: 'Gerencia',
+        asistente: 'Asistente', practicante: 'Practicante', automotriz: 'Automotriz'
     };
     const ROLE_COLORS = {
         jefe_mtto: '#FF9F0A', planner: '#5AC8FA', supervisor: '#BF5AF2',
-        tecnico: '#30D158', operador: '#FFD60A', almacenero: '#FF375F', gerencia: '#0A84FF'
+        tecnico: '#30D158', operador: '#FFD60A', almacenero: '#FF375F', gerencia: '#0A84FF',
+        asistente: '#64D2FF', practicante: '#AC8E68', automotriz: '#FF7A00'
     };
 
     if (!_activeRole || !roles.includes(_activeRole)) _activeRole = roles[0];

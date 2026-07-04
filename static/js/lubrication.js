@@ -182,22 +182,122 @@ function renderPoints(points) {
     renderPointSelect();
 }
 
+// ── Filtros de la lista de puntos (tabla + arbol) ────────────────────────────
+// Cada select se llena con los valores distintos presentes en los puntos que
+// pasan los DEMAS filtros, para que las opciones siempre sean alcanzables.
+const _TABLE_FILTERS = [
+    { id: 'tfArea',      key: p => p.area_name || '' },
+    { id: 'tfEquipment', key: p => p.equipment_name || '' },
+    { id: 'tfSystem',    key: p => p.system_name || '' },
+    { id: 'tfComponent', key: p => p.component_name || '' },
+    { id: 'tfLubricant', key: p => p.lubricant_name || '' },
+    { id: 'tfFreq',      key: p => (p.frequency_days ? `${p.frequency_days}` : ''),
+                         label: v => `${v} dias` },
+];
+
+function _daysUntilDue(p) {
+    if (!p.next_due_date) return null;
+    const due = new Date(p.next_due_date + 'T00:00:00');
+    if (isNaN(due)) return null;
+    const today = new Date(); today.setHours(0, 0, 0, 0);
+    return Math.round((due - today) / 86400000);
+}
+
+// skipId permite ignorar un filtro (para calcular las opciones de su select).
+function _pointPassesFilters(p, skipId) {
+    for (const f of _TABLE_FILTERS) {
+        if (f.id === skipId) continue;
+        const el = q(f.id);
+        const v = el ? el.value : '';
+        if (v && f.key(p) !== v) return false;
+    }
+    if (skipId !== 'tfSema') {
+        const sema = (q('tfSema') || {}).value || '';
+        if (sema && (p.semaphore_status || 'PENDIENTE') !== sema) return false;
+    }
+    if (skipId !== 'tfDue') {
+        const due = (q('tfDue') || {}).value || '';
+        if (due) {
+            const days = _daysUntilDue(p);
+            if (days === null) return false;
+            if (due === 'vencido' ? days >= 0 : days > Number(due)) return false;
+        }
+    }
+    if (skipId !== 'tfSearch') {
+        const tokens = _tokenize((q('tfSearch') || {}).value || '');
+        if (tokens.length) {
+            const blob = [_pointBlob(p), p.lubricant_name, p.area_name, p.line_name]
+                .filter(Boolean).join(' ').toLowerCase();
+            if (!tokens.every(t => blob.includes(t))) return false;
+        }
+    }
+    return true;
+}
+
 // Lista de puntos que comparten tabla y arbol: aplica el filtro de responsable
-// para que ambas vistas muestren exactamente el mismo subconjunto. El filtro
-// de inactivos ya viene resuelto desde el backend (show_inactive).
+// y los filtros de la barra para que ambas vistas muestren exactamente el
+// mismo subconjunto. El filtro de inactivos ya viene resuelto desde el
+// backend (show_inactive).
 function getDisplayPoints() {
     const respFilter = (q('fResponsible') || {}).value || '';
     let points = lubState.points || [];
     if (respFilter) {
         points = points.filter(p => (p.effective_responsible_party || 'INTERNO') === respFilter);
     }
+    points = points.filter(p => _pointPassesFilters(p, null));
     return points;
 }
+
+// Reconstruye las opciones de cada select de filtro con los valores distintos
+// de los puntos que pasan los demas filtros, conservando la seleccion actual.
+function updateTableFilterOptions() {
+    const respFilter = (q('fResponsible') || {}).value || '';
+    let base = lubState.points || [];
+    if (respFilter) {
+        base = base.filter(p => (p.effective_responsible_party || 'INTERNO') === respFilter);
+    }
+    _TABLE_FILTERS.forEach(f => {
+        const sel = q(f.id);
+        if (!sel) return;
+        const current = sel.value;
+        const candidates = base.filter(p => _pointPassesFilters(p, f.id));
+        const values = [...new Set(candidates.map(f.key).filter(Boolean))]
+            .sort((a, b) => f.id === 'tfFreq'
+                ? Number(a) - Number(b)
+                : String(a).localeCompare(String(b), 'es', { numeric: true, sensitivity: 'base' }));
+        const firstLabel = sel.options[0] ? sel.options[0].textContent : 'Todos';
+        sel.innerHTML = `<option value="">${firstLabel}</option>` +
+            values.map(v => `<option value="${_esc(v)}">${_esc(f.label ? f.label(v) : v)}</option>`).join('');
+        // Mantener la seleccion aunque haya quedado sin coincidencias, para
+        // que el usuario vea el filtro activo y pueda quitarlo.
+        if (current && !values.includes(current)) {
+            sel.insertAdjacentHTML('beforeend', `<option value="${_esc(current)}">${_esc(f.label ? f.label(current) : current)}</option>`);
+        }
+        sel.value = current;
+    });
+}
+
+function clearTableFilters() {
+    ['tfSearch', 'tfArea', 'tfEquipment', 'tfSystem', 'tfComponent',
+     'tfLubricant', 'tfFreq', 'tfSema', 'tfDue'].forEach(id => {
+        const el = q(id);
+        if (el) el.value = '';
+    });
+    renderPointsView();
+}
+window.clearTableFilters = clearTableFilters;
 
 // Re-renderiza ambas vistas (tabla + arbol) con los filtros actuales.
 function renderPointsView() {
     renderPointsTable();
     renderLubTree();
+    updateTableFilterOptions();
+    const countEl = q('tfCount');
+    if (countEl) {
+        const shown = getDisplayPoints().length;
+        const total = (lubState.points || []).length;
+        countEl.textContent = shown === total ? `(${total})` : `(${shown}/${total})`;
+    }
 }
 window.renderPointsView = renderPointsView;
 
@@ -518,9 +618,9 @@ async function registerExecution() {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(payload)
     });
-    // Limpiar inputs
+    // Limpiar inputs (fBy vuelve al default FAPMETAL, responsable habitual)
     q('fQty').value = '';
-    q('fBy').value = '';
+    q('fBy').value = 'FAPMETAL';
     if (q('fComments')) q('fComments').value = '';
     if (q('fLeak')) q('fLeak').value = '0';
     q('fAnom').value = '0';
@@ -638,6 +738,19 @@ async function boot() {
         q('btnCreate').addEventListener('click', createPoint);
         q('btnExec').addEventListener('click', registerExecution);
         if (q('fPointSearch')) q('fPointSearch').addEventListener('input', renderPointSelect);
+        // Filtros de la lista de puntos
+        ['tfArea', 'tfEquipment', 'tfSystem', 'tfComponent', 'tfLubricant',
+         'tfFreq', 'tfSema', 'tfDue'].forEach(id => {
+            if (q(id)) q(id).addEventListener('change', renderPointsView);
+        });
+        if (q('tfSearch')) {
+            let _tfTimer = null;
+            q('tfSearch').addEventListener('input', () => {
+                clearTimeout(_tfTimer);
+                _tfTimer = setTimeout(renderPointsView, 200);
+            });
+        }
+        if (q('btnClearFilters')) q('btnClearFilters').addEventListener('click', clearTableFilters);
         // Restaurar vista preferida (tabla por defecto)
         let savedView = 'table';
         try { savedView = localStorage.getItem('cmms.lub.view') || 'table'; } catch (e) { /* ignore */ }

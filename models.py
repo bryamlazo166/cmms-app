@@ -2372,3 +2372,154 @@ class BotUsage(db.Model):
             "error_msg": self.error_msg,
             "created_at": self.created_at.isoformat() if self.created_at else None,
         }
+
+
+# ── Equipos Alquilados (montacargas / minicargadores de terceros) ─────────────
+# Seguimiento de flota alquilada (p.ej. RDrental): horometros, fallas y
+# responsabilidad declarada por el proveedor vs. evaluacion propia. El objetivo
+# es tener datos duros (fallas repetitivas, MTBF, paralizaciones) para
+# sustentar reclamos y exigir el cambio de unidad al cumplir su vida (4000 h).
+
+class RentalEquipment(db.Model):
+    __tablename__ = 'rental_equipments'
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    code: Mapped[str] = mapped_column(String(30), unique=True, nullable=False)  # ALQ-001
+    name: Mapped[str] = mapped_column(String(150), nullable=False)
+    equipment_type: Mapped[str] = mapped_column(String(30), nullable=False, default='MONTACARGA')
+    # MONTACARGA | MINICARGADOR | OTRO
+    brand: Mapped[Optional[str]] = mapped_column(String(80), nullable=True)
+    model: Mapped[Optional[str]] = mapped_column(String(80), nullable=True)
+    serial_number: Mapped[Optional[str]] = mapped_column(String(80), nullable=True)
+    provider_name: Mapped[str] = mapped_column(String(120), nullable=False, default='RDRENTAL')
+    location: Mapped[Optional[str]] = mapped_column(String(120), nullable=True)  # area donde opera
+    # Vida util contractual: al llegar al limite el proveedor debe cambiar la unidad.
+    replacement_hours: Mapped[float] = mapped_column(Float, nullable=False, default=4000)
+    # Horometro con el que llego la unidad (para computar horas trabajadas aqui).
+    initial_horometer: Mapped[float] = mapped_column(Float, nullable=False, default=0)
+    current_horometer: Mapped[float] = mapped_column(Float, nullable=False, default=0)
+    horometer_updated_at: Mapped[Optional[str]] = mapped_column(String(20), nullable=True)  # YYYY-MM-DD
+    start_date: Mapped[Optional[str]] = mapped_column(String(20), nullable=True)  # inicio de alquiler
+    monthly_cost: Mapped[Optional[float]] = mapped_column(Float, nullable=True)
+    status: Mapped[str] = mapped_column(String(20), nullable=False, default='OPERATIVO')
+    # OPERATIVO | EN_FALLA | EN_REPARACION | FUERA_SERVICIO | DEVUELTO
+    is_active: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
+    notes: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+
+    readings = relationship("RentalHorometerReading", back_populates="equipment",
+                            cascade="all, delete-orphan")
+    failures = relationship("RentalFailure", back_populates="equipment",
+                            cascade="all, delete-orphan")
+
+    def to_dict(self):
+        return {
+            "id": self.id,
+            "code": self.code,
+            "name": self.name,
+            "equipment_type": self.equipment_type,
+            "brand": self.brand,
+            "model": self.model,
+            "serial_number": self.serial_number,
+            "provider_name": self.provider_name,
+            "location": self.location,
+            "replacement_hours": self.replacement_hours,
+            "initial_horometer": self.initial_horometer,
+            "current_horometer": self.current_horometer,
+            "horometer_updated_at": self.horometer_updated_at,
+            "start_date": self.start_date,
+            "monthly_cost": self.monthly_cost,
+            "status": self.status,
+            "is_active": self.is_active,
+            "notes": self.notes,
+            "created_at": self.created_at.isoformat() if self.created_at else None,
+        }
+
+
+class RentalHorometerReading(db.Model):
+    __tablename__ = 'rental_horometer_readings'
+    __table_args__ = (
+        Index('ix_rhr_rental_date', 'rental_id', 'reading_date'),
+    )
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    rental_id: Mapped[int] = mapped_column(ForeignKey('rental_equipments.id'), nullable=False)
+    reading_date: Mapped[str] = mapped_column(String(20), nullable=False)  # YYYY-MM-DD
+    horometer: Mapped[float] = mapped_column(Float, nullable=False)
+    notes: Mapped[Optional[str]] = mapped_column(String(300), nullable=True)
+    created_by: Mapped[Optional[str]] = mapped_column(String(80), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+
+    equipment = relationship("RentalEquipment", back_populates="readings")
+
+    def to_dict(self):
+        return {
+            "id": self.id,
+            "rental_id": self.rental_id,
+            "rental_code": self.equipment.code if self.equipment else None,
+            "reading_date": self.reading_date,
+            "horometer": self.horometer,
+            "notes": self.notes,
+            "created_by": self.created_by,
+            "created_at": self.created_at.isoformat() if self.created_at else None,
+        }
+
+
+class RentalFailure(db.Model):
+    __tablename__ = 'rental_failures'
+    __table_args__ = (
+        Index('ix_rf_rental_date', 'rental_id', 'reported_date'),
+    )
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    rental_id: Mapped[int] = mapped_column(ForeignKey('rental_equipments.id'), nullable=False)
+    reported_date: Mapped[str] = mapped_column(String(20), nullable=False)  # YYYY-MM-DD
+    attended_date: Mapped[Optional[str]] = mapped_column(String(20), nullable=True)
+    resolved_date: Mapped[Optional[str]] = mapped_column(String(20), nullable=True)
+    description: Mapped[str] = mapped_column(Text, nullable=False)
+    # Sistema afectado: clave para detectar fallas repetitivas del mismo tipo.
+    failure_system: Mapped[str] = mapped_column(String(30), nullable=False, default='OTRO')
+    # MOTOR | HIDRAULICO | ELECTRICO | TRANSMISION | FRENOS | LLANTAS |
+    # TREN_RODAJE | MASTIL_UNAS | CABINA | OTRO
+    horometer_at_failure: Mapped[Optional[float]] = mapped_column(Float, nullable=True)
+    downtime_hours: Mapped[Optional[float]] = mapped_column(Float, nullable=True)
+    # Si la falla paralizo un area (p.ej. descarga de materia prima).
+    production_stopped: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
+    production_impact: Mapped[Optional[str]] = mapped_column(String(300), nullable=True)
+    # Nro/codigo del formato que entrega el proveedor al atender.
+    provider_report_code: Mapped[Optional[str]] = mapped_column(String(80), nullable=True)
+    # Lo que declara el proveedor en su formato vs. nuestra evaluacion.
+    provider_responsibility: Mapped[str] = mapped_column(String(20), nullable=False, default='SIN_DEFINIR')
+    our_assessment: Mapped[str] = mapped_column(String(20), nullable=False, default='SIN_DEFINIR')
+    # NUESTRA | PROVEEDOR | COMPARTIDA | SIN_DEFINIR
+    our_assessment_notes: Mapped[Optional[str]] = mapped_column(Text, nullable=True)  # sustento
+    status: Mapped[str] = mapped_column(String(20), nullable=False, default='REPORTADA')
+    # REPORTADA | ATENDIDA | RESUELTA
+    created_by: Mapped[Optional[str]] = mapped_column(String(80), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+
+    equipment = relationship("RentalEquipment", back_populates="failures")
+
+    def to_dict(self):
+        return {
+            "id": self.id,
+            "rental_id": self.rental_id,
+            "rental_code": self.equipment.code if self.equipment else None,
+            "rental_name": self.equipment.name if self.equipment else None,
+            "reported_date": self.reported_date,
+            "attended_date": self.attended_date,
+            "resolved_date": self.resolved_date,
+            "description": self.description,
+            "failure_system": self.failure_system,
+            "horometer_at_failure": self.horometer_at_failure,
+            "downtime_hours": self.downtime_hours,
+            "production_stopped": self.production_stopped,
+            "production_impact": self.production_impact,
+            "provider_report_code": self.provider_report_code,
+            "provider_responsibility": self.provider_responsibility,
+            "our_assessment": self.our_assessment,
+            "our_assessment_notes": self.our_assessment_notes,
+            "status": self.status,
+            "created_by": self.created_by,
+            "created_at": self.created_at.isoformat() if self.created_at else None,
+        }
