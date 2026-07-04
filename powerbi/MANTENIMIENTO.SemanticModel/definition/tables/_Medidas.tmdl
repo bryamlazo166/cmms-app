@@ -426,6 +426,19 @@ table _Medidas
 		displayFolder: Inspecciones
 		lineageTag: m-lect-alerta
 
+	measure '% Alertas Inspección' =
+			VAR _Total = SUM(FactInspecciones[Puntos Totales])
+			VAR _Alertas = SUM(FactInspecciones[Puntos Alerta]) + SUM(FactInspecciones[Puntos Críticos])
+			RETURN DIVIDE(_Alertas, _Total, 0)
+		formatString: 0.0%
+		displayFolder: Inspecciones
+		lineageTag: m-pct-alertas-insp
+
+	measure 'Duración Real Total' = SUM(FactOTs[Duración Real])
+		formatString: #,0.00 \h
+		displayFolder: Ordenes de Trabajo
+		lineageTag: m-dur-real-total
+
 	column Value
 		dataType: int64
 		isHidden

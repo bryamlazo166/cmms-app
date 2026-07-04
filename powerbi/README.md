@@ -26,6 +26,12 @@ Todas las particiones M usan `Odbc.DataSource("dsn=CMMS_Supabase", ...)`. Sin es
    - **Password**: solicitar al administrador del proyecto.
 4. Probar conexión → debe responder OK.
 
+### 1.3 Política RLS para `powerbi_reader`
+Las tablas de `public` tienen **RLS habilitado** (ver `scripts/migrations/enable_rls_public_schema.sql`).
+Sin política, el rol `powerbi_reader` recibe **0 filas** y los dashboards se ven vacíos.
+Ejecutar una vez `scripts/migrations/grant_powerbi_reader_rls.sql` (Supabase → SQL Editor → Run):
+crea la política `powerbi_read` (solo SELECT) en todas las tablas. Ya aplicada el 2026-07-04.
+
 ---
 
 ## 2. Estructura del proyecto

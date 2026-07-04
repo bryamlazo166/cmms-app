@@ -23,11 +23,11 @@
                       "Entity": "_Medidas"
                     }
                   },
-                  "Property": "Cumplimiento Paradas"
+                  "Property": "% Cumplimiento Parada"
                 }
               },
-              "queryRef": "_Medidas.Cumplimiento Paradas",
-              "nativeQueryRef": "Cumplimiento Paradas"
+              "queryRef": "_Medidas.% Cumplimiento Parada",
+              "nativeQueryRef": "% Cumplimiento Parada"
             }
           ]
         }

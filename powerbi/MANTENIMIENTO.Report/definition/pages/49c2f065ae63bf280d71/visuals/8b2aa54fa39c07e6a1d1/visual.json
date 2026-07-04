@@ -1,6 +1,6 @@
 {
   "$schema": "https://developer.microsoft.com/json-schemas/fabric/item/report/definition/visualContainer/2.0.0/schema.json",
-  "name": "acf09a9589cbf082a68a",
+  "name": "8b2aa54fa39c07e6a1d1",
   "position": {
     "x": 20,
     "y": 460,
@@ -20,48 +20,6 @@
                 "Column": {
                   "Expression": {
                     "SourceRef": {
-                      "Entity": "FactAvisos"
-                    }
-                  },
-                  "Property": "Código Aviso"
-                }
-              },
-              "queryRef": "FactAvisos.Código Aviso",
-              "nativeQueryRef": "Código Aviso"
-            },
-            {
-              "field": {
-                "Column": {
-                  "Expression": {
-                    "SourceRef": {
-                      "Entity": "FactAvisos"
-                    }
-                  },
-                  "Property": "Estado Aviso"
-                }
-              },
-              "queryRef": "FactAvisos.Estado Aviso",
-              "nativeQueryRef": "Estado Aviso"
-            },
-            {
-              "field": {
-                "Column": {
-                  "Expression": {
-                    "SourceRef": {
-                      "Entity": "FactAvisos"
-                    }
-                  },
-                  "Property": "Severidad Aviso"
-                }
-              },
-              "queryRef": "FactAvisos.Severidad Aviso",
-              "nativeQueryRef": "Severidad Aviso"
-            },
-            {
-              "field": {
-                "Column": {
-                  "Expression": {
-                    "SourceRef": {
                       "Entity": "DimEquipos"
                     }
                   },
@@ -73,17 +31,45 @@
             },
             {
               "field": {
+                "Column": {
+                  "Expression": {
+                    "SourceRef": {
+                      "Entity": "FactInspecciones"
+                    }
+                  },
+                  "Property": "Semáforo"
+                }
+              },
+              "queryRef": "FactInspecciones.Semáforo",
+              "nativeQueryRef": "Semáforo"
+            },
+            {
+              "field": {
+                "Column": {
+                  "Expression": {
+                    "SourceRef": {
+                      "Entity": "FactInspecciones"
+                    }
+                  },
+                  "Property": "Estado Inspección"
+                }
+              },
+              "queryRef": "FactInspecciones.Estado Inspección",
+              "nativeQueryRef": "Estado Inspección"
+            },
+            {
+              "field": {
                 "Measure": {
                   "Expression": {
                     "SourceRef": {
                       "Entity": "_Medidas"
                     }
                   },
-                  "Property": "Tiempo Respuesta Aviso"
+                  "Property": "Espesor Promedio (mm)"
                 }
               },
-              "queryRef": "_Medidas.Tiempo Respuesta Aviso",
-              "nativeQueryRef": "Tiempo Respuesta Aviso"
+              "queryRef": "_Medidas.Espesor Promedio (mm)",
+              "nativeQueryRef": "Espesor Promedio (mm)"
             }
           ]
         }

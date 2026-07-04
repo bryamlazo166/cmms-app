@@ -1,13 +1,13 @@
 {
   "$schema": "https://developer.microsoft.com/json-schemas/fabric/item/report/definition/visualContainer/2.0.0/schema.json",
-  "name": "4db5cf53fdbeba58ebf2",
+  "name": "cc27b8a22669e8fffd5a",
   "position": {
-    "x": 20,
+    "x": 440,
     "y": 160,
-    "z": 1005,
+    "z": 1006,
     "width": 400,
     "height": 280,
-    "tabOrder": 1005
+    "tabOrder": 1006
   },
   "visual": {
     "visualType": "donutChart",
@@ -20,14 +20,14 @@
                 "Column": {
                   "Expression": {
                     "SourceRef": {
-                      "Entity": "FactLubricacion"
+                      "Entity": "FactInspecciones"
                     }
                   },
-                  "Property": "Frecuencia Lub"
+                  "Property": "Estado Inspección"
                 }
               },
-              "queryRef": "FactLubricacion.Frecuencia Lub",
-              "nativeQueryRef": "Frecuencia Lub"
+              "queryRef": "FactInspecciones.Estado Inspección",
+              "nativeQueryRef": "Estado Inspección"
             }
           ]
         },
@@ -41,11 +41,11 @@
                       "Entity": "_Medidas"
                     }
                   },
-                  "Property": "Total Lubricaciones"
+                  "Property": "Total Inspecciones"
                 }
               },
-              "queryRef": "_Medidas.Total Lubricaciones",
-              "nativeQueryRef": "Total Lubricaciones"
+              "queryRef": "_Medidas.Total Inspecciones",
+              "nativeQueryRef": "Total Inspecciones"
             }
           ]
         }
