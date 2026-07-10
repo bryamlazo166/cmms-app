@@ -18,6 +18,10 @@ DEEPSEEK_URL = 'https://api.deepseek.com/chat/completions'
 OPENAI_API_KEY = os.getenv('OPENAI_API_KEY')
 POLL_INTERVAL = 2
 
+# Timestamp del ultimo mensaje recibido — el refresco del contexto baja de
+# ritmo cuando nadie usa el bot (ahorra egress de Supabase free tier).
+_last_activity_ts = 0.0
+
 
 def _parse_int_env(name, default=None):
     raw = (os.getenv(name) or '').strip()
@@ -911,10 +915,10 @@ def _generate_daily_summary(app):
 
             # Low stock — detalle de items
             low_stock_items = _db.session.execute(text("""
-                SELECT code, name, current_stock, min_stock, unit
+                SELECT code, name, stock, min_stock, unit
                 FROM warehouse_items
-                WHERE is_active = true AND current_stock <= min_stock
-                ORDER BY (current_stock - min_stock) ASC LIMIT 15
+                WHERE is_active = true AND stock <= min_stock
+                ORDER BY (stock - min_stock) ASC LIMIT 15
             """)).fetchall()
             low_stock = len(low_stock_items)
 
@@ -926,7 +930,7 @@ def _generate_daily_summary(app):
                     WHERE next_due_date IS NOT NULL AND next_due_date < :today
                 """), {"today": date.today().isoformat()}).scalar() or 0
             except Exception:
-                pass
+                _db.session.rollback()
 
             # Recordatorios PENDIENTES — entradas de bitacora con tipo
             # PENDIENTE cuya fecha es hoy o pasada (vencida).
@@ -943,6 +947,7 @@ def _generate_daily_summary(app):
                     ORDER BY le.log_date ASC LIMIT 20
                 """), {"today": today_iso}).fetchall()
             except Exception as e:
+                _db.session.rollback()
                 logger.warning(f"pendientes_due fetch error: {e}")
                 pendientes_due = []
 
@@ -1985,6 +1990,7 @@ def start_telegram_bot(app):
         return
 
     def poll():
+        global _last_activity_ts
         logger.info("Telegram bot started. Polling for messages...")
         offset = 0
         while True:
@@ -2002,6 +2008,8 @@ def start_telegram_bot(app):
                             continue
                         msg = update.get('message', {})
                         chat_id = msg.get('chat', {}).get('id')
+                        if chat_id:
+                            _last_activity_ts = time.time()
                         txt = msg.get('text', '')
                         photos = msg.get('photo')
                         caption = msg.get('caption', '')
@@ -2060,23 +2068,37 @@ def start_telegram_bot(app):
             time.sleep(60)
 
     def refresh_context_loop():
-        """Pre-calcula el contexto general cada 60s (Opt #3).
+        """Pre-calcula el contexto general (Opt #3), con ritmo adaptativo.
 
         IMPORTANTE: escribimos directo en bot.context._cached_cmms_context
         (no a un global de este modulo), porque _get_cmms_context lee la
         variable desde bot.context. Si declaramos `global` aqui, la
         asignacion se queda en bot.telegram_bot y el cache real nunca
         se refresca (bug post-split fase 7).
+
+        Ritmo adaptativo: con mensajes recientes (<10 min) refresca cada
+        _CACHE_CONTEXT_TTL (60s); sin actividad, baja a 1 refresco cada
+        30 min. Reduce ~30x el egress de Supabase free tier cuando el bot
+        esta ocioso y a la vez mantiene el proyecto activo (la consulta
+        periodica evita la pausa por inactividad de 7 dias).
         """
-        logger.info("Context pre-cache thread started (TTL 60s).")
+        IDLE_AFTER = 10 * 60      # sin mensajes por 10 min → modo ocioso
+        IDLE_REFRESH = 30 * 60    # refresco de mantenimiento en modo ocioso
+        logger.info("Context pre-cache thread started (60s activo / 30min ocioso).")
+        last_build = 0.0
         while True:
-            try:
-                ctx = _build_cmms_context_real(app)
-                _ctx._cached_cmms_context = ctx
-                _ctx._cached_cmms_context_ts = time.time()
-            except Exception as e:
-                logger.warning(f"Context refresh fallo: {e}")
-            time.sleep(_CACHE_CONTEXT_TTL)
+            interval = _CACHE_CONTEXT_TTL
+            if time.time() - _last_activity_ts > IDLE_AFTER:
+                interval = IDLE_REFRESH
+            if time.time() - last_build >= interval:
+                try:
+                    ctx = _build_cmms_context_real(app)
+                    _ctx._cached_cmms_context = ctx
+                    _ctx._cached_cmms_context_ts = time.time()
+                except Exception as e:
+                    logger.warning(f"Context refresh fallo: {e}")
+                last_build = time.time()
+            time.sleep(30)
 
     threading.Thread(target=poll, daemon=True).start()
     threading.Thread(target=daily_alerts, daemon=True).start()

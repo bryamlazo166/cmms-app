@@ -762,6 +762,7 @@ def _build_cmms_context_real(app):
                 n_fuera = _db.session.execute(text("SELECT count(*) FROM maintenance_notices WHERE scope = 'FUERA_PLAN'")).scalar() or 0
                 n_general = _db.session.execute(text("SELECT count(*) FROM maintenance_notices WHERE scope = 'GENERAL'")).scalar() or 0
             except Exception:
+                _db.session.rollback()
                 n_plan = n_fuera = n_general = 0
 
             ctx.append("=== RESUMEN CMMS ===")
@@ -874,6 +875,7 @@ def _build_cmms_context_real(app):
                         desc = (r[7] or '')[:80]
                         ctx.append(f"  {r[0]} | {prov} | {eq} | {cierre} | informe: {estado} | {desc}")
             except Exception as e:
+                _db.session.rollback()
                 ctx.append(f"(error informes pendientes: {e})")
 
             # Seccion dedicada: INFORMES DISPONIBLES — lista TODAS las OTs que
@@ -903,6 +905,7 @@ def _build_cmms_context_real(app):
                         cierre = f"cerrada {r[5]}" if r[5] else ""
                         ctx.append(f"  {r[0]} | {eq}{comp} | {cierre} | {r[1]}")
             except Exception as e:
+                _db.session.rollback()
                 ctx.append(f"(error informes disponibles: {e})")
 
             # Bitacora / Log entries — relevantes para responder "muestrame el informe / bitacora"
@@ -930,6 +933,7 @@ def _build_cmms_context_real(app):
                                 comment = comment[:240] + '...'
                             ctx.append(f"  {lg[1]} | {lg[2]} | {lg[3]} | {lg[4] or '-'} | {comment}")
             except Exception as e:
+                _db.session.rollback()
                 ctx.append(f"(error bitacora: {e})")
 
             # Herramientas y materiales usados en OTs — clave para preguntas
@@ -975,6 +979,7 @@ def _build_cmms_context_real(app):
                             comp = m[8] or '-'
                             ctx.append(f"  {m[0]} | {m[1] or '-'} | {m[2] or '-'} | {qty}{inst} | {eq} | {comp}")
             except Exception as e:
+                _db.session.rollback()
                 ctx.append(f"(error materiales: {e})")
 
             # Catalogo maestro de herramientas — preguntas tipo "que llave
@@ -994,6 +999,7 @@ def _build_cmms_context_real(app):
                         desc = f" | {h[4][:80]}" if h[4] else ""
                         ctx.append(f"  id:{h[0]} | {h[1] or '-'} | {h[2]} | {h[3] or '-'} | {h[5] or '-'}{loc}{desc}")
             except Exception as e:
+                _db.session.rollback()
                 ctx.append(f"(error catalogo herramientas: {e})")
 
             # Notices (last 30) — include scope and free_location for FUERA_PLAN/GENERAL
@@ -1009,6 +1015,7 @@ def _build_cmms_context_real(app):
                     ORDER BY n.id DESC LIMIT 30
                 """)).fetchall()
             except Exception:
+                _db.session.rollback()
                 notices = _db.session.execute(text("""
                     SELECT n.id, n.code, n.status, n.description, n.criticality, n.priority,
                            n.request_date, n.maintenance_type, n.reporter_name,
@@ -1053,6 +1060,7 @@ def _build_cmms_context_real(app):
                 mon = _db.session.execute(text("SELECT count(*) FROM monitoring_points WHERE is_active = true AND semaphore_status = 'ROJO'")).scalar() or 0
                 ctx.append(f"\n=== PUNTOS VENCIDOS (ROJO) === Lub: {lub} | Insp: {insp} | Mon: {mon}")
             except Exception:
+                _db.session.rollback()
                 pass
 
             # Lubrication points (active) — needed for register_lubrication action
@@ -1074,6 +1082,7 @@ def _build_cmms_context_real(app):
                         qty = f"{p[4] or '-'} {p[5] or ''}".strip()
                         ctx.append(f"  id:{p[0]} | {p[1] or '-'} | {p[2]} | {eq} | {p[12] or '-'} | Lub:{p[3] or '-'} {qty} | cada {p[6]}d | Ult:{p[7] or '-'} | Prox:{p[8] or '-'} | {p[9]}")
             except Exception as e:
+                _db.session.rollback()
                 ctx.append(f"(error puntos lubricacion: {e})")
 
             # Inspection routes (active)
@@ -1093,6 +1102,7 @@ def _build_cmms_context_real(app):
                         eq = f"[{r[7] or '-'}] {r[8] or '-'}"
                         ctx.append(f"  id:{r[0]} | {r[1] or '-'} | {r[2]} | {eq} | {r[9] or '-'} | cada {r[3]}d | Ult:{r[4] or '-'} | Prox:{r[5] or '-'} | {r[6]}")
             except Exception:
+                _db.session.rollback()
                 pass
 
             # Monitoring points (active)
@@ -1111,6 +1121,7 @@ def _build_cmms_context_real(app):
                         eq = f"[{m[7] or '-'}] {m[8] or '-'}"
                         ctx.append(f"  id:{m[0]} | {m[1] or '-'} | {m[2]} | {eq} | cada {m[3]}d | Ult:{m[4] or '-'} | Prox:{m[5] or '-'} | {m[6]}")
             except Exception:
+                _db.session.rollback()
                 pass
 
             # Recent lubrication executions (last 30) — needed for edit/delete
@@ -1133,6 +1144,7 @@ def _build_cmms_context_real(app):
                         com = f" — {x[8]}" if x[8] else ''
                         ctx.append(f"  exec_id:{x[0]} | {x[2] or f'pt:{x[1]}'} {x[3]} | {x[4]} | por:{x[5] or '-'}{qty}{flags}{com}")
             except Exception:
+                _db.session.rollback()
                 pass
 
             # Technicians
@@ -1195,19 +1207,21 @@ def _build_cmms_context_real(app):
                                     com = f" — {m[5][:120]}" if m[5] else ''
                                     ctx.append(f"    {icon} {m[1]}{target}{done}{com}")
             except Exception as _e:
+                _db.session.rollback()
                 ctx.append(f"(error seguimiento: {_e})")
 
             # Warehouse low stock
             try:
                 low = _db.session.execute(text("""
-                    SELECT code, name, current_stock, min_stock, unit FROM warehouse_items
-                    WHERE is_active = true AND current_stock <= min_stock ORDER BY name LIMIT 20
+                    SELECT code, name, stock, min_stock, unit FROM warehouse_items
+                    WHERE is_active = true AND stock <= min_stock ORDER BY name LIMIT 20
                 """)).fetchall()
                 if low:
                     ctx.append(f"\n=== STOCK BAJO ({len(low)}) ===")
                     for w in low:
                         ctx.append(f"  {w[0]} {w[1]} | Stock: {w[2]} {w[4] or ''} | Min: {w[3]}")
             except Exception:
+                _db.session.rollback()
                 pass
 
             # Failure recurrence
@@ -1228,6 +1242,7 @@ def _build_cmms_context_real(app):
                     for r in rec:
                         ctx.append(f"  {r[0]} ({r[1]}) en {r[2]} [{r[3]}] {r[4]} — {r[5]} OTs")
             except Exception:
+                _db.session.rollback()
                 pass
 
             # Equipment specs (key technical data)
@@ -1248,6 +1263,7 @@ def _build_cmms_context_real(app):
                             ctx.append(f"  {eq_label}:")
                         ctx.append(f"    {s[2]}: {s[3]} {s[4] or ''}")
             except Exception:
+                _db.session.rollback()
                 pass
 
             # Componentes por equipo (lista completa para que el LLM sepa qué existe)
@@ -1269,6 +1285,7 @@ def _build_cmms_context_real(app):
                             cur_eq = eq_lbl
                         ctx.append(f"    - {c[2]} > {c[3]} (comp_id={c[4]})")
             except Exception:
+                _db.session.rollback()
                 pass
 
             # Component specs (sin LIMIT — necesario para responder consultas técnicas)
@@ -1286,6 +1303,7 @@ def _build_cmms_context_real(app):
                     for s in cspecs:
                         ctx.append(f"  [{s[0]}] {s[1]}: {s[2]}={s[3]} {s[4] or ''}")
             except Exception:
+                _db.session.rollback()
                 pass
 
             # Document links
@@ -1298,6 +1316,7 @@ def _build_cmms_context_real(app):
                     for d in docs:
                         ctx.append(f"  [{d[0]} id:{d[1]}] {d[2]} ({d[4] or 'otro'}) — {d[3]}")
             except Exception:
+                _db.session.rollback()
                 pass
 
             # OTs per technician (workload)
@@ -1316,6 +1335,7 @@ def _build_cmms_context_real(app):
                     for w in workload:
                         ctx.append(f"  {w[0]}: {w[1]} OTs ({w[2]} en progreso, {w[3]} pendientes)")
             except Exception:
+                _db.session.rollback()
                 pass
 
             # KPI: corrective vs preventive ratio (only PLAN — exclude GENERAL/FUERA_PLAN noise)
@@ -1337,6 +1357,7 @@ def _build_cmms_context_real(app):
                     ctx.append(f"\n=== KPI MANTENIMIENTO (solo PLAN) ===")
                     ctx.append(f"  Correctivo: {corr} ({round(corr/total_mt*100)}%) | Preventivo: {prev} ({round(prev/total_mt*100)}%)")
             except Exception:
+                _db.session.rollback()
                 pass
 
             # Hammer batches state (FAPMETAL) — para responder "que lote esta en M1", etc.
@@ -1357,10 +1378,12 @@ def _build_cmms_context_real(app):
                         loc = state_label.get(r[1], r[1])
                         ctx.append(f"  {r[0]}: {loc} | {r[2]} martillos | rellenados acumulados: {r[3]}")
             except Exception:
+                _db.session.rollback()
                 pass
 
             _db.session.remove()
         except Exception as e:
+            _db.session.rollback()
             ctx.append(f"Error cargando datos: {e}")
             try:
                 _db.session.remove()
