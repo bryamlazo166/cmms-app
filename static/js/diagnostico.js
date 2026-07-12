@@ -24,6 +24,7 @@ async function loadDiagnostico() {
             ? `Mes en curso: KPIs parciales al dia ${m.dia_hoy} de ${DIAG.kpis_mes.dias_mes}, comparados con ${m.prev_label} completo. Benchmarks SMRP: cumplimiento >90%, proactivo >75%.`
             : `Indicadores de ${m.label} vs. ${m.prev_label}. Benchmarks SMRP: cumplimiento >90%, proactivo >75%.`;
         renderKpis();
+        renderProduccion();
         renderSemanas();
         renderConsolidado();
         renderTrend();
@@ -112,13 +113,67 @@ function renderKpis() {
 
     const dispCls = k.disponibilidad_pct >= 95 ? 'v-good' : (k.disponibilidad_pct >= 90 ? 'v-warn' : 'v-crit');
     el('kpiStrip2').innerHTML =
-        kpiCard('MTBF (h)', k.mtbf_h ?? '-', '', deltaTxt(k.mtbf_h, p.mtbf_h, 'h'), 'goToSlide(6)') +
-        kpiCard('MTTR (h)', k.mttr_h ?? '-', '', deltaTxt(k.mttr_h, p.mttr_h, 'h', true), 'goToSlide(6)') +
-        kpiCard('Disponibilidad', (k.disponibilidad_pct ?? '-') + '%', dispCls, deltaTxt(k.disponibilidad_pct, p.disponibilidad_pct, ' pts'), 'goToSlide(6)') +
-        kpiCard('Confiabilidad R(7d)', k.confiabilidad_pct != null ? k.confiabilidad_pct + '%' : '-', '', deltaTxt(k.confiabilidad_pct, p.confiabilidad_pct, ' pts'), 'goToSlide(6)');
+        kpiCard('MTBF (h)', k.mtbf_h ?? '-', '', deltaTxt(k.mtbf_h, p.mtbf_h, 'h'), 'goToSlide(7)') +
+        kpiCard('MTTR (h)', k.mttr_h ?? '-', '', deltaTxt(k.mttr_h, p.mttr_h, 'h', true), 'goToSlide(7)') +
+        kpiCard('Disponibilidad', (k.disponibilidad_pct ?? '-') + '%', dispCls, deltaTxt(k.disponibilidad_pct, p.disponibilidad_pct, ' pts'), 'goToSlide(7)') +
+        kpiCard('Confiabilidad R(7d)', k.confiabilidad_pct != null ? k.confiabilidad_pct + '%' : '-', '', deltaTxt(k.confiabilidad_pct, p.confiabilidad_pct, ' pts'), 'goToSlide(7)');
 }
 
-// ── S2: Indicadores por semana del mes ───────────────────────────────────
+// ── S2: Impacto en Produccion (TM y sacos de harina no producidos) ───────
+function renderProduccion() {
+    const pr = DIAG.produccion || {};
+    const slide = el('prodSlide');
+    if (!pr.disponible) {
+        if (slide) slide.querySelector('.kpi-strip').innerHTML =
+            kpiCard('Sin metas de produccion', '-', '', 'Registra metas en Produccion vs Mtto para calcular el impacto');
+        return;
+    }
+    el('prodTitle').textContent = `Impacto del mantenimiento en la produccion — ${DIAG.meta.label}`;
+    const deltaTons = deltaTxt(pr.tons_lost_mes, pr.tons_lost_prev, ' TM', true);
+    const pctCls = pr.pct_de_meta == null ? '' :
+        (pr.pct_de_meta <= 2 ? 'v-good' : (pr.pct_de_meta <= 5 ? 'v-warn' : 'v-crit'));
+    el('prodStripKpis').innerHTML =
+        kpiCard('TM no producidas (mes)', pr.tons_lost_mes, pr.tons_lost_mes > pr.tons_lost_prev ? 'v-crit' : 'v-good', deltaTons) +
+        kpiCard('Sacos de 50 kg (mes)', pr.sacks_lost_mes.toLocaleString(), '', 'harina que no llego a ensacarse') +
+        kpiCard('% de la meta mensual', pr.pct_de_meta != null ? pr.pct_de_meta + '%' : '-', pctCls, `meta: ${pr.meta_mes_tons} TM`) +
+        kpiCard('TM perdidas 12 meses', pr.tons_lost_12m, '', `${pr.sacks_lost_12m.toLocaleString()} sacos acumulados`);
+
+    const s = pr.serie || [];
+    chart('prodSerieChart').setOption({
+        backgroundColor: 'transparent',
+        title: { text: 'TM no producidas por mes', textStyle: { color: '#9ab0cb', fontSize: 13 } },
+        tooltip: { trigger: 'axis', formatter: ps => {
+            const it = s[ps[0].dataIndex];
+            return `<b>${it.month}</b><br/>TM perdidas: ${it.tons_lost}<br/>Sacos (50kg): ${it.sacks_lost.toLocaleString()}`;
+        } },
+        grid: { left: 55, right: 20, top: 40, bottom: 30 },
+        xAxis: { type: 'category', data: s.map(x => x.month), axisLabel: { color: '#9ab0cb', fontSize: 10 } },
+        yAxis: { type: 'value', name: 'TM', axisLabel: { color: '#9ab0cb' }, splitLine: { lineStyle: { color: '#233246' } } },
+        series: [{
+            name: 'TM perdidas', type: 'bar', data: s.map(x => x.tons_lost),
+            itemStyle: { color: '#FF9F0A', borderRadius: [4, 4, 0, 0] }, barMaxWidth: 30,
+            label: { show: true, position: 'top', color: '#d5e2f5', fontSize: 9 },
+        }],
+    });
+
+    const te = (pr.top_equipos || []).slice().reverse();
+    chart('prodEquiposChart').setOption({
+        backgroundColor: 'transparent',
+        title: { text: 'Top equipos por TM perdidas (mes)', textStyle: { color: '#9ab0cb', fontSize: 13 } },
+        tooltip: { trigger: 'axis', axisPointer: { type: 'shadow' },
+            formatter: ps => { const t = te[ps[0].dataIndex]; return `<b>${t.equipo}</b><br/>${t.tons_lost} TM · ${t.sacks_lost.toLocaleString()} sacos`; } },
+        grid: { left: 170, right: 50, top: 40, bottom: 30 },
+        xAxis: { type: 'value', axisLabel: { color: '#9ab0cb' }, splitLine: { lineStyle: { color: '#233246' } } },
+        yAxis: { type: 'category', data: te.map(t => t.equipo), axisLabel: { color: '#d5e2f5', width: 155, overflow: 'truncate', fontSize: 10 } },
+        series: [{
+            name: 'TM', type: 'bar', data: te.map(t => t.tons_lost),
+            itemStyle: { color: '#FF453A' },
+            label: { show: true, position: 'right', color: '#d5e2f5', fontSize: 10, formatter: '{c} TM' },
+        }],
+    });
+}
+
+// ── S3: Indicadores por semana del mes ───────────────────────────────────
 function renderSemanas() {
     const s = DIAG.semanas || [];
     el('semTitle').textContent = `Indicadores por semana — ${DIAG.meta.label}`;
@@ -348,6 +403,35 @@ function relKpiStrip(k) {
         kpiCard('MTBF (h)', k.mtbf ?? '-', '') +
         kpiCard('MTTR (h)', k.mttr ?? '-', '');
 }
+// Evolucion mensual del alcance visible en el drill-down (planta/area/equipo)
+async function loadEvolucion(params, etiqueta) {
+    try {
+        const q = new URLSearchParams({ month: DIAG.meta.month, months: 12, ...(params || {}) });
+        const res = await fetch(`/api/diagnostico/evolucion?${q}`);
+        const data = await safeJson(res);
+        if (data.error) { console.error(data.error); return; }
+        const s = data.serie || [];
+        el('relEvoTitle').textContent = `Evolucion mensual — ${data.alcance || etiqueta || 'Planta completa'}`;
+        chart('relEvoChart').setOption({
+            backgroundColor: 'transparent',
+            tooltip: { trigger: 'axis' },
+            legend: { textStyle: { color: '#9ab0cb' }, top: 0, right: 0 },
+            grid: { left: 50, right: 55, top: 34, bottom: 28 },
+            xAxis: { type: 'category', data: s.map(x => x.month + (x.en_curso ? '*' : '')), axisLabel: { color: '#9ab0cb', fontSize: 10 } },
+            yAxis: [
+                { type: 'value', name: '% / h', axisLabel: { color: '#9ab0cb' }, splitLine: { lineStyle: { color: '#233246' } } },
+                { type: 'value', name: 'fallas / TM', axisLabel: { color: '#9ab0cb' }, splitLine: { show: false } },
+            ],
+            series: [
+                { name: 'Disponibilidad %', type: 'line', data: s.map(x => x.disponibilidad_pct), itemStyle: { color: '#30D158' }, lineStyle: { width: 3 }, areaStyle: { opacity: .07 } },
+                { name: 'MTTR h', type: 'line', data: s.map(x => x.mttr_h), itemStyle: { color: '#FF9F0A' }, connectNulls: true },
+                { name: 'Fallas', type: 'bar', yAxisIndex: 1, data: s.map(x => x.fallas), itemStyle: { color: '#FF453A', opacity: .5 }, barMaxWidth: 18 },
+                { name: 'TM no producidas', type: 'line', yAxisIndex: 1, data: s.map(x => x.tons_lost), itemStyle: { color: '#5AC8FA' }, lineStyle: { type: 'dashed' }, connectNulls: true },
+            ],
+        }, true);
+    } catch (e) { console.error('loadEvolucion:', e); }
+}
+
 async function loadReliability(level, id, name) {
     try {
         closeDetail('relDetail');
@@ -370,6 +454,7 @@ async function loadReliability(level, id, name) {
                 const a = areas[idx];
                 loadReliability('equipments', a.area_id, a.area_name);
             });
+            loadEvolucion({}, 'Planta completa');
         } else if (level === 'equipments') {
             REL.level = 'equipments'; REL.areaId = id; REL.areaName = name;
             const res = await fetch(`/api/indicators/area/${id}/equipments?${relParams()}`);
@@ -389,6 +474,7 @@ async function loadReliability(level, id, name) {
                 const e = eqs[idx];
                 await relFailures(e.equipment_id, e.equipment_tag || e.equipment_name);
             });
+            loadEvolucion({ area_id: id }, name);
         }
     } catch (e) { console.error('loadReliability:', e); }
 }
@@ -419,6 +505,7 @@ function relChartBars(names, rows, onClick) {
 }
 
 async function relFailures(equipId, label) {
+    loadEvolucion({ equipment_id: equipId }, label);
     const res = await fetch(`/api/indicators/equipment/${equipId}/failures?${relParams()}`);
     const data = await res.json();
     const ots = data.all_ots || [];

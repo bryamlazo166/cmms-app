@@ -128,7 +128,18 @@
             <div class="narrativa" id="narrativaBox"></div>
         </div>
 
-        <!-- S2: Indicadores por semana del mes -->
+        <!-- S2: Impacto en Produccion -->
+        <div class="slide" data-slide id="prodSlide">
+            <h2><i class="fas fa-industry"></i> <span id="prodTitle">Impacto del mantenimiento en la produccion</span></h2>
+            <div class="method">Harina que se dejo de producir por horas de parada de mantenimiento — misma metodologia del modulo Produccion vs Mtto (TM/h segun rendimiento y horas operativas de la meta de cada area). 1 saco = 50 kg.</div>
+            <div class="kpi-strip" id="prodStripKpis"></div>
+            <div style="display:grid;grid-template-columns:1.2fr 1fr;gap:14px;">
+                <div class="chart-box" id="prodSerieChart" style="height:320px;"></div>
+                <div class="chart-box" id="prodEquiposChart" style="height:320px;"></div>
+            </div>
+        </div>
+
+        <!-- S3: Indicadores por semana del mes -->
         <div class="slide" data-slide>
             <h2><i class="fas fa-calendar-week"></i> <span id="semTitle">Indicadores por semana del mes</span></h2>
             <div class="method">Desglose semanal (Sem 1 = dias 1-7, Sem 2 = 8-14, ...). Las semanas futuras del mes en curso aparecen vacias.</div>
@@ -188,7 +199,9 @@
             <div class="method">MTBF · MTTR · Disponibilidad · Confiabilidad del periodo seleccionado, con la misma metodologia del modulo Indicadores. <span class="hint">Clic en una barra: Area → Equipos → Fallas.</span></div>
             <div class="breadcrumb" id="relBreadcrumb"></div>
             <div class="kpi-strip" id="relKpis" style="grid-template-columns:repeat(4,1fr);"></div>
-            <div class="chart-box" id="relChart"></div>
+            <div class="chart-box" id="relChart" style="height:330px;"></div>
+            <div class="method" style="margin:12px 0 4px;color:#5AC8FA;" id="relEvoTitle">Evolucion mensual — Planta completa</div>
+            <div class="chart-box" id="relEvoChart" style="height:280px;"></div>
             <div class="detail-panel" id="relDetail">
                 <div class="dp-head"><b id="relDetailTitle">-</b><button class="dp-close" onclick="closeDetail('relDetail')"><i class="fas fa-xmark"></i> cerrar</button></div>
                 <div class="twrap"><table class="diag" id="relDetailTable"></table></div>

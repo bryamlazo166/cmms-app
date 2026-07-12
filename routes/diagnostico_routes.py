@@ -16,10 +16,12 @@ from flask import jsonify, render_template, request
 
 def register_diagnostico_routes(app, db, logger):
     from models import (
-        WorkOrder, Equipment,
+        WorkOrder, Equipment, Line, ProductionGoal,
         LubricationPoint, InspectionRoute, MonitoringPoint,
         RotativeAsset, WarehouseItem, Technician, Shutdown,
     )
+
+    SACK_KG = 50  # 1 saco de harina = 50 kg (igual que el modulo Produccion)
 
     # ── Helpers de fechas (todas las fechas son strings ISO) ─────────────
 
@@ -56,6 +58,44 @@ def register_diagnostico_routes(app, db, logger):
             cur = _prev_month(cur)
         out.reverse()
         return out
+
+    # ── Produccion: TM/h por area segun metas (modulo Produccion vs Mtto) ─
+
+    def _goals_por_area():
+        """{area_id: [(period, goal), ...] ordenado}."""
+        out = {}
+        for g in ProductionGoal.query.all():
+            out.setdefault(g.area_id, []).append((g.goal_period, g))
+        for k in out:
+            out[k].sort(key=lambda x: x[0])
+        return out
+
+    def _goal_para(goals_area, ym):
+        """Meta vigente para el mes: la ultima con period <= ym, o la primera."""
+        if not goals_area:
+            return None
+        anteriores = [g for (p, g) in goals_area if p <= ym]
+        return anteriores[-1] if anteriores else goals_area[0][1]
+
+    def _tons_per_hour(goal):
+        oh = goal.operating_hours_month or 720.0
+        return (goal.monthly_avg_yield_tons / oh) if oh > 0 else 0.0
+
+    def _area_resolver():
+        line_map = {l.id: l for l in Line.query.all()}
+        eq_map = {e.id: e for e in Equipment.query.all()}
+
+        def resolver(ot):
+            if ot.area_id:
+                return ot.area_id
+            if ot.line_id and ot.line_id in line_map:
+                return line_map[ot.line_id].area_id
+            if ot.equipment_id and ot.equipment_id in eq_map:
+                e = eq_map[ot.equipment_id]
+                if e.line_id and e.line_id in line_map:
+                    return line_map[e.line_id].area_id
+            return None
+        return resolver, eq_map
 
     # ── Datos del diagnostico ─────────────────────────────────────────────
 
@@ -315,6 +355,85 @@ def register_diagnostico_routes(app, db, logger):
                                    and not (o.report_url or '').strip()]),
             }
 
+            # ── Impacto en produccion: TM y sacos no producidos ──────────
+            # Misma metodologia del modulo Produccion vs Mtto:
+            # tons_per_hour = rendimiento mensual / horas operativas de la
+            # meta del area; TM perdidas = downtime del area x tons_per_hour.
+            produccion = {'disponible': False}
+            try:
+                goals_map = _goals_por_area()
+                resolver_area, _eqm = _area_resolver()
+
+                def tons_mes(ym, acumular_equipos=None):
+                    total_tons = 0.0
+                    por_area = {}
+                    for o in closed:
+                        if _ot_close_month(o) != ym:
+                            continue
+                        dtx = _downtime(o)
+                        if dtx <= 0:
+                            continue
+                        aid = resolver_area(o)
+                        if not aid or aid not in goals_map:
+                            continue
+                        goal = _goal_para(goals_map.get(aid), ym)
+                        if not goal:
+                            continue
+                        tph = _tons_per_hour(goal)
+                        tons = dtx * tph
+                        total_tons += tons
+                        por_area[aid] = por_area.get(aid, 0.0) + tons
+                        if acumular_equipos is not None and o.equipment_id:
+                            acumular_equipos[o.equipment_id] = (
+                                acumular_equipos.get(o.equipment_id, 0.0) + tons)
+                    return total_tons, por_area
+
+                if goals_map:
+                    eq_tons = {}
+                    tons_sel, tons_area_sel = tons_mes(month, eq_tons)
+                    tons_prev, _pa = tons_mes(prev)
+                    serie = []
+                    for ym in _months_back(month, 12):
+                        t, _ = tons_mes(ym)
+                        serie.append({'month': ym, 'tons_lost': round(t, 1),
+                                      'sacks_lost': int(t * 1000 / SACK_KG)})
+                    meta_total = 0.0
+                    for aid in goals_map:
+                        g = _goal_para(goals_map[aid], month)
+                        if g and g.monthly_target_tons:
+                            meta_total += float(g.monthly_target_tons)
+
+                    from models import Area as _Area
+                    area_names = {a.id: a.name for a in _Area.query.all()}
+                    top_eq = sorted(eq_tons.items(), key=lambda x: -x[1])[:8]
+                    produccion = {
+                        'disponible': True,
+                        'tons_lost_mes': round(tons_sel, 1),
+                        'sacks_lost_mes': int(tons_sel * 1000 / SACK_KG),
+                        'tons_lost_prev': round(tons_prev, 1),
+                        'meta_mes_tons': round(meta_total, 1),
+                        'pct_de_meta': (round(tons_sel / meta_total * 100, 2)
+                                        if meta_total else None),
+                        'tons_lost_12m': round(sum(s['tons_lost'] for s in serie), 1),
+                        'sacks_lost_12m': int(sum(s['tons_lost'] for s in serie) * 1000 / SACK_KG),
+                        'serie': serie,
+                        'por_area': sorted([
+                            {'area': area_names.get(aid, f'Area {aid}'),
+                             'tons_lost': round(t, 1),
+                             'sacks_lost': int(t * 1000 / SACK_KG)}
+                            for aid, t in tons_area_sel.items()], key=lambda x: -x['tons_lost']),
+                        'top_equipos': [
+                            {'equipo': (f"[{eq_map[eid].tag}] {eq_map[eid].name}"
+                                        if eid in eq_map and eq_map[eid].tag
+                                        else (eq_map[eid].name if eid in eq_map else f'Eq {eid}')),
+                             'tons_lost': round(t, 1),
+                             'sacks_lost': int(t * 1000 / SACK_KG)}
+                            for eid, t in top_eq],
+                        'sack_kg': SACK_KG,
+                    }
+            except Exception as _pe:
+                logger.warning(f"produccion impacto skipped: {_pe}")
+
             # ── Programacion: resto del mes en curso + mes siguiente ─────
             tecnicos = Technician.query.filter_by(is_active=True).count()
 
@@ -440,11 +559,89 @@ def register_diagnostico_routes(app, db, logger):
                 'predictivo': predictivo,
                 'almacen': almacen,
                 'informes': informes,
+                'produccion': produccion,
                 'programa_actual': programa_actual,
                 'programa': programa,
             })
         except Exception as e:
             logger.exception('diagnostico_data error')
+            return jsonify({'error': str(e)}), 500
+
+    # ── Evolucion mensual por alcance (planta / area / equipo) ────────────
+
+    @app.route('/api/diagnostico/evolucion', methods=['GET'])
+    def diagnostico_evolucion():
+        """Indicadores mes a mes para el alcance elegido (drill-down):
+        sin filtro = planta; ?area_id=N = un area; ?equipment_id=N = un
+        equipo. Incluye TM no producidas si el area tiene meta de produccion.
+        """
+        try:
+            hoy = dt.date.today()
+            mes_actual = hoy.strftime('%Y-%m')
+            month = (request.args.get('month') or mes_actual)[:7]
+            n = min(request.args.get('months', default=12, type=int), 24)
+            area_id = request.args.get('area_id', type=int)
+            equipment_id = request.args.get('equipment_id', type=int)
+
+            resolver_area, eq_map = _area_resolver()
+            goals_map = _goals_por_area()
+
+            closed = [o for o in WorkOrder.query.filter(WorkOrder.status == 'Cerrada').all()]
+
+            def en_alcance(o):
+                if equipment_id:
+                    return o.equipment_id == equipment_id
+                if area_id:
+                    return resolver_area(o) == area_id
+                return True
+
+            serie = []
+            for ym in _months_back(month, n):
+                mes = [o for o in closed if _ot_close_month(o) == ym and en_alcance(o)]
+                corr = [o for o in mes if _mtype(o) == 'correctivo']
+                dt_total = sum(_downtime(o) for o in mes)
+
+                dias_m = calendar.monthrange(int(ym[:4]), int(ym[5:7]))[1]
+                dias_ef = hoy.day if ym == mes_actual else dias_m
+                horas = max(dias_ef * 24, 1)
+                uptime = max(horas - dt_total, 0)
+                n_f = len(corr)
+
+                tons = 0.0
+                for o in mes:
+                    dtx = _downtime(o)
+                    if dtx <= 0:
+                        continue
+                    aid = resolver_area(o)
+                    if aid and aid in goals_map:
+                        g = _goal_para(goals_map[aid], ym)
+                        if g:
+                            tons += dtx * _tons_per_hour(g)
+
+                serie.append({
+                    'month': ym,
+                    'en_curso': ym == mes_actual,
+                    'fallas': n_f,
+                    'ots_cerradas': len(mes),
+                    'downtime_h': round(dt_total, 1),
+                    'disponibilidad_pct': round(uptime / horas * 100, 2),
+                    'mtbf_h': round(uptime / n_f, 1) if n_f else None,
+                    'mttr_h': round(dt_total / n_f, 1) if n_f and dt_total else None,
+                    'tons_lost': round(tons, 1),
+                })
+
+            etiqueta = 'Planta completa'
+            if equipment_id and equipment_id in eq_map:
+                e = eq_map[equipment_id]
+                etiqueta = f"[{e.tag}] {e.name}" if e.tag else e.name
+            elif area_id:
+                from models import Area as _Area
+                a = _Area.query.get(area_id)
+                etiqueta = a.name if a else f'Area {area_id}'
+
+            return jsonify({'alcance': etiqueta, 'serie': serie})
+        except Exception as e:
+            logger.exception('diagnostico_evolucion error')
             return jsonify({'error': str(e)}), 500
 
     # ── Drill-down: OTs detras de un valor del grafico ────────────────────
@@ -560,6 +757,18 @@ def register_diagnostico_routes(app, db, logger):
                            f"{alm.get('quiebres')} quiebres")
             inf = data.get('informes', {})
             resumen.append(f"INFORMES PROVEEDOR: {inf.get('pendientes')}/{inf.get('requeridos')} pendientes")
+            prod = data.get('produccion') or {}
+            if prod.get('disponible'):
+                resumen.append(
+                    f"IMPACTO EN PRODUCCION: el downtime del mes dejo de producir "
+                    f"{prod.get('tons_lost_mes')} TM de harina ({prod.get('sacks_lost_mes')} sacos de 50kg)"
+                    + (f", equivalente al {prod.get('pct_de_meta')}% de la meta mensual "
+                       f"({prod.get('meta_mes_tons')} TM)" if prod.get('pct_de_meta') is not None else "")
+                    + f". Mes anterior: {prod.get('tons_lost_prev')} TM. "
+                    f"Acumulado 12 meses: {prod.get('tons_lost_12m')} TM "
+                    f"({prod.get('sacks_lost_12m')} sacos). Top equipos por TM perdidas: "
+                    + "; ".join(f"{t['equipo']}: {t['tons_lost']} TM"
+                                for t in (prod.get('top_equipos') or [])[:3]))
 
             pa = data.get('programa_actual')
             if pa:

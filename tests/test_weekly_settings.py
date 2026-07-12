@@ -135,6 +135,60 @@ def test_diagnostico_data(auth_admin):
     assert len(prog['rutinas_semana']['lubricacion']) == 5  # 5 semanas del mes
 
 
+def test_diagnostico_produccion_y_evolucion(auth_admin, app):
+    """Impacto en produccion (TM/sacos 50kg) y evolucion mensual por alcance."""
+    import datetime as dt
+    with app.app_context():
+        from database import db
+        from models import Area, Line, Equipment, ProductionGoal
+        area = Area(name='AREA PROD TEST')
+        db.session.add(area); db.session.flush()
+        line = Line(name='LINEA PROD TEST', area_id=area.id)
+        db.session.add(line); db.session.flush()
+        eq = Equipment(name='EQUIPO PROD TEST', tag='EQ-PROD', line_id=line.id)
+        db.session.add(eq); db.session.flush()
+        mes = dt.date.today().strftime('%Y-%m')
+        # Meta: 720 TM/mes en 720h -> 1 TM/h
+        db.session.add(ProductionGoal(goal_period=mes, area_id=area.id,
+                                      monthly_avg_yield_tons=720.0,
+                                      monthly_target_tons=720.0,
+                                      operating_hours_month=720.0))
+        db.session.commit()
+        eq_id, area_id = eq.id, area.id
+
+    # Falla con 10h de parada => 10 TM = 200 sacos de 50kg
+    hoy = dt.date.today().isoformat()
+    auth_admin.post('/api/work-orders', data=json.dumps({
+        'description': 'Parada prod test', 'maintenance_type': 'Correctivo',
+        'status': 'Cerrada', 'equipment_id': eq_id, 'real_end_date': hoy,
+        'caused_downtime': True, 'downtime_hours': 10.0,
+    }), content_type='application/json')
+
+    mes = dt.date.today().strftime('%Y-%m')
+    r = auth_admin.get(f'/api/diagnostico/data?month={mes}')
+    prod = r.json['produccion']
+    assert prod['disponible'] is True
+    assert prod['tons_lost_mes'] >= 10.0
+    assert prod['sacks_lost_mes'] >= 200
+    assert prod['sack_kg'] == 50
+    assert len(prod['serie']) == 12
+
+    # Evolucion por equipo
+    r2 = auth_admin.get(f'/api/diagnostico/evolucion?equipment_id={eq_id}&month={mes}')
+    assert r2.status_code == 200
+    serie = r2.json['serie']
+    assert len(serie) == 12
+    ult = serie[-1]
+    assert ult['fallas'] >= 1 and ult['downtime_h'] >= 10.0
+    assert ult['tons_lost'] >= 10.0
+
+    # Evolucion por area y planta
+    r3 = auth_admin.get(f'/api/diagnostico/evolucion?area_id={area_id}&month={mes}')
+    assert r3.json['serie'][-1]['fallas'] >= 1
+    r4 = auth_admin.get(f'/api/diagnostico/evolucion?month={mes}')
+    assert r4.json['alcance'] == 'Planta completa'
+
+
 def test_diagnostico_semanas(auth_admin):
     """El diagnostico incluye indicadores por semana del mes."""
     import datetime as dt
