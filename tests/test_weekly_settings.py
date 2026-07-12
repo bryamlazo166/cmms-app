@@ -188,6 +188,23 @@ def test_diagnostico_produccion_y_evolucion(auth_admin, app):
     r4 = auth_admin.get(f'/api/diagnostico/evolucion?month={mes}')
     assert r4.json['alcance'] == 'Planta completa'
 
+    # Metas y rendimientos por area (lamina de produccion)
+    metas = prod['metas']
+    m = next(x for x in metas if x['area'] == 'AREA PROD TEST')
+    assert m['meta_tons'] == 720.0 and m['tons_por_hora'] == 1.0
+    assert m['tons_lost'] >= 10.0 and m['sacks_lost'] >= 200
+
+    # Top equipos trae equipment_id para el drill-down
+    top = prod['top_equipos'][0]
+    assert top['equipment_id'] == eq_id
+
+    # Drill-down: OTs con paro del equipo, con TM y sacos por OT
+    r5 = auth_admin.get(f'/api/diagnostico/ots-detail?month={mes}&window=mes'
+                        f'&tipo=todas&con_downtime=1&tons=1&equipment_id={eq_id}')
+    assert r5.status_code == 200 and r5.json['total'] >= 1
+    fila = r5.json['rows'][0]
+    assert fila['tons_lost'] >= 10.0 and fila['sacks_lost'] >= 200
+
 
 def test_diagnostico_semanas(auth_admin):
     """El diagnostico incluye indicadores por semana del mes."""
@@ -277,6 +294,59 @@ def test_diagnostico_ots_detail(auth_admin):
     assert r.status_code == 200
     assert r.json['total'] >= 1
     assert any(row['modo'] == 'MODO DRILL TEST' for row in r.json['rows'])
+
+
+def test_diagnostico_ots_detail_filtros_semana_tipo(auth_admin):
+    """Filtro dinamico: por tipo de OT, rango semanal, downtime y programadas."""
+    import datetime as dt
+    mes = dt.date.today().strftime('%Y-%m')
+    d3, d5 = f'{mes}-03', f'{mes}-05'
+    # Correctiva con paro y mejora, cerradas en la semana 1; preventivo programado
+    auth_admin.post('/api/work-orders', data=json.dumps({
+        'description': 'Correctiva sem1 filtro', 'maintenance_type': 'Correctivo',
+        'status': 'Cerrada', 'real_end_date': d3,
+        'caused_downtime': True, 'downtime_hours': 4.0,
+    }), content_type='application/json')
+    auth_admin.post('/api/work-orders', data=json.dumps({
+        'description': 'Mejora sem1 filtro', 'maintenance_type': 'Mejora',
+        'status': 'Cerrada', 'real_end_date': d3,
+    }), content_type='application/json')
+    auth_admin.post('/api/work-orders', data=json.dumps({
+        'description': 'Preventivo programado filtro', 'maintenance_type': 'Preventivo',
+        'status': 'Programada', 'scheduled_date': d5,
+    }), content_type='application/json')
+
+    base = f'/api/diagnostico/ots-detail?month={mes}&desde={mes}-01&hasta={mes}-07'
+    # Solo mejoras de la semana 1
+    r = auth_admin.get(base + '&tipo=mejora')
+    assert r.status_code == 200 and r.json['total'] >= 1
+    assert all(row['tipo'] == 'Mejora' for row in r.json['rows'])
+    # Solo OTs que causaron downtime en la semana
+    r2 = auth_admin.get(base + '&tipo=todas&con_downtime=1')
+    assert r2.json['total'] >= 1
+    assert all(row['downtime_h'] > 0 for row in r2.json['rows'])
+    # OTs programadas en la semana (drill de cumplimiento): incluye la abierta
+    r3 = auth_admin.get(base + '&tipo=todas&programadas=1')
+    assert any(row['descripcion'].startswith('Preventivo programado')
+               for row in r3.json['rows'])
+    # Por tipo y mes completo (drill de la tendencia)
+    r4 = auth_admin.get(f'/api/diagnostico/ots-detail?month={mes}&window=mes&tipo=correctivo')
+    assert all(row['tipo'] == 'Correctivo' for row in r4.json['rows'])
+
+
+def test_diagnostico_informe_html(auth_admin):
+    """El informe HTML autocontenido se genera con la plantilla ejecutiva."""
+    import datetime as dt
+    mes = dt.date.today().strftime('%Y-%m')
+    r = auth_admin.get(f'/api/diagnostico/informe?month={mes}')
+    assert r.status_code == 200
+    html = r.data.decode('utf-8')
+    assert 'DIAGNOSTICO DE GESTION DE MANTENIMIENTO' in html
+    assert 'Cuadro consolidado de indicadores' in html
+    assert 'Content-Disposition' not in r.headers  # vista inline por defecto
+    # Con download=1 se descarga como archivo con nombre del periodo
+    r2 = auth_admin.get(f'/api/diagnostico/informe?month={mes}&download=1')
+    assert 'Diagnostico_Gestion_Mantenimiento' in r2.headers.get('Content-Disposition', '')
 
 
 def test_diagnostico_narrativa_sin_api_key(auth_admin):

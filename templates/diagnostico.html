@@ -114,6 +114,7 @@
                 <button class="btn primary" onclick="loadDiagnostico()"><i class="fas fa-sync"></i> Actualizar</button>
                 <button class="btn ai" onclick="generarNarrativa()" title="Genera el analisis ejecutivo con IA (DeepSeek) usando los datos cargados"><i class="fas fa-wand-magic-sparkles"></i> Narrativa IA</button>
                 <button class="btn present" onclick="togglePresent()" title="Pantalla completa, avanza con las flechas del teclado"><i class="fas fa-display"></i> Presentar</button>
+                <button class="btn back" onclick="descargarInforme()" title="Descarga el documento 'Diagnostico de Gestion de Mantenimiento' del periodo elegido: HTML autocontenido que se abre sin conexion (si ya generaste la Narrativa IA, va incluida)"><i class="fas fa-file-arrow-down"></i> Informe</button>
                 <button class="btn back" onclick="window.print()"><i class="fas fa-file-pdf"></i> PDF</button>
             </div>
         </div>
@@ -131,23 +132,33 @@
         <!-- S2: Impacto en Produccion -->
         <div class="slide" data-slide id="prodSlide">
             <h2><i class="fas fa-industry"></i> <span id="prodTitle">Impacto del mantenimiento en la produccion</span></h2>
-            <div class="method">Harina que se dejo de producir por horas de parada de mantenimiento — misma metodologia del modulo Produccion vs Mtto (TM/h segun rendimiento y horas operativas de la meta de cada area). 1 saco = 50 kg.</div>
+            <div class="method">Harina que se dejo de producir por horas de parada de mantenimiento — misma metodologia del modulo Produccion vs Mtto (TM/h segun rendimiento y horas operativas de la meta de cada area). 1 saco = 50 kg. <span class="hint">Clic en un equipo del grafico para ver las OTs que causaron esa perdida.</span></div>
             <div class="kpi-strip" id="prodStripKpis"></div>
             <div style="display:grid;grid-template-columns:1.2fr 1fr;gap:14px;">
                 <div class="chart-box" id="prodSerieChart" style="height:320px;"></div>
                 <div class="chart-box" id="prodEquiposChart" style="height:320px;"></div>
+            </div>
+            <h3 style="color:#FF9F0A;font-size:.95rem;margin:14px 0 6px;">Metas y rendimientos vigentes por area</h3>
+            <div class="twrap"><table class="diag" id="prodMetasTable"></table></div>
+            <div class="detail-panel" id="prodDetail">
+                <div class="dp-head"><b id="prodDetailTitle">-</b><button class="dp-close" onclick="closeDetail('prodDetail')"><i class="fas fa-xmark"></i> cerrar</button></div>
+                <div class="twrap"><table class="diag" id="prodDetailTable"></table></div>
             </div>
         </div>
 
         <!-- S3: Indicadores por semana del mes -->
         <div class="slide" data-slide>
             <h2><i class="fas fa-calendar-week"></i> <span id="semTitle">Indicadores por semana del mes</span></h2>
-            <div class="method">Desglose semanal (Sem 1 = dias 1-7, Sem 2 = 8-14, ...). Las semanas futuras del mes en curso aparecen vacias.</div>
+            <div class="method">Desglose semanal (Sem 1 = dias 1-7, Sem 2 = 8-14, ...). Las semanas futuras del mes en curso aparecen vacias. <span class="hint">Filtro dinamico: clic en cualquier barra (correctivas, proactivas, mejoras, downtime o cumplimiento) para ver abajo las OTs de esa semana.</span></div>
             <div style="display:grid;grid-template-columns:1fr 1fr;gap:14px;">
                 <div class="chart-box" id="semMixChart" style="height:320px;"></div>
                 <div class="chart-box" id="semKpiChart" style="height:320px;"></div>
             </div>
-            <div class="twrap"><table class="diag" id="semTable"></table></div>
+            <div class="detail-panel" id="semDetail">
+                <div class="dp-head"><b id="semDetailTitle">-</b><button class="dp-close" onclick="closeDetail('semDetail')"><i class="fas fa-xmark"></i> cerrar</button></div>
+                <div class="twrap"><table class="diag" id="semDetailTable"></table></div>
+            </div>
+            <div class="twrap" style="margin-top:12px;"><table class="diag" id="semTable"></table></div>
         </div>
 
         <!-- S3: Cuadro consolidado 12 meses -->
@@ -160,10 +171,14 @@
         <!-- S3: Tendencia grafica -->
         <div class="slide" data-slide>
             <h2><i class="fas fa-chart-line"></i> Tendencia grafica</h2>
-            <div class="method">OTs por tipo y % proactivo (izquierda) · MTBF, MTTR y Disponibilidad (derecha)</div>
+            <div class="method">OTs por tipo y % proactivo (izquierda) · MTBF, MTTR y Disponibilidad (derecha). <span class="hint">Clic en una barra o punto: ver abajo las OTs de ese tipo y mes (en el grafico derecho, las OTs que causaron el downtime del mes).</span></div>
             <div style="display:grid;grid-template-columns:1fr 1fr;gap:14px;">
                 <div class="chart-box" id="trendChart"></div>
                 <div class="chart-box" id="trendKpiChart"></div>
+            </div>
+            <div class="detail-panel" id="trendDetail">
+                <div class="dp-head"><b id="trendDetailTitle">-</b><button class="dp-close" onclick="closeDetail('trendDetail')"><i class="fas fa-xmark"></i> cerrar</button></div>
+                <div class="twrap"><table class="diag" id="trendDetailTable"></table></div>
             </div>
         </div>
 

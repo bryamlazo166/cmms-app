@@ -103,12 +103,13 @@ def register_diagnostico_routes(app, db, logger):
     def diagnostico_page():
         return render_template('diagnostico.html')
 
-    @app.route('/api/diagnostico/data', methods=['GET'])
-    def diagnostico_data():
+    def _build_diagnostico(month):
+        """Arma el dict completo del diagnostico del mes. Lo usan el API
+        JSON (/api/diagnostico/data) y el informe HTML descargable."""
         try:
             hoy = dt.date.today()
             mes_actual = hoy.strftime('%Y-%m')
-            month = (request.args.get('month') or mes_actual)[:7]
+            month = (month or mes_actual)[:7]
             prev = _prev_month(month)
             nxt = _next_month(month)
 
@@ -406,6 +407,30 @@ def register_diagnostico_routes(app, db, logger):
                     from models import Area as _Area
                     area_names = {a.id: a.name for a in _Area.query.all()}
                     top_eq = sorted(eq_tons.items(), key=lambda x: -x[1])[:8]
+
+                    # Metas y rendimientos vigentes por area (para la lamina
+                    # de produccion: de donde sale cada TM/h)
+                    metas = []
+                    for aid, lst in goals_map.items():
+                        g = _goal_para(lst, month)
+                        if not g:
+                            continue
+                        t_lost = tons_area_sel.get(aid, 0.0)
+                        meta_a = float(g.monthly_target_tons or 0)
+                        metas.append({
+                            'area': area_names.get(aid, f'Area {aid}'),
+                            'periodo_meta': g.goal_period,
+                            'meta_tons': round(meta_a, 1),
+                            'rendimiento_tons': round(float(g.monthly_avg_yield_tons or 0), 1),
+                            'horas_mes': round(float(g.operating_hours_month or 720.0), 0),
+                            'tons_por_hora': round(_tons_per_hour(g), 3),
+                            'tons_lost': round(t_lost, 1),
+                            'sacks_lost': int(t_lost * 1000 / SACK_KG),
+                            'pct_de_su_meta': (round(t_lost / meta_a * 100, 2)
+                                               if meta_a else None),
+                        })
+                    metas.sort(key=lambda x: (-x['tons_lost'], x['area']))
+
                     produccion = {
                         'disponible': True,
                         'tons_lost_mes': round(tons_sel, 1),
@@ -426,9 +451,11 @@ def register_diagnostico_routes(app, db, logger):
                             {'equipo': (f"[{eq_map[eid].tag}] {eq_map[eid].name}"
                                         if eid in eq_map and eq_map[eid].tag
                                         else (eq_map[eid].name if eid in eq_map else f'Eq {eid}')),
+                             'equipment_id': eid,
                              'tons_lost': round(t, 1),
                              'sacks_lost': int(t * 1000 / SACK_KG)}
                             for eid, t in top_eq],
+                        'metas': metas,
                         'sack_kg': SACK_KG,
                     }
             except Exception as _pe:
@@ -539,7 +566,7 @@ def register_diagnostico_routes(app, db, logger):
                 pass
             programa['paradas_proximas'] = paradas_prox[:10]
 
-            return jsonify({
+            return {
                 'meta': {
                     'month': month, 'label': _month_label(month),
                     'prev_label': _month_label(prev),
@@ -562,9 +589,16 @@ def register_diagnostico_routes(app, db, logger):
                 'produccion': produccion,
                 'programa_actual': programa_actual,
                 'programa': programa,
-            })
+            }
+        except Exception:
+            logger.exception('diagnostico build error')
+            raise
+
+    @app.route('/api/diagnostico/data', methods=['GET'])
+    def diagnostico_data():
+        try:
+            return jsonify(_build_diagnostico(request.args.get('month')))
         except Exception as e:
-            logger.exception('diagnostico_data error')
             return jsonify({'error': str(e)}), 500
 
     # ── Evolucion mensual por alcance (planta / area / equipo) ────────────
@@ -648,9 +682,19 @@ def register_diagnostico_routes(app, db, logger):
 
     @app.route('/api/diagnostico/ots-detail', methods=['GET'])
     def diagnostico_ots_detail():
-        """OTs correctivas que explican un punto del Pareto o de equipos.
+        """OTs que explican cualquier punto de los graficos del diagnostico
+        (filtro dinamico de los drill-down).
 
-        Query: month=YYYY-MM, window=mes|6m, failure_mode=..., equipment_id=N
+        Query:
+          month=YYYY-MM, window=mes|6m         ventana por mes de cierre
+          desde=YYYY-MM-DD & hasta=YYYY-MM-DD  rango exacto (barras semanales)
+          tipo=correctivo|proactivo|preventivo|predictivo|mejora|todas
+               (default: correctivo, para Pareto y equipos criticos)
+          failure_mode=..., equipment_id=N, sin_equipo=1
+          con_downtime=1   solo OTs que causaron horas de parada
+          programadas=1    OTs PROGRAMADAS en el rango, cualquier estado
+                           (drill-down de cumplimiento)
+          tons=1           agrega TM y sacos de harina no producidos por OT
         """
         try:
             hoy = dt.date.today()
@@ -659,33 +703,96 @@ def register_diagnostico_routes(app, db, logger):
             fm = (request.args.get('failure_mode') or '').strip().upper()
             eq_id = request.args.get('equipment_id', type=int)
             sin_equipo = request.args.get('sin_equipo') == '1'
+            tipo = (request.args.get('tipo') or 'correctivo').strip().lower()
+            desde = (request.args.get('desde') or '')[:10]
+            hasta = (request.args.get('hasta') or '')[:10]
+            con_downtime = request.args.get('con_downtime') == '1'
+            programadas = request.args.get('programadas') == '1'
+            con_tons = request.args.get('tons') == '1'
 
             months = {month} if window == 'mes' else set(_months_back(month, 6))
             eq_map = {e.id: e for e in Equipment.query.all()}
+            if con_tons:
+                goals_map = _goals_por_area()
+                resolver_area, _em = _area_resolver()
+
+            def tipo_ok(o):
+                if tipo == 'todas':
+                    return True
+                mt = _mtype(o)
+                if tipo == 'proactivo':
+                    return mt in ('preventivo', 'predictivo')
+                return mt == tipo
 
             rows = []
-            for o in WorkOrder.query.filter(WorkOrder.maintenance_type == 'Correctivo').all():
-                if _ot_close_month(o) not in months:
-                    continue
+            for o in WorkOrder.query.all():
+                if programadas:
+                    f = str(o.scheduled_date)[:10] if o.scheduled_date else ''
+                    if not f:
+                        continue
+                    if desde and hasta:
+                        if not (desde <= f <= hasta):
+                            continue
+                    elif f[:7] not in months:
+                        continue
+                    # En modo programadas el default (correctivo) no filtra:
+                    # el cumplimiento se mide sobre TODO lo programado
+                    if tipo != 'correctivo' and not tipo_ok(o):
+                        continue
+                else:
+                    if not tipo_ok(o):
+                        continue
+                    if desde and hasta:
+                        # Rango exacto: misma fecha que usan las barras
+                        # semanales (solo OTs cerradas)
+                        if o.status != 'Cerrada':
+                            continue
+                        d = o.real_end_date or o.real_start_date or o.scheduled_date
+                        if not d or not (desde <= str(d)[:10] <= hasta):
+                            continue
+                    elif _ot_close_month(o) not in months:
+                        continue
                 if fm and (o.failure_mode or 'SIN MODO').strip().upper() != fm:
                     continue
                 if eq_id and o.equipment_id != eq_id:
                     continue
                 if sin_equipo and o.equipment_id:
                     continue
+                dt_h = _downtime(o)
+                if con_downtime and dt_h <= 0:
+                    continue
                 e = eq_map.get(o.equipment_id)
-                rows.append({
+                row = {
                     'code': o.code or f'OT-{o.id}',
-                    'fecha': (o.real_end_date or o.scheduled_date or '-')[:10],
+                    'fecha': str(o.scheduled_date if programadas else
+                                 (o.real_end_date or o.scheduled_date or '-'))[:10],
                     'equipo': (f"[{e.tag}] {e.name}" if e and e.tag else (e.name if e else '-')),
+                    'tipo': o.maintenance_type or '-',
                     'modo': (o.failure_mode or '-'),
                     'status': o.status,
-                    'downtime_h': round(_downtime(o), 1),
+                    'downtime_h': round(dt_h, 1),
                     'duracion_h': float(o.real_duration or 0),
                     'descripcion': (o.description or '')[:130],
                     'ejecucion': (o.execution_comments or '')[:130],
-                })
-            rows.sort(key=lambda r: (-r['downtime_h'], r['fecha']))
+                }
+                if con_tons:
+                    tons = 0.0
+                    if dt_h > 0:
+                        aid = resolver_area(o)
+                        if aid and aid in goals_map:
+                            g = _goal_para(goals_map[aid], _ot_close_month(o) or month)
+                            if g:
+                                tons = dt_h * _tons_per_hour(g)
+                    row['tons_lost'] = round(tons, 1)
+                    row['sacks_lost'] = int(tons * 1000 / SACK_KG)
+                rows.append(row)
+
+            if con_tons:
+                rows.sort(key=lambda r: (-r.get('tons_lost', 0), -r['downtime_h']))
+            elif programadas:
+                rows.sort(key=lambda r: r['fecha'])
+            else:
+                rows.sort(key=lambda r: (-r['downtime_h'], r['fecha']))
             return jsonify({'total': len(rows), 'rows': rows[:80]})
         except Exception as e:
             logger.exception('diagnostico_ots_detail error')
@@ -746,6 +853,13 @@ def register_diagnostico_routes(app, db, logger):
                 resumen.append("TENDENCIA (mes: %proactivo/disp%/downtime h): " + "; ".join(
                     f"{t['month']}: {t['proactive_pct']}%/{t['disponibilidad_pct']}%/{t['downtime_h']}h"
                     for t in tr[-6:]))
+            sem = data.get('semanas') or []
+            if sem:
+                resumen.append("SEMANAS DEL MES (cerradas/correctivas/downtime h/cumplimiento): " + "; ".join(
+                    f"{s.get('semana')} [{s.get('rango')}]: {s.get('closed_total')}/"
+                    f"{s.get('correctivas')}/{s.get('downtime_h')}h/{s.get('cumplimiento_pct')}%"
+                    + (" FUTURA" if s.get('futura') else "")
+                    for s in sem))
             bl = data.get('backlog', {})
             resumen.append(f"BACKLOG: {bl.get('total')} OTs abiertas, {bl.get('con_tecnico')} con tecnico, "
                            f"{bl.get('programadas')} programadas, aging {bl.get('aging')}")
@@ -769,6 +883,15 @@ def register_diagnostico_routes(app, db, logger):
                     f"({prod.get('sacks_lost_12m')} sacos). Top equipos por TM perdidas: "
                     + "; ".join(f"{t['equipo']}: {t['tons_lost']} TM"
                                 for t in (prod.get('top_equipos') or [])[:3]))
+                if prod.get('por_area'):
+                    resumen.append("TM PERDIDAS POR AREA: " + "; ".join(
+                        f"{a['area']}: {a['tons_lost']} TM ({a['sacks_lost']} sacos)"
+                        for a in prod['por_area'][:6]))
+                if prod.get('metas'):
+                    resumen.append("METAS/RENDIMIENTOS VIGENTES POR AREA (meta TM / rendimiento TM / TM por hora): "
+                                   + "; ".join(
+                        f"{m['area']}: {m['meta_tons']}/{m['rendimiento_tons']}/{m['tons_por_hora']}"
+                        for m in prod['metas'][:6]))
 
             pa = data.get('programa_actual')
             if pa:
@@ -791,14 +914,19 @@ def register_diagnostico_routes(app, db, logger):
                 "datos proporcionados, no inventes cifras. Si el mes esta EN CURSO, indica que "
                 "los KPIs son parciales y proyecta con cautela. Referencia benchmarks SMRP "
                 "donde aplique (cumplimiento >90%, proactivo >75%, backlog 2-4 semanas). "
+                "El analisis debe ser COMPLETO y detallado (apunta a 700-1000 palabras). "
+                "El impacto en produccion se expresa SOLO en toneladas (TM) y sacos de "
+                "50 kg de harina, NUNCA en dinero. "
                 "Estructura EXACTA (usa estos titulos en mayusculas):\n"
-                "RESUMEN EJECUTIVO\n(4-6 lineas, lo mas importante primero)\n"
-                "HALLAZGOS DEL MES\n(5-7 vinetas: dato -> interpretacion -> accion concreta)\n"
-                "TENDENCIA Y COMPARACION\n(3-5 lineas sobre la evolucion de los indicadores: "
-                "MTBF, MTTR, disponibilidad, % proactivo)\n"
+                "RESUMEN EJECUTIVO\n(5-7 lineas, lo mas importante primero)\n"
+                "HALLAZGOS DEL MES\n(6-9 vinetas: dato -> interpretacion -> accion concreta)\n"
+                "IMPACTO EN PRODUCCION\n(si hay datos: TM y sacos no producidos, % de la meta, "
+                "areas y equipos responsables, comparacion con el mes anterior)\n"
+                "TENDENCIA Y COMPARACION\n(4-6 lineas sobre la evolucion de los indicadores: "
+                "MTBF, MTTR, disponibilidad, % proactivo, y el comportamiento semana a semana)\n"
                 "PLAN RESTO DEL MES Y PROXIMO MES\n(prioridades de la programacion y que pedir a "
                 "produccion: ventanas de parada, coordinaciones)\n"
-                "RIESGOS SI NO SE ACTUA\n(2-3 vinetas)\n"
+                "RIESGOS SI NO SE ACTUA\n(3-4 vinetas)\n"
                 "Tono directo y gerencial. Sin markdown de codigo, sin tablas."
             )
 
@@ -826,8 +954,8 @@ def register_diagnostico_routes(app, db, logger):
                             {'role': 'system', 'content': system_prompt},
                             {'role': 'user', 'content': prompt_usuario},
                         ],
-                        'max_tokens': 1800, 'temperature': 0.3,
-                    }, timeout=150)
+                        'max_tokens': 3000, 'temperature': 0.3,
+                    }, timeout=360)
                     if r.status_code != 200:
                         _narrativa_jobs[job_id] = {
                             'status': 'ERROR', 'ts': _t.time(),
@@ -842,4 +970,34 @@ def register_diagnostico_routes(app, db, logger):
             return jsonify({'job_id': job_id, 'status': 'PENDIENTE'})
         except Exception as e:
             logger.exception('diagnostico_narrativa error')
+            return jsonify({'error': str(e)}), 500
+
+    # ── Informe HTML descargable (plantilla ejecutiva autocontenida) ──────
+
+    @app.route('/api/diagnostico/informe', methods=['GET'])
+    def diagnostico_informe():
+        """Documento HTML autocontenido del diagnostico: se descarga, se
+        abre sin conexion en cualquier lugar y se imprime a PDF desde el
+        navegador. Siempre la misma plantilla, datos en vivo del mes pedido.
+
+        Query: month=YYYY-MM (periodo elegido por el usuario),
+               download=1 fuerza la descarga como archivo,
+               narrativa_job=<id> incrusta la narrativa IA ya generada.
+        """
+        try:
+            d = _build_diagnostico(request.args.get('month'))
+            narrativa = ''
+            job = _narrativa_jobs.get((request.args.get('narrativa_job') or '').strip())
+            if job and job.get('status') == 'OK':
+                narrativa = job.get('narrativa') or ''
+            html = render_template('informe_diagnostico.html', d=d, narrativa=narrativa)
+            resp = app.make_response(html)
+            resp.headers['Content-Type'] = 'text/html; charset=utf-8'
+            if request.args.get('download') == '1':
+                fname = ("Diagnostico_Gestion_Mantenimiento_"
+                         + d['meta']['label'].replace(' ', '_') + ".html")
+                resp.headers['Content-Disposition'] = f'attachment; filename="{fname}"'
+            return resp
+        except Exception as e:
+            logger.exception('diagnostico_informe error')
             return jsonify({'error': str(e)}), 500

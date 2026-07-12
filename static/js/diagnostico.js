@@ -35,7 +35,8 @@ async function loadDiagnostico() {
         renderSalud();
         renderPrograma();
         renderOTsNext();
-        closeDetail('paretoDetail'); closeDetail('equiposDetail'); closeDetail('relDetail');
+        ['paretoDetail', 'equiposDetail', 'relDetail', 'prodDetail', 'semDetail', 'trendDetail']
+            .forEach(closeDetail);
     } catch (e) { alert('No se pudo cargar el diagnostico: ' + e.message); }
 }
 
@@ -80,14 +81,27 @@ function goToSlide(n) {
 window.goToSlide = goToSlide;
 window.closeDetail = closeDetail;
 
-const OTS_COLS = `<tr><th>OT</th><th>Fecha</th><th>Equipo</th><th>Modo de falla</th><th class="num">Parada (h)</th><th class="num">Durac. (h)</th><th>Descripcion / Trabajo realizado</th></tr>`;
+const OTS_COLS = `<tr><th>OT</th><th>Fecha</th><th>Equipo</th><th>Tipo</th><th>Modo de falla</th><th>Estado</th><th class="num">Parada (h)</th><th class="num">Durac. (h)</th><th>Descripcion / Trabajo realizado</th></tr>`;
 function otsRows(rows) {
-    if (!rows.length) return `<tr><td colspan="7" style="color:#9ab0cb">Sin OTs en esta seleccion.</td></tr>`;
+    if (!rows.length) return `<tr><td colspan="9" style="color:#9ab0cb">Sin OTs en esta seleccion.</td></tr>`;
     return rows.map(r =>
         `<tr><td style="color:#5AC8FA;font-weight:600">${r.code}</td><td>${r.fecha}</td>` +
-        `<td>${r.equipo}</td><td>${r.modo}</td>` +
+        `<td>${r.equipo}</td><td>${r.tipo || '-'}</td><td>${r.modo}</td><td>${r.status}</td>` +
         `<td class="num" style="color:${r.downtime_h > 0 ? '#FF453A' : '#9ab0cb'}">${r.downtime_h || '-'}</td>` +
         `<td class="num">${r.duracion_h || '-'}</td>` +
+        `<td>${r.descripcion}${r.ejecucion ? `<div style="color:#30D158;font-size:.76rem">✔ ${r.ejecucion}</div>` : ''}</td></tr>`
+    ).join('');
+}
+// Version con impacto en produccion (TM y sacos por OT)
+const OTS_COLS_PROD = `<tr><th>OT</th><th>Fecha</th><th>Equipo</th><th>Tipo</th><th>Modo de falla</th><th class="num">Parada (h)</th><th class="num">TM perdidas</th><th class="num">Sacos (50kg)</th><th>Descripcion / Trabajo realizado</th></tr>`;
+function otsRowsProd(rows) {
+    if (!rows.length) return `<tr><td colspan="9" style="color:#9ab0cb">Sin OTs en esta seleccion.</td></tr>`;
+    return rows.map(r =>
+        `<tr><td style="color:#5AC8FA;font-weight:600">${r.code}</td><td>${r.fecha}</td>` +
+        `<td>${r.equipo}</td><td>${r.tipo || '-'}</td><td>${r.modo}</td>` +
+        `<td class="num" style="color:${r.downtime_h > 0 ? '#FF453A' : '#9ab0cb'}">${r.downtime_h || '-'}</td>` +
+        `<td class="num" style="color:#FF9F0A;font-weight:700">${r.tons_lost ?? '-'}</td>` +
+        `<td class="num">${r.sacks_lost != null ? r.sacks_lost.toLocaleString() : '-'}</td>` +
         `<td>${r.descripcion}${r.ejecucion ? `<div style="color:#30D158;font-size:.76rem">✔ ${r.ejecucion}</div>` : ''}</td></tr>`
     ).join('');
 }
@@ -96,6 +110,19 @@ async function fetchOtsDetail(params) {
     const res = await fetch(`/api/diagnostico/ots-detail?${q}`);
     return res.json();
 }
+// Panel de detalle generico: llena <panel>Title y <panel>Table y lo abre
+async function showOtsPanel(panel, title, params) {
+    el(panel + 'Title').textContent = title;
+    el(panel + 'Table').innerHTML = `<tr><td style="color:#9ab0cb">Cargando...</td></tr>`;
+    openDetail(panel);
+    const d = await fetchOtsDetail(params);
+    if (d.error) { el(panel + 'Table').innerHTML = `<tr><td style="color:#FF453A">${d.error}</td></tr>`; return; }
+    const prod = params.tons === '1';
+    el(panel + 'Table').innerHTML = (prod ? OTS_COLS_PROD : OTS_COLS) +
+        (prod ? otsRowsProd(d.rows || []) : otsRows(d.rows || []));
+}
+// Serie del grafico -> filtro tipo del backend
+const TIPO_SERIE = { 'Correctivas': 'correctivo', 'Proactivas': 'proactivo', 'Mejoras': 'mejora', '% Proactivo': 'proactivo' };
 
 // ── S1: KPIs ─────────────────────────────────────────────────────────────
 function renderKpis() {
@@ -157,11 +184,12 @@ function renderProduccion() {
     });
 
     const te = (pr.top_equipos || []).slice().reverse();
-    chart('prodEquiposChart').setOption({
+    const cte = chart('prodEquiposChart');
+    cte.setOption({
         backgroundColor: 'transparent',
         title: { text: 'Top equipos por TM perdidas (mes)', textStyle: { color: '#9ab0cb', fontSize: 13 } },
         tooltip: { trigger: 'axis', axisPointer: { type: 'shadow' },
-            formatter: ps => { const t = te[ps[0].dataIndex]; return `<b>${t.equipo}</b><br/>${t.tons_lost} TM · ${t.sacks_lost.toLocaleString()} sacos`; } },
+            formatter: ps => { const t = te[ps[0].dataIndex]; return `<b>${t.equipo}</b><br/>${t.tons_lost} TM · ${t.sacks_lost.toLocaleString()} sacos<br/><i>Clic para ver las OTs</i>`; } },
         grid: { left: 170, right: 50, top: 40, bottom: 30 },
         xAxis: { type: 'value', axisLabel: { color: '#9ab0cb' }, splitLine: { lineStyle: { color: '#233246' } } },
         yAxis: { type: 'category', data: te.map(t => t.equipo), axisLabel: { color: '#d5e2f5', width: 155, overflow: 'truncate', fontSize: 10 } },
@@ -171,15 +199,47 @@ function renderProduccion() {
             label: { show: true, position: 'right', color: '#d5e2f5', fontSize: 10, formatter: '{c} TM' },
         }],
     });
+    cte.off('click');
+    cte.on('click', ev => {
+        const t = te[ev.dataIndex];
+        if (!t) return;
+        const params = { window: 'mes', tipo: 'todas', con_downtime: '1', tons: '1' };
+        if (t.equipment_id) params.equipment_id = t.equipment_id; else params.sin_equipo = '1';
+        showOtsPanel('prodDetail',
+            `OTs con paro de ${t.equipo} — ${DIAG.meta.label} (${t.tons_lost} TM · ${t.sacks_lost.toLocaleString()} sacos)`,
+            params);
+    });
+
+    // Metas y rendimientos vigentes por area (de donde sale cada TM/h)
+    const metas = pr.metas || [];
+    el('prodMetasTable').innerHTML =
+        `<tr><th>Area</th><th class="num">Meta (TM/mes)</th><th class="num">Rendimiento prom. (TM/mes)</th><th class="num">Horas oper.</th><th class="num">TM/h</th><th class="num">TM perdidas</th><th class="num">Sacos (50kg)</th><th class="num">% de su meta</th></tr>` +
+        (metas.length ? metas.map(m =>
+            `<tr><td><b>${m.area}</b> <span style="color:#5a7aa0;font-size:.72rem">(meta ${m.periodo_meta})</span></td>` +
+            `<td class="num">${m.meta_tons.toLocaleString()}</td>` +
+            `<td class="num">${m.rendimiento_tons.toLocaleString()}</td>` +
+            `<td class="num">${m.horas_mes}</td><td class="num">${m.tons_por_hora}</td>` +
+            `<td class="num" style="color:${m.tons_lost > 0 ? '#FF453A' : '#30D158'};font-weight:700">${m.tons_lost}</td>` +
+            `<td class="num">${m.sacks_lost.toLocaleString()}</td>` +
+            `<td class="num">${m.pct_de_su_meta != null ? m.pct_de_su_meta + '%' : '-'}</td></tr>`).join('')
+        : `<tr><td colspan="8" style="color:#9ab0cb">Sin metas de produccion registradas.</td></tr>`);
 }
 
 // ── S3: Indicadores por semana del mes ───────────────────────────────────
+function weekRange(x) {
+    // rango "01-07" del mes seleccionado -> fechas exactas para el filtro
+    const [d1, d2] = x.rango.split('-');
+    const m = DIAG.meta.month;
+    return { desde: `${m}-${d1}`, hasta: `${m}-${d2}` };
+}
+
 function renderSemanas() {
     const s = DIAG.semanas || [];
     el('semTitle').textContent = `Indicadores por semana — ${DIAG.meta.label}`;
     const labels = s.map(x => `${x.semana} (${x.rango})`);
 
-    chart('semMixChart').setOption({
+    const cMix = chart('semMixChart');
+    cMix.setOption({
         backgroundColor: 'transparent',
         title: { text: 'Mezcla de trabajo por semana', textStyle: { color: '#9ab0cb', fontSize: 13 } },
         tooltip: { trigger: 'axis' },
@@ -197,8 +257,20 @@ function renderSemanas() {
             { name: '% Proactivo', type: 'line', yAxisIndex: 1, data: s.map(x => x.proactive_pct), itemStyle: { color: '#BF5AF2' }, connectNulls: true },
         ],
     });
+    // Filtro dinamico: clic en una barra -> OTs de ese tipo en esa semana
+    cMix.off('click');
+    cMix.on('click', ev => {
+        const x = s[ev.dataIndex];
+        if (!x) return;
+        const tipo = TIPO_SERIE[ev.seriesName] || 'todas';
+        const { desde, hasta } = weekRange(x);
+        showOtsPanel('semDetail',
+            `OTs ${ev.seriesName.toLowerCase()} — ${x.semana} (${x.rango} de ${DIAG.meta.label})`,
+            { tipo, desde, hasta });
+    });
 
-    chart('semKpiChart').setOption({
+    const cKpi = chart('semKpiChart');
+    cKpi.setOption({
         backgroundColor: 'transparent',
         title: { text: 'Cumplimiento, disponibilidad y downtime', textStyle: { color: '#9ab0cb', fontSize: 13 } },
         tooltip: { trigger: 'axis' },
@@ -215,6 +287,22 @@ function renderSemanas() {
               markLine: { silent: true, symbol: 'none', data: [{ yAxis: 90 }], lineStyle: { color: '#0A84FF', type: 'dashed' }, label: { formatter: 'meta 90%', color: '#0A84FF' } } },
             { name: 'Disponibilidad %', type: 'line', data: s.map(x => x.disponibilidad_pct), itemStyle: { color: '#30D158' }, connectNulls: true },
         ],
+    });
+    // Downtime/Disponibilidad -> OTs que causaron el paro; Cumplimiento -> lo programado
+    cKpi.off('click');
+    cKpi.on('click', ev => {
+        const x = s[ev.dataIndex];
+        if (!x) return;
+        const { desde, hasta } = weekRange(x);
+        if (ev.seriesName === 'Cumplimiento %') {
+            showOtsPanel('semDetail',
+                `OTs programadas — ${x.semana} (${x.rango} de ${DIAG.meta.label}) · cumplimiento ${x.cumplimiento_pct ?? '-'}%`,
+                { programadas: '1', tipo: 'todas', desde, hasta });
+        } else {
+            showOtsPanel('semDetail',
+                `OTs que causaron el downtime — ${x.semana} (${x.rango} de ${DIAG.meta.label}) · ${x.downtime_h} h`,
+                { tipo: 'todas', con_downtime: '1', desde, hasta });
+        }
     });
 
     const fila = (nombre, fn, fmt) =>
@@ -265,7 +353,8 @@ function renderConsolidado() {
 // ── S3: Tendencia ────────────────────────────────────────────────────────
 function renderTrend() {
     const t = DIAG.trend;
-    chart('trendChart').setOption({
+    const c = chart('trendChart');
+    c.setOption({
         backgroundColor: 'transparent',
         title: { text: 'Mezcla de trabajo', textStyle: { color: '#9ab0cb', fontSize: 13 } },
         tooltip: { trigger: 'axis' },
@@ -284,11 +373,22 @@ function renderTrend() {
               markLine: { silent: true, symbol: 'none', data: [{ yAxis: 75 }], lineStyle: { color: '#30D158', type: 'dashed' }, label: { formatter: 'meta 75%', color: '#30D158' } } },
         ],
     });
+    // Clic en una barra -> OTs de ese tipo en ese mes
+    c.off('click');
+    c.on('click', ev => {
+        const x = t[ev.dataIndex];
+        if (!x) return;
+        const tipo = TIPO_SERIE[ev.seriesName] || 'todas';
+        showOtsPanel('trendDetail',
+            `OTs ${ev.seriesName.toLowerCase()} — ${x.label || x.month}`,
+            { month: x.month, window: 'mes', tipo });
+    });
 }
 
 function renderTrendKpi() {
     const t = DIAG.trend;
-    chart('trendKpiChart').setOption({
+    const c = chart('trendKpiChart');
+    c.setOption({
         backgroundColor: 'transparent',
         title: { text: 'Confiabilidad de planta', textStyle: { color: '#9ab0cb', fontSize: 13 } },
         tooltip: { trigger: 'axis' },
@@ -304,6 +404,15 @@ function renderTrendKpi() {
             { name: 'MTTR (h)', type: 'line', data: t.map(x => x.mttr_h), itemStyle: { color: '#FF9F0A' }, lineStyle: { width: 2 }, connectNulls: true },
             { name: 'Disponibilidad %', type: 'line', yAxisIndex: 1, data: t.map(x => x.disponibilidad_pct), itemStyle: { color: '#30D158' }, lineStyle: { width: 3 }, areaStyle: { opacity: .08 } },
         ],
+    });
+    // Clic en cualquier punto -> OTs que causaron el downtime de ese mes
+    c.off('click');
+    c.on('click', ev => {
+        const x = t[ev.dataIndex];
+        if (!x) return;
+        showOtsPanel('trendDetail',
+            `OTs que causaron el downtime — ${x.label || x.month} (${x.downtime_h} h)`,
+            { month: x.month, window: 'mes', tipo: 'todas', con_downtime: '1' });
     });
 }
 
@@ -638,6 +747,8 @@ async function safeJson(res) {
     }
 }
 
+let NARR_JOB = null;  // ultimo job de narrativa terminado OK (se incrusta en el informe)
+
 async function generarNarrativa() {
     if (!DIAG) return;
     const box = el('narrativaBox');
@@ -651,25 +762,35 @@ async function generarNarrativa() {
         if (data.error) { box.textContent = 'Error: ' + data.error; return; }
         if (data.narrativa) { box.textContent = data.narrativa; return; }  // compat
 
-        // Sondear el resultado cada 3s hasta 3 minutos
+        // Sondear el resultado cada 3s hasta 7 minutos (el analisis completo
+        // puede tardar: la IA redacta 700-1000 palabras con todos los datos)
         const jobId = data.job_id;
         const inicio = Date.now();
-        while (Date.now() - inicio < 180000) {
+        while (Date.now() - inicio < 420000) {
             await new Promise(r => setTimeout(r, 3000));
             const seg = Math.round((Date.now() - inicio) / 1000);
-            box.textContent = `Generando analisis ejecutivo con IA... (${seg}s)`;
+            box.textContent = `Generando analisis ejecutivo con IA... (${seg}s — el analisis completo puede tardar varios minutos)`;
             let st;
             try {
                 st = await safeJson(await fetch(`/api/diagnostico/narrativa/${jobId}`));
             } catch (_) { continue; }  // fallo transitorio de red: seguir sondeando
-            if (st.status === 'OK') { box.textContent = st.narrativa; return; }
+            if (st.status === 'OK') { box.textContent = st.narrativa; NARR_JOB = jobId; return; }
             if (st.status === 'ERROR') { box.textContent = 'Error: ' + st.error; return; }
             if (st.error) { box.textContent = 'Error: ' + st.error; return; }
         }
-        box.textContent = 'La IA tardo mas de 3 minutos. Intenta de nuevo.';
+        box.textContent = 'La IA tardo mas de 7 minutos. Intenta de nuevo.';
     } catch (e) { box.textContent = 'Error generando narrativa: ' + e.message; }
 }
 window.generarNarrativa = generarNarrativa;
+
+// ── Informe HTML descargable (plantilla ejecutiva, se abre sin conexion) ─
+function descargarInforme() {
+    const month = document.getElementById('diagMonth').value;
+    const q = new URLSearchParams({ month, download: '1' });
+    if (NARR_JOB) q.set('narrativa_job', NARR_JOB);  // incluye la narrativa ya generada
+    window.location.href = `/api/diagnostico/informe?${q}`;
+}
+window.descargarInforme = descargarInforme;
 
 // ── Modo presentacion ────────────────────────────────────────────────────
 let slideIdx = 0;
