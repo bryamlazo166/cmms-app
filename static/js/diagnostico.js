@@ -24,6 +24,7 @@ async function loadDiagnostico() {
             ? `Mes en curso: KPIs parciales al dia ${m.dia_hoy} de ${DIAG.kpis_mes.dias_mes}, comparados con ${m.prev_label} completo. Benchmarks SMRP: cumplimiento >90%, proactivo >75%.`
             : `Indicadores de ${m.label} vs. ${m.prev_label}. Benchmarks SMRP: cumplimiento >90%, proactivo >75%.`;
         renderKpis();
+        renderSemanas();
         renderConsolidado();
         renderTrend();
         renderTrendKpi();
@@ -111,13 +112,78 @@ function renderKpis() {
 
     const dispCls = k.disponibilidad_pct >= 95 ? 'v-good' : (k.disponibilidad_pct >= 90 ? 'v-warn' : 'v-crit');
     el('kpiStrip2').innerHTML =
-        kpiCard('MTBF (h)', k.mtbf_h ?? '-', '', deltaTxt(k.mtbf_h, p.mtbf_h, 'h'), 'goToSlide(5)') +
-        kpiCard('MTTR (h)', k.mttr_h ?? '-', '', deltaTxt(k.mttr_h, p.mttr_h, 'h', true), 'goToSlide(5)') +
-        kpiCard('Disponibilidad', (k.disponibilidad_pct ?? '-') + '%', dispCls, deltaTxt(k.disponibilidad_pct, p.disponibilidad_pct, ' pts'), 'goToSlide(5)') +
-        kpiCard('Confiabilidad R(7d)', k.confiabilidad_pct != null ? k.confiabilidad_pct + '%' : '-', '', deltaTxt(k.confiabilidad_pct, p.confiabilidad_pct, ' pts'), 'goToSlide(5)');
+        kpiCard('MTBF (h)', k.mtbf_h ?? '-', '', deltaTxt(k.mtbf_h, p.mtbf_h, 'h'), 'goToSlide(6)') +
+        kpiCard('MTTR (h)', k.mttr_h ?? '-', '', deltaTxt(k.mttr_h, p.mttr_h, 'h', true), 'goToSlide(6)') +
+        kpiCard('Disponibilidad', (k.disponibilidad_pct ?? '-') + '%', dispCls, deltaTxt(k.disponibilidad_pct, p.disponibilidad_pct, ' pts'), 'goToSlide(6)') +
+        kpiCard('Confiabilidad R(7d)', k.confiabilidad_pct != null ? k.confiabilidad_pct + '%' : '-', '', deltaTxt(k.confiabilidad_pct, p.confiabilidad_pct, ' pts'), 'goToSlide(6)');
 }
 
-// ── S2: Cuadro consolidado 12 meses ──────────────────────────────────────
+// ── S2: Indicadores por semana del mes ───────────────────────────────────
+function renderSemanas() {
+    const s = DIAG.semanas || [];
+    el('semTitle').textContent = `Indicadores por semana — ${DIAG.meta.label}`;
+    const labels = s.map(x => `${x.semana} (${x.rango})`);
+
+    chart('semMixChart').setOption({
+        backgroundColor: 'transparent',
+        title: { text: 'Mezcla de trabajo por semana', textStyle: { color: '#9ab0cb', fontSize: 13 } },
+        tooltip: { trigger: 'axis' },
+        legend: { textStyle: { color: '#9ab0cb' }, top: 0, right: 0 },
+        grid: { left: 40, right: 50, top: 42, bottom: 30 },
+        xAxis: { type: 'category', data: labels, axisLabel: { color: '#9ab0cb', fontSize: 10 } },
+        yAxis: [
+            { type: 'value', name: 'OTs', axisLabel: { color: '#9ab0cb' }, splitLine: { lineStyle: { color: '#233246' } } },
+            { type: 'value', name: '%', min: 0, max: 100, axisLabel: { color: '#9ab0cb', formatter: '{value}%' }, splitLine: { show: false } },
+        ],
+        series: [
+            { name: 'Correctivas', type: 'bar', stack: 'w', data: s.map(x => x.correctivas), itemStyle: { color: '#FF453A' } },
+            { name: 'Proactivas', type: 'bar', stack: 'w', data: s.map(x => x.proactivas), itemStyle: { color: '#30D158' } },
+            { name: 'Mejoras', type: 'bar', stack: 'w', data: s.map(x => x.mejoras), itemStyle: { color: '#5AC8FA' } },
+            { name: '% Proactivo', type: 'line', yAxisIndex: 1, data: s.map(x => x.proactive_pct), itemStyle: { color: '#BF5AF2' }, connectNulls: true },
+        ],
+    });
+
+    chart('semKpiChart').setOption({
+        backgroundColor: 'transparent',
+        title: { text: 'Cumplimiento, disponibilidad y downtime', textStyle: { color: '#9ab0cb', fontSize: 13 } },
+        tooltip: { trigger: 'axis' },
+        legend: { textStyle: { color: '#9ab0cb' }, top: 0, right: 0 },
+        grid: { left: 44, right: 52, top: 42, bottom: 30 },
+        xAxis: { type: 'category', data: labels, axisLabel: { color: '#9ab0cb', fontSize: 10 } },
+        yAxis: [
+            { type: 'value', name: '%', min: 0, max: 100, axisLabel: { color: '#9ab0cb', formatter: '{value}%' }, splitLine: { lineStyle: { color: '#233246' } } },
+            { type: 'value', name: 'h', axisLabel: { color: '#9ab0cb' }, splitLine: { show: false } },
+        ],
+        series: [
+            { name: 'Downtime (h)', type: 'bar', yAxisIndex: 1, data: s.map(x => x.downtime_h), itemStyle: { color: '#FF453A', opacity: .55 }, barMaxWidth: 30 },
+            { name: 'Cumplimiento %', type: 'line', data: s.map(x => x.cumplimiento_pct), itemStyle: { color: '#0A84FF' }, lineStyle: { width: 3 }, connectNulls: true,
+              markLine: { silent: true, symbol: 'none', data: [{ yAxis: 90 }], lineStyle: { color: '#0A84FF', type: 'dashed' }, label: { formatter: 'meta 90%', color: '#0A84FF' } } },
+            { name: 'Disponibilidad %', type: 'line', data: s.map(x => x.disponibilidad_pct), itemStyle: { color: '#30D158' }, connectNulls: true },
+        ],
+    });
+
+    const fila = (nombre, fn, fmt) =>
+        `<tr><td><b>${nombre}</b></td>` + s.map(x => {
+            if (x.futura) return `<td class="num" style="color:#4a5361">—</td>`;
+            const v = fn(x);
+            return `<td class="num">${v == null ? '-' : (fmt ? fmt(v) : v)}</td>`;
+        }).join('') + `</tr>`;
+    el('semTable').innerHTML =
+        `<tr><th>Indicador</th>${s.map(x => `<th class="num">${x.semana}<br>(${x.rango})${x.futura ? ' *' : ''}</th>`).join('')}</tr>` +
+        fila('OTs cerradas', x => x.closed_total) +
+        fila('Correctivas', x => x.correctivas) +
+        fila('Proactivas', x => x.proactivas) +
+        fila('% Proactivo', x => x.proactive_pct, v => v + '%') +
+        fila('Programadas', x => x.programadas) +
+        fila('Cumplimiento', x => x.cumplimiento_pct, v => v + '%') +
+        fila('MTBF (h)', x => x.mtbf_h) +
+        fila('MTTR (h)', x => x.mttr_h) +
+        fila('Disponibilidad', x => x.disponibilidad_pct, v => v + '%') +
+        fila('Downtime (h)', x => x.downtime_h) +
+        (s.some(x => x.futura) ? `<tr><td colspan="${s.length + 1}" style="color:#5a7aa0;font-size:.72rem">* semana futura del mes en curso</td></tr>` : '');
+}
+
+// ── S3: Cuadro consolidado 12 meses ──────────────────────────────────────
 function renderConsolidado() {
     const t = DIAG.trend;
     const cols = t.map(x => `<th class="num">${x.month}${x.en_curso ? '*' : ''}</th>`).join('');

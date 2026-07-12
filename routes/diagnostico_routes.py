@@ -192,6 +192,62 @@ def register_diagnostico_routes(app, db, logger):
             # ── Tendencia y consolidado 12 meses ─────────────────────────
             trend = [month_stats(ym) for ym in _months_back(month, 12)]
 
+            # ── Indicadores por semana del mes seleccionado ──────────────
+            dias_m_sel = kpis_mes['dias_mes']
+            en_curso_sel = kpis_mes['en_curso']
+            semanas = []
+            for w in range(5):
+                d1 = 1 + 7 * w
+                if d1 > dias_m_sel:
+                    break
+                d2 = dias_m_sel if w == 4 else min(d1 + 6, dias_m_sel)
+                ini, fin = f"{month}-{d1:02d}", f"{month}-{d2:02d}"
+
+                def in_week(o):
+                    d = o.real_end_date or o.real_start_date or o.scheduled_date
+                    return d and ini <= str(d)[:10] <= fin
+
+                mes_w = [o for o in closed if in_week(o)]
+                corr_w = [o for o in mes_w if _mtype(o) == 'correctivo']
+                proa_w = [o for o in mes_w if _mtype(o) in ('preventivo', 'predictivo')]
+                mix_w = len(corr_w) + len(proa_w)
+                dt_w = sum(_downtime(o) for o in mes_w)
+                mttr_vals_w = [float(o.real_duration) for o in corr_w if o.real_duration]
+
+                # Semana futura (mes en curso): sin KPIs de horas
+                futura = en_curso_sel and d1 > hoy.day
+                if en_curso_sel:
+                    dias_ef = max(0, min(d2, hoy.day) - d1 + 1)
+                else:
+                    dias_ef = d2 - d1 + 1
+                horas_w = dias_ef * 24
+                uptime_w = max(horas_w - dt_w, 0)
+                mtbf_w = round(uptime_w / len(corr_w), 1) if corr_w and horas_w else None
+                disp_w = round(uptime_w / horas_w * 100, 2) if horas_w else None
+
+                prog_w = [o for o in ots if o.scheduled_date
+                          and ini <= str(o.scheduled_date)[:10] <= fin]
+                cerr_w = [o for o in prog_w if o.status == 'Cerrada']
+
+                semanas.append({
+                    'semana': f"Sem {w + 1}",
+                    'rango': f"{d1:02d}-{d2:02d}",
+                    'futura': futura,
+                    'closed_total': len(mes_w),
+                    'correctivas': len(corr_w),
+                    'proactivas': len(proa_w),
+                    'mejoras': len([o for o in mes_w if _mtype(o) == 'mejora']),
+                    'proactive_pct': round(len(proa_w) / mix_w * 100, 1) if mix_w else None,
+                    'downtime_h': round(dt_w, 1),
+                    'mttr_h': (round(sum(mttr_vals_w) / len(mttr_vals_w), 1)
+                               if mttr_vals_w else None),
+                    'mtbf_h': mtbf_w,
+                    'disponibilidad_pct': disp_w,
+                    'programadas': len(prog_w),
+                    'cumplimiento_pct': (round(len(cerr_w) / len(prog_w) * 100, 1)
+                                         if prog_w else None),
+                })
+
             # ── Backlog (foto actual) ────────────────────────────────────
             aging = {'<30': 0, '30-60': 0, '>60': 0, 'sin_fecha': 0}
             for o in open_ots:
@@ -374,6 +430,7 @@ def register_diagnostico_routes(app, db, logger):
                 },
                 'kpis_mes': kpis_mes,
                 'kpis_prev': kpis_prev,
+                'semanas': semanas,
                 'pareto_mes': pareto_mes,
                 'pareto_6m': pareto_6m,
                 'top_equipos': top_equipos,

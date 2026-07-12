@@ -84,6 +84,7 @@ from routes.production_routes import register_production_routes
 from routes.weekly_plan_routes import register_weekly_plan_routes
 from routes.insights_routes import register_insights_routes
 from routes.diagnostico_routes import register_diagnostico_routes
+from routes.pf_analysis_routes import register_pf_analysis_routes
 from routes.rental_routes import register_rental_routes
 
 # Nivel configurable via env. En produccion default = INFO (NUNCA DEBUG)
@@ -292,6 +293,7 @@ _MODULE_ROUTES = {
     'cockpit':          {'pages': ['/cockpit'], 'api': []},
     'indicadores':      {'pages': ['/indicadores'], 'api': ['/api/indicators']},
     'diagnostico':      {'pages': ['/diagnostico'], 'api': ['/api/diagnostico']},
+    'analisis_pf':      {'pages': ['/analisis-pf'], 'api': ['/api/pf']},
     'produccion':       {'pages': ['/produccion'], 'api': ['/api/production']},
     'programa_nocturno': {'pages': ['/programa-nocturno'], 'api': ['/api/weekly-plans', '/api/preventive-sources']},
     'insights':          {'pages': ['/insights', '/optimizacion-preventivos', '/cumplimiento-preventivos'], 'api': ['/api/insights']},
@@ -319,6 +321,7 @@ _DEFAULT_PERMS = {
         'espesores': {'view': True, 'edit': True}, 'cockpit': {'view': True, 'edit': False},
         'indicadores': {'view': True, 'edit': False},
         'diagnostico': {'view': True, 'edit': False},
+        'analisis_pf': {'view': True, 'edit': False},
         'produccion': {'view': True, 'edit': True},
         'paradas': {'view': True, 'edit': True},
         'plantillas_paradas': {'view': True, 'edit': True},
@@ -453,6 +456,7 @@ _DEFAULT_PERMS = {
         'espesores': {'view': True, 'edit': False}, 'cockpit': {'view': True, 'edit': False},
         'indicadores': {'view': True, 'edit': False},
         'diagnostico': {'view': True, 'edit': False},
+        'analisis_pf': {'view': True, 'edit': False},
         'produccion': {'view': True, 'edit': True},
         'paradas': {'view': True, 'edit': False},
         'plantillas_paradas': {'view': True, 'edit': False},
@@ -1075,6 +1079,8 @@ register_insights_routes(
 )
 
 register_diagnostico_routes(app=app, db=db, logger=logger)
+
+register_pf_analysis_routes(app=app, db=db, logger=logger)
 
 register_rotative_assets_routes(
     app=app,

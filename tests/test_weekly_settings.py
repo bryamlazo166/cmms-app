@@ -135,6 +135,81 @@ def test_diagnostico_data(auth_admin):
     assert len(prog['rutinas_semana']['lubricacion']) == 5  # 5 semanas del mes
 
 
+def test_diagnostico_semanas(auth_admin):
+    """El diagnostico incluye indicadores por semana del mes."""
+    import datetime as dt
+    mes = dt.date.today().strftime('%Y-%m')
+    r = auth_admin.get(f'/api/diagnostico/data?month={mes}')
+    assert r.status_code == 200
+    semanas = r.json['semanas']
+    assert len(semanas) >= 4  # todo mes tiene al menos 4 semanas
+    s1 = semanas[0]
+    for key in ('semana', 'rango', 'closed_total', 'correctivas', 'proactivas',
+                'downtime_h', 'cumplimiento_pct', 'disponibilidad_pct', 'futura'):
+        assert key in s1, f"falta {key}"
+    assert s1['semana'] == 'Sem 1'
+
+
+def test_pf_analysis(auth_admin, app):
+    """Modulo P-F: equipos con datos, timeline y precursores."""
+    import datetime as dt
+    today = dt.date.today()
+
+    # Equipo con punto de monitoreo, lectura fuera de rango y falla posterior
+    with app.app_context():
+        from database import db
+        from models import Area, Line, Equipment
+        area = Area(name='AREA PF TEST')
+        db.session.add(area); db.session.flush()
+        line = Line(name='LINEA PF TEST', area_id=area.id)
+        db.session.add(line); db.session.flush()
+        eq = Equipment(name='EQUIPO PF TEST', tag='EQ-PF', line_id=line.id)
+        db.session.add(eq); db.session.commit()
+        eq_id = eq.id
+
+    r = auth_admin.post('/api/monitoring/points', data=json.dumps({
+        'name': 'VIB PF TEST', 'measurement_type': 'VIBRACION',
+        'equipment_id': eq_id, 'frequency_days': 7,
+        'normal_max': 4.5, 'alarm_max': 7.1,
+    }), content_type='application/json')
+    point_id = r.json['id']
+
+    # Lectura fuera de rango 10 dias antes de la falla (senal previa)
+    fecha_senal = (today - dt.timedelta(days=10)).isoformat()
+    r2 = auth_admin.post('/api/monitoring/readings', data=json.dumps({
+        'point_id': point_id, 'reading_date': fecha_senal, 'value': 8.0,
+    }), content_type='application/json')
+    assert r2.status_code in (200, 201), r2.json
+
+    # Falla correctiva cerrada hoy en el mismo equipo
+    auth_admin.post('/api/work-orders', data=json.dumps({
+        'description': 'Falla PF test', 'maintenance_type': 'Correctivo',
+        'status': 'Cerrada', 'equipment_id': eq_id,
+        'failure_mode': 'VIBRACION EXCESIVA', 'real_end_date': today.isoformat(),
+    }), content_type='application/json')
+
+    # Equipos con datos
+    r3 = auth_admin.get('/api/pf/equipos')
+    assert r3.status_code == 200
+    assert any(e['id'] == eq_id for e in r3.json)
+
+    # Timeline del equipo
+    r4 = auth_admin.get(f'/api/pf/timeline?equipment_id={eq_id}&months=6')
+    assert r4.status_code == 200
+    t = r4.json
+    assert len(t['monitoring_series']) == 1
+    assert len(t['monitoring_series'][0]['readings']) == 1
+    assert len(t['fallas']) == 1
+
+    # Precursores: la falla debe tener senal previa con ~10 dias de anticipacion
+    r5 = auth_admin.get('/api/pf/precursores?months=6')
+    assert r5.status_code == 200
+    fila = next(f for f in r5.json['fallas'] if f['equipment_id'] == eq_id)
+    assert fila['senal_previa'] is True
+    assert fila['anticipacion_dias'] == 10
+    assert r5.json['resumen']['fallas_analizadas'] >= 1
+
+
 def test_diagnostico_ots_detail(auth_admin):
     """Drill-down: OTs detras de un modo de falla del Pareto."""
     import datetime as dt

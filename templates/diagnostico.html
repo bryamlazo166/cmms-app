@@ -128,7 +128,18 @@
             <div class="narrativa" id="narrativaBox"></div>
         </div>
 
-        <!-- S2: Cuadro consolidado 12 meses -->
+        <!-- S2: Indicadores por semana del mes -->
+        <div class="slide" data-slide>
+            <h2><i class="fas fa-calendar-week"></i> <span id="semTitle">Indicadores por semana del mes</span></h2>
+            <div class="method">Desglose semanal (Sem 1 = dias 1-7, Sem 2 = 8-14, ...). Las semanas futuras del mes en curso aparecen vacias.</div>
+            <div style="display:grid;grid-template-columns:1fr 1fr;gap:14px;">
+                <div class="chart-box" id="semMixChart" style="height:320px;"></div>
+                <div class="chart-box" id="semKpiChart" style="height:320px;"></div>
+            </div>
+            <div class="twrap"><table class="diag" id="semTable"></table></div>
+        </div>
+
+        <!-- S3: Cuadro consolidado 12 meses -->
         <div class="slide" data-slide>
             <h2><i class="fas fa-table-list"></i> Cuadro consolidado de indicadores — 12 meses</h2>
             <div class="method">Comportamiento de todos los indicadores mes a mes. Confiabilidad = R(168h) = e<sup>-168/MTBF</sup>. El mes en curso usa solo los dias transcurridos.</div>

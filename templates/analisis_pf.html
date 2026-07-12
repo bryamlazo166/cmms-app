@@ -1,0 +1,103 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <link rel="icon" type="image/svg+xml" href="/static/favicon.svg">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Ingenieria de Confiabilidad (P-F) - CMMS</title>
+    <!-- CMMS_THEME_INIT -->
+    <script>(function(){try{var t=localStorage.getItem('cmms.theme');if(t=='management'||t=='developer'){document.documentElement.setAttribute('data-theme',t);}}catch(e){}})();</script>
+    <link rel="stylesheet" href="/static/css/style.css?v={{ v }}">
+    <link rel="stylesheet" href="/static/css/sidebar.css?v={{ v }}">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css">
+    <script src="https://cdn.jsdelivr.net/npm/echarts@5.5.0/dist/echarts.min.js"></script>
+    <style>
+        body{background:#0a0e14;}
+        .wrap{max-width:1500px;margin:0 auto;padding:16px;}
+        .header{background:linear-gradient(120deg,#1a1f2e,#12161f);border:1px solid #2d3f56;border-radius:14px;padding:20px 24px;margin-bottom:16px;display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:14px;}
+        .header h1{margin:0;color:#BF5AF2;font-size:1.5rem;display:flex;align-items:center;gap:10px;}
+        .header .sub{margin:4px 0 0;color:#9ab0cb;font-size:.85rem;max-width:900px;}
+        .tools{display:flex;gap:10px;align-items:center;flex-wrap:wrap;}
+        .tools select{height:38px;background:#0f1319;color:#d5e2f5;border:1px solid #344964;border-radius:8px;padding:6px 12px;font-size:.88rem;max-width:340px;}
+        .btn{height:38px;border-radius:8px;padding:0 16px;font-weight:600;cursor:pointer;font-size:.88rem;border:none;display:inline-flex;align-items:center;gap:6px;background:#0a84ff;color:#fff;}
+
+        .panel{background:#181d24;border:1px solid #2f4257;border-radius:14px;padding:18px 22px;margin-bottom:16px;}
+        .panel h3{margin:0 0 4px;color:#BF5AF2;font-size:1rem;}
+        .panel .method{color:#9ab0cb;font-size:.78rem;margin-bottom:12px;}
+        .chart-box{height:430px;width:100%;}
+
+        .kpi-strip{display:grid;grid-template-columns:repeat(auto-fit,minmax(170px,1fr));gap:12px;margin-bottom:14px;}
+        .kpi-item{background:#1b212b;border:1px solid #344964;border-radius:12px;padding:13px;text-align:center;}
+        .kpi-item .label{font-size:.7rem;color:#9ab0cb;text-transform:uppercase;letter-spacing:.5px;line-height:1.3;}
+        .kpi-item .value{font-size:1.7rem;font-weight:700;margin-top:6px;font-variant-numeric:tabular-nums;}
+        .kpi-item .delta{font-size:.74rem;margin-top:3px;color:#9ab0cb;}
+        .v-good{color:#30D158!important;}.v-warn{color:#FF9F0A!important;}.v-crit{color:#FF453A!important;}
+
+        table.diag{border-collapse:collapse;width:100%;font-size:.83rem;}
+        table.diag th{text-align:left;font-size:.7rem;text-transform:uppercase;letter-spacing:.06em;color:#9ab0cb;padding:8px 10px;border-bottom:2px solid #344964;white-space:nowrap;}
+        table.diag td{padding:7px 10px;border-bottom:1px solid rgba(255,255,255,.06);color:#d5e2f5;vertical-align:top;}
+        table.diag td.num,table.diag th.num{text-align:right;font-variant-numeric:tabular-nums;white-space:nowrap;}
+        .twrap{overflow-x:auto;}
+        .pill{display:inline-block;padding:2px 9px;border-radius:10px;font-size:.72rem;font-weight:700;}
+        .pill.si{background:rgba(48,209,88,.15);color:#30D158;border:1px solid #30D158;}
+        .pill.no{background:rgba(255,69,58,.15);color:#FF453A;border:1px solid #FF453A;}
+        .pill.mon{background:rgba(255,159,10,.12);color:#FF9F0A;border:1px solid #FF9F0A;}
+        .pf-explain{color:#9ab0cb;font-size:.84rem;line-height:1.6;max-width:1000px;}
+        .pf-explain b{color:#d5e2f5;}
+    </style>
+</head>
+<body>
+<nav class="sidebar"><div class="logo-details"><i class="fas fa-industry icon"></i><div class="logo_name">CMMS Pro</div><i class="fas fa-bars" id="btn_toggle"></i></div><ul class="nav-list"></ul></nav>
+<section class="home-section">
+    <div class="wrap">
+        <div class="header">
+            <div>
+                <h1><i class="fas fa-wave-square"></i> Ingenieria de Confiabilidad — Curva P-F</h1>
+                <div class="sub">Correlaciona TODO el CMMS por equipo: mediciones predictivas, anomalias de lubricacion,
+                hallazgos de inspeccion y fallas. Herramienta interna de analisis — no forma parte de la presentacion gerencial.</div>
+            </div>
+            <div class="tools">
+                <select id="pfMonths" onchange="reloadAll()">
+                    <option value="6">Ultimos 6 meses</option>
+                    <option value="12" selected>Ultimos 12 meses</option>
+                    <option value="24">Ultimos 24 meses</option>
+                </select>
+                <button class="btn" onclick="reloadAll()"><i class="fas fa-sync"></i> Actualizar</button>
+            </div>
+        </div>
+
+        <!-- Resumen precursores / intervalo P-F observado -->
+        <div class="panel">
+            <h3><i class="fas fa-bell"></i> ¿Las fallas avisaron antes de ocurrir?</h3>
+            <div class="method">Para cada falla correctiva se busca una SEÑAL PREVIA en los <span id="ventanaTxt">45</span> dias anteriores del mismo equipo:
+                lectura de monitoreo fuera de limites, fuga/anomalia en lubricacion, inspeccion con hallazgos o test electrico en alerta.
+                La anticipacion promedio es tu <b>intervalo P-F observado</b>: cuanto tiempo real tienes entre la señal y la falla para planificar.</div>
+            <div class="kpi-strip" id="precKpis"></div>
+            <div class="pf-explain" id="pfLectura"></div>
+        </div>
+
+        <!-- Timeline P-F por equipo -->
+        <div class="panel">
+            <h3><i class="fas fa-timeline"></i> Linea de tiempo P-F por equipo</h3>
+            <div class="method">
+                Equipo: <select id="pfEquipo" onchange="loadTimeline()" style="height:32px;background:#0f1319;color:#d5e2f5;border:1px solid #344964;border-radius:6px;padding:4px 10px;max-width:380px;"></select>
+                — lineas = mediciones predictivas (con banda de alarma) · marcas rojas = fallas · naranjas = anomalias de lubricacion · azules = hallazgos de inspeccion.
+                Una linea que sube hacia una marca roja es tu curva P-F con datos reales.
+            </div>
+            <div class="chart-box" id="pfChart"></div>
+            <div class="twrap" style="margin-top:10px;"><table class="diag" id="pfEventsTable"></table></div>
+        </div>
+
+        <!-- Tabla de fallas con/sin precursor -->
+        <div class="panel">
+            <h3><i class="fas fa-list"></i> Detalle por falla</h3>
+            <div class="method">Cada falla del periodo con sus señales previas. Las fallas SIN monitoreo previo son la lista de puntos predictivos que faltan crear.</div>
+            <div class="twrap"><table class="diag" id="precTable"></table></div>
+        </div>
+    </div>
+</section>
+
+<script src="/static/js/sidebar.js?v={{ v }}"></script>
+<script src="/static/js/analisis_pf.js?v={{ v }}"></script>
+</body>
+</html>
