@@ -126,3 +126,62 @@ def test_pagination_work_orders(auth_admin):
     data = r.json
     assert 'items' in data
     assert 'pagination' in data
+
+
+def test_ot_directa_asignar_arbol(auth_admin, app):
+    """OT creada directa (sin aviso) puede recibir el arbol de equipos
+    despues, via PUT — el flujo del modal Editar OT con los selects de
+    jerarquia (caso OT-0276)."""
+    with app.app_context():
+        from database import db
+        from models import Area, Line, Equipment, System, Component
+        area = Area(name='AREA TEST ARBOL')
+        db.session.add(area)
+        db.session.flush()
+        line = Line(name='LINEA TEST ARBOL', area_id=area.id)
+        db.session.add(line)
+        db.session.flush()
+        eq = Equipment(name='EQUIPO TEST ARBOL', tag='EQ-ARB', line_id=line.id)
+        db.session.add(eq)
+        db.session.flush()
+        sysm = System(name='SISTEMA TEST ARBOL', equipment_id=eq.id)
+        db.session.add(sysm)
+        db.session.flush()
+        comp = Component(name='COMPONENTE TEST ARBOL', system_id=sysm.id)
+        db.session.add(comp)
+        db.session.commit()
+        a_id, l_id, e_id, s_id, c_id = area.id, line.id, eq.id, sysm.id, comp.id
+
+    # 1. OT directa sin arbol (como se creo OT-0276)
+    r = auth_admin.post('/api/work-orders', data=json.dumps({
+        'description': 'OT directa sin aviso',
+        'maintenance_type': 'Correctivo',
+        'status': 'Abierta',
+    }), content_type='application/json')
+    assert r.status_code == 201
+    assert r.json.get('equipment_id') is None
+    ot_id = r.json['id']
+
+    # 2. Asignar el arbol completo via PUT (lo que envia el modal Editar)
+    r2 = auth_admin.put(f'/api/work-orders/{ot_id}', data=json.dumps({
+        'area_id': a_id, 'line_id': l_id, 'equipment_id': e_id,
+        'system_id': s_id, 'component_id': c_id,
+    }), content_type='application/json')
+    assert r2.status_code == 200
+
+    # 3. El listado devuelve los IDs y resuelve los nombres del arbol
+    r3 = auth_admin.get('/api/work-orders')
+    ot = next(o for o in r3.json if o['id'] == ot_id)
+    assert ot['equipment_id'] == e_id
+    assert ot['component_id'] == c_id
+    assert ot['equipment_tag'] == 'EQ-ARB'
+    assert ot['area_name'] == 'AREA TEST ARBOL'
+
+    # 4. Crear OT directa YA con arbol (el modal Nueva OT tambien lo envia)
+    r4 = auth_admin.post('/api/work-orders', data=json.dumps({
+        'description': 'OT directa con arbol',
+        'status': 'Abierta',
+        'area_id': a_id, 'line_id': l_id, 'equipment_id': e_id,
+    }), content_type='application/json')
+    assert r4.status_code == 201
+    assert r4.json['equipment_id'] == e_id

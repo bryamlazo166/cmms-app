@@ -776,6 +776,46 @@
                         </div>
                     </fieldset>
 
+                    <!-- Arbol de equipos: editable tambien para OTs creadas sin aviso -->
+                    <fieldset>
+                        <legend>Ubicacion / Arbol de Equipos</legend>
+                        <div class="form-row">
+                            <div class="form-group">
+                                <label>Area</label>
+                                <select id="otTreeArea" onchange="onOTTreeChange('area')">
+                                    <option value="">- Sin area -</option>
+                                </select>
+                            </div>
+                            <div class="form-group">
+                                <label>Linea</label>
+                                <select id="otTreeLine" onchange="onOTTreeChange('line')">
+                                    <option value="">- Sin linea -</option>
+                                </select>
+                            </div>
+                            <div class="form-group">
+                                <label>Equipo</label>
+                                <select id="otTreeEquip" onchange="onOTTreeChange('equipment')">
+                                    <option value="">- Sin equipo -</option>
+                                </select>
+                            </div>
+                        </div>
+                        <div class="form-row">
+                            <div class="form-group">
+                                <label>Sistema</label>
+                                <select id="otTreeSystem" onchange="onOTTreeChange('system')">
+                                    <option value="">- Sin sistema -</option>
+                                </select>
+                            </div>
+                            <div class="form-group">
+                                <label>Componente</label>
+                                <select id="otTreeComp" onchange="onOTTreeChange('component')">
+                                    <option value="">- Sin componente -</option>
+                                </select>
+                            </div>
+                        </div>
+                        <small style="color:rgba(255,255,255,.35);font-size:.72rem">Al elegir un equipo, area y linea se completan solos. Sistema y componente se habilitan segun el nivel anterior.</small>
+                    </fieldset>
+
                     <!-- OT Data Section -->
                     <fieldset>
                         <legend>Datos de la Orden de Trabajo</legend>
@@ -845,7 +885,7 @@
                                 <select id="otRotativeAsset" style="width:100%">
                                     <option value="">- Sin activo rotativo -</option>
                                 </select>
-                                <small style="color:rgba(255,255,255,.35);font-size:.72rem">Se carga automaticamente al seleccionar equipo desde un aviso</small>
+                                <small style="color:rgba(255,255,255,.35);font-size:.72rem">Se carga al seleccionar un equipo (en el arbol de arriba o desde el aviso)</small>
                             </div>
                             <div class="form-group">
                                 <label>Asociar a Parada (opcional)</label>

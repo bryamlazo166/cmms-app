@@ -825,10 +825,107 @@ async function loadRotativeAssets(equipmentId, selectedId) {
     } catch (_) {}
 }
 
+// ============= ARBOL DE EQUIPOS EN EL MODAL DE OT =============
+// Las OTs generadas desde un aviso heredan el arbol; las creadas
+// directamente no tenian forma de asignarlo. Estos selects en cascada
+// envian area_id/line_id/equipment_id/system_id/component_id al guardar
+// (el PUT/POST del backend ya aceptaba esos campos).
+
+function fillTreeSelect(id, items, selectedId, labelFn, emptyLabel) {
+    const sel = document.getElementById(id);
+    if (!sel) return;
+    sel.innerHTML = '';
+    const opt0 = document.createElement('option');
+    opt0.value = '';
+    opt0.textContent = emptyLabel;
+    sel.appendChild(opt0);
+    items.forEach(x => {
+        const o = document.createElement('option');
+        o.value = x.id;
+        o.textContent = labelFn(x);
+        if (selectedId && x.id == selectedId) o.selected = true;
+        sel.appendChild(o);
+    });
+}
+
+function getOTTreeSelection() {
+    const v = id => {
+        const el = document.getElementById(id);
+        return el && el.value ? parseInt(el.value) : null;
+    };
+    return {
+        area_id: v('otTreeArea'),
+        line_id: v('otTreeLine'),
+        equipment_id: v('otTreeEquip'),
+        system_id: v('otTreeSystem'),
+        component_id: v('otTreeComp'),
+    };
+}
+
+function renderOTTreeSelects(sel = {}) {
+    const natOpts = { numeric: true, sensitivity: 'base' };
+    const byName = (a, b) => (a.name || '').localeCompare(b.name || '', 'es', natOpts);
+    const byTag = (a, b) => ((a.tag || a.name || '')).localeCompare((b.tag || b.name || ''), 'es', natOpts);
+    const name = x => x.name || '-';
+    const eqLabel = e => (e.tag ? `[${e.tag}] ` : '') + (e.name || '');
+
+    let lines = allLines;
+    if (sel.area_id) lines = allLines.filter(l => l.area_id == sel.area_id);
+
+    let equips = allEquips;
+    if (sel.line_id) equips = allEquips.filter(e => e.line_id == sel.line_id);
+    else if (sel.area_id) {
+        const lineIds = new Set(lines.map(l => l.id));
+        equips = allEquips.filter(e => lineIds.has(e.line_id));
+    }
+
+    const systems = sel.equipment_id ? allSystems.filter(s => s.equipment_id == sel.equipment_id) : [];
+    const comps = sel.system_id ? allComponents.filter(c => c.system_id == sel.system_id) : [];
+
+    fillTreeSelect('otTreeArea', [...allAreas].sort(byName), sel.area_id, name, '- Sin area -');
+    fillTreeSelect('otTreeLine', [...lines].sort(byName), sel.line_id, name, '- Sin linea -');
+    fillTreeSelect('otTreeEquip', [...equips].sort(byTag), sel.equipment_id, eqLabel, '- Sin equipo -');
+    fillTreeSelect('otTreeSystem', [...systems].sort(byName), sel.system_id, name, sel.equipment_id ? '- Sin sistema -' : '- Elija un equipo -');
+    fillTreeSelect('otTreeComp', [...comps].sort(byName), sel.component_id, name, sel.system_id ? '- Sin componente -' : '- Elija un sistema -');
+}
+
+async function onOTTreeChange(level) {
+    const sel = getOTTreeSelection();
+
+    // Completar padres al elegir un nivel inferior directamente
+    if (level === 'equipment' && sel.equipment_id) {
+        const e = allEquips.find(x => x.id == sel.equipment_id);
+        if (e && e.line_id) {
+            sel.line_id = e.line_id;
+            const l = allLines.find(x => x.id == e.line_id);
+            if (l) sel.area_id = l.area_id;
+        }
+    }
+    if (level === 'line' && sel.line_id) {
+        const l = allLines.find(x => x.id == sel.line_id);
+        if (l) sel.area_id = l.area_id;
+    }
+
+    // Limpiar hijos al cambiar un nivel superior
+    if (level === 'area') { sel.line_id = null; sel.equipment_id = null; sel.system_id = null; sel.component_id = null; }
+    if (level === 'line') { sel.equipment_id = null; sel.system_id = null; sel.component_id = null; }
+    if (level === 'equipment') { sel.system_id = null; sel.component_id = null; }
+    if (level === 'system') { sel.component_id = null; }
+
+    renderOTTreeSelects(sel);
+
+    // Los activos rotativos dependen del equipo seleccionado
+    if (level === 'equipment') {
+        await loadRotativeAssets(sel.equipment_id, null);
+    }
+}
+window.onOTTreeChange = onOTTreeChange;
+
 function openCreateOTModal() {
     document.getElementById('otForm').reset();
     document.getElementById('otId').value = '';
     document.getElementById('otRotativeAsset').innerHTML = '<option value="">- Sin activo rotativo -</option>';
+    renderOTTreeSelects({});
 
     // Reset sub-tabs to General
     document.querySelectorAll('.ot-tab-content').forEach(t => t.style.display = 'none');
@@ -869,6 +966,15 @@ async function editOT(id) {
     // Preseleccionar parada vinculada (si existe)
     const otShutdown = document.getElementById('otShutdown');
     if (otShutdown) otShutdown.value = ot.shutdown_id || '';
+
+    // Arbol de equipos: preseleccionar la jerarquia actual de la OT
+    renderOTTreeSelects({
+        area_id: ot.area_id,
+        line_id: ot.line_id,
+        equipment_id: ot.equipment_id,
+        system_id: ot.system_id,
+        component_id: ot.component_id,
+    });
 
     // Load rotative assets for this equipment
     if (ot.equipment_id) {
@@ -1018,6 +1124,7 @@ async function handleOTSubmit(e) {
 
         const raVal = document.getElementById('otRotativeAsset').value;
         const data = {
+            ...getOTTreeSelection(),  // area_id, line_id, equipment_id, system_id, component_id
             description: document.getElementById('otDescription').value,
             maintenance_type: document.getElementById('otType').value,
             priority: document.getElementById('otPriority').value,

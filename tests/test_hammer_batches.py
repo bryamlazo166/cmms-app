@@ -246,9 +246,12 @@ def test_conciliation_summary(three_batches):
     client.post('/api/hammer-batches/change', data=json.dumps({
         'mill': 'M1', 'start_time': '2026-05-10T04:30', 'end_time': '2026-05-10T05:30',
     }), content_type='application/json')
-    # Recibo LOTE-A
+    # Recibo LOTE-A — event_date explicita: sin ella el endpoint usa
+    # date.today() y la recepcion cae fuera de la ventana de conciliacion
+    # (el test fallaba en cualquier fecha posterior a mayo 2026).
     aid = three_batches['A']['id']
-    client.post(f'/api/hammer-batches/{aid}/receive', data=json.dumps({}),
+    client.post(f'/api/hammer-batches/{aid}/receive',
+                data=json.dumps({'event_date': '2026-05-11'}),
                 content_type='application/json')
     # Otro cambio en M2 — LOTE-B sale, LOTE-A entra (ya rellenado)
     client.post('/api/hammer-batches/change', data=json.dumps({
