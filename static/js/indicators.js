@@ -6,9 +6,19 @@ let _indAreaName = '';
 let _indEquipId = null;
 let _indEquipName = '';
 
-document.addEventListener('DOMContentLoaded', () => {
+// Dia de inicio del corte semanal (0=lunes..6=domingo) — config global
+let IND_WEEK_START = 0;
+
+document.addEventListener('DOMContentLoaded', async () => {
+    try {
+        const s = await fetch('/api/settings').then(r => r.json());
+        IND_WEEK_START = parseInt(s.week_start_day) || 0;
+    } catch (_) { /* default lunes */ }
     loadIndicators();
-    window.addEventListener('resize', () => { if (_indChart) _indChart.resize(); });
+    window.addEventListener('resize', () => {
+        if (_indChart) _indChart.resize();
+        if (_paretoChart) _paretoChart.resize();
+    });
 });
 
 function onIndPeriodChange() {
@@ -22,6 +32,17 @@ function getIndDates() {
     const p = document.getElementById('indPeriod').value;
     const today = new Date();
     let s, e = new Date(today);
+    if (p === 'week' || p === 'last_week') {
+        // Semana con corte configurable (ej. viernes a jueves)
+        const pyDay = (today.getDay() + 6) % 7;   // 0=lunes..6=domingo
+        const offset = -((pyDay - IND_WEEK_START + 7) % 7);
+        s = new Date(today);
+        s.setDate(today.getDate() + offset);
+        if (p === 'last_week') s.setDate(s.getDate() - 7);
+        e = new Date(s);
+        e.setDate(e.getDate() + 6);
+        return { start: s.toISOString().slice(0, 10), end: e.toISOString().slice(0, 10) };
+    }
     if (p === 'month') { s = new Date(today.getFullYear(), today.getMonth(), 1); }
     else if (p === 'last_month') { s = new Date(today.getFullYear(), today.getMonth() - 1, 1); e = new Date(today.getFullYear(), today.getMonth(), 0); }
     else if (p === 'quarter') { s = new Date(today); s.setDate(s.getDate() - 90); }
@@ -56,6 +77,7 @@ async function loadIndicators() {
         renderBreadcrumb();
         renderAreasChart(data);
     } catch (e) { console.error('loadIndicators:', e); }
+    loadPareto();
 }
 
 async function drillToEquipments(areaId, areaName) {
@@ -322,6 +344,63 @@ function renderFailures(data) {
         </div>
     `;
 }
+
+// ── Pareto de Fallas (80/20) ─────────────────────────────────────────────
+let _paretoChart = null;
+
+async function loadPareto() {
+    const box = document.getElementById('paretoChart');
+    if (!box || typeof echarts === 'undefined') return;
+    const group = (document.getElementById('paretoGroup') || {}).value || 'mode';
+    const { start, end } = getIndDates();
+    try {
+        const res = await fetch(`/api/indicators/pareto-fallas?start_date=${start}&end_date=${end}&group=${group}`);
+        const data = await res.json();
+        if (data.error) { console.error(data.error); return; }
+
+        if (!_paretoChart) _paretoChart = echarts.init(box);
+        const items = (data.items || []).slice(0, 15);  // top 15 legible
+        const labels = items.map(i => i.label);
+        const counts = items.map(i => i.count);
+        const cum = items.map(i => i.cum_pct);
+
+        _paretoChart.setOption({
+            backgroundColor: 'transparent',
+            tooltip: {
+                trigger: 'axis',
+                formatter: (ps) => {
+                    const it = items[ps[0].dataIndex];
+                    return `<b>${it.label}</b><br/>Ocurrencias: ${it.count} (${it.pct}%)<br/>` +
+                           `Acumulado: ${it.cum_pct}%<br/>Horas de parada: ${it.downtime_hours}h`;
+                },
+            },
+            grid: { left: 50, right: 55, top: 30, bottom: 90 },
+            xAxis: {
+                type: 'category', data: labels,
+                axisLabel: { rotate: 40, color: '#9ab0cb', fontSize: 10, width: 110, overflow: 'truncate' },
+                axisLine: { lineStyle: { color: '#344964' } },
+            },
+            yAxis: [
+                { type: 'value', name: 'OTs', axisLabel: { color: '#9ab0cb' },
+                  splitLine: { lineStyle: { color: '#233246' } } },
+                { type: 'value', name: '% acum', min: 0, max: 100,
+                  axisLabel: { color: '#9ab0cb', formatter: '{value}%' }, splitLine: { show: false } },
+            ],
+            series: [
+                { name: 'Ocurrencias', type: 'bar', data: counts, barMaxWidth: 34,
+                  itemStyle: { color: '#0A84FF', borderRadius: [4, 4, 0, 0] },
+                  label: { show: true, position: 'top', color: '#dce7f5', fontSize: 10 } },
+                { name: '% acumulado', type: 'line', yAxisIndex: 1, data: cum, smooth: true,
+                  symbolSize: 6, itemStyle: { color: '#FF9F0A' }, lineStyle: { width: 2 },
+                  markLine: { silent: true, symbol: 'none',
+                    data: [{ yAxis: 80 }],
+                    lineStyle: { color: '#FF453A', type: 'dashed' },
+                    label: { formatter: '80%', color: '#FF453A' } } },
+            ],
+        });
+    } catch (e) { console.error('loadPareto:', e); }
+}
+window.loadPareto = loadPareto;
 
 function round2(v) { return Math.round(v * 100) / 100; }
 

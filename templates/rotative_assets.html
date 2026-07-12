@@ -91,6 +91,33 @@
                     </tbody>
                 </table>
             </div>
+
+            <!-- Seguimiento Predictivo: motores, bombas, motorreductores, cajas reductoras -->
+            <div style="margin-top:24px;">
+                <h3 style="color:#5AC8FA;margin-bottom:4px;"><i class="fas fa-heartbeat"></i> Seguimiento Predictivo</h3>
+                <div style="color:rgba(255,255,255,.45);font-size:.8rem;margin-bottom:10px;">
+                    Estado de las medidas predictivas (megado, corriente/temperatura, monitoreo) de motores electricos,
+                    bombas, motorreductores y cajas reductoras. Los activos <b>sin medidas configuradas</b> son la brecha a cerrar.
+                </div>
+                <div class="kpi-grid" id="predKpis" style="margin-bottom:10px;">
+                    <div class="kpi-card"><div class="label">🔴 Vencidos</div><div id="predRojo" class="value" style="color:#FF453A;">-</div></div>
+                    <div class="kpi-card"><div class="label">🟠 Proximos</div><div id="predAmarillo" class="value" style="color:#FF9F0A;">-</div></div>
+                    <div class="kpi-card"><div class="label">🟢 Al dia</div><div id="predVerde" class="value" style="color:#30D158;">-</div></div>
+                    <div class="kpi-card"><div class="label">Sin medidas</div><div id="predSinMedidas" class="value" style="color:#9ab0cb;">-</div></div>
+                </div>
+                <div class="table-wrap">
+                    <table class="table-sm">
+                        <thead>
+                            <tr>
+                                <th>Semaforo</th><th>Codigo</th><th>Activo</th><th>Categoria</th><th>Medidas (tipo · ultima · proxima)</th>
+                            </tr>
+                        </thead>
+                        <tbody id="predBody">
+                            <tr><td colspan="5">Cargando...</td></tr>
+                        </tbody>
+                    </table>
+                </div>
+            </div>
         </div>
     </section>
 

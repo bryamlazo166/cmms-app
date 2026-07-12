@@ -1106,6 +1106,52 @@ def register_core_routes(app, db, logger, app_build_tag,
 
         return jsonify({"by_component": data, "by_equipment": eq_data, "months": months})
 
+    # ── Configuracion global (app_settings) ───────────────────────────────
+
+    @app.route('/api/settings', methods=['GET'])
+    def get_app_settings():
+        """Configuracion global. Incluye defaults para claves conocidas."""
+        from models import AppSetting
+        from utils.app_settings import get_week_start_day
+        out = {'week_start_day': get_week_start_day()}
+        try:
+            for s in AppSetting.query.all():
+                out[s.key] = s.value
+            out['week_start_day'] = get_week_start_day()
+        except Exception:
+            pass
+        return jsonify(out)
+
+    @app.route('/api/settings', methods=['PUT'])
+    def update_app_settings():
+        """Actualiza configuracion global (solo admin). Body: {clave: valor}."""
+        from flask_login import current_user
+        from models import AppSetting
+        from utils.app_settings import set_setting_cache
+        if not getattr(current_user, 'is_authenticated', False) or \
+                (current_user.role or '').lower() != 'admin':
+            return jsonify({"error": "Solo admin puede cambiar la configuracion"}), 403
+        data = request.get_json(force=True) or {}
+        ALLOWED = {'week_start_day'}
+        changed = {}
+        for key, value in data.items():
+            if key not in ALLOWED:
+                continue
+            if key == 'week_start_day':
+                try:
+                    value = str(int(value) % 7)
+                except (TypeError, ValueError):
+                    return jsonify({"error": "week_start_day debe ser 0 (lunes) a 6 (domingo)"}), 400
+            s = AppSetting.query.get(key)
+            if s:
+                s.value = value
+            else:
+                db.session.add(AppSetting(key=key, value=value))
+            set_setting_cache(key, value)
+            changed[key] = value
+        db.session.commit()
+        return jsonify({"ok": True, "changed": changed})
+
     # ── Failure Catalog (Catalogo de Fallas) ──────────────────────────────
 
     @app.route('/api/failure-catalog', methods=['GET'])
@@ -1179,6 +1225,75 @@ def register_core_routes(app, db, logger, app_build_tag,
         entry.usage_count = (entry.usage_count or 0) + 1
         db.session.commit()
         return jsonify(entry.to_dict())
+
+    @app.route('/api/failure-modes/suggestions', methods=['GET'])
+    def failure_mode_suggestions():
+        """Catalogo + historial de modos de falla para el autocomplete de OTs.
+
+        Combina failure_catalog (activos) con los failure_mode ya usados en
+        work_orders (con su conteo), sin duplicar (case-insensitive). Orden:
+        mas usados primero.
+        """
+        merged = {}  # upper -> {mode, category, uses}
+        try:
+            if FailureCatalog is not None:
+                for e in FailureCatalog.query.filter_by(is_active=True).all():
+                    merged[e.failure_mode.strip().upper()] = {
+                        'mode': e.failure_mode.strip().upper(),
+                        'category': (e.failure_category or '').upper() or None,
+                        'uses': e.usage_count or 0,
+                    }
+            hist = db.session.query(
+                WorkOrder.failure_mode, db.func.count(WorkOrder.id)
+            ).filter(
+                WorkOrder.failure_mode.isnot(None), WorkOrder.failure_mode != ''
+            ).group_by(WorkOrder.failure_mode).all()
+            for mode, count in hist:
+                key = mode.strip().upper()
+                if not key:
+                    continue
+                if key in merged:
+                    merged[key]['uses'] += count
+                else:
+                    merged[key] = {'mode': key, 'category': None, 'uses': count}
+        except Exception as e:
+            logger.warning(f"failure_mode_suggestions error: {e}")
+        items = sorted(merged.values(), key=lambda x: -x['uses'])
+        return jsonify(items)
+
+    @app.route('/api/failure-modes/track', methods=['POST'])
+    def track_failure_mode():
+        """Registra el uso de un modo de falla al guardar una OT.
+
+        Si existe en el catalogo (case-insensitive) incrementa usage_count;
+        si no existe lo agrega con categoria SIN_CLASIFICAR para que el
+        catalogo crezca con el historial real y luego el admin lo categorice.
+        """
+        if FailureCatalog is None:
+            return jsonify({"ok": False}), 501
+        data = request.get_json(force=True) or {}
+        mode = (data.get('mode') or '').strip().upper()
+        if not mode:
+            return jsonify({"error": "mode requerido"}), 400
+        try:
+            entry = FailureCatalog.query.filter(
+                db.func.upper(FailureCatalog.failure_mode) == mode
+            ).first()
+            if entry:
+                entry.usage_count = (entry.usage_count or 0) + 1
+                if not entry.is_active:
+                    entry.is_active = True
+            else:
+                entry = FailureCatalog(
+                    failure_mode=mode, failure_category='SIN_CLASIFICAR',
+                    is_active=True, usage_count=1)
+                db.session.add(entry)
+            db.session.commit()
+            return jsonify(entry.to_dict())
+        except Exception as e:
+            db.session.rollback()
+            logger.warning(f"track_failure_mode error: {e}")
+            return jsonify({"ok": False}), 500
 
     @app.route('/api/failure-catalog/seed', methods=['POST'])
     def seed_failure_catalog():

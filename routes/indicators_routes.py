@@ -438,3 +438,86 @@ def register_indicators_routes(app, db, logger, WorkOrder, Area, Line, Equipment
         except Exception as e:
             logger.error(f"indicators_equipment_failures error: {e}")
             return jsonify({"error": str(e)}), 500
+
+    @app.route('/api/indicators/pareto-fallas', methods=['GET'])
+    def indicators_pareto_fallas():
+        """Pareto de fallas (OTs correctivas) en la ventana de fechas.
+
+        Query: start_date / end_date (default: ultimos 90 dias),
+               group = mode | equipment | component (default mode),
+               area_id opcional.
+        Devuelve items ordenados desc por ocurrencias con % acumulado
+        (analisis 80/20) y horas de parada asociadas a cada grupo.
+        """
+        try:
+            end = _parse_date(request.args.get('end_date')) or dt.date.today()
+            start = _parse_date(request.args.get('start_date')) or (end - dt.timedelta(days=89))
+            group = (request.args.get('group') or 'mode').lower()
+            area_id = request.args.get('area_id', type=int)
+
+            q = WorkOrder.query.filter(WorkOrder.maintenance_type == 'Correctivo')
+            if area_id:
+                q = q.filter(WorkOrder.area_id == area_id)
+            ots = q.all()
+
+            def in_window(ot):
+                d = ot.real_end_date or ot.real_start_date or ot.scheduled_date
+                if not d:
+                    return False
+                try:
+                    return start <= dt.date.fromisoformat(str(d)[:10]) <= end
+                except Exception:
+                    return False
+
+            # Pre-cargar nombres para agrupar sin N+1
+            eq_names, comp_names = {}, {}
+            if group in ('equipment', 'component'):
+                eq_ids = {o.equipment_id for o in ots if o.equipment_id}
+                comp_ids = {o.component_id for o in ots if o.component_id}
+                if eq_ids:
+                    for e in Equipment.query.filter(Equipment.id.in_(eq_ids)).all():
+                        eq_names[e.id] = f"[{e.tag}] {e.name}" if e.tag else e.name
+                if comp_ids:
+                    from models import Component
+                    for c in Component.query.filter(Component.id.in_(comp_ids)).all():
+                        comp_names[c.id] = c.name
+
+            buckets = {}
+            total = 0
+            for ot in ots:
+                if not in_window(ot):
+                    continue
+                total += 1
+                if group == 'equipment':
+                    key = eq_names.get(ot.equipment_id, 'SIN EQUIPO')
+                elif group == 'component':
+                    key = comp_names.get(ot.component_id, 'SIN COMPONENTE')
+                else:
+                    key = (ot.failure_mode or 'SIN MODO DE FALLA').strip().upper()
+                b = buckets.setdefault(key, {'label': key, 'count': 0, 'downtime_hours': 0.0})
+                b['count'] += 1
+                dh = 0.0
+                if getattr(ot, 'caused_downtime', None) and ot.downtime_hours:
+                    dh = float(ot.downtime_hours)
+                elif getattr(ot, 'caused_downtime', None) and ot.real_duration:
+                    dh = float(ot.real_duration)
+                b['downtime_hours'] += dh
+
+            items = sorted(buckets.values(), key=lambda x: (-x['count'], -x['downtime_hours']))
+            cum = 0
+            for it in items:
+                cum += it['count']
+                it['downtime_hours'] = round(it['downtime_hours'], 1)
+                it['pct'] = round(it['count'] / total * 100, 1) if total else 0
+                it['cum_pct'] = round(cum / total * 100, 1) if total else 0
+
+            return jsonify({
+                'start_date': start.isoformat(),
+                'end_date': end.isoformat(),
+                'group': group,
+                'total': total,
+                'items': items,
+            })
+        except Exception as e:
+            logger.error(f"indicators_pareto_fallas error: {e}")
+            return jsonify({"error": str(e)}), 500

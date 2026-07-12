@@ -1,0 +1,128 @@
+"""Tests: corte semanal configurable, catalogo de modos de falla,
+Pareto de fallas y seguimiento predictivo de activos rotativos."""
+import json
+
+
+def test_settings_default_week_start(auth_admin):
+    r = auth_admin.get('/api/settings')
+    assert r.status_code == 200
+    assert int(r.json['week_start_day']) in range(7)
+
+
+def test_settings_update_week_start_admin(auth_admin):
+    # Viernes (4) -> el reporte semanal debe empezar en viernes
+    r = auth_admin.put('/api/settings', data=json.dumps({'week_start_day': 4}),
+                       content_type='application/json')
+    assert r.status_code == 200
+    assert r.json['changed']['week_start_day'] == '4'
+
+    import datetime as dt
+    r2 = auth_admin.get('/api/reports/weekly-plan?window=current_week')
+    assert r2.status_code == 200
+    start = dt.date.fromisoformat(r2.json['meta']['start_date'])
+    end = dt.date.fromisoformat(r2.json['meta']['end_date'])
+    assert start.weekday() == 4  # viernes
+    assert (end - start).days == 6  # viernes a jueves
+
+    # Restaurar default (lunes) para no afectar otros tests
+    auth_admin.put('/api/settings', data=json.dumps({'week_start_day': 0}),
+                   content_type='application/json')
+
+
+def test_settings_update_rejected_for_viewer(auth_viewer):
+    r = auth_viewer.put('/api/settings', data=json.dumps({'week_start_day': 4}),
+                        content_type='application/json')
+    assert r.status_code == 403
+
+
+def test_weekly_plan_includes_smrp_kpis(auth_admin):
+    r = auth_admin.get('/api/reports/weekly-plan?window=current_week')
+    assert r.status_code == 200
+    smrp = r.json.get('smrp')
+    assert smrp is not None
+    for key in ('schedule_compliance_pct', 'proactive_pct', 'reactive_pct',
+                'backlog_ots', 'backlog_weeks', 'benchmark'):
+        assert key in smrp
+
+
+def test_failure_mode_suggestions_and_track(auth_admin):
+    # Crear una OT con modo de falla y verificar que aparece en sugerencias
+    auth_admin.post('/api/work-orders', data=json.dumps({
+        'description': 'Falla de prueba', 'maintenance_type': 'Correctivo',
+        'status': 'Abierta', 'failure_mode': 'DESGASTE DE PRUEBA XYZ',
+    }), content_type='application/json')
+
+    r = auth_admin.get('/api/failure-modes/suggestions')
+    assert r.status_code == 200
+    modes = [i['mode'] for i in r.json]
+    assert 'DESGASTE DE PRUEBA XYZ' in modes
+
+    # track: modo nuevo se agrega al catalogo como SIN_CLASIFICAR
+    r2 = auth_admin.post('/api/failure-modes/track', data=json.dumps({
+        'mode': 'modo nuevo de prueba'}), content_type='application/json')
+    assert r2.status_code == 200
+    assert r2.json['failure_mode'] == 'MODO NUEVO DE PRUEBA'
+    assert r2.json['usage_count'] == 1
+
+    # track repetido incrementa
+    r3 = auth_admin.post('/api/failure-modes/track', data=json.dumps({
+        'mode': 'MODO NUEVO DE PRUEBA'}), content_type='application/json')
+    assert r3.json['usage_count'] == 2
+
+
+def test_pareto_fallas(auth_admin):
+    import datetime as dt
+    today = dt.date.today().isoformat()
+    # OTs correctivas cerradas hoy con modos conocidos
+    for modo in ('ROTURA', 'ROTURA', 'FUGA'):
+        auth_admin.post('/api/work-orders', data=json.dumps({
+            'description': f'Pareto test {modo}', 'maintenance_type': 'Correctivo',
+            'status': 'Cerrada', 'failure_mode': modo, 'real_end_date': today,
+        }), content_type='application/json')
+
+    r = auth_admin.get('/api/indicators/pareto-fallas?group=mode')
+    assert r.status_code == 200
+    data = r.json
+    assert data['total'] >= 3
+    labels = [i['label'] for i in data['items']]
+    assert 'ROTURA' in labels and 'FUGA' in labels
+    # % acumulado del ultimo item = 100
+    assert abs(data['items'][-1]['cum_pct'] - 100.0) < 0.2
+
+
+def test_predictive_tracking(auth_admin, app):
+    # Crear un activo rotativo categoria BOMBA sin medidas -> sin_medidas
+    r = auth_admin.post('/api/rotative-assets', data=json.dumps({
+        'name': 'BOMBA TEST PREDICTIVO', 'category': 'BOMBA CENTRIFUGA',
+    }), content_type='application/json')
+    assert r.status_code in (200, 201)
+
+    r2 = auth_admin.get('/api/rotative-assets/predictive-tracking')
+    assert r2.status_code == 200
+    data = r2.json
+    assert data['summary']['total'] >= 1
+    nombres = [a['name'] for a in data['assets']]
+    assert 'BOMBA TEST PREDICTIVO' in nombres
+    bomba = next(a for a in data['assets'] if a['name'] == 'BOMBA TEST PREDICTIVO')
+    assert bomba['overall'] is None  # sin medidas configuradas
+
+
+def test_monitoring_point_accepts_rotative_asset(auth_admin):
+    # El punto de monitoreo acepta rotative_asset_id (sigue al activo)
+    r = auth_admin.post('/api/rotative-assets', data=json.dumps({
+        'name': 'MOTOR TEST MON', 'category': 'MOTOR ELECTRICO',
+    }), content_type='application/json')
+    asset_id = r.json['id']
+
+    r2 = auth_admin.post('/api/monitoring/points', data=json.dumps({
+        'name': 'VIBRACION MOTOR TEST', 'measurement_type': 'VIBRACION',
+        'frequency_days': 30, 'rotative_asset_id': asset_id,
+    }), content_type='application/json')
+    assert r2.status_code in (200, 201), r2.json
+    assert r2.json.get('rotative_asset_id') == asset_id
+
+    # Y el seguimiento predictivo lo refleja como medida del activo
+    r3 = auth_admin.get('/api/rotative-assets/predictive-tracking')
+    motor = next(a for a in r3.json['assets'] if a['name'] == 'MOTOR TEST MON')
+    tipos = [m['tipo'] for m in motor['measures']]
+    assert 'VIBRACION' in tipos

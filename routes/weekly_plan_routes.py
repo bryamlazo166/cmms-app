@@ -71,11 +71,18 @@ def _estimate_hours(source_type, obj, WorkOrder=None):
 # ── Código e ISO week helpers ────────────────────────────────────────────────
 
 def _iso_week_bounds(date_str):
-    """Devuelve (lunes, domingo) de la semana que contiene a date_str."""
+    """Devuelve (inicio, fin) de la semana que contiene a date_str.
+
+    El dia de inicio es configurable (app_settings.week_start_day:
+    0=lunes ... 6=domingo). Con el default 0 se comporta igual que antes
+    (lunes-domingo).
+    """
+    from utils.app_settings import get_week_start_day
     d = dt.date.fromisoformat(date_str)
-    monday = d - dt.timedelta(days=d.weekday())
-    sunday = monday + dt.timedelta(days=6)
-    return monday.isoformat(), sunday.isoformat()
+    wsd = get_week_start_day()
+    start = d - dt.timedelta(days=(d.weekday() - wsd) % 7)
+    end = start + dt.timedelta(days=6)
+    return start.isoformat(), end.isoformat()
 
 
 def _generate_plan_code(week_start, WeeklyPlan):

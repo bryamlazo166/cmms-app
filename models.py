@@ -156,6 +156,22 @@ class RolePermission(db.Model):
         }
 
 
+class AppSetting(db.Model):
+    """Configuracion global clave/valor de la aplicacion.
+
+    Claves en uso:
+      week_start_day: dia de inicio del corte semanal para reportes e
+        indicadores (0=lunes ... 6=domingo). Ej: 4 = semana de viernes
+        a jueves ("corte de viernes a viernes").
+    """
+    __tablename__ = 'app_settings'
+    key: Mapped[str] = mapped_column(String(60), primary_key=True)
+    value: Mapped[str | None] = mapped_column(String(200), nullable=True)
+
+    def to_dict(self):
+        return {"key": self.key, "value": self.value}
+
+
 # Taxonomy: Area -> Line -> Equipment -> System -> Component -> SparePart
 
 class Area(db.Model):
@@ -1118,6 +1134,10 @@ class MonitoringPoint(db.Model):
     equipment_id: Mapped[int | None] = mapped_column(ForeignKey('equipments.id'), nullable=True)
     system_id: Mapped[int | None] = mapped_column(ForeignKey('systems.id'), nullable=True)
     component_id: Mapped[int | None] = mapped_column(ForeignKey('components.id'), nullable=True)
+    # Vinculo directo al activo rotativo (espejo de MotorElectricalTest):
+    # el punto sigue al activo (motor, bomba, caja reductora) aunque cambie
+    # de equipo. NULL = punto anclado solo a la jerarquia.
+    rotative_asset_id: Mapped[int | None] = mapped_column(ForeignKey('rotative_assets.id'), nullable=True)
 
     # Limits and frequency
     normal_min: Mapped[float | None] = mapped_column(Float, nullable=True)
@@ -1158,6 +1178,7 @@ class MonitoringPoint(db.Model):
             "equipment_id": self.equipment_id,
             "system_id": self.system_id,
             "component_id": self.component_id,
+            "rotative_asset_id": self.rotative_asset_id,
             "area_name": self.area.name if self.area else None,
             "line_name": self.line.name if self.line else None,
             "equipment_name": self.equipment.name if self.equipment else None,

@@ -56,6 +56,104 @@ def register_rotative_assets_routes(
             )
         )
 
+    @app.route('/api/rotative-assets/predictive-tracking', methods=['GET'])
+    def rotative_predictive_tracking():
+        """Seguimiento de medidas predictivas por activo rotativo.
+
+        Cubre motores electricos, bombas, motorreductores y cajas reductoras:
+        - Megado y ruta mensual corriente/temperatura (si is_electric_motor,
+          programacion que ya vive en el propio RotativeAsset).
+        - Puntos de monitoreo (vibracion, temperatura, etc.) vinculados por
+          rotative_asset_id o, en su defecto, por el equipo+componente donde
+          esta instalado.
+        Devuelve semaforo global por activo (peor estado de sus medidas).
+        """
+        try:
+            from models import MonitoringPoint
+            from utils.schedule_helpers import _calculate_monitoring_schedule
+
+            CATS = ('MOTOR', 'BOMBA', 'MOTORREDUCTOR', 'CAJA REDUCTORA', 'REDUCTOR')
+            assets = RotativeAsset.query.filter(RotativeAsset.is_active == True).all()  # noqa: E712
+            assets = [a for a in assets
+                      if getattr(a, 'is_electric_motor', False)
+                      or any(c in (a.category or '').strip().upper() for c in CATS)]
+
+            # Puntos de monitoreo activos, indexados por rotativo y por equipo/comp
+            points = MonitoringPoint.query.filter_by(is_active=True).all()
+            by_asset, by_eq_comp, by_eq = {}, {}, {}
+            for p in points:
+                if getattr(p, 'rotative_asset_id', None):
+                    by_asset.setdefault(p.rotative_asset_id, []).append(p)
+                if p.equipment_id and p.component_id:
+                    by_eq_comp.setdefault((p.equipment_id, p.component_id), []).append(p)
+                elif p.equipment_id:
+                    by_eq.setdefault(p.equipment_id, []).append(p)
+
+            SEV = {'ROJO': 3, 'AMARILLO': 2, 'PENDIENTE': 1, 'VERDE': 0}
+            rows = []
+            summary = {'total': 0, 'rojo': 0, 'amarillo': 0, 'verde': 0, 'pendiente': 0, 'sin_medidas': 0}
+            for a in assets:
+                measures = []
+                if getattr(a, 'is_electric_motor', False):
+                    _, meg_status = _calculate_monitoring_schedule(
+                        a.last_megado_date, a.megado_frequency_days or 180,
+                        a.megado_warning_days or 14)
+                    measures.append({
+                        'tipo': 'MEGADO', 'status': meg_status,
+                        'last': a.last_megado_date, 'next': a.next_megado_due,
+                        'freq_days': a.megado_frequency_days or 180,
+                    })
+                    _, mes_status = _calculate_monitoring_schedule(
+                        a.last_measure_date, a.measure_frequency_days or 30,
+                        a.measure_warning_days or 5)
+                    measures.append({
+                        'tipo': 'CORRIENTE/TEMP', 'status': mes_status,
+                        'last': a.last_measure_date, 'next': a.next_measure_due,
+                        'freq_days': a.measure_frequency_days or 30,
+                    })
+
+                pts = list(by_asset.get(a.id, []))
+                if not pts and a.equipment_id:
+                    if a.component_id:
+                        pts = by_eq_comp.get((a.equipment_id, a.component_id), [])
+                    else:
+                        pts = by_eq.get(a.equipment_id, [])
+                for p in pts:
+                    _, p_status = _calculate_monitoring_schedule(
+                        p.last_measurement_date, p.frequency_days or 7, p.warning_days or 1)
+                    measures.append({
+                        'tipo': (p.measurement_type or 'MONITOREO').upper(),
+                        'status': p_status, 'last': p.last_measurement_date,
+                        'next': p.next_due_date, 'freq_days': p.frequency_days,
+                        'point_code': p.code, 'point_id': p.id,
+                    })
+
+                overall = None
+                if measures:
+                    overall = max((m['status'] or 'PENDIENTE' for m in measures),
+                                  key=lambda s: SEV.get(s, 1))
+                rows.append({
+                    'id': a.id, 'code': a.code, 'name': a.name,
+                    'category': (a.category or '-').upper(),
+                    'status': a.status,
+                    'equipment_id': a.equipment_id,
+                    'is_electric_motor': bool(getattr(a, 'is_electric_motor', False)),
+                    'measures': measures,
+                    'overall': overall,   # None = sin medidas configuradas
+                })
+                summary['total'] += 1
+                if overall is None:
+                    summary['sin_medidas'] += 1
+                else:
+                    summary[overall.lower() if overall.lower() in ('rojo', 'amarillo', 'verde') else 'pendiente'] += 1
+
+            # Peor estado primero; sin medidas al final (son el hueco a cerrar)
+            rows.sort(key=lambda r: -(SEV.get(r['overall'], -1) if r['overall'] else -1))
+            return jsonify({'summary': summary, 'assets': rows})
+        except Exception as e:
+            app.logger.exception('predictive-tracking error')
+            return jsonify({"error": str(e)}), 500
+
     @app.route('/api/rotative-assets', methods=['GET', 'POST'])
     def handle_rotative_assets():
         if request.method == 'POST':

@@ -70,7 +70,9 @@
                     <option value="inherente">Disponibilidad Inherente (ISO 14224)</option>
                 </select>
                 <select id="indPeriod" onchange="onIndPeriodChange()">
-                    <option value="month">Mes actual</option>
+                    <option value="week">Semana actual (corte config.)</option>
+                    <option value="last_week">Semana anterior (corte config.)</option>
+                    <option value="month" selected>Mes actual</option>
                     <option value="last_month">Mes anterior</option>
                     <option value="quarter">Último trimestre</option>
                     <option value="semester">Último semestre</option>
@@ -94,6 +96,19 @@
         <div class="failures-panel" id="failuresPanel" style="display:none;">
             <h3 id="failuresTitle"></h3>
             <div id="failuresList"></div>
+        </div>
+
+        <!-- Pareto de Fallas (80/20) -->
+        <div class="chart-panel" id="paretoPanel">
+            <h3><i class="fas fa-chart-column"></i> Pareto de Fallas (80/20)</h3>
+            <div class="method">OTs correctivas del periodo agrupadas por
+                <select id="paretoGroup" onchange="loadPareto()" style="background:#12161c;color:#dce7f5;border:1px solid #2f4257;border-radius:6px;padding:2px 8px;">
+                    <option value="mode">Modo de falla</option>
+                    <option value="equipment">Equipo</option>
+                    <option value="component">Componente</option>
+                </select>
+                — barras = ocurrencias, linea = % acumulado. El 20% de las causas suele concentrar el 80% de las fallas.</div>
+            <div class="chart-box" id="paretoChart"></div>
         </div>
     </div>
 </section>

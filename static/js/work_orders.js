@@ -743,7 +743,7 @@ function renderPlanningTable(data = null) {
             <td>${ot.system_name || '-'}</td>
             <td>${ot.component_name || '-'}</td>
             <td><span class="badge" style="background:${getCriticalityColor(ot.criticality)}; color:white;">${ot.criticality || '-'}</span></td>
-            <td title="${ot.description || ''}">${ot.description || ''}</td>
+            <td title="${(ot.description || '') + (ot.execution_comments ? '\n\nTRABAJO REALIZADO: ' + ot.execution_comments : '')}">${ot.description || ''}${ot.status === 'Cerrada' && ot.execution_comments ? `<div style="color:#30D158;font-size:.76rem;margin-top:3px;"><i class="fas fa-check-circle"></i> ${ot.execution_comments}</div>` : ''}</td>
             <td>${ot.maintenance_type || '-'}${ot.source_type ? ' <span style="font-size:.7rem;color:#30D158" title="' + ot.source_type + '">[PM]</span>' : ''}</td>
             <td><span class="badge ${statusClass}">${ot.status || '-'}</span></td>
             <td><span class="badge ${priorityClass}">${ot.priority || '-'}</span></td>
@@ -889,6 +889,36 @@ function renderOTTreeSelects(sel = {}) {
     fillTreeSelect('otTreeComp', [...comps].sort(byName), sel.component_id, name, sel.system_id ? '- Sin componente -' : '- Elija un sistema -');
 }
 
+// ============= CATALOGO DE MODOS DE FALLA =============
+// Alimenta el datalist del input #otFailureMode con catalogo + historial
+// (mas usados primero) y aprende modos nuevos al guardar (track).
+let _fmSuggestionsLoaded = false;
+async function loadFailureModeSuggestions(force = false) {
+    if (_fmSuggestionsLoaded && !force) return;
+    try {
+        const res = await fetch('/api/failure-modes/suggestions');
+        const items = await res.json();
+        const dl = document.getElementById('failureModesList');
+        if (!dl) return;
+        dl.innerHTML = '';
+        items.forEach(it => {
+            const o = document.createElement('option');
+            o.value = it.mode;
+            if (it.category) o.label = `${it.category} — ${it.uses} usos`;
+            dl.appendChild(o);
+        });
+        _fmSuggestionsLoaded = true;
+    } catch (_) { /* datalist queda vacio, input sigue siendo libre */ }
+}
+
+function trackFailureMode(mode) {
+    if (!mode) return;
+    fetch('/api/failure-modes/track', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ mode: mode }),
+    }).then(() => loadFailureModeSuggestions(true)).catch(() => {});
+}
+
 async function onOTTreeChange(level) {
     const sel = getOTTreeSelection();
 
@@ -926,6 +956,9 @@ function openCreateOTModal() {
     document.getElementById('otId').value = '';
     document.getElementById('otRotativeAsset').innerHTML = '<option value="">- Sin activo rotativo -</option>';
     renderOTTreeSelects({});
+    loadFailureModeSuggestions();
+    const execBlock = document.getElementById('otExecutedBlock');
+    if (execBlock) execBlock.style.display = 'none';
 
     // Reset sub-tabs to General
     document.querySelectorAll('.ot-tab-content').forEach(t => t.style.display = 'none');
@@ -954,6 +987,17 @@ async function editOT(id) {
     document.getElementById('otId').value = ot.id;
     document.getElementById('otNoticeId').value = ot.notice_id || '';
     document.getElementById('otDescription').value = ot.description || '';
+
+    // Trabajo realizado (comentarios del cierre) — visible si existen
+    const execBlock = document.getElementById('otExecutedBlock');
+    if (execBlock) {
+        if (ot.execution_comments) {
+            execBlock.style.display = 'block';
+            document.getElementById('otExecutedText').textContent = ot.execution_comments;
+        } else {
+            execBlock.style.display = 'none';
+        }
+    }
     document.getElementById('otType').value = ot.maintenance_type || 'Preventivo';
     document.getElementById('otPriority').value = ot.priority || 'Media';
     document.getElementById('otScheduledDate').value = ot.scheduled_date || '';
@@ -1017,6 +1061,7 @@ async function editOT(id) {
     // Load Feedback (Lessons Learned)
     checkFeedback(ot.equipment_id);
 
+    loadFailureModeSuggestions();
     document.getElementById('otModal').showModal();
 }
 
@@ -1133,7 +1178,7 @@ async function handleOTSubmit(e) {
             provider_id: document.getElementById('otProvider').value ? parseInt(document.getElementById('otProvider').value) : null,
             estimated_duration: document.getElementById('otEstDuration').value,
             status: document.getElementById('otStatus').value,
-            failure_mode: document.getElementById('otFailureMode').value,
+            failure_mode: (document.getElementById('otFailureMode').value || '').trim().toUpperCase(),
             rotative_asset_id: raVal ? parseInt(raVal) : null,
             shutdown_id: (() => {
                 const v = document.getElementById('otShutdown') ? document.getElementById('otShutdown').value : '';
@@ -1164,6 +1209,9 @@ async function handleOTSubmit(e) {
         }
 
         const savedOT = await res.json();
+
+        // Aprender el modo de falla en el catalogo (nuevo o incrementar uso)
+        if (data.failure_mode) trackFailureMode(data.failure_mode);
 
         // Sync notice data if linked
         if (noticeId) {

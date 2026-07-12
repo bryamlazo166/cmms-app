@@ -147,6 +147,7 @@
 
         <div class="weekly-toolbar">
             <div class="filter-block"><label>Ventana</label><select id="weeklyWindow"><option value="current_week">Semana actual</option><option value="next_week">Semana siguiente</option><option value="weekend">Fin de semana</option><option value="custom">Personalizado</option></select></div>
+            <div class="filter-block"><label title="Dia en que inicia la semana para todos los cortes semanales (reportes, indicadores y programa nocturno). Solo admin puede cambiarlo.">Corte semanal</label><select id="weekStartDaySetting" onchange="saveWeekStartSetting(this.value)"><option value="0">Lun → Dom</option><option value="1">Mar → Lun</option><option value="2">Mie → Mar</option><option value="3">Jue → Mie</option><option value="4">Vie → Jue</option><option value="5">Sab → Vie</option><option value="6">Dom → Sab</option></select></div>
             <div class="filter-block"><label>Inicio</label><input type="date" id="weeklyStartDate"></div>
             <div class="filter-block"><label>Fin</label><input type="date" id="weeklyEndDate"></div>
             <div class="filter-block"><label>Especialidad</label><select id="weeklySpecialty"><option value="">Todas</option><option value="MECANICO">Mecanico</option><option value="ELECTRICO">Electrico</option><option value="MIXTO">Mixto</option><option value="SIN ASIGNAR">Sin asignar</option></select></div>
@@ -165,6 +166,15 @@
             <article class="weekly-kpi"><div class="label">No Ejecutadas ❌</div><div class="value" id="wkNoEjecutada" style="color:#ff6b6b">-</div></article>
             <article class="weekly-kpi"><div class="label">Bloqueadas 🔒</div><div class="value" id="wkBlocked">-</div></article>
             <article class="weekly-kpi"><div class="label">Cumplimiento 📊</div><div class="value" id="wkCompliance">-</div></article>
+        </div>
+
+        <!-- KPIs SMRP (best practices de gestion de mantenimiento) -->
+        <div class="weekly-kpi-grid" id="smrpStrip" title="Benchmarks SMRP: cumplimiento de programa >90%, trabajo proactivo >75%, backlog sano 2-4 semanas-cuadrilla">
+            <article class="weekly-kpi"><div class="label">Proactivo (PM+PdM) 🎯</div><div class="value" id="smrpProactive">-</div><div class="label" style="font-size:.62rem;color:#5a7aa0">meta &gt;75%</div></article>
+            <article class="weekly-kpi"><div class="label">Reactivo ⚠️</div><div class="value" id="smrpReactive">-</div><div class="label" style="font-size:.62rem;color:#5a7aa0">meta &lt;25%</div></article>
+            <article class="weekly-kpi"><div class="label">Backlog (OTs abiertas)</div><div class="value" id="smrpBacklogOts">-</div></article>
+            <article class="weekly-kpi"><div class="label">Backlog (semanas) ⏳</div><div class="value" id="smrpBacklogWeeks">-</div><div class="label" style="font-size:.62rem;color:#5a7aa0">sano: 2-4 sem</div></article>
+            <article class="weekly-kpi"><div class="label">MTTR semana (h)</div><div class="value" id="smrpMttr">-</div></article>
         </div>
 
         <section class="chart-grid weekly-chart-grid">

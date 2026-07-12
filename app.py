@@ -1208,6 +1208,8 @@ _ENSURE_INDEXES_SQL = [
     "ALTER TABLE purchase_orders ADD COLUMN IF NOT EXISTS external_rq_code VARCHAR(50)",
     "ALTER TABLE purchase_orders ADD COLUMN IF NOT EXISTS external_notes TEXT",
     "CREATE INDEX IF NOT EXISTS ix_po_external_rq ON purchase_orders(external_rq_code)",
+    # Predictivos: punto de monitoreo puede seguir a un activo rotativo
+    "ALTER TABLE monitoring_points ADD COLUMN IF NOT EXISTS rotative_asset_id INTEGER REFERENCES rotative_assets(id)",
 ]
 
 

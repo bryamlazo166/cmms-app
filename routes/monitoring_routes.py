@@ -42,6 +42,7 @@ def register_monitoring_routes(
                     equipment_id=data.get('equipment_id'),
                     system_id=data.get('system_id'),
                     component_id=data.get('component_id'),
+                    rotative_asset_id=data.get('rotative_asset_id'),
                     normal_min=data.get('normal_min'),
                     normal_max=data.get('normal_max'),
                     alarm_min=data.get('alarm_min'),
@@ -123,6 +124,7 @@ def register_monitoring_routes(
             for field in [
                 'code', 'name', 'measurement_type', 'axis', 'unit', 'notes',
                 'area_id', 'line_id', 'equipment_id', 'system_id', 'component_id',
+                'rotative_asset_id',
                 'normal_min', 'normal_max', 'alarm_min', 'alarm_max',
                 'frequency_days', 'warning_days', 'last_measurement_date', 'is_active'
             ]:

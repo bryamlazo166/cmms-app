@@ -574,18 +574,24 @@ def register_reports_routes(
             return jsonify({"error": str(e)}), 500
 
     def _resolve_weekly_window(window_key, start_raw, end_raw, reference_raw):
+        # Corte semanal configurable (app_settings.week_start_day):
+        # 0=lunes (default) ... 4=viernes ("de viernes a viernes"), etc.
+        from utils.app_settings import get_week_start_day
         reference_date = _parse_date_flexible(reference_raw) or dt.date.today()
-        monday = reference_date - dt.timedelta(days=reference_date.weekday())
+        wsd = get_week_start_day()
+        week_start = reference_date - dt.timedelta(days=(reference_date.weekday() - wsd) % 7)
 
         normalized = (window_key or 'current_week').strip().lower()
-        start_date = monday
-        end_date = monday + dt.timedelta(days=6)
+        start_date = week_start
+        end_date = week_start + dt.timedelta(days=6)
 
         if normalized == 'next_week':
-            start_date = monday + dt.timedelta(days=7)
+            start_date = week_start + dt.timedelta(days=7)
             end_date = start_date + dt.timedelta(days=6)
         elif normalized == 'weekend':
-            start_date = monday + dt.timedelta(days=5)
+            # Sabado-domingo calendario, independiente del dia de corte
+            saturday = reference_date - dt.timedelta(days=(reference_date.weekday() - 5) % 7)
+            start_date = saturday
             end_date = start_date + dt.timedelta(days=1)
             if reference_date > end_date:
                 start_date += dt.timedelta(days=7)
@@ -928,6 +934,51 @@ def register_reports_routes(
         except Exception as insp_err:
             logger.warning(f"Inspections fetch skipped: {insp_err}")
 
+        # ── KPIs SMRP para presentacion gerencial ────────────────────────────
+        # Benchmarks SMRP Best Practices / clase mundial:
+        #   Cumplimiento de programa >90% · Trabajo proactivo >75-80%
+        #   Backlog sano: 2-4 semanas-cuadrilla
+        smrp = {}
+        try:
+            proactive_types = {'preventivo', 'predictivo'}
+            proactive_count = len([i for i in items if (i['maintenance_type'] or '').lower() in proactive_types])
+            reactive_count = corrective_count
+            base_mix = proactive_count + reactive_count
+            smrp = {
+                'schedule_compliance_pct': completion_percent,
+                'proactive_pct': round(proactive_count / base_mix * 100, 1) if base_mix else 0.0,
+                'reactive_pct': round(reactive_count / base_mix * 100, 1) if base_mix else 0.0,
+                'benchmark': {
+                    'schedule_compliance_target': 90,
+                    'proactive_target': 75,
+                    'backlog_weeks_target': '2-4',
+                },
+            }
+            # Backlog global: OTs abiertas (todas, no solo la semana) en horas-hombre
+            open_ots = [o for o in ots if (o.status or '') not in ('Cerrada', 'No Ejecutada')]
+            backlog_hours = sum(
+                float(o.estimated_duration or 0) * max(int(o.tech_count or 1), 1)
+                for o in open_ots)
+            tech_active = max(len(tech_map), 1)
+            weekly_capacity = tech_active * 8 * 6  # tecnicos x 8h x 6 dias
+            smrp['backlog_ots'] = len(open_ots)
+            smrp['backlog_hours'] = round(backlog_hours, 1)
+            smrp['backlog_weeks'] = round(backlog_hours / weekly_capacity, 1) if weekly_capacity else None
+            smrp['weekly_capacity_hours'] = weekly_capacity
+            # MTTR de la semana (cerradas con duracion real en la ventana)
+            closed_win = []
+            for o in ots:
+                if o.status != 'Cerrada' or not o.real_duration:
+                    continue
+                d = _parse_date_flexible(o.real_end_date)
+                if d and _is_in_window(d, start_date, end_date):
+                    closed_win.append(o)
+            smrp['mttr_week_hours'] = (
+                round(sum(float(o.real_duration) for o in closed_win) / len(closed_win), 1)
+                if closed_win else None)
+        except Exception as smrp_err:
+            logger.warning(f"SMRP KPIs skipped: {smrp_err}")
+
         return {
             'meta': {
                 'window': normalized_window,
@@ -958,6 +1009,7 @@ def register_reports_routes(
                 'inspections_executed': len(inspections),
                 'inspections_with_findings': sum(1 for i in inspections if i['overall_result'] == 'CON_HALLAZGOS'),
             },
+            'smrp': smrp,
             'daily': day_rows,
             'items': items,
             'lubrications': lubrications,

@@ -103,29 +103,64 @@ function toInputDate(dateObj) {
     return `${y}-${m}-${d}`;
 }
 
+// Dia de inicio del corte semanal (0=lunes ... 6=domingo), configurable
+// en app_settings.week_start_day. Se carga una vez al abrir la pagina.
+let WEEK_START_DAY = 0;
+
+async function loadWeekStartSetting() {
+    try {
+        const res = await fetch('/api/settings');
+        const s = await res.json();
+        WEEK_START_DAY = parseInt(s.week_start_day) || 0;
+        const sel = document.getElementById('weekStartDaySetting');
+        if (sel) sel.value = String(WEEK_START_DAY);
+    } catch (_) { /* default lunes */ }
+}
+
+async function saveWeekStartSetting(value) {
+    try {
+        const res = await fetch('/api/settings', {
+            method: 'PUT',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ week_start_day: parseInt(value) }),
+        });
+        if (!res.ok) {
+            const err = await res.json();
+            alert(err.error || 'No se pudo guardar la configuracion');
+            return;
+        }
+        WEEK_START_DAY = parseInt(value) || 0;
+        // Recalcular las fechas visibles con el nuevo corte
+        const winSel = document.getElementById('weeklyWindow');
+        if (winSel && winSel.value !== 'custom') setWeeklyWindowDates(winSel.value);
+    } catch (e) { console.error(e); }
+}
+window.saveWeekStartSetting = saveWeekStartSetting;
+
 function computeWeekWindow(windowKey) {
     const now = new Date();
-    const jsDay = now.getDay();
-    const mondayOffset = jsDay === 0 ? -6 : 1 - jsDay;
-    const monday = new Date(now);
-    monday.setDate(now.getDate() + mondayOffset);
-    monday.setHours(0, 0, 0, 0);
+    // getDay(): 0=domingo..6=sabado → convertir a 0=lunes..6=domingo
+    const pyDay = (now.getDay() + 6) % 7;
+    const offset = -((pyDay - WEEK_START_DAY + 7) % 7);
+    const weekStart = new Date(now);
+    weekStart.setDate(now.getDate() + offset);
+    weekStart.setHours(0, 0, 0, 0);
 
-    let start = new Date(monday);
-    let end = new Date(monday);
+    let start = new Date(weekStart);
+    let end = new Date(weekStart);
 
     if (windowKey === "next_week") {
         start.setDate(start.getDate() + 7);
         end = new Date(start);
         end.setDate(end.getDate() + 6);
     } else if (windowKey === "weekend") {
-        start.setDate(start.getDate() + 5);
+        // Sabado-domingo calendario, independiente del corte
+        const satOffset = -((pyDay - 5 + 7) % 7);
+        start = new Date(now);
+        start.setDate(now.getDate() + satOffset);
+        start.setHours(0, 0, 0, 0);
         end = new Date(start);
         end.setDate(end.getDate() + 1);
-        if (now > end) {
-            start.setDate(start.getDate() + 7);
-            end.setDate(end.getDate() + 7);
-        }
     } else {
         end.setDate(end.getDate() + 6);
     }
@@ -291,7 +326,7 @@ async function loadRadar() {
     }
 }
 
-function renderWeeklySummary(summary, meta) {
+function renderWeeklySummary(summary, meta, smrp) {
     setText("weeklyPeriod", `${meta.start_date} a ${meta.end_date} | ${meta.days} dias`);
     setText("wkTotal", num(summary.total));
     setText("wkPreventive", num(summary.preventive));
@@ -300,6 +335,27 @@ function renderWeeklySummary(summary, meta) {
     setText("wkNoEjecutada", num(summary.no_ejecutada || 0));
     setText("wkBlocked", num(summary.blocked));
     setText("wkCompliance", `${num(summary.completion_percent, 1)}%`);
+
+    // KPIs SMRP — colorear contra benchmark (>75% proactivo, backlog 2-4 sem)
+    smrp = smrp || {};
+    const pro = document.getElementById('smrpProactive');
+    if (pro) {
+        pro.textContent = smrp.proactive_pct != null ? `${smrp.proactive_pct}%` : '-';
+        pro.style.color = smrp.proactive_pct >= 75 ? '#30D158' : (smrp.proactive_pct >= 50 ? '#FF9F0A' : '#FF453A');
+    }
+    const rea = document.getElementById('smrpReactive');
+    if (rea) {
+        rea.textContent = smrp.reactive_pct != null ? `${smrp.reactive_pct}%` : '-';
+        rea.style.color = smrp.reactive_pct <= 25 ? '#30D158' : (smrp.reactive_pct <= 50 ? '#FF9F0A' : '#FF453A');
+    }
+    setText('smrpBacklogOts', smrp.backlog_ots != null ? `${smrp.backlog_ots} (${num(smrp.backlog_hours)}h)` : '-');
+    const bw = document.getElementById('smrpBacklogWeeks');
+    if (bw) {
+        bw.textContent = smrp.backlog_weeks != null ? smrp.backlog_weeks : '-';
+        bw.style.color = smrp.backlog_weeks == null ? '' :
+            (smrp.backlog_weeks <= 4 ? '#30D158' : (smrp.backlog_weeks <= 8 ? '#FF9F0A' : '#FF453A'));
+    }
+    setText('smrpMttr', smrp.mttr_week_hours != null ? smrp.mttr_week_hours : '-');
 }
 
 function printWeeklyPlan() {
@@ -624,7 +680,7 @@ async function loadWeeklyPlan() {
         _lastWeeklyItems = data.items || [];
         _lastWeeklyLubrications = data.lubrications || [];
         _lastWeeklyInspections = data.inspections || [];
-        renderWeeklySummary(data.summary || {}, data.meta || {});
+        renderWeeklySummary(data.summary || {}, data.meta || {}, data.smrp || {});
         drawWeeklyLoad(data.daily || []);
         drawWeeklySpecialty(data.summary || {});
         renderWeeklyTable(_lastWeeklyItems);
@@ -647,6 +703,8 @@ async function initReports() {
     document.getElementById("startDate").valueAsDate = start;
     document.getElementById("endDate").valueAsDate = end;
 
+    // Cargar el corte semanal configurado ANTES de calcular las fechas
+    await loadWeekStartSetting();
     document.getElementById("weeklyWindow").value = "current_week";
     setWeeklyWindowDates("current_week");
 

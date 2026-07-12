@@ -202,8 +202,52 @@ async function reloadRotative() {
         rotState.assets = rows;
         renderKPIs(rows);
         renderAssets(rows);
+        loadPredictiveTracking();
     } catch (e) {
         alert('Error cargando activos rotativos: ' + e.message);
+    }
+}
+
+// ── Seguimiento Predictivo (motores, bombas, motorreductores, reductoras) ──
+const PRED_ICON = { ROJO: '🔴', AMARILLO: '🟠', VERDE: '🟢', PENDIENTE: '⚪' };
+
+async function loadPredictiveTracking() {
+    const tbody = document.getElementById('predBody');
+    if (!tbody) return;
+    try {
+        const data = await rFetch('/api/rotative-assets/predictive-tracking');
+        const s = data.summary || {};
+        const set = (id, v) => { const el = document.getElementById(id); if (el) el.textContent = v; };
+        set('predRojo', s.rojo != null ? s.rojo : 0);
+        set('predAmarillo', s.amarillo != null ? s.amarillo : 0);
+        set('predVerde', s.verde != null ? s.verde : 0);
+        set('predSinMedidas', s.sin_medidas != null ? s.sin_medidas : 0);
+
+        const rows = data.assets || [];
+        if (!rows.length) {
+            tbody.innerHTML = '<tr><td colspan="5" style="color:#9ab0cb;">Sin activos de categorias predictivas (motor, bomba, motorreductor, caja reductora).</td></tr>';
+            return;
+        }
+        tbody.innerHTML = rows.map(a => {
+            const sem = a.overall
+                ? `${PRED_ICON[a.overall] || '⚪'} ${a.overall}`
+                : '<span style="color:#FF9F0A;">⚠ SIN MEDIDAS</span>';
+            const medidas = (a.measures || []).map(m =>
+                `<span style="display:inline-block;margin:1px 6px 1px 0;padding:2px 8px;border-radius:10px;font-size:.72rem;` +
+                `background:${m.status === 'ROJO' ? 'rgba(255,69,58,.15)' : m.status === 'AMARILLO' ? 'rgba(255,159,10,.15)' : m.status === 'VERDE' ? 'rgba(48,209,88,.12)' : 'rgba(255,255,255,.06)'};` +
+                `border:1px solid ${m.status === 'ROJO' ? '#FF453A' : m.status === 'AMARILLO' ? '#FF9F0A' : m.status === 'VERDE' ? '#30D158' : '#555'};">` +
+                `${PRED_ICON[m.status] || '⚪'} ${m.tipo}${m.point_code ? ' ' + m.point_code : ''} · ult: ${m.last || '-'} · prox: ${m.next || '-'}</span>`
+            ).join('') || '<span style="color:#9ab0cb;font-size:.78rem;">Configure megado (pagina Motores Electricos) o un punto de monitoreo vinculado a este activo</span>';
+            return `<tr>
+                <td>${sem}</td>
+                <td style="font-weight:600;color:#5AC8FA;">${a.code || '-'}</td>
+                <td>${a.name}</td>
+                <td>${a.category}</td>
+                <td>${medidas}</td>
+            </tr>`;
+        }).join('');
+    } catch (e) {
+        tbody.innerHTML = `<tr><td colspan="5" style="color:#FF453A;">Error cargando seguimiento: ${e.message}</td></tr>`;
     }
 }
 
