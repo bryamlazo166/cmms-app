@@ -29,24 +29,41 @@
         .slide h2{margin:0 0 2px;color:#5AC8FA;font-size:1.15rem;display:flex;align-items:center;gap:10px;}
         .slide .method{color:#9ab0cb;font-size:.78rem;margin-bottom:14px;}
         .chart-box{height:360px;width:100%;}
-        .chart-box.tall{height:420px;}
 
-        .kpi-strip{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:12px;margin:6px 0 4px;}
+        .kpi-strip{display:grid;grid-template-columns:repeat(auto-fit,minmax(148px,1fr));gap:12px;margin:6px 0 4px;}
         .kpi-item{background:#1b212b;border:1px solid #344964;border-radius:12px;padding:13px;text-align:center;}
+        .kpi-item.click{cursor:pointer;transition:border-color .15s;}
+        .kpi-item.click:hover{border-color:#5AC8FA;}
         .kpi-item .label{font-size:.7rem;color:#9ab0cb;text-transform:uppercase;letter-spacing:.5px;line-height:1.3;}
-        .kpi-item .value{font-size:1.7rem;font-weight:700;margin-top:6px;font-variant-numeric:tabular-nums;}
+        .kpi-item .value{font-size:1.65rem;font-weight:700;margin-top:6px;font-variant-numeric:tabular-nums;}
         .kpi-item .delta{font-size:.74rem;margin-top:3px;color:#9ab0cb;}
         .v-good{color:#30D158!important;}.v-warn{color:#FF9F0A!important;}.v-crit{color:#FF453A!important;}
 
         table.diag{border-collapse:collapse;width:100%;font-size:.84rem;}
-        table.diag th{text-align:left;font-size:.7rem;text-transform:uppercase;letter-spacing:.06em;color:#9ab0cb;padding:8px 10px;border-bottom:2px solid #344964;}
+        table.diag th{text-align:left;font-size:.7rem;text-transform:uppercase;letter-spacing:.06em;color:#9ab0cb;padding:8px 10px;border-bottom:2px solid #344964;white-space:nowrap;}
         table.diag td{padding:7px 10px;border-bottom:1px solid rgba(255,255,255,.06);color:#d5e2f5;vertical-align:top;}
         table.diag td.num,table.diag th.num{text-align:right;font-variant-numeric:tabular-nums;white-space:nowrap;}
         .twrap{overflow-x:auto;}
 
+        .detail-panel{margin-top:14px;background:#141a22;border:1px solid #2f4257;border-radius:10px;padding:12px 14px;display:none;}
+        .detail-panel.open{display:block;}
+        .detail-panel .dp-head{display:flex;justify-content:space-between;align-items:center;margin-bottom:8px;}
+        .detail-panel .dp-head b{color:#5AC8FA;}
+        .detail-panel .dp-close{cursor:pointer;color:#9ab0cb;background:none;border:none;font-size:1rem;}
+        .hint{color:#5a7aa0;font-size:.74rem;}
+
+        .breadcrumb{display:flex;gap:6px;align-items:center;margin-bottom:10px;font-size:.88rem;color:#9ab0cb;}
+        .breadcrumb span{cursor:pointer;color:#5ac8fa;}
+        .breadcrumb span:hover{text-decoration:underline;}
+        .breadcrumb .sep{color:#4a5361;cursor:default;}
+        .breadcrumb .current{color:#BF5AF2;font-weight:700;cursor:default;}
+
+        .prog-block{margin-bottom:18px;padding-bottom:6px;}
+        .prog-block h3{color:#FF9F0A;font-size:.95rem;margin:0 0 8px;}
+        .prog-block.next h3{color:#30D158;}
+
         .narrativa{white-space:pre-wrap;color:#d5e2f5;font-size:.92rem;line-height:1.65;background:#141a22;border:1px solid #2f4257;border-radius:10px;padding:16px 18px;}
         .narrativa:empty{display:none;}
-        .spin{color:#BF5AF2;}
 
         /* ── MODO PRESENTACION ─────────────────────────────────────────── */
         body.presenting .sidebar,body.presenting .header,body.presenting .no-present{display:none!important;}
@@ -54,15 +71,15 @@
         body.presenting{overflow:hidden;}
         body.presenting .wrap{max-width:none;padding:0;}
         body.presenting .slide{display:none;position:fixed;inset:0;margin:0;border-radius:0;border:none;
-            padding:48px 70px;overflow-y:auto;z-index:60;}
+            padding:44px 66px;overflow-y:auto;z-index:60;}
         body.presenting .slide.active{display:block;}
-        body.presenting .slide h2{font-size:2rem;margin-bottom:8px;}
-        body.presenting .slide .method{font-size:1rem;margin-bottom:22px;}
-        body.presenting .kpi-item .value{font-size:2.6rem;}
-        body.presenting .kpi-item .label{font-size:.85rem;}
-        body.presenting table.diag{font-size:1.02rem;}
-        body.presenting .chart-box{height:58vh;}
-        body.presenting .narrativa{font-size:1.15rem;}
+        body.presenting .slide h2{font-size:1.9rem;margin-bottom:8px;}
+        body.presenting .slide .method{font-size:1rem;margin-bottom:20px;}
+        body.presenting .kpi-item .value{font-size:2.4rem;}
+        body.presenting .kpi-item .label{font-size:.82rem;}
+        body.presenting table.diag{font-size:1rem;}
+        body.presenting .chart-box{height:56vh;}
+        body.presenting .narrativa{font-size:1.12rem;}
         #presentNav{display:none;position:fixed;bottom:18px;right:24px;z-index:70;gap:10px;align-items:center;}
         body.presenting #presentNav{display:flex;}
         #presentNav button{background:#1b212b;color:#d5e2f5;border:1px solid #344964;border-radius:8px;
@@ -71,13 +88,14 @@
 
         @media print{
             body{background:#fff!important;}
-            .sidebar,.tools,.btn,#presentNav{display:none!important;}
+            .sidebar,.tools,.btn,#presentNav,.hint{display:none!important;}
             .home-section{margin-left:0!important;}
             .slide{background:#fff!important;border:1px solid #ccc!important;break-inside:avoid;}
             .kpi-item{background:#fff!important;border:1px solid #ccc!important;}
             .kpi-item .label,.slide .method{color:#555!important;}
             .narrativa{background:#fff!important;border:1px solid #ccc!important;color:#111!important;}
             table.diag td{color:#111!important;}
+            .detail-panel{display:none!important;}
             @page{size:A4 landscape;margin:10mm;}
         }
     </style>
@@ -89,7 +107,7 @@
         <div class="header">
             <div>
                 <h1><i class="fas fa-stethoscope"></i> Diagnostico Mensual de Gestion</h1>
-                <div class="sub">Informe ejecutivo con datos en vivo · indicadores del mes + programacion del mes siguiente · <span id="genAt">-</span></div>
+                <div class="sub">Informe ejecutivo con datos en vivo · mes en curso + resto del mes + mes siguiente · <span id="genAt">-</span></div>
             </div>
             <div class="tools">
                 <input type="month" id="diagMonth" title="Mes a presentar">
@@ -103,37 +121,70 @@
         <!-- S1: Resumen ejecutivo -->
         <div class="slide" data-slide>
             <h2><i class="fas fa-flag"></i> <span id="s1Title">Resumen del mes</span></h2>
-            <div class="method">Indicadores del mes vs. mes anterior — benchmarks SMRP: cumplimiento &gt;90%, proactivo &gt;75%</div>
+            <div class="method" id="s1Method">Indicadores del mes vs. mes anterior — benchmarks SMRP: cumplimiento &gt;90%, proactivo &gt;75%</div>
             <div class="kpi-strip" id="kpiStrip"></div>
+            <div class="kpi-strip" id="kpiStrip2"></div>
+            <div class="hint">Los indicadores MTBF / MTTR / Disponibilidad / Confiabilidad son clic-ables: llevan al detalle por area → equipo → fallas.</div>
             <div class="narrativa" id="narrativaBox"></div>
         </div>
 
-        <!-- S2: Tendencia -->
+        <!-- S2: Cuadro consolidado 12 meses -->
         <div class="slide" data-slide>
-            <h2><i class="fas fa-chart-line"></i> Tendencia 6 meses</h2>
-            <div class="method">OTs cerradas por tipo, % proactivo y horas de parada por mes</div>
-            <div class="chart-box" id="trendChart"></div>
+            <h2><i class="fas fa-table-list"></i> Cuadro consolidado de indicadores — 12 meses</h2>
+            <div class="method">Comportamiento de todos los indicadores mes a mes. Confiabilidad = R(168h) = e<sup>-168/MTBF</sup>. El mes en curso usa solo los dias transcurridos.</div>
+            <div class="twrap"><table class="diag" id="consolidadoTable"></table></div>
         </div>
 
-        <!-- S3: Pareto -->
+        <!-- S3: Tendencia grafica -->
+        <div class="slide" data-slide>
+            <h2><i class="fas fa-chart-line"></i> Tendencia grafica</h2>
+            <div class="method">OTs por tipo y % proactivo (izquierda) · MTBF, MTTR y Disponibilidad (derecha)</div>
+            <div style="display:grid;grid-template-columns:1fr 1fr;gap:14px;">
+                <div class="chart-box" id="trendChart"></div>
+                <div class="chart-box" id="trendKpiChart"></div>
+            </div>
+        </div>
+
+        <!-- S4: Pareto -->
         <div class="slide" data-slide>
             <h2><i class="fas fa-chart-column"></i> Pareto de fallas (80/20)</h2>
             <div class="method">
                 <label><input type="radio" name="parWin" value="mes" onchange="renderPareto()"> Mes</label>
                 &nbsp;&nbsp;<label><input type="radio" name="parWin" value="6m" checked onchange="renderPareto()"> Ultimos 6 meses</label>
-                — barras = fallas, linea = % acumulado
+                — barras = fallas, linea = % acumulado. <span class="hint">Clic en una barra para ver las OTs que la componen.</span>
             </div>
             <div class="chart-box" id="paretoChart"></div>
+            <div class="detail-panel" id="paretoDetail">
+                <div class="dp-head"><b id="paretoDetailTitle">-</b><button class="dp-close" onclick="closeDetail('paretoDetail')"><i class="fas fa-xmark"></i> cerrar</button></div>
+                <div class="twrap"><table class="diag" id="paretoDetailTable"></table></div>
+            </div>
         </div>
 
-        <!-- S4: Equipos criticos -->
+        <!-- S5: Equipos criticos -->
         <div class="slide" data-slide>
             <h2><i class="fas fa-triangle-exclamation"></i> Equipos que concentran las perdidas</h2>
-            <div class="method">Fallas correctivas y horas de parada — ultimos 6 meses</div>
+            <div class="method">Fallas correctivas y horas de parada — ultimos 6 meses. <span class="hint">Clic en un equipo para ver sus OTs.</span></div>
             <div class="chart-box" id="equiposChart"></div>
+            <div class="detail-panel" id="equiposDetail">
+                <div class="dp-head"><b id="equiposDetailTitle">-</b><button class="dp-close" onclick="closeDetail('equiposDetail')"><i class="fas fa-xmark"></i> cerrar</button></div>
+                <div class="twrap"><table class="diag" id="equiposDetailTable"></table></div>
+            </div>
         </div>
 
-        <!-- S5: Salud del sistema -->
+        <!-- S6: Confiabilidad drill-down -->
+        <div class="slide" data-slide>
+            <h2><i class="fas fa-magnifying-glass-chart"></i> Confiabilidad por Area — drill-down</h2>
+            <div class="method">MTBF · MTTR · Disponibilidad · Confiabilidad del periodo seleccionado, con la misma metodologia del modulo Indicadores. <span class="hint">Clic en una barra: Area → Equipos → Fallas.</span></div>
+            <div class="breadcrumb" id="relBreadcrumb"></div>
+            <div class="kpi-strip" id="relKpis" style="grid-template-columns:repeat(4,1fr);"></div>
+            <div class="chart-box" id="relChart"></div>
+            <div class="detail-panel" id="relDetail">
+                <div class="dp-head"><b id="relDetailTitle">-</b><button class="dp-close" onclick="closeDetail('relDetail')"><i class="fas fa-xmark"></i> cerrar</button></div>
+                <div class="twrap"><table class="diag" id="relDetailTable"></table></div>
+            </div>
+        </div>
+
+        <!-- S7: Salud del sistema -->
         <div class="slide" data-slide>
             <h2><i class="fas fa-heart-pulse"></i> Salud del sistema de mantenimiento</h2>
             <div class="method">Backlog, rutinas, predictivo, almacen y proveedores — foto de hoy</div>
@@ -141,18 +192,25 @@
             <div class="twrap"><table class="diag" id="rutinasTable"></table></div>
         </div>
 
-        <!-- S6: Programacion proximo mes -->
+        <!-- S8: Programacion (resto del mes + proximo mes) -->
         <div class="slide" data-slide>
-            <h2><i class="fas fa-calendar-days"></i> <span id="s6Title">Programacion propuesta</span></h2>
+            <h2><i class="fas fa-calendar-days"></i> Programacion — resto del mes y mes siguiente</h2>
             <div class="method">Para coordinar con produccion: OTs programadas, rutinas que vencen por semana y carga vs capacidad</div>
-            <div class="kpi-strip" id="progStrip"></div>
-            <div class="chart-box" id="progChart" style="height:300px;"></div>
+            <div class="prog-block" id="progActualBlock" style="display:none;">
+                <h3 id="progActualTitle">Lo que queda del mes</h3>
+                <div class="kpi-strip" id="progActualStrip"></div>
+            </div>
+            <div class="prog-block next">
+                <h3 id="progNextTitle">Mes siguiente</h3>
+                <div class="kpi-strip" id="progStrip"></div>
+                <div class="chart-box" id="progChart" style="height:280px;"></div>
+            </div>
         </div>
 
-        <!-- S7: Detalle OTs proximo mes -->
+        <!-- S9: Detalle OTs programadas -->
         <div class="slide" data-slide>
-            <h2><i class="fas fa-list-check"></i> <span id="s7Title">Detalle de OTs del proximo mes</span></h2>
-            <div class="method">Ordenadas por fecha — llevar a la reunion con produccion para validar ventanas</div>
+            <h2><i class="fas fa-list-check"></i> <span id="s9Title">Detalle de OTs programadas</span></h2>
+            <div class="method">Resto del mes en curso y mes siguiente, ordenadas por fecha — para validar ventanas con produccion</div>
             <div class="twrap"><table class="diag" id="otsNextTable"></table></div>
         </div>
     </div>
@@ -160,7 +218,7 @@
 
 <div id="presentNav">
     <button onclick="prevSlide()"><i class="fas fa-chevron-left"></i></button>
-    <span class="cnt" id="slideCnt">1/7</span>
+    <span class="cnt" id="slideCnt">1/9</span>
     <button onclick="nextSlide()"><i class="fas fa-chevron-right"></i></button>
     <button onclick="togglePresent()" title="Salir (Esc)"><i class="fas fa-xmark"></i></button>
 </div>

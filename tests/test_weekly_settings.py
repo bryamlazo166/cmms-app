@@ -116,13 +116,38 @@ def test_diagnostico_data(auth_admin):
     data = r.json
     for key in ('meta', 'kpis_mes', 'kpis_prev', 'pareto_mes', 'pareto_6m',
                 'top_equipos', 'trend', 'backlog', 'rutinas', 'predictivo',
-                'almacen', 'informes', 'programa'):
+                'almacen', 'informes', 'programa', 'programa_actual'):
         assert key in data, f"falta {key}"
     assert data['meta']['month'] == mes
-    assert len(data['trend']) == 6
+    assert data['meta']['en_curso'] is True
+    # Consolidado de 12 meses con indicadores de confiabilidad
+    assert len(data['trend']) == 12
+    for key in ('mtbf_h', 'disponibilidad_pct', 'confiabilidad_pct', 'mttr_h'):
+        assert key in data['trend'][-1], f"falta {key} en trend"
+    assert key in data['kpis_mes']
+    # Mes en curso: KPIs parciales con dias transcurridos
+    assert data['kpis_mes']['dias_efectivos'] == dt.date.today().day
+    # Programa del resto del mes en curso + mes siguiente
+    pa = data['programa_actual']
+    assert pa is not None and pa['parcial'] is True
     prog = data['programa']
     assert 'capacidad' in prog and 'rutinas_semana' in prog
     assert len(prog['rutinas_semana']['lubricacion']) == 5  # 5 semanas del mes
+
+
+def test_diagnostico_ots_detail(auth_admin):
+    """Drill-down: OTs detras de un modo de falla del Pareto."""
+    import datetime as dt
+    today = dt.date.today().isoformat()
+    auth_admin.post('/api/work-orders', data=json.dumps({
+        'description': 'Drill test', 'maintenance_type': 'Correctivo',
+        'status': 'Cerrada', 'failure_mode': 'MODO DRILL TEST',
+        'real_end_date': today,
+    }), content_type='application/json')
+    r = auth_admin.get('/api/diagnostico/ots-detail?window=6m&failure_mode=MODO DRILL TEST')
+    assert r.status_code == 200
+    assert r.json['total'] >= 1
+    assert any(row['modo'] == 'MODO DRILL TEST' for row in r.json['rows'])
 
 
 def test_diagnostico_narrativa_sin_api_key(auth_admin):
