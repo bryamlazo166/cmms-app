@@ -541,7 +541,16 @@ function renderOTsNext() {
     el('otsNextTable').innerHTML = html;
 }
 
-// ── Narrativa IA ─────────────────────────────────────────────────────────
+// ── Narrativa IA (asincrona: el POST devuelve un job y se consulta) ──────
+async function safeJson(res) {
+    const text = await res.text();
+    try { return JSON.parse(text); }
+    catch (_) {
+        throw new Error(`el servidor respondio HTTP ${res.status} con contenido no valido ` +
+            `(posible timeout o sesion expirada). Intenta de nuevo.`);
+    }
+}
+
 async function generarNarrativa() {
     if (!DIAG) return;
     const box = el('narrativaBox');
@@ -551,8 +560,26 @@ async function generarNarrativa() {
             method: 'POST', headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify(DIAG),
         });
-        const data = await res.json();
-        box.textContent = data.narrativa || ('Error: ' + (data.error || 'desconocido'));
+        const data = await safeJson(res);
+        if (data.error) { box.textContent = 'Error: ' + data.error; return; }
+        if (data.narrativa) { box.textContent = data.narrativa; return; }  // compat
+
+        // Sondear el resultado cada 3s hasta 3 minutos
+        const jobId = data.job_id;
+        const inicio = Date.now();
+        while (Date.now() - inicio < 180000) {
+            await new Promise(r => setTimeout(r, 3000));
+            const seg = Math.round((Date.now() - inicio) / 1000);
+            box.textContent = `Generando analisis ejecutivo con IA... (${seg}s)`;
+            let st;
+            try {
+                st = await safeJson(await fetch(`/api/diagnostico/narrativa/${jobId}`));
+            } catch (_) { continue; }  // fallo transitorio de red: seguir sondeando
+            if (st.status === 'OK') { box.textContent = st.narrativa; return; }
+            if (st.status === 'ERROR') { box.textContent = 'Error: ' + st.error; return; }
+            if (st.error) { box.textContent = 'Error: ' + st.error; return; }
+        }
+        box.textContent = 'La IA tardo mas de 3 minutos. Intenta de nuevo.';
     } catch (e) { box.textContent = 'Error generando narrativa: ' + e.message; }
 }
 window.generarNarrativa = generarNarrativa;

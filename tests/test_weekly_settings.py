@@ -234,6 +234,13 @@ def test_diagnostico_narrativa_sin_api_key(auth_admin):
     assert 'error' in r.json
 
 
+def test_diagnostico_narrativa_job_desconocido(auth_admin):
+    """Consultar un job inexistente devuelve 404 JSON (no HTML)."""
+    r = auth_admin.get('/api/diagnostico/narrativa/noexiste123')
+    assert r.status_code == 404
+    assert 'error' in r.json
+
+
 def test_monitoring_point_accepts_rotative_asset(auth_admin):
     # El punto de monitoreo acepta rotative_asset_id (sigue al activo)
     r = auth_admin.post('/api/rotative-assets', data=json.dumps({

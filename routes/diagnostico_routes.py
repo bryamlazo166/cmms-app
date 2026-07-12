@@ -494,7 +494,26 @@ def register_diagnostico_routes(app, db, logger):
             logger.exception('diagnostico_ots_detail error')
             return jsonify({'error': str(e)}), 500
 
-    # ── Narrativa ejecutiva con DeepSeek ──────────────────────────────────
+    # ── Narrativa ejecutiva con DeepSeek (asincrona) ──────────────────────
+    # DeepSeek puede tardar 30-90s y los proxies (Render/gunicorn) cortan la
+    # request devolviendo una pagina HTML -> "Unexpected token '<'" en el
+    # navegador. Por eso el POST lanza un hilo y responde al instante con un
+    # job_id; el frontend consulta GET /narrativa/<job_id> hasta tener el texto.
+    _narrativa_jobs = {}
+
+    def _limpiar_jobs():
+        import time as _t
+        ahora = _t.time()
+        viejos = [k for k, v in _narrativa_jobs.items() if ahora - v.get('ts', 0) > 1800]
+        for k in viejos:
+            _narrativa_jobs.pop(k, None)
+
+    @app.route('/api/diagnostico/narrativa/<job_id>', methods=['GET'])
+    def diagnostico_narrativa_status(job_id):
+        job = _narrativa_jobs.get(job_id)
+        if not job:
+            return jsonify({'error': 'Trabajo no encontrado (expiro o el servidor se reinicio). Vuelve a generar.'}), 404
+        return jsonify({k: v for k, v in job.items() if k != 'ts'})
 
     @app.route('/api/diagnostico/narrativa', methods=['POST'])
     def diagnostico_narrativa():
@@ -579,21 +598,39 @@ def register_diagnostico_routes(app, db, logger):
             if not key:
                 return jsonify({'error': 'DEEPSEEK_API_KEY no configurada en el servidor'}), 501
 
-            import requests as _rq
-            r = _rq.post(url, headers={
-                'Authorization': f'Bearer {key}', 'Content-Type': 'application/json',
-            }, json={
-                'model': 'deepseek-chat',
-                'messages': [
-                    {'role': 'system', 'content': system_prompt},
-                    {'role': 'user', 'content': "\n".join(resumen)},
-                ],
-                'max_tokens': 1800, 'temperature': 0.3,
-            }, timeout=90)
-            if r.status_code != 200:
-                return jsonify({'error': f'DeepSeek HTTP {r.status_code}: {r.text[:200]}'}), 502
-            texto = r.json()['choices'][0]['message']['content']
-            return jsonify({'narrativa': texto})
+            import threading
+            import time as _t
+            import uuid
+            _limpiar_jobs()
+            job_id = uuid.uuid4().hex[:12]
+            _narrativa_jobs[job_id] = {'status': 'PENDIENTE', 'ts': _t.time()}
+            prompt_usuario = "\n".join(resumen)
+
+            def _worker():
+                import requests as _rq
+                try:
+                    r = _rq.post(url, headers={
+                        'Authorization': f'Bearer {key}', 'Content-Type': 'application/json',
+                    }, json={
+                        'model': 'deepseek-chat',
+                        'messages': [
+                            {'role': 'system', 'content': system_prompt},
+                            {'role': 'user', 'content': prompt_usuario},
+                        ],
+                        'max_tokens': 1800, 'temperature': 0.3,
+                    }, timeout=150)
+                    if r.status_code != 200:
+                        _narrativa_jobs[job_id] = {
+                            'status': 'ERROR', 'ts': _t.time(),
+                            'error': f'DeepSeek HTTP {r.status_code}: {r.text[:200]}'}
+                        return
+                    texto = r.json()['choices'][0]['message']['content']
+                    _narrativa_jobs[job_id] = {'status': 'OK', 'narrativa': texto, 'ts': _t.time()}
+                except Exception as e:
+                    _narrativa_jobs[job_id] = {'status': 'ERROR', 'error': str(e)[:300], 'ts': _t.time()}
+
+            threading.Thread(target=_worker, daemon=True).start()
+            return jsonify({'job_id': job_id, 'status': 'PENDIENTE'})
         except Exception as e:
             logger.exception('diagnostico_narrativa error')
             return jsonify({'error': str(e)}), 500
