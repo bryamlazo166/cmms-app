@@ -14,3 +14,8 @@ venv/
 backups/
 _*.txt
 _*.log
+
+# Informes con datos reales de planta - NO publicar (repo publico)
+docs/Diagnostico_*.html
+docs/Diagnostico_*.pdf
+docs/backfill_modos_falla_*.csv
