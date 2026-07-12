@@ -1,12 +1,12 @@
 {
-  "$schema": "https://developer.microsoft.com/json-schemas/fabric/item/report/definition/visualContainer/2.0.0/schema.json",
+  "$schema": "https://developer.microsoft.com/json-schemas/fabric/item/report/definition/visualContainer/2.10.0/schema.json",
   "name": "e17bbb7a5dac601e47b0",
   "position": {
     "x": 20,
     "y": 460,
     "z": 1007,
-    "width": 1240,
     "height": 240,
+    "width": 1240,
     "tabOrder": 1007
   },
   "visual": {
@@ -27,7 +27,8 @@
                 }
               },
               "queryRef": "DimAreas.Área",
-              "nativeQueryRef": "Área"
+              "nativeQueryRef": "Área",
+              "active": true
             },
             {
               "field": {
@@ -41,7 +42,8 @@
                 }
               },
               "queryRef": "DimEquipos.Equipo",
-              "nativeQueryRef": "Equipo"
+              "nativeQueryRef": "Equipo",
+              "active": false
             },
             {
               "field": {
@@ -55,7 +57,8 @@
                 }
               },
               "queryRef": "_Medidas.Disponibilidad por Equipo",
-              "nativeQueryRef": "Disponibilidad por Equipo"
+              "nativeQueryRef": "Disponibilidad por Equipo",
+              "active": false
             },
             {
               "field": {
@@ -69,7 +72,8 @@
                 }
               },
               "queryRef": "_Medidas.MTBF por Equipo",
-              "nativeQueryRef": "MTBF por Equipo"
+              "nativeQueryRef": "MTBF por Equipo",
+              "active": false
             },
             {
               "field": {
@@ -83,7 +87,8 @@
                 }
               },
               "queryRef": "_Medidas.MTTR por Equipo",
-              "nativeQueryRef": "MTTR por Equipo"
+              "nativeQueryRef": "MTTR por Equipo",
+              "active": false
             }
           ]
         }

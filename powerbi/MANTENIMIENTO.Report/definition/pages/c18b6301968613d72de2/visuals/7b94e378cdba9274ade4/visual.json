@@ -1,5 +1,5 @@
 {
-  "$schema": "https://developer.microsoft.com/json-schemas/fabric/item/report/definition/visualContainer/2.8.0/schema.json",
+  "$schema": "https://developer.microsoft.com/json-schemas/fabric/item/report/definition/visualContainer/2.10.0/schema.json",
   "name": "7b94e378cdba9274ade4",
   "position": {
     "x": 0,
@@ -11,40 +11,6 @@
   },
   "visual": {
     "visualType": "pivotTable",
-    "drillFilterOtherVisuals": true,
-    "visualContainerObjects": {
-      "title": [
-        {
-          "properties": {
-            "show": {
-              "expr": {
-                "Literal": {
-                  "Value": "true"
-                }
-              }
-            },
-            "text": {
-              "expr": {
-                "Literal": {
-                  "Value": "'Indicadores por Área › Línea › Equipo › Sistema (drill-down)'"
-                }
-              }
-            },
-            "fontColor": {
-              "solid": {
-                "color": {
-                  "expr": {
-                    "Literal": {
-                      "Value": "'#E8EDF3'"
-                    }
-                  }
-                }
-              }
-            }
-          }
-        }
-      ]
-    },
     "query": {
       "queryState": {
         "Rows": {
@@ -61,7 +27,8 @@
                 }
               },
               "queryRef": "DimAreas.Área",
-              "nativeQueryRef": "Área"
+              "nativeQueryRef": "Área",
+              "active": true
             },
             {
               "field": {
@@ -75,7 +42,8 @@
                 }
               },
               "queryRef": "DimLineas.Línea",
-              "nativeQueryRef": "Línea"
+              "nativeQueryRef": "Línea",
+              "active": false
             },
             {
               "field": {
@@ -89,7 +57,8 @@
                 }
               },
               "queryRef": "DimEquipos.Equipo",
-              "nativeQueryRef": "Equipo"
+              "nativeQueryRef": "Equipo",
+              "active": false
             },
             {
               "field": {
@@ -103,7 +72,8 @@
                 }
               },
               "queryRef": "DimSistemas.Sistema",
-              "nativeQueryRef": "Sistema"
+              "nativeQueryRef": "Sistema",
+              "active": false
             }
           ]
         },
@@ -182,6 +152,40 @@
           ]
         }
       }
-    }
+    },
+    "visualContainerObjects": {
+      "title": [
+        {
+          "properties": {
+            "show": {
+              "expr": {
+                "Literal": {
+                  "Value": "true"
+                }
+              }
+            },
+            "text": {
+              "expr": {
+                "Literal": {
+                  "Value": "'Indicadores por Área › Línea › Equipo › Sistema (drill-down)'"
+                }
+              }
+            },
+            "fontColor": {
+              "solid": {
+                "color": {
+                  "expr": {
+                    "Literal": {
+                      "Value": "'#E8EDF3'"
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      ]
+    },
+    "drillFilterOtherVisuals": true
   }
 }

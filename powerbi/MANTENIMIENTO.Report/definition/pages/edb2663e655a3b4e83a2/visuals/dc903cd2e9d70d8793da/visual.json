@@ -1,12 +1,12 @@
 {
-  "$schema": "https://developer.microsoft.com/json-schemas/fabric/item/report/definition/visualContainer/2.0.0/schema.json",
+  "$schema": "https://developer.microsoft.com/json-schemas/fabric/item/report/definition/visualContainer/2.10.0/schema.json",
   "name": "dc903cd2e9d70d8793da",
   "position": {
     "x": 0,
     "y": 506,
     "z": 1012,
-    "width": 1280,
     "height": 384,
+    "width": 1280,
     "tabOrder": 1012
   },
   "visual": {
@@ -27,7 +27,8 @@
                 }
               },
               "queryRef": "FactOTs.Código OT",
-              "nativeQueryRef": "Código OT"
+              "nativeQueryRef": "Código OT",
+              "active": true
             },
             {
               "field": {
@@ -41,7 +42,8 @@
                 }
               },
               "queryRef": "FactOTs.Tipo OT",
-              "nativeQueryRef": "Tipo OT"
+              "nativeQueryRef": "Tipo OT",
+              "active": false
             },
             {
               "field": {
@@ -55,7 +57,8 @@
                 }
               },
               "queryRef": "FactOTs.Estado OT",
-              "nativeQueryRef": "Estado OT"
+              "nativeQueryRef": "Estado OT",
+              "active": false
             },
             {
               "field": {
@@ -69,7 +72,8 @@
                 }
               },
               "queryRef": "DimEquipos.Equipo",
-              "nativeQueryRef": "Equipo"
+              "nativeQueryRef": "Equipo",
+              "active": false
             },
             {
               "field": {
@@ -83,7 +87,8 @@
                 }
               },
               "queryRef": "_Medidas.Duración Real Total",
-              "nativeQueryRef": "Duración Real Total"
+              "nativeQueryRef": "Duración Real Total",
+              "active": false
             },
             {
               "field": {
@@ -97,7 +102,8 @@
                 }
               },
               "queryRef": "_Medidas.Horas Parada Total",
-              "nativeQueryRef": "Horas Parada Total"
+              "nativeQueryRef": "Horas Parada Total",
+              "active": false
             }
           ]
         }

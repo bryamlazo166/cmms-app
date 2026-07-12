@@ -1,12 +1,12 @@
 {
-  "$schema": "https://developer.microsoft.com/json-schemas/fabric/item/report/definition/visualContainer/2.0.0/schema.json",
+  "$schema": "https://developer.microsoft.com/json-schemas/fabric/item/report/definition/visualContainer/2.10.0/schema.json",
   "name": "3cd94293080be96ad492",
   "position": {
     "x": 20,
     "y": 160,
     "z": 1004,
-    "width": 400,
     "height": 280,
+    "width": 400,
     "tabOrder": 1004
   },
   "visual": {
@@ -27,7 +27,8 @@
                 }
               },
               "queryRef": "FactParadas.Tipo Parada",
-              "nativeQueryRef": "Tipo Parada"
+              "nativeQueryRef": "Tipo Parada",
+              "active": true
             }
           ]
         },

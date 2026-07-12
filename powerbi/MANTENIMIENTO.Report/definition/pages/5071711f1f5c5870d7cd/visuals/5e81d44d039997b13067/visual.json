@@ -1,12 +1,12 @@
 {
-  "$schema": "https://developer.microsoft.com/json-schemas/fabric/item/report/definition/visualContainer/2.0.0/schema.json",
+  "$schema": "https://developer.microsoft.com/json-schemas/fabric/item/report/definition/visualContainer/2.10.0/schema.json",
   "name": "5e81d44d039997b13067",
   "position": {
     "x": 660,
     "y": 160,
     "z": 1006,
-    "width": 600,
     "height": 280,
+    "width": 600,
     "tabOrder": 1006
   },
   "visual": {
@@ -27,7 +27,8 @@
                 }
               },
               "queryRef": "DimEquipos.Equipo",
-              "nativeQueryRef": "Equipo"
+              "nativeQueryRef": "Equipo",
+              "active": true
             }
           ]
         },

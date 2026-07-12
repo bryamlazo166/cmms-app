@@ -1,12 +1,12 @@
 {
-  "$schema": "https://developer.microsoft.com/json-schemas/fabric/item/report/definition/visualContainer/2.0.0/schema.json",
+  "$schema": "https://developer.microsoft.com/json-schemas/fabric/item/report/definition/visualContainer/2.10.0/schema.json",
   "name": "245e2d53b19ec8ed34b0",
   "position": {
     "x": 660,
     "y": 160,
     "z": 1006,
-    "width": 600,
     "height": 280,
+    "width": 600,
     "tabOrder": 1006
   },
   "visual": {
@@ -27,7 +27,8 @@
                 }
               },
               "queryRef": "DimTecnicos.Especialidad",
-              "nativeQueryRef": "Especialidad"
+              "nativeQueryRef": "Especialidad",
+              "active": true
             }
           ]
         },

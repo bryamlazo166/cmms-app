@@ -1,12 +1,12 @@
 {
-  "$schema": "https://developer.microsoft.com/json-schemas/fabric/item/report/definition/visualContainer/2.0.0/schema.json",
+  "$schema": "https://developer.microsoft.com/json-schemas/fabric/item/report/definition/visualContainer/2.10.0/schema.json",
   "name": "a19f01b168e1b5dff83a",
   "position": {
     "x": 20,
     "y": 460,
     "z": 1007,
-    "width": 1240,
     "height": 240,
+    "width": 1240,
     "tabOrder": 1007
   },
   "visual": {
@@ -27,7 +27,8 @@
                 }
               },
               "queryRef": "DimTecnicos.Técnico",
-              "nativeQueryRef": "Técnico"
+              "nativeQueryRef": "Técnico",
+              "active": true
             },
             {
               "field": {
@@ -41,7 +42,8 @@
                 }
               },
               "queryRef": "DimTecnicos.Especialidad",
-              "nativeQueryRef": "Especialidad"
+              "nativeQueryRef": "Especialidad",
+              "active": false
             },
             {
               "field": {
@@ -55,7 +57,8 @@
                 }
               },
               "queryRef": "_Medidas.OTs por Técnico",
-              "nativeQueryRef": "OTs por Técnico"
+              "nativeQueryRef": "OTs por Técnico",
+              "active": false
             },
             {
               "field": {
@@ -69,7 +72,8 @@
                 }
               },
               "queryRef": "_Medidas.Horas por Técnico",
-              "nativeQueryRef": "Horas por Técnico"
+              "nativeQueryRef": "Horas por Técnico",
+              "active": false
             },
             {
               "field": {
@@ -83,7 +87,8 @@
                 }
               },
               "queryRef": "_Medidas.Eficiencia Técnico",
-              "nativeQueryRef": "Eficiencia Técnico"
+              "nativeQueryRef": "Eficiencia Técnico",
+              "active": false
             },
             {
               "field": {
@@ -97,7 +102,8 @@
                 }
               },
               "queryRef": "_Medidas.Costo por Técnico",
-              "nativeQueryRef": "Costo por Técnico"
+              "nativeQueryRef": "Costo por Técnico",
+              "active": false
             }
           ]
         }

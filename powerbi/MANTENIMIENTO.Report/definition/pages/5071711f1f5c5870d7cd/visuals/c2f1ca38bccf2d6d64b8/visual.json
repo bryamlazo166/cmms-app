@@ -1,12 +1,12 @@
 {
-  "$schema": "https://developer.microsoft.com/json-schemas/fabric/item/report/definition/visualContainer/2.0.0/schema.json",
+  "$schema": "https://developer.microsoft.com/json-schemas/fabric/item/report/definition/visualContainer/2.10.0/schema.json",
   "name": "c2f1ca38bccf2d6d64b8",
   "position": {
     "x": 20,
     "y": 160,
     "z": 1005,
-    "width": 620,
     "height": 280,
+    "width": 620,
     "tabOrder": 1005
   },
   "visual": {
@@ -27,7 +27,8 @@
                 }
               },
               "queryRef": "DimAreas.Área",
-              "nativeQueryRef": "Área"
+              "nativeQueryRef": "Área",
+              "active": true
             }
           ]
         },

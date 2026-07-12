@@ -1,12 +1,12 @@
 {
-  "$schema": "https://developer.microsoft.com/json-schemas/fabric/item/report/definition/visualContainer/2.0.0/schema.json",
+  "$schema": "https://developer.microsoft.com/json-schemas/fabric/item/report/definition/visualContainer/2.10.0/schema.json",
   "name": "8b2aa54fa39c07e6a1d1",
   "position": {
     "x": 20,
     "y": 460,
     "z": 1008,
-    "width": 1240,
     "height": 240,
+    "width": 1240,
     "tabOrder": 1008
   },
   "visual": {
@@ -27,7 +27,8 @@
                 }
               },
               "queryRef": "DimEquipos.Equipo",
-              "nativeQueryRef": "Equipo"
+              "nativeQueryRef": "Equipo",
+              "active": true
             },
             {
               "field": {
@@ -41,7 +42,8 @@
                 }
               },
               "queryRef": "FactInspecciones.Semáforo",
-              "nativeQueryRef": "Semáforo"
+              "nativeQueryRef": "Semáforo",
+              "active": false
             },
             {
               "field": {
@@ -55,7 +57,8 @@
                 }
               },
               "queryRef": "FactInspecciones.Estado Inspección",
-              "nativeQueryRef": "Estado Inspección"
+              "nativeQueryRef": "Estado Inspección",
+              "active": false
             },
             {
               "field": {
@@ -69,7 +72,8 @@
                 }
               },
               "queryRef": "_Medidas.Espesor Promedio (mm)",
-              "nativeQueryRef": "Espesor Promedio (mm)"
+              "nativeQueryRef": "Espesor Promedio (mm)",
+              "active": false
             }
           ]
         }

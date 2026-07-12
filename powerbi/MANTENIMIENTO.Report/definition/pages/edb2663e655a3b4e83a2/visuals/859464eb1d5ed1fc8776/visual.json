@@ -1,12 +1,12 @@
 {
-  "$schema": "https://developer.microsoft.com/json-schemas/fabric/item/report/definition/visualContainer/2.0.0/schema.json",
+  "$schema": "https://developer.microsoft.com/json-schemas/fabric/item/report/definition/visualContainer/2.10.0/schema.json",
   "name": "859464eb1d5ed1fc8776",
   "position": {
     "x": 0,
     "y": 210,
     "z": 1009,
-    "width": 413,
     "height": 280,
+    "width": 413,
     "tabOrder": 1009
   },
   "visual": {
@@ -27,7 +27,8 @@
                 }
               },
               "queryRef": "FactOTs.Tipo OT",
-              "nativeQueryRef": "Tipo OT"
+              "nativeQueryRef": "Tipo OT",
+              "active": true
             }
           ]
         },
