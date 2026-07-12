@@ -526,6 +526,7 @@
 
         { group: G_ANALISIS, href: '/reportes', icon: 'fas fa-file-contract', label: 'Reportes', tip: 'Reportes' },
         { group: G_ANALISIS, href: '/indicadores', icon: 'fas fa-chart-bar', label: 'Indicadores', tip: 'Indicadores Directorio', restricted: true },
+        { group: G_ANALISIS, href: '/diagnostico', icon: 'fas fa-stethoscope', label: 'Diagnóstico Mensual', tip: 'Informe ejecutivo con IA + programación del próximo mes', restricted: true },
         { group: G_ANALISIS, href: '/cockpit', icon: 'fas fa-chart-pie', label: 'Cockpit Gerencial', tip: 'Cockpit Gerencial', restricted: true },
         { group: G_ANALISIS, href: '/produccion', icon: 'fas fa-seedling', label: 'Produccion vs Mtto', tip: 'Confiabilidad de Produccion', restricted: true },
         { group: G_ANALISIS, href: '/operatividad-anual', icon: 'fas fa-calendar-check', label: 'Operatividad Anual', tip: 'Grilla anual de operatividad por equipo (semanas)', restricted: true },
@@ -674,7 +675,7 @@
         'monitoreo': '/monitoreo', 'lubricacion': '/lubricacion',
         'inspecciones': '/inspecciones', 'espesores': '/espesores',
         'paradas': '/paradas', 'plantillas_paradas': '/plantillas-paradas',
-        'indicadores': '/indicadores', 'cockpit': '/cockpit',
+        'indicadores': '/indicadores', 'diagnostico': '/diagnostico', 'cockpit': '/cockpit',
         'produccion': '/produccion',
         'programa_nocturno': '/programa-nocturno',
         'flujo_planta': '/flujo-planta',

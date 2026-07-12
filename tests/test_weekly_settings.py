@@ -107,6 +107,33 @@ def test_predictive_tracking(auth_admin, app):
     assert bomba['overall'] is None  # sin medidas configuradas
 
 
+def test_diagnostico_data(auth_admin):
+    """El diagnostico mensual devuelve todas las secciones del informe."""
+    import datetime as dt
+    mes = dt.date.today().strftime('%Y-%m')
+    r = auth_admin.get(f'/api/diagnostico/data?month={mes}')
+    assert r.status_code == 200, r.json
+    data = r.json
+    for key in ('meta', 'kpis_mes', 'kpis_prev', 'pareto_mes', 'pareto_6m',
+                'top_equipos', 'trend', 'backlog', 'rutinas', 'predictivo',
+                'almacen', 'informes', 'programa'):
+        assert key in data, f"falta {key}"
+    assert data['meta']['month'] == mes
+    assert len(data['trend']) == 6
+    prog = data['programa']
+    assert 'capacidad' in prog and 'rutinas_semana' in prog
+    assert len(prog['rutinas_semana']['lubricacion']) == 5  # 5 semanas del mes
+
+
+def test_diagnostico_narrativa_sin_api_key(auth_admin):
+    """Sin DEEPSEEK_API_KEY el endpoint responde 501 con mensaje claro."""
+    r = auth_admin.post('/api/diagnostico/narrativa', data=json.dumps({
+        'meta': {'label': 'Test'}, 'kpis_mes': {}, 'kpis_prev': {},
+    }), content_type='application/json')
+    assert r.status_code in (501, 502)
+    assert 'error' in r.json
+
+
 def test_monitoring_point_accepts_rotative_asset(auth_admin):
     # El punto de monitoreo acepta rotative_asset_id (sigue al activo)
     r = auth_admin.post('/api/rotative-assets', data=json.dumps({

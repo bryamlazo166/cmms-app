@@ -1,0 +1,171 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <link rel="icon" type="image/svg+xml" href="/static/favicon.svg">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Diagnostico Mensual - CMMS</title>
+    <!-- CMMS_THEME_INIT -->
+    <script>(function(){try{var t=localStorage.getItem('cmms.theme');if(t=='management'||t=='developer'){document.documentElement.setAttribute('data-theme',t);}}catch(e){}})();</script>
+    <link rel="stylesheet" href="/static/css/style.css?v={{ v }}">
+    <link rel="stylesheet" href="/static/css/sidebar.css?v={{ v }}">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css">
+    <script src="https://cdn.jsdelivr.net/npm/echarts@5.5.0/dist/echarts.min.js"></script>
+    <style>
+        body{background:#0a0e14;}
+        .wrap{max-width:1500px;margin:0 auto;padding:16px;}
+        .header{background:linear-gradient(120deg,#1a1f2e,#12161f);border:1px solid #2d3f56;border-radius:14px;padding:20px 24px;margin-bottom:16px;display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:14px;}
+        .header h1{margin:0;color:#5AC8FA;font-size:1.5rem;display:flex;align-items:center;gap:10px;}
+        .header .sub{margin:4px 0 0;color:#9ab0cb;font-size:.85rem;}
+        .tools{display:flex;gap:10px;align-items:center;flex-wrap:wrap;}
+        .tools select,.tools input{height:38px;background:#0f1319;color:#d5e2f5;border:1px solid #344964;border-radius:8px;padding:6px 12px;font-size:.88rem;}
+        .btn{height:38px;border-radius:8px;padding:0 16px;font-weight:600;cursor:pointer;font-size:.88rem;border:none;display:inline-flex;align-items:center;gap:6px;}
+        .btn.primary{background:#0a84ff;color:#fff;}
+        .btn.ai{background:#BF5AF2;color:#fff;}
+        .btn.present{background:#30D158;color:#0a2513;}
+        .btn.back{background:#2a2d35;color:#d6d8de;border:1px solid #4a5361;}
+
+        .slide{background:#181d24;border:1px solid #2f4257;border-radius:14px;padding:20px 24px;margin-bottom:16px;}
+        .slide h2{margin:0 0 2px;color:#5AC8FA;font-size:1.15rem;display:flex;align-items:center;gap:10px;}
+        .slide .method{color:#9ab0cb;font-size:.78rem;margin-bottom:14px;}
+        .chart-box{height:360px;width:100%;}
+        .chart-box.tall{height:420px;}
+
+        .kpi-strip{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:12px;margin:6px 0 4px;}
+        .kpi-item{background:#1b212b;border:1px solid #344964;border-radius:12px;padding:13px;text-align:center;}
+        .kpi-item .label{font-size:.7rem;color:#9ab0cb;text-transform:uppercase;letter-spacing:.5px;line-height:1.3;}
+        .kpi-item .value{font-size:1.7rem;font-weight:700;margin-top:6px;font-variant-numeric:tabular-nums;}
+        .kpi-item .delta{font-size:.74rem;margin-top:3px;color:#9ab0cb;}
+        .v-good{color:#30D158!important;}.v-warn{color:#FF9F0A!important;}.v-crit{color:#FF453A!important;}
+
+        table.diag{border-collapse:collapse;width:100%;font-size:.84rem;}
+        table.diag th{text-align:left;font-size:.7rem;text-transform:uppercase;letter-spacing:.06em;color:#9ab0cb;padding:8px 10px;border-bottom:2px solid #344964;}
+        table.diag td{padding:7px 10px;border-bottom:1px solid rgba(255,255,255,.06);color:#d5e2f5;vertical-align:top;}
+        table.diag td.num,table.diag th.num{text-align:right;font-variant-numeric:tabular-nums;white-space:nowrap;}
+        .twrap{overflow-x:auto;}
+
+        .narrativa{white-space:pre-wrap;color:#d5e2f5;font-size:.92rem;line-height:1.65;background:#141a22;border:1px solid #2f4257;border-radius:10px;padding:16px 18px;}
+        .narrativa:empty{display:none;}
+        .spin{color:#BF5AF2;}
+
+        /* ── MODO PRESENTACION ─────────────────────────────────────────── */
+        body.presenting .sidebar,body.presenting .header,body.presenting .no-present{display:none!important;}
+        body.presenting .home-section{margin-left:0!important;}
+        body.presenting{overflow:hidden;}
+        body.presenting .wrap{max-width:none;padding:0;}
+        body.presenting .slide{display:none;position:fixed;inset:0;margin:0;border-radius:0;border:none;
+            padding:48px 70px;overflow-y:auto;z-index:60;}
+        body.presenting .slide.active{display:block;}
+        body.presenting .slide h2{font-size:2rem;margin-bottom:8px;}
+        body.presenting .slide .method{font-size:1rem;margin-bottom:22px;}
+        body.presenting .kpi-item .value{font-size:2.6rem;}
+        body.presenting .kpi-item .label{font-size:.85rem;}
+        body.presenting table.diag{font-size:1.02rem;}
+        body.presenting .chart-box{height:58vh;}
+        body.presenting .narrativa{font-size:1.15rem;}
+        #presentNav{display:none;position:fixed;bottom:18px;right:24px;z-index:70;gap:10px;align-items:center;}
+        body.presenting #presentNav{display:flex;}
+        #presentNav button{background:#1b212b;color:#d5e2f5;border:1px solid #344964;border-radius:8px;
+            padding:8px 14px;cursor:pointer;font-size:1rem;}
+        #presentNav .cnt{color:#9ab0cb;font-size:.9rem;}
+
+        @media print{
+            body{background:#fff!important;}
+            .sidebar,.tools,.btn,#presentNav{display:none!important;}
+            .home-section{margin-left:0!important;}
+            .slide{background:#fff!important;border:1px solid #ccc!important;break-inside:avoid;}
+            .kpi-item{background:#fff!important;border:1px solid #ccc!important;}
+            .kpi-item .label,.slide .method{color:#555!important;}
+            .narrativa{background:#fff!important;border:1px solid #ccc!important;color:#111!important;}
+            table.diag td{color:#111!important;}
+            @page{size:A4 landscape;margin:10mm;}
+        }
+    </style>
+</head>
+<body>
+<nav class="sidebar"><div class="logo-details"><i class="fas fa-industry icon"></i><div class="logo_name">CMMS Pro</div><i class="fas fa-bars" id="btn_toggle"></i></div><ul class="nav-list"></ul></nav>
+<section class="home-section">
+    <div class="wrap">
+        <div class="header">
+            <div>
+                <h1><i class="fas fa-stethoscope"></i> Diagnostico Mensual de Gestion</h1>
+                <div class="sub">Informe ejecutivo con datos en vivo · indicadores del mes + programacion del mes siguiente · <span id="genAt">-</span></div>
+            </div>
+            <div class="tools">
+                <input type="month" id="diagMonth" title="Mes a presentar">
+                <button class="btn primary" onclick="loadDiagnostico()"><i class="fas fa-sync"></i> Actualizar</button>
+                <button class="btn ai" onclick="generarNarrativa()" title="Genera el analisis ejecutivo con IA (DeepSeek) usando los datos cargados"><i class="fas fa-wand-magic-sparkles"></i> Narrativa IA</button>
+                <button class="btn present" onclick="togglePresent()" title="Pantalla completa, avanza con las flechas del teclado"><i class="fas fa-display"></i> Presentar</button>
+                <button class="btn back" onclick="window.print()"><i class="fas fa-file-pdf"></i> PDF</button>
+            </div>
+        </div>
+
+        <!-- S1: Resumen ejecutivo -->
+        <div class="slide" data-slide>
+            <h2><i class="fas fa-flag"></i> <span id="s1Title">Resumen del mes</span></h2>
+            <div class="method">Indicadores del mes vs. mes anterior — benchmarks SMRP: cumplimiento &gt;90%, proactivo &gt;75%</div>
+            <div class="kpi-strip" id="kpiStrip"></div>
+            <div class="narrativa" id="narrativaBox"></div>
+        </div>
+
+        <!-- S2: Tendencia -->
+        <div class="slide" data-slide>
+            <h2><i class="fas fa-chart-line"></i> Tendencia 6 meses</h2>
+            <div class="method">OTs cerradas por tipo, % proactivo y horas de parada por mes</div>
+            <div class="chart-box" id="trendChart"></div>
+        </div>
+
+        <!-- S3: Pareto -->
+        <div class="slide" data-slide>
+            <h2><i class="fas fa-chart-column"></i> Pareto de fallas (80/20)</h2>
+            <div class="method">
+                <label><input type="radio" name="parWin" value="mes" onchange="renderPareto()"> Mes</label>
+                &nbsp;&nbsp;<label><input type="radio" name="parWin" value="6m" checked onchange="renderPareto()"> Ultimos 6 meses</label>
+                — barras = fallas, linea = % acumulado
+            </div>
+            <div class="chart-box" id="paretoChart"></div>
+        </div>
+
+        <!-- S4: Equipos criticos -->
+        <div class="slide" data-slide>
+            <h2><i class="fas fa-triangle-exclamation"></i> Equipos que concentran las perdidas</h2>
+            <div class="method">Fallas correctivas y horas de parada — ultimos 6 meses</div>
+            <div class="chart-box" id="equiposChart"></div>
+        </div>
+
+        <!-- S5: Salud del sistema -->
+        <div class="slide" data-slide>
+            <h2><i class="fas fa-heart-pulse"></i> Salud del sistema de mantenimiento</h2>
+            <div class="method">Backlog, rutinas, predictivo, almacen y proveedores — foto de hoy</div>
+            <div class="kpi-strip" id="saludStrip"></div>
+            <div class="twrap"><table class="diag" id="rutinasTable"></table></div>
+        </div>
+
+        <!-- S6: Programacion proximo mes -->
+        <div class="slide" data-slide>
+            <h2><i class="fas fa-calendar-days"></i> <span id="s6Title">Programacion propuesta</span></h2>
+            <div class="method">Para coordinar con produccion: OTs programadas, rutinas que vencen por semana y carga vs capacidad</div>
+            <div class="kpi-strip" id="progStrip"></div>
+            <div class="chart-box" id="progChart" style="height:300px;"></div>
+        </div>
+
+        <!-- S7: Detalle OTs proximo mes -->
+        <div class="slide" data-slide>
+            <h2><i class="fas fa-list-check"></i> <span id="s7Title">Detalle de OTs del proximo mes</span></h2>
+            <div class="method">Ordenadas por fecha — llevar a la reunion con produccion para validar ventanas</div>
+            <div class="twrap"><table class="diag" id="otsNextTable"></table></div>
+        </div>
+    </div>
+</section>
+
+<div id="presentNav">
+    <button onclick="prevSlide()"><i class="fas fa-chevron-left"></i></button>
+    <span class="cnt" id="slideCnt">1/7</span>
+    <button onclick="nextSlide()"><i class="fas fa-chevron-right"></i></button>
+    <button onclick="togglePresent()" title="Salir (Esc)"><i class="fas fa-xmark"></i></button>
+</div>
+
+<script src="/static/js/sidebar.js?v={{ v }}"></script>
+<script src="/static/js/diagnostico.js?v={{ v }}"></script>
+</body>
+</html>
