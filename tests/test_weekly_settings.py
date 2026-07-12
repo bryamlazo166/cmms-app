@@ -343,6 +343,9 @@ def test_diagnostico_informe_html(auth_admin):
     html = r.data.decode('utf-8')
     assert 'DIAGNOSTICO DE GESTION DE MANTENIMIENTO' in html
     assert 'Cuadro consolidado de indicadores' in html
+    # Ninguna clave de dict debe filtrarse como metodo de Python
+    # (ej. al.items -> "<built-in method items of dict...>")
+    assert 'built-in method' not in html
     assert 'Content-Disposition' not in r.headers  # vista inline por defecto
     # Con download=1 se descarga como archivo con nombre del periodo
     r2 = auth_admin.get(f'/api/diagnostico/informe?month={mes}&download=1')

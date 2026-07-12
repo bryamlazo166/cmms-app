@@ -257,7 +257,7 @@
         <div class="kpi"><div class="l">Con tecnico asignado</div><div class="v {{ 'crit' if b.con_tecnico < b.total / 2 else 'good' }}">{{ b.con_tecnico }}/{{ b.total }}</div><div class="d">{{ b.programadas }} programadas</div></div>
         <div class="kpi"><div class="l">OTs &gt;30 dias</div><div class="v">{{ b.aging['30-60'] + b.aging['>60'] }}</div><div class="d">{{ b.aging['sin_fecha'] }} sin fecha</div></div>
         <div class="kpi"><div class="l">Megado pendiente</div><div class="v {{ 'crit' if prd.megado_pendiente > 0 else 'good' }}">{{ prd.megado_pendiente }}/{{ prd.electricos }}</div><div class="d">motores sin prueba electrica</div></div>
-        <div class="kpi"><div class="l">Almacen bajo minimo</div><div class="v {{ 'crit' if al.quiebres > 0 else 'warn' }}">{{ al.bajo_minimo }}/{{ al.items }}</div><div class="d">{{ al.quiebres }} quiebres de stock</div></div>
+        <div class="kpi"><div class="l">Almacen bajo minimo</div><div class="v {{ 'crit' if al.quiebres > 0 else 'warn' }}">{{ al.bajo_minimo }}/{{ al['items'] }}</div><div class="d">{{ al.quiebres }} quiebres de stock</div></div>
         <div class="kpi"><div class="l">Informes proveedor</div><div class="v">{{ inf.pendientes }}/{{ inf.requeridos }}</div><div class="d">pendientes</div></div>
     </div>
     <h3>Rutinas</h3>
