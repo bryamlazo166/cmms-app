@@ -223,11 +223,22 @@ async function handleMessage(sock, msg) {
     if (!fwd?.to) continue
     await humanDelay()
     if (fwd.attach_incoming_media && mediaBuffer && media) {
+      // media del MENSAJE ACTUAL (ej: evidencia recien enviada)
       const content = media.type === 'video'
         ? { video: mediaBuffer, caption: fwd.text || '' }
         : media.type === 'image'
           ? { image: mediaBuffer, caption: fwd.text || '' }
           : { document: mediaBuffer, mimetype: media.mimetype, caption: fwd.text || '' }
+      await sock.sendMessage(fwd.to, content)
+    } else if (fwd.media_base64) {
+      // media guardada por Flask en la sesion (ej: foto que vino con el
+      // primer mensaje del reporte, antes de confirmar)
+      const buf = Buffer.from(fwd.media_base64, 'base64')
+      const content = fwd.media_type === 'video'
+        ? { video: buf, caption: fwd.text || '' }
+        : fwd.media_type === 'image'
+          ? { image: buf, caption: fwd.text || '' }
+          : { document: buf, mimetype: fwd.mimetype || 'application/octet-stream', caption: fwd.text || '' }
       await sock.sendMessage(fwd.to, content)
     } else if (fwd.text) {
       await sock.sendMessage(fwd.to, { text: fwd.text })

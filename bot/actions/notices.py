@@ -58,13 +58,14 @@ def create_notice(app, data):
                     maintenance_type, status, reporter_name, reporter_type,
                     area_id, line_id, equipment_id, system_id, component_id, rotative_asset_id, shift,
                     scope, free_location, failure_mode, failure_category, blockage_object)
-                VALUES (:code, :desc, :crit, :prio, :rdate, :mtype, 'Pendiente', :reporter, 'telegram',
+                VALUES (:code, :desc, :crit, :prio, :rdate, :mtype, 'Pendiente', :reporter, :rtype,
                     :ar, :ln, :eq, :sys, :comp, :ra, :shift, :scope, :loc, :fm, :fc, :bo)
             """), {
                 "code": code, "desc": ' | '.join(desc_parts),
                 "crit": data.get('criticality', 'Media'), "prio": data.get('priority', 'Normal'),
                 "rdate": req_date, "mtype": data.get('maintenance_type', 'Correctivo'),
                 "reporter": data.get('reporter_name', 'Bot Telegram'),
+                "rtype": data.get('reporter_type', 'telegram'),
                 "ar": ar_id, "ln": ln_id, "eq": eq_id, "sys": sys_id, "comp": comp_id, "ra": ra_id,
                 "shift": data.get('shift'),
                 "scope": scope, "loc": free_loc,
