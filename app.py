@@ -86,6 +86,7 @@ from routes.insights_routes import register_insights_routes
 from routes.diagnostico_routes import register_diagnostico_routes
 from routes.pf_analysis_routes import register_pf_analysis_routes
 from routes.rental_routes import register_rental_routes
+from routes.whatsapp_routes import register_whatsapp_routes
 
 # Nivel configurable via env. En produccion default = INFO (NUNCA DEBUG)
 # porque urllib3.connectionpool en DEBUG loguea cada URL que peticionamos,
@@ -1130,6 +1131,8 @@ register_rental_routes(
     RentalHorometerReading=RentalHorometerReading,
     RentalFailure=RentalFailure,
 )
+
+register_whatsapp_routes(app=app, db=db, logger=logger)
 
 register_data_import_routes(
     app=app,
