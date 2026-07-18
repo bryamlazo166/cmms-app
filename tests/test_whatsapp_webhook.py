@@ -139,12 +139,18 @@ def test_flujo_dry_run_no_escribe(app, client, wa_env, monkeypatch):
     assert 'MOLI2' in body                      # path resuelto contra el arbol real
     assert 'MOTOR ELECTRICO' in body            # componente resuelto
     assert 'DRY-RUN' in body
-    # 2) confirmar -> simulacion, sin escribir
+    # 2) confirmar -> simulacion + pide evidencia (mismo flujo que produccion)
     r2 = _post(client, text='1')
-    body2 = r2.get_json()['replies'][0]
-    assert 'DRY-RUN' in body2
-    assert 'AV-SIMULADO' in body2
+    replies2 = r2.get_json()['replies']
+    assert 'DRY-RUN' in replies2[0]
+    assert 'AV-SIMULADO' in replies2[0]
+    assert any('foto' in x.lower() for x in replies2)   # pide foto/video tambien en DRY
     assert not r2.get_json().get('forwards')    # DRY no reenvia a grupos
+    # 3) enviar video en DRY -> simula reenvio, aclara que no se sube
+    r3 = _post(client, text='', media={'type': 'video', 'mimetype': 'video/mp4', 'base64': 'aGk='})
+    body3 = r3.get_json()['replies'][0]
+    assert 'DRY-RUN' in body3
+    assert 'no se suben' in body3.lower() or 'no se sube' in body3.lower()
     from sqlalchemy import text as _t
     from database import db
     with app.app_context():
@@ -177,9 +183,17 @@ def test_flujo_real_crea_aviso_y_reenvia(app, client, wa_env, monkeypatch):
     assert row[1] == 'Pendiente'
     assert row[2] == 'Alta'
     assert row[3] is not None                   # quedo vinculado al equipo
-    # 3) cerrar sin evidencia
-    r3 = _post(client, text='listo')
-    assert 'sin evidencia' in r3.get_json()['replies'][0]
+    # 3) enviar VIDEO como evidencia: NO se sube a Supabase, SI se reenvia al grupo
+    from bot import whatsapp_handler as wh
+    llamadas_upload = []
+    monkeypatch.setattr(wh, '_attach_media_to_notice',
+                        lambda *a, **k: llamadas_upload.append(a) or None)
+    r3 = _post(client, text='', media={'type': 'video', 'mimetype': 'video/mp4', 'base64': 'aGk='})
+    d3 = r3.get_json()
+    assert 'no se almacenan' in d3['replies'][0].lower()
+    assert not llamadas_upload                              # video: sin upload
+    assert d3['forwards'] and d3['forwards'][0]['to'] == GROUP
+    assert d3['forwards'][0]['attach_incoming_media'] is True   # pero SI va al grupo
 
 
 def test_duplicado_ofrece_agregar_observacion(app, client, wa_env, monkeypatch):

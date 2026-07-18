@@ -381,21 +381,22 @@ def _create_notice_from_extraction(app, user, extraction):
 
 
 def _attach_media_to_notice(app, notice_id, media):
-    """Sube foto/video a Supabase Storage y la vincula al aviso. Devuelve url o None."""
+    """Comprime y sube una FOTO a Supabase Storage vinculada al aviso.
+
+    Los VIDEOS no se almacenan en el CMMS (consumen demasiado storage del
+    plan de Supabase) — solo se reenvian al grupo de WhatsApp como evidencia.
+    Devuelve la url de la foto subida o None.
+    """
+    if (media or {}).get('type') != 'image':
+        return None
     try:
         import base64
         raw = base64.b64decode(media.get('base64') or '')
         if not raw:
             return None
         from utils.photo_helpers import compress_photo, upload_to_supabase_storage
-        mtype = media.get('type')
-        if mtype == 'image':
-            payload, _ = compress_photo(raw)
-            ext = 'jpg'
-        else:
-            payload = raw  # video: sin compresion (el gateway limita a 16 MB)
-            ext = (media.get('mimetype') or 'video/mp4').split('/')[-1].split(';')[0]
-        fname = f"whatsapp_{notice_id}_{int(time.time())}.{ext}"
+        payload, _ = compress_photo(raw)
+        fname = f"whatsapp_{notice_id}_{int(time.time())}.jpg"
         url = upload_to_supabase_storage(payload, fname)
         if not url:
             return None
@@ -640,22 +641,31 @@ def _handle_media_state(app, phone, user, session, text, lower, media):
     notice_id = session.get('notice_id')
 
     if media and media.get('type') in ('image', 'video'):
+        is_image = media.get('type') == 'image'
+        dry = _dry_run()
         url = None
-        if not _dry_run() and notice_id:
+        if not dry and notice_id and is_image:
             url = _attach_media_to_notice(app, notice_id, media)
         _clear_session(phone)
+        # Foto Y video se reenvian SIEMPRE al grupo como evidencia;
+        # solo la foto se almacena ademas en el CMMS (video no se sube).
         forwards = []
-        if not _dry_run() and user.get('grupo_destino'):
+        if not dry and user.get('grupo_destino'):
             forwards.append({
                 "to": user['grupo_destino'],
                 "text": f"📎 Evidencia del {code} — {user.get('nombre')}",
                 "attach_incoming_media": True,
             })
-        msg = f"✅ Evidencia recibida y adjuntada al *{code}*."
-        if _dry_run():
-            msg = f"🧪 [DRY-RUN] Habria adjuntado la evidencia al *{code}* y reenviado al grupo."
-        elif not url:
-            msg = f"⚠️ Recibi el archivo pero no pude subirlo al {code}. El aviso sigue registrado."
+        if dry:
+            accion = ("comprimido y adjuntado la foto al aviso" if is_image
+                      else "reenviado el video al grupo (los videos no se suben al CMMS)")
+            msg = f"🧪 [DRY-RUN] Habria {accion} y avisado al grupo. Fin de la prueba del *{code}*."
+        elif is_image:
+            msg = (f"✅ Foto comprimida y adjuntada al *{code}*. Tambien la reenvie al grupo."
+                   if url else
+                   f"⚠️ Recibi la foto pero no pude subirla al {code} (el aviso sigue registrado). La reenvie al grupo.")
+        else:
+            msg = f"✅ Video reenviado al grupo como evidencia del *{code}*. (Los videos no se almacenan en el CMMS.)"
         return {"replies": [msg], "forwards": forwards}
 
     if lower in _SKIP_MEDIA:
@@ -674,13 +684,19 @@ def _do_create(app, phone, user, session):
     media_pending = session.get('media_pending')
 
     if _dry_run():
-        _clear_session(phone)
         preview = _group_message('AV-SIMULADO', user, extraction, resolved)
+        # Mantener el flujo completo tambien en modo prueba: pasar al paso
+        # de evidencia igual que en produccion (sin escribir nada).
+        _set_session(phone, {"state": "media", "notice_code": "AV-SIMULADO",
+                             "notice_id": None, "extraction": extraction,
+                             "resolved": resolved})
         return {"replies": [
             "🧪 *[DRY-RUN]* El aviso NO se creo (modo prueba). Esto es lo que habria pasado:\n\n"
             f"1. Aviso creado en el CMMS (estado Pendiente)\n"
             f"2. Mensaje al grupo *{user.get('grupo_nombre') or user.get('grupo_destino') or '(sin grupo)'}*:\n\n"
-            f"{preview}"
+            f"{preview}",
+            "📸 Si tienes foto o video de la falla, mandalo ahora (o escribe *listo*).\n"
+            "_(La foto se comprime y adjunta al aviso; el video solo se reenvia al grupo.)_"
         ]}
 
     code, notice_id, err = _create_notice_from_extraction(app, user, extraction)
@@ -700,12 +716,15 @@ def _do_create(app, phone, user, session):
             fwd["mimetype"] = media_pending.get('mimetype')
         forwards.append(fwd)
 
-    # adjuntar media que vino con el primer mensaje
+    # adjuntar media que vino con el primer mensaje (solo foto se sube;
+    # video se reenvia al grupo sin almacenarse)
     if media_pending and media_pending.get('base64'):
         _attach_media_to_notice(app, notice_id, media_pending)
         _clear_session(phone)
+        evidencia = ("con tu foto adjunta" if media_pending.get('type') == 'image'
+                     else "— el video va al grupo (no se almacena en el CMMS)")
         return {"replies": [
-            f"✅ Aviso *{code}* creado en el CMMS con tu evidencia.\n"
+            f"✅ Aviso *{code}* creado en el CMMS {evidencia}.\n"
             f"📢 Avise al grupo {user.get('grupo_nombre') or ''}."
         ], "forwards": forwards}
 
@@ -714,7 +733,8 @@ def _do_create(app, phone, user, session):
     return {"replies": [
         f"✅ Aviso *{code}* creado en el CMMS (estado Pendiente).\n"
         f"📢 Avise al grupo {user.get('grupo_nombre') or ''}.\n\n"
-        "📸 Si tienes foto o video de la falla, mandalo ahora (o escribe *listo*)."
+        "📸 Si tienes foto o video de la falla, mandalo ahora (o escribe *listo*).\n"
+        "_(La foto se comprime y adjunta al aviso; el video solo se reenvia al grupo.)_"
     ], "forwards": forwards}
 
 
