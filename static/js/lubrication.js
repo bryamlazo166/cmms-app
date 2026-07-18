@@ -180,6 +180,7 @@ function renderPoints(points) {
     lubState.points = points || [];
     renderPointsView();
     renderPointSelect();
+    updateHistFilterOptions();
 }
 
 // ── Filtros de la lista de puntos (tabla + arbol) ────────────────────────────
@@ -520,7 +521,7 @@ window.setLubView = setLubView;
 function renderExecutions(rows) {
     const tbody = q('tbodyExec');
     if (!rows || !rows.length) {
-        tbody.innerHTML = '<tr><td colspan="9">Sin historial.</td></tr>';
+        tbody.innerHTML = '<tr><td colspan="12">Sin historial para el filtro actual.</td></tr>';
         return;
     }
     const ACTION_LABEL = {
@@ -532,7 +533,10 @@ function renderExecutions(rows) {
         <tr>
             <td>${r.execution_date || '-'}</td>
             <td>${r.point_name || '-'}</td>
+            <td>${r.equipment_name || '-'}</td>
+            <td>${r.component_name || '-'}</td>
             <td>${ACTION_LABEL[r.action_type] || (r.action_type || '-')}</td>
+            <td>${r.interval_days != null ? r.interval_days + ' d' : '-'}</td>
             <td>${r.quantity_used ? fnum(r.quantity_used, 2) : '-'} ${r.quantity_unit || ''}</td>
             <td>${r.executed_by || '-'}</td>
             <td>${r.anomaly_detected || r.leak_detected ? 'Si' : 'No'}</td>
@@ -542,6 +546,92 @@ function renderExecutions(rows) {
         </tr>
     `).join('');
 }
+
+/* ──────────────────────────────────────────────────────────────
+   FILTROS DEL HISTORIAL (Area → Equipo → Sistema → Componente,
+   por nombre, en cascada) + resumen de intervalos reales.
+   ────────────────────────────────────────────────────────────── */
+const _HIST_LEVELS = [
+    { id: 'hArea',      key: p => p.area_name || '' },
+    { id: 'hEquipment', key: p => p.equipment_name || '' },
+    { id: 'hSystem',    key: p => p.system_name || '' },
+    { id: 'hComponent', key: p => p.component_name || '' },
+];
+
+// Un punto pasa los filtros de los niveles ANTERIORES a uptoId (cascada).
+function _histPointPasses(p, uptoId) {
+    for (const lvl of _HIST_LEVELS) {
+        if (lvl.id === uptoId) return true;
+        const v = (q(lvl.id) || {}).value || '';
+        if (v && lvl.key(p) !== v) return false;
+    }
+    return true;
+}
+
+function updateHistFilterOptions() {
+    _HIST_LEVELS.forEach(lvl => {
+        const sel = q(lvl.id);
+        if (!sel) return;
+        const current = sel.value;
+        const candidates = (lubState.points || []).filter(p => _histPointPasses(p, lvl.id));
+        const values = [...new Set(candidates.map(lvl.key).filter(Boolean))]
+            .sort((a, b) => String(a).localeCompare(String(b), 'es', { numeric: true, sensitivity: 'base' }));
+        const firstLabel = sel.options[0] ? sel.options[0].textContent : 'Todos';
+        sel.innerHTML = `<option value="">${firstLabel}</option>` +
+            values.map(v => `<option value="${_esc(v)}">${_esc(v)}</option>`).join('');
+        if (current && !values.includes(current)) {
+            sel.insertAdjacentHTML('beforeend', `<option value="${_esc(current)}">${_esc(current)}</option>`);
+        }
+        sel.value = current;
+    });
+}
+
+function _histQueryParams() {
+    const params = new URLSearchParams();
+    const map = { hArea: 'area', hEquipment: 'equipment', hSystem: 'system', hComponent: 'component' };
+    Object.entries(map).forEach(([id, key]) => {
+        const v = (q(id) || {}).value || '';
+        if (v) params.set(key, v);
+    });
+    const from = (q('hFrom') || {}).value || '';
+    const to = (q('hTo') || {}).value || '';
+    if (from) params.set('date_from', from);
+    if (to) params.set('date_to', to);
+    return params;
+}
+
+// Resumen: cuantas lubricaciones, cada cuantos dias en promedio (real) y la
+// frecuencia teorica cuando el filtro cae en un solo punto.
+function renderHistSummary(rows, hasFilters) {
+    const countEl = q('hfCount');
+    if (countEl) countEl.textContent = rows.length ? `(${rows.length})` : '';
+    const el = q('histSummary');
+    if (!el) return;
+    if (!hasFilters || !rows.length) { el.style.display = 'none'; return; }
+    const ivals = rows.map(r => r.interval_days).filter(v => v != null);
+    const changes = rows.filter(r => r.action_type === 'CAMBIO_TOTAL' || r.action_type === 'SERVICIO').length;
+    const pointIds = new Set(rows.map(r => r.point_id));
+    let txt = `<b>${rows.length}</b> lubricaciones (${changes} cambio(s) total(es), ${rows.length - changes} relleno(s)) en <b>${pointIds.size}</b> punto(s)`;
+    if (ivals.length) {
+        const avg = ivals.reduce((a, b) => a + b, 0) / ivals.length;
+        txt += ` &middot; se ha lubricado cada <b>${avg.toFixed(1)} d&iacute;as</b> en promedio (m&iacute;n ${Math.min(...ivals)}, m&aacute;x ${Math.max(...ivals)})`;
+    }
+    if (pointIds.size === 1 && rows[0].frequency_days) {
+        txt += ` &middot; frecuencia te&oacute;rica <b>${rows[0].frequency_days} d&iacute;as</b>`;
+    }
+    el.innerHTML = txt;
+    el.style.display = '';
+}
+
+function clearHistFilters() {
+    ['hArea', 'hEquipment', 'hSystem', 'hComponent', 'hFrom', 'hTo'].forEach(id => {
+        const el = q(id);
+        if (el) el.value = '';
+    });
+    updateHistFilterOptions();
+    loadExecutions();
+}
+window.clearHistFilters = clearHistFilters;
 
 async function deleteExecution(execId) {
     if (!confirm('¿Eliminar esta ejecucion? El semaforo del punto se recalculara con la ultima ejecucion restante.')) return;
@@ -564,9 +654,39 @@ async function loadDashboard() {
 }
 
 async function loadExecutions() {
-    const data = await jget('/api/lubrication/executions');
+    const params = _histQueryParams();
+    const qs = params.toString();
+    const data = await jget('/api/lubrication/executions' + (qs ? `?${qs}` : ''));
     renderExecutions(data || []);
+    renderHistSummary(data || [], qs.length > 0);
 }
+
+/* ──────────────────────────────────────────────────────────────
+   EXPORTACION A EXCEL
+   ────────────────────────────────────────────────────────────── */
+// Excel de pendientes: respeta los filtros activos de la tabla de puntos.
+function exportPendingExcel() {
+    const params = new URLSearchParams({ scope: 'pending' });
+    const map = {
+        tfArea: 'area', tfEquipment: 'equipment', tfSystem: 'system',
+        tfComponent: 'component', tfLubricant: 'lubricant', tfFreq: 'freq',
+        tfSema: 'sema', tfDue: 'due', tfSearch: 'search', fResponsible: 'responsible',
+    };
+    Object.entries(map).forEach(([id, key]) => {
+        const v = ((q(id) || {}).value || '').trim();
+        if (v) params.set(key, v);
+    });
+    window.location = '/api/lubrication/export?' + params.toString();
+}
+window.exportPendingExcel = exportPendingExcel;
+
+// Excel de historial: respeta los filtros del panel de historial.
+function exportHistoryExcel() {
+    const params = _histQueryParams();
+    params.set('scope', 'history');
+    window.location = '/api/lubrication/export?' + params.toString();
+}
+window.exportHistoryExcel = exportHistoryExcel;
 
 async function createPoint() {
     const payload = {
@@ -751,6 +871,27 @@ async function boot() {
             });
         }
         if (q('btnClearFilters')) q('btnClearFilters').addEventListener('click', clearTableFilters);
+        // Filtros del historial (cascada: al cambiar un nivel se limpian los hijos)
+        _HIST_LEVELS.forEach((lvl, idx) => {
+            const sel = q(lvl.id);
+            if (!sel) return;
+            sel.addEventListener('change', () => {
+                for (let j = idx + 1; j < _HIST_LEVELS.length; j++) {
+                    const child = q(_HIST_LEVELS[j].id);
+                    if (child) child.value = '';
+                }
+                updateHistFilterOptions();
+                loadExecutions().catch(e => alert(`Error cargando historial: ${e.message}`));
+            });
+        });
+        ['hFrom', 'hTo'].forEach(id => {
+            if (q(id)) q(id).addEventListener('change', () => {
+                loadExecutions().catch(e => alert(`Error cargando historial: ${e.message}`));
+            });
+        });
+        if (q('btnHistClear')) q('btnHistClear').addEventListener('click', clearHistFilters);
+        if (q('btnExportPending')) q('btnExportPending').addEventListener('click', exportPendingExcel);
+        if (q('btnExportHistory')) q('btnExportHistory').addEventListener('click', exportHistoryExcel);
         // Restaurar vista preferida (tabla por defecto)
         let savedView = 'table';
         try { savedView = localStorage.getItem('cmms.lub.view') || 'table'; } catch (e) { /* ignore */ }
