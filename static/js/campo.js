@@ -262,19 +262,55 @@ async function loadLubs() {
 }
 
 const LUB_PILL = { 'ROJO': 'p-red', 'VENCIDO': 'p-red', 'AMARILLO': 'p-amber', 'VERDE': 'p-green' };
+
+// Ruta física completa: Área › Línea › Equipo › Sistema › Componente
+function lubTree(p) {
+    return [p.area_name, p.line_name, p.equipment_name, p.system_name, p.component_name]
+        .filter(Boolean).join(' › ');
+}
+
+// Antigüedad: días de atraso (+) o días restantes (−) respecto a hoy
+function lubDays(p) {
+    if (!p.next_due_date) return null;
+    const due = new Date(p.next_due_date + 'T00:00:00');
+    const now = new Date(today() + 'T00:00:00');
+    return Math.round((now - due) / 86400000);
+}
+
+function lubDueHtml(p) {
+    const d = lubDays(p);
+    if (d === null) return '🆕 <b>Sin servicio registrado</b> — primera lubricación pendiente';
+    if (d > 0) return `⏰ <b style="color:#ff8a80">ATRASADO ${d} día${d === 1 ? '' : 's'}</b> (venció ${esc(p.next_due_date)})`;
+    if (d === 0) return '⏰ <b style="color:#ffe066">VENCE HOY</b>';
+    return `vence en ${-d} día${d === -1 ? '' : 's'} (${esc(p.next_due_date)})`;
+}
+
+// Orden por antigüedad: primero los más atrasados, luego los que nunca se
+// lubricaron, luego por vencer — así se "liberan" las lubricaciones pasadas.
+const LUB_RANK = { 'ROJO': 0, 'VENCIDO': 0, 'PENDIENTE': 1, 'AMARILLO': 2, 'VERDE': 3 };
+function lubSortKey(p) {
+    const d = lubDays(p);
+    return [LUB_RANK[p.semaphore_status] ?? 4, -(d === null ? -99999 : d)];
+}
+
 function renderLubList() {
     const q = ($('lubSearch').value || '').toLowerCase();
     let rows = LUBS;
     if (lubFilterMode === 'pendientes') rows = rows.filter(p => p.semaphore_status !== 'VERDE');
-    if (q) rows = rows.filter(p => JSON.stringify([p.name, p.code, p.equipment_name, p.component_name, p.lubricant_name]).toLowerCase().includes(q));
-    rows = [...rows].sort((a, b) => String(a.next_due_date || '9999').localeCompare(String(b.next_due_date || '9999')));
+    if (q) rows = rows.filter(p => JSON.stringify([p.name, p.code, lubTree(p), p.lubricant_name]).toLowerCase().includes(q));
+    rows = [...rows].sort((a, b) => {
+        const ka = lubSortKey(a), kb = lubSortKey(b);
+        return ka[0] - kb[0] || ka[1] - kb[1];
+    });
     if (!rows.length) { $('lubList').innerHTML = '<div class="empty">Sin puntos ' + (lubFilterMode === 'pendientes' ? 'vencidos 🎉' : '') + '</div>'; return; }
     $('lubList').innerHTML = rows.slice(0, 150).map(p => `
         <div class="card" onclick="openLub(${p.id})">
-            <div class="t"><span class="code">${esc(p.code || '')} ${esc(p.name || '')}</span>
+            <div class="t"><span style="font-weight:700">${esc(p.name || '')}</span>
                 <span class="pill ${LUB_PILL[p.semaphore_status] || 'p-gray'}">${esc(p.semaphore_status || '—')}</span></div>
-            <div class="sub">${esc(p.equipment_name || '')}${p.component_name ? ' › ' + esc(p.component_name) : ''}</div>
-            <div class="sub">🛢 ${esc(p.lubricant_name || '-')} · vence: <b>${esc(p.next_due_date || '—')}</b></div>
+            <div class="sub" style="color:var(--cyan)">📍 ${esc(lubTree(p)) || '(sin ubicación)'}</div>
+            <div class="sub">🛢 ${esc(p.lubricant_name || '-')}${p.quantity_nominal ? ` · ${p.quantity_nominal} ${esc(p.quantity_unit || '')}` : ''}</div>
+            <div class="sub">${lubDueHtml(p)}${p.last_service_date ? ` · últ: ${esc(p.last_service_date)}` : ''}
+                <span style="opacity:.5"> · ${esc(p.code || '')}</span></div>
         </div>`).join('');
 }
 
@@ -285,11 +321,13 @@ function openLub(id) {
     $('lubLeak').classList.remove('on'); $('lubAnom').classList.remove('on');
     $('lubComments').value = '';
     $('lubHead').innerHTML = `
-        <b>${esc(currentLub.code || '')} — ${esc(currentLub.name || '')}</b><br>
-        <span class="kv">${esc(currentLub.equipment_name || '')}${currentLub.component_name ? ' › ' + esc(currentLub.component_name) : ''}</span>
+        <b>${esc(currentLub.name || '')}</b><br>
+        <span class="kv" style="color:var(--cyan)">📍 ${esc(lubTree(currentLub)) || '(sin ubicación)'}</span>
         <div class="kv sect">Lubricante: <b>${esc(currentLub.lubricant_name || '-')}</b>
-        · Nominal: <b>${currentLub.quantity_nominal ?? '-'} ${esc(currentLub.quantity_unit || '')}</b>
-        · Vence: <b>${esc(currentLub.next_due_date || '—')}</b></div>`;
+        · Nominal: <b>${currentLub.quantity_nominal ?? '-'} ${esc(currentLub.quantity_unit || '')}</b></div>
+        <div class="kv">${lubDueHtml(currentLub)}
+        ${currentLub.last_service_date ? ` · último servicio: <b>${esc(currentLub.last_service_date)}</b>` : ''}
+        <span style="opacity:.5"> · ${esc(currentLub.code || '')}</span></div>`;
     if (currentLub.quantity_nominal) $('lubQty').value = currentLub.quantity_nominal;
     if (currentLub.quantity_unit) {
         const u = $('lubUnit');
@@ -351,22 +389,62 @@ async function loadMots() {
 }
 
 const ST_PILL = { 'ROJO': 'p-red', 'AMARILLO': 'p-amber', 'VERDE': 'p-green', 'PENDIENTE': 'p-gray' };
+
+// Ruta física del motor: Área › Línea › [TAG] Equipo
+function motTree(m) {
+    const eq = m.equipment_name ? (m.equipment_tag ? `[${m.equipment_tag}] ` : '') + m.equipment_name : null;
+    return [m.area_name, m.line_name, eq].filter(Boolean).join(' › ');
+}
+
+// Días de atraso (+) respecto a una fecha de vencimiento
+function daysLate(dueDate) {
+    if (!dueDate) return null;
+    const due = new Date(dueDate + 'T00:00:00');
+    const now = new Date(today() + 'T00:00:00');
+    return Math.round((now - due) / 86400000);
+}
+
+function dueHtml(label, dueDate, lastDate) {
+    const d = daysLate(dueDate);
+    let core;
+    if (d === null) core = '🆕 <b>sin medición registrada</b>';
+    else if (d > 0) core = `<b style="color:#ff8a80">ATRASADO ${d} día${d === 1 ? '' : 's'}</b> (venció ${esc(dueDate)})`;
+    else if (d === 0) core = '<b style="color:#ffe066">VENCE HOY</b>';
+    else core = `vence en ${-d} día${d === -1 ? '' : 's'} (${esc(dueDate)})`;
+    return `${label}: ${core}${lastDate ? ` · últ: ${esc(lastDate)}` : ''}`;
+}
+
+// Orden por antigüedad: la medición más atrasada (corriente o megado) primero
+const MOT_RANK = { 'ROJO': 0, 'AMARILLO': 1, 'PENDIENTE': 2, 'VERDE': 3 };
+function motSortKey(m) {
+    const rank = Math.min(MOT_RANK[m.measure_status] ?? 4, MOT_RANK[m.megado_status] ?? 4);
+    const late = Math.max(daysLate(m.next_measure_due) ?? -99999, daysLate(m.next_megado_due) ?? -99999);
+    return [rank, -late];
+}
+
 function renderMotList() {
     const q = ($('motSearch').value || '').toLowerCase();
     let rows = MOTS;
     if (motFilterMode === 'pendientes') rows = rows.filter(m =>
         ['ROJO', 'AMARILLO', 'PENDIENTE'].includes(m.megado_status) ||
         ['ROJO', 'AMARILLO', 'PENDIENTE'].includes(m.measure_status));
-    if (q) rows = rows.filter(m => JSON.stringify([m.code, m.name, m.equipment_tag, m.equipment_name]).toLowerCase().includes(q));
+    if (q) rows = rows.filter(m => JSON.stringify([m.code, m.name, motTree(m)]).toLowerCase().includes(q));
+    rows = [...rows].sort((a, b) => {
+        const ka = motSortKey(a), kb = motSortKey(b);
+        return ka[0] - kb[0] || ka[1] - kb[1];
+    });
     if (!rows.length) { $('motList').innerHTML = '<div class="empty">Sin motores pendientes 🎉</div>'; return; }
     $('motList').innerHTML = rows.slice(0, 150).map(m => `
         <div class="card" onclick="openMot(${m.id})">
-            <div class="t"><span class="code">${esc(m.code || '')} ${esc(m.name || '')}</span></div>
-            <div class="sub">${m.equipment_tag ? '[' + esc(m.equipment_tag) + '] ' : ''}${esc(m.equipment_name || m.status || '')}</div>
-            <div class="sub" style="display:flex;gap:6px;flex-wrap:wrap;margin-top:6px">
-                <span class="pill ${ST_PILL[m.measure_status] || 'p-gray'}">Corriente/Temp: ${esc(m.measure_status || '—')}</span>
-                <span class="pill ${ST_PILL[m.megado_status] || 'p-gray'}">Megado: ${esc(m.megado_status || '—')}</span>
-            </div>
+            <div class="t"><span style="font-weight:700">${esc(m.name || '')}</span>
+                <span style="display:flex;gap:5px">
+                    <span class="pill ${ST_PILL[m.measure_status] || 'p-gray'}">⚡ ${esc(m.measure_status || '—')}</span>
+                    <span class="pill ${ST_PILL[m.megado_status] || 'p-gray'}">🧪 ${esc(m.megado_status || '—')}</span>
+                </span></div>
+            <div class="sub" style="color:var(--cyan)">📍 ${esc(motTree(m)) || esc(m.status || '(sin ubicación)')}</div>
+            <div class="sub">${dueHtml('⚡ Corriente/Temp', m.next_measure_due, m.last_current_date)}</div>
+            <div class="sub">${dueHtml('🧪 Megado', m.next_megado_due, m.last_megado_date)}
+                <span style="opacity:.5"> · ${esc(m.code || '')}</span></div>
         </div>`).join('');
 }
 
@@ -377,11 +455,13 @@ function openMot(id) {
     ['mCurR', 'mCurS', 'mCurT', 'mVrs', 'mVst', 'mVtr', 'mMohm', 'mTemp', 'mNotes'].forEach(i => $(i).value = '');
     const m = currentMot;
     $('motHead').innerHTML = `
-        <b>${esc(m.code || '')} — ${esc(m.name || '')}</b><br>
-        <span class="kv">${m.equipment_tag ? '[' + esc(m.equipment_tag) + '] ' : ''}${esc(m.equipment_name || '')}</span>
+        <b>${esc(m.name || '')}</b> <span style="opacity:.5">· ${esc(m.code || '')}</span><br>
+        <span class="kv" style="color:var(--cyan)">📍 ${esc(motTree(m)) || '(sin ubicación)'}</span>
         <div class="kv sect">Placa: <b>${m.rated_hp ?? '-'} HP</b> · <b>${m.rated_voltage_v ?? '-'} V</b>
         · I nom: <b>${m.rated_current_a ?? '-'} A</b> · Megado mín: <b>${m.megado_min_mohm ?? '-'} MΩ</b></div>
-        <div class="kv">Últ. corriente: <b>${m.last_current_r ?? '-'} / ${m.last_current_s ?? '-'} / ${m.last_current_t ?? '-'} A</b>
+        <div class="kv">${dueHtml('⚡ Corriente/Temp', m.next_measure_due, null)}</div>
+        <div class="kv">${dueHtml('🧪 Megado', m.next_megado_due, null)}</div>
+        <div class="kv sect">Últ. corriente: <b>${m.last_current_r ?? '-'} / ${m.last_current_s ?? '-'} / ${m.last_current_t ?? '-'} A</b>
         (${esc(m.last_current_date || 'nunca')}) · Últ. megado: <b>${m.last_megado_mohm ?? '-'} MΩ</b> (${esc(m.last_megado_date || 'nunca')})</div>`;
     nav('motreg');
 }
