@@ -25,13 +25,19 @@ fi
 TS="$(date +%Y%m%d_%H%M%S)"
 DUMP="/backups/supabase_${TS}.dump"
 
-echo "[1/5] Dump de Supabase (schema public, formato custom)..."
+echo "[1/6] Dump de Supabase (schema public, formato custom)..."
 docker exec cmms-db pg_dump "$SUPA_URL" -n public -Fc --no-owner --no-privileges -f "$DUMP"
 SIZE="$(docker exec cmms-db sh -c "du -h '$DUMP' | cut -f1")"
 echo "      OK: $DUMP ($SIZE)"
 
-echo "[2/5] Recreando schema public local..."
-docker exec cmms-db psql -U cmms -d cmms -v ON_ERROR_STOP=1 -q <<'SQL'
+# La app se detiene durante el refresh: si sigue viva, su db.create_all()
+# recrea tablas vacias en cuanto ve el schema vacio y el restore choca.
+echo "[2/6] Deteniendo cmms-app durante el refresh..."
+docker stop cmms-app >/dev/null
+trap 'docker start cmms-app >/dev/null; echo "cmms-app rearrancada."' EXIT
+
+echo "[3/6] Recreando schema public local..."
+docker exec -i cmms-db psql -U cmms -d cmms -v ON_ERROR_STOP=1 -q <<'SQL'
 DROP SCHEMA IF EXISTS public CASCADE;
 CREATE SCHEMA public;
 CREATE EXTENSION IF NOT EXISTS vector;
@@ -44,10 +50,13 @@ DO $$ BEGIN CREATE ROLE authenticated NOLOGIN; EXCEPTION WHEN duplicate_object T
 DO $$ BEGIN CREATE ROLE service_role NOLOGIN; EXCEPTION WHEN duplicate_object THEN NULL; END $$;
 SQL
 
-echo "[3/5] Restaurando dump en el PostgreSQL local..."
-docker exec cmms-db pg_restore -U cmms -d cmms --no-owner --no-privileges --exit-on-error "$DUMP"
+echo "[4/6] Restaurando dump en el PostgreSQL local..."
+# El dump trae su propio "CREATE SCHEMA public" (ya existe con las extensiones):
+# se excluye del indice de restauracion y todo lo demas sigue siendo estricto.
+docker exec cmms-db sh -c "pg_restore -l '$DUMP' | grep -v 'SCHEMA - public' > /tmp/restore.list"
+docker exec cmms-db pg_restore -U cmms -d cmms --no-owner --no-privileges --exit-on-error -L /tmp/restore.list "$DUMP"
 
-echo "[4/5] Verificacion..."
+echo "[5/6] Verificacion..."
 docker exec cmms-db psql -U cmms -d cmms -t -A -c "
 SELECT 'tablas: ' || count(*) FROM information_schema.tables
 WHERE table_schema='public' AND table_type='BASE TABLE';" \
@@ -55,7 +64,7 @@ WHERE table_schema='public' AND table_type='BASE TABLE';" \
     -c "SELECT 'ordenes de trabajo: ' || count(*) FROM work_orders;" \
     -c "SELECT 'puntos de lubricacion: ' || count(*) FROM lubrication_points;"
 
-echo "[5/5] Rotando backups (conservo los 10 mas recientes)..."
+echo "[6/6] Rotando backups (conservo los 10 mas recientes)..."
 docker exec cmms-db sh -c 'ls -1t /backups/supabase_*.dump 2>/dev/null | tail -n +11 | xargs -r rm -f'
 docker exec cmms-db sh -c 'ls -1t /backups/supabase_*.dump | head -3'
 
