@@ -154,6 +154,9 @@
                     <button id="btnToggleInactive" class="btn-toggle-inactive" onclick="toggleInactiveFilter()">
                         <i class="fas fa-eye"></i> Mostrar Inactivos
                     </button>
+                    <button id="btnExportPending" class="btn" data-perm="lubricacion.export" title="Descargar Excel con las lubricaciones pendientes (vencidas, por vencer y sin fecha). Respeta los filtros activos de la tabla.">
+                        <i class="fas fa-file-excel"></i> Excel Pendientes
+                    </button>
                 </div>
             </div>
             <!-- Filtros de la lista de puntos (aplican a tabla y arbol) -->
@@ -209,11 +212,27 @@
         </div>
 
         <div class="panel">
-            <h3>Historial de Ejecuciones</h3>
+            <div style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:10px;">
+                <h3>Historial de Ejecuciones <span id="hfCount" style="color:#666;font-size:.8rem;font-weight:normal;"></span></h3>
+                <button id="btnExportHistory" class="btn" data-perm="lubricacion.export" title="Descargar Excel del historial filtrado, con intervalo real entre lubricaciones y resumen por punto.">
+                    <i class="fas fa-file-excel"></i> Excel Historial
+                </button>
+            </div>
+            <!-- Filtros del historial: taxonomia (cascada por nombre) + rango de fechas -->
+            <div class="toolbar" style="grid-template-columns:repeat(8,minmax(110px,1fr));margin-top:8px;">
+                <div><label>Area</label><select id="hArea"><option value="">Todas</option></select></div>
+                <div><label>Equipo</label><select id="hEquipment"><option value="">Todos</option></select></div>
+                <div><label>Sistema</label><select id="hSystem"><option value="">Todos</option></select></div>
+                <div><label>Componente</label><select id="hComponent"><option value="">Todos</option></select></div>
+                <div><label>Desde</label><input id="hFrom" type="date"></div>
+                <div><label>Hasta</label><input id="hTo" type="date"></div>
+                <div><label>&nbsp;</label><button class="btn secondary" id="btnHistClear" type="button"><i class="fas fa-eraser"></i> Limpiar</button></div>
+            </div>
+            <div id="histSummary" style="display:none;margin:4px 0 8px;padding:8px 12px;background:rgba(10,132,255,.08);border:1px solid rgba(10,132,255,.25);border-radius:8px;color:#cfe3fb;font-size:.82rem;"></div>
             <div class="table-wrap" style="max-height:320px;">
                 <table>
-                    <thead><tr><th>Fecha</th><th>Punto</th><th>Accion</th><th>Cantidad</th><th>Tecnico</th><th>Anomalia</th><th>Aviso</th><th>Comentario</th><th></th></tr></thead>
-                    <tbody id="tbodyExec"><tr><td colspan="9">Cargando...</td></tr></tbody>
+                    <thead><tr><th>Fecha</th><th>Punto</th><th>Equipo</th><th>Componente</th><th>Accion</th><th>Intervalo</th><th>Cantidad</th><th>Tecnico</th><th>Anomalia</th><th>Aviso</th><th>Comentario</th><th></th></tr></thead>
+                    <tbody id="tbodyExec"><tr><td colspan="12">Cargando...</td></tr></tbody>
                 </table>
             </div>
         </div>

@@ -1,8 +1,15 @@
 import datetime as dt
 import re
+from io import BytesIO
 
-from flask import jsonify, request
+import pandas as pd
+from flask import jsonify, request, send_file
+from flask_login import login_required
+from openpyxl.utils import get_column_letter
 from sqlalchemy import inspect, text
+
+from utils.audit import audit_log
+from utils.rate_limit import limit_export
 
 
 def register_lubrication_routes(
@@ -99,6 +106,97 @@ def register_lubrication_routes(
             area_id = _safe_int(area_id)
 
         return area_id, line_id, equipment_id, system_id, component_id
+
+    _ACTION_LABELS = {
+        'CAMBIO_TOTAL': 'Cambio total',
+        'SERVICIO': 'Cambio total',
+        'RELLENO': 'Relleno',
+    }
+
+    _POINT_FILTER_KEYS = ('area', 'line', 'equipment', 'system', 'component',
+                          'lubricant', 'freq', 'responsible', 'search')
+
+    def _has_point_filters(args):
+        return any((args.get(k) or '').strip() for k in _POINT_FILTER_KEYS)
+
+    def _point_matches_filters(p, args):
+        """True si el punto pasa los filtros de taxonomia que llegan como query
+        params. Se filtra por NOMBRE (los mismos valores que muestran los
+        selects de la UI), no por id, para que la URL de exportacion sea la
+        misma que ve el usuario en pantalla."""
+        def norm(s):
+            return (s or '').strip().lower()
+
+        pairs = (
+            ('area', p.area.name if p.area else None),
+            ('line', p.line.name if p.line else None),
+            ('equipment', p.equipment.name if p.equipment else None),
+            ('system', p.system.name if p.system else None),
+            ('component', p.component.name if p.component else None),
+            ('lubricant', p.lubricant_name),
+            ('freq', str(p.frequency_days or '')),
+        )
+        for key, value in pairs:
+            wanted = norm(args.get(key))
+            if wanted and norm(value) != wanted:
+                return False
+
+        wanted_resp = norm(args.get('responsible'))
+        if wanted_resp:
+            effective = (
+                p.responsible_party_override
+                or (p.equipment.default_responsible_party if p.equipment else None)
+                or 'INTERNO'
+            )
+            if norm(effective) != wanted_resp:
+                return False
+
+        search = norm(args.get('search'))
+        if search:
+            blob = ' '.join(filter(None, [
+                p.code, p.name, p.lubricant_name,
+                p.area.name if p.area else None,
+                p.line.name if p.line else None,
+                p.equipment.name if p.equipment else None,
+                p.equipment.tag if p.equipment else None,
+                p.system.name if p.system else None,
+                p.component.name if p.component else None,
+            ])).lower()
+            tokens = [t for t in re.split(r'[\s,;/#-]+', search) if t]
+            if not all(t in blob for t in tokens):
+                return False
+        return True
+
+    def _interval_map_for_points(point_ids):
+        """{execution_id: dias transcurridos desde la ejecucion anterior del
+        mismo punto}. Se calcula sobre TODO el historial de esos puntos, no
+        solo la ventana filtrada, para que el primer registro de un rango de
+        fechas conserve su intervalo real."""
+        if not point_ids:
+            return {}
+        rows = (
+            db.session.query(
+                LubricationExecution.id,
+                LubricationExecution.point_id,
+                LubricationExecution.execution_date,
+            )
+            .filter(LubricationExecution.point_id.in_(point_ids))
+            .all()
+        )
+        by_point = {}
+        for exec_id, pid, date_raw in rows:
+            d = _parse_date_flexible(date_raw)
+            if d:
+                by_point.setdefault(pid, []).append((d, exec_id))
+        intervals = {}
+        for parsed in by_point.values():
+            parsed.sort()
+            prev = None
+            for d, exec_id in parsed:
+                if prev is not None:
+                    intervals[exec_id] = (d - prev).days
+                prev = d
+        return intervals
 
     def _ensure_lubrication_schema_compat():
         if _schema_compat_checked["done"]:
@@ -404,12 +502,48 @@ def register_lubrication_routes(
                 return jsonify({"error": _friendly_error_message(e, 'registro de ejecucion')}), 500
 
         _ensure_lubrication_schema_compat()
-        point_id = request.args.get('point_id', type=int)
+        args = request.args
+        point_id = args.get('point_id', type=int)
+        date_from = _safe_date_iso(args.get('date_from'))
+        date_to = _safe_date_iso(args.get('date_to'))
+        has_filters = bool(point_id or date_from or date_to or _has_point_filters(args))
+
         query = LubricationExecution.query
         if point_id:
             query = query.filter_by(point_id=point_id)
-        rows = query.order_by(LubricationExecution.id.desc()).limit(300).all()
-        return jsonify([r.to_dict() for r in rows])
+        elif _has_point_filters(args):
+            matching_ids = [p.id for p in LubricationPoint.query.all()
+                            if _point_matches_filters(p, args)]
+            if not matching_ids:
+                return jsonify([])
+            query = query.filter(LubricationExecution.point_id.in_(matching_ids))
+        if date_from:
+            query = query.filter(LubricationExecution.execution_date >= date_from)
+        if date_to:
+            query = query.filter(LubricationExecution.execution_date <= date_to)
+
+        # Con filtros dejamos traer mas historia (analisis de un componente);
+        # sin filtros mantenemos la vista liviana de los ultimos registros.
+        limit = 1000 if has_filters else 300
+        rows = (query.order_by(LubricationExecution.execution_date.desc(),
+                               LubricationExecution.id.desc())
+                .limit(limit).all())
+        intervals = _interval_map_for_points({r.point_id for r in rows})
+        result = []
+        for r in rows:
+            d = r.to_dict()
+            d['interval_days'] = intervals.get(r.id)
+            p = r.point
+            d['point_code'] = p.code if p else None
+            d['area_name'] = p.area.name if p and p.area else None
+            d['line_name'] = p.line.name if p and p.line else None
+            d['equipment_name'] = p.equipment.name if p and p.equipment else None
+            d['equipment_tag'] = p.equipment.tag if p and p.equipment else None
+            d['system_name'] = p.system.name if p and p.system else None
+            d['component_name'] = p.component.name if p and p.component else None
+            d['frequency_days'] = p.frequency_days if p else None
+            result.append(d)
+        return jsonify(result)
 
     @app.route('/api/lubrication/executions/<int:exec_id>', methods=['DELETE'])
     def delete_lubrication_execution(exec_id):
@@ -453,6 +587,239 @@ def register_lubrication_routes(
             db.session.rollback()
             logger.exception('Lubrication execution DELETE error')
             return jsonify({"error": _friendly_error_message(e, 'eliminacion de ejecucion')}), 500
+
+    @app.route('/api/lubrication/export', methods=['GET'])
+    @login_required
+    @limit_export
+    def export_lubrication_excel():
+        """Exporta a Excel la lubricacion en dos modos:
+
+        scope=pending (default): lista de lubricaciones pendientes (ROJO,
+            AMARILLO y sin fecha) con taxonomia completa y columnas vacias
+            para completar en campo (fecha ejecutada, cantidad, observaciones).
+        scope=history: historial de ejecuciones con intervalo real entre
+            lubricaciones + hoja de resumen por punto (intervalo promedio
+            real vs frecuencia teorica).
+
+        Ambos aceptan los mismos filtros por nombre que la UI (area, line,
+        equipment, system, component, lubricant, freq, responsible, search)
+        y el historial ademas date_from/date_to.
+        """
+        try:
+            _ensure_lubrication_schema_compat()
+            args = request.args
+            scope = (args.get('scope') or 'pending').lower()
+            today = dt.date.today()
+
+            # Pendientes: solo puntos activos (salvo show_inactive=true).
+            # Historial: SIEMPRE incluye inactivos — el historial de un punto
+            # desactivado sigue siendo historia valida (igual que la tabla).
+            show_inactive = args.get('show_inactive', 'false').lower() == 'true'
+            points_query = LubricationPoint.query
+            if scope != 'history' and not show_inactive:
+                points_query = points_query.filter_by(is_active=True)
+            points = [p for p in points_query.all() if _point_matches_filters(p, args)]
+
+            def taxonomy_cols(p):
+                return {
+                    'Código': p.code,
+                    'Área': p.area.name if p.area else '-',
+                    'Línea': p.line.name if p.line else '-',
+                    'Equipo': p.equipment.name if p.equipment else '-',
+                    'TAG': p.equipment.tag if p.equipment else '-',
+                    'Sistema': p.system.name if p.system else '-',
+                    'Componente': p.component.name if p.component else '-',
+                    'Punto de Lubricación': p.name,
+                }
+
+            sheets = []
+            if scope == 'history':
+                date_from = _safe_date_iso(args.get('date_from'))
+                date_to = _safe_date_iso(args.get('date_to'))
+                point_map = {p.id: p for p in points}
+                execs = []
+                if point_map:
+                    q = LubricationExecution.query.filter(
+                        LubricationExecution.point_id.in_(point_map.keys()))
+                    if date_from:
+                        q = q.filter(LubricationExecution.execution_date >= date_from)
+                    if date_to:
+                        q = q.filter(LubricationExecution.execution_date <= date_to)
+                    execs = (q.order_by(LubricationExecution.execution_date.desc(),
+                                        LubricationExecution.id.desc()).all())
+                intervals = _interval_map_for_points({e.point_id for e in execs})
+
+                hist_rows = []
+                per_point = {}
+                for e in execs:
+                    p = point_map.get(e.point_id)
+                    if not p:
+                        continue
+                    row = {'Fecha': e.execution_date}
+                    row.update(taxonomy_cols(p))
+                    row.update({
+                        'Acción': _ACTION_LABELS.get(e.action_type, e.action_type),
+                        'Cantidad': e.quantity_used,
+                        'Unidad': e.quantity_unit,
+                        'Ejecutado Por': e.executed_by,
+                        'Intervalo (días)': intervals.get(e.id),
+                        'Fuga': 'Sí' if e.leak_detected else 'No',
+                        'Anomalía': 'Sí' if e.anomaly_detected else 'No',
+                        'Aviso': e.created_notice.code if e.created_notice else '',
+                        'Comentarios': e.comments or '',
+                    })
+                    hist_rows.append(row)
+                    per_point.setdefault(e.point_id, []).append(e)
+
+                summary_rows = []
+                for pid, plist in per_point.items():
+                    p = point_map[pid]
+                    ivals = [intervals[e.id] for e in plist if intervals.get(e.id) is not None]
+                    dates = sorted(d for d in (e.execution_date for e in plist) if d)
+                    total_changes = sum(1 for e in plist
+                                        if e.action_type in ('CAMBIO_TOTAL', 'SERVICIO'))
+                    avg = round(sum(ivals) / len(ivals), 1) if ivals else None
+                    row = taxonomy_cols(p)
+                    row.update({
+                        'Lubricante': p.lubricant_name,
+                        'N° Lubricaciones': len(plist),
+                        'N° Cambios Totales': total_changes,
+                        'N° Rellenos': len(plist) - total_changes,
+                        'Primera Fecha': dates[0] if dates else None,
+                        'Última Fecha': dates[-1] if dates else None,
+                        'Intervalo Real Prom. (días)': avg,
+                        'Intervalo Mín (días)': min(ivals) if ivals else None,
+                        'Intervalo Máx (días)': max(ivals) if ivals else None,
+                        'Frecuencia Teórica (días)': p.frequency_days,
+                        'Desviación (días)': (round(avg - p.frequency_days, 1)
+                                              if (avg is not None and p.frequency_days) else None),
+                    })
+                    summary_rows.append(row)
+                summary_rows.sort(key=lambda r: (str(r['Área']), str(r['Equipo']),
+                                                 str(r['Componente']),
+                                                 str(r['Punto de Lubricación'])))
+
+                sheets.append(('Historial', pd.DataFrame(hist_rows)))
+                sheets.append(('Resumen por Punto', pd.DataFrame(summary_rows)))
+                filename = f"Lubricacion_Historial_{today.isoformat()}.xlsx"
+                audit_detail = f"scope=history rows={len(hist_rows)}"
+            else:
+                sema_filter = (args.get('sema') or '').strip().upper()
+                due_filter = (args.get('due') or '').strip().lower()
+                due_days_cap = None
+                if due_filter and due_filter != 'vencido':
+                    try:
+                        due_days_cap = int(due_filter)
+                    except ValueError:
+                        due_filter = ''
+
+                pend_rows = []
+                for p in points:
+                    next_due, semaphore = _calculate_lubrication_schedule(
+                        p.last_service_date, p.frequency_days, p.warning_days)
+                    # Sin filtro de semaforo se exporta lo pendiente (todo lo
+                    # que no esta VERDE); con filtro se respeta lo que el
+                    # usuario tiene seleccionado en pantalla.
+                    if sema_filter:
+                        if semaphore != sema_filter:
+                            continue
+                    elif semaphore == 'VERDE':
+                        continue
+                    due = _parse_date_flexible(next_due)
+                    if due_filter:
+                        if not due:
+                            continue
+                        days_until = (due - today).days
+                        if due_filter == 'vencido':
+                            if days_until >= 0:
+                                continue
+                        elif due_days_cap is not None and days_until > due_days_cap:
+                            continue
+                    days_overdue = max(0, (today - due).days) if due else None
+                    effective_resp = (
+                        p.responsible_party_override
+                        or (p.equipment.default_responsible_party if p.equipment else None)
+                        or 'INTERNO'
+                    )
+                    row = taxonomy_cols(p)
+                    row.update({
+                        'Lubricante': p.lubricant_name,
+                        'Cant. Nominal': p.quantity_nominal,
+                        'Unidad': p.quantity_unit,
+                        'Frecuencia (días)': p.frequency_days,
+                        'Último Servicio': p.last_service_date,
+                        'Próximo Vencimiento': next_due,
+                        'Días de Atraso': days_overdue,
+                        'Semáforo': semaphore,
+                        'Responsable': effective_resp,
+                        'Ejecutado (fecha)': '',
+                        'Cantidad Usada': '',
+                        'Observaciones': '',
+                    })
+                    pend_rows.append(row)
+
+                sema_order = {'ROJO': 0, 'AMARILLO': 1, 'PENDIENTE': 2, 'VERDE': 3}
+                pend_rows.sort(key=lambda r: (
+                    sema_order.get(r['Semáforo'], 9),
+                    r['Próximo Vencimiento'] or '9999-12-31',
+                    str(r['Área']), str(r['Equipo'])))
+
+                summary_rows = []
+                by_area = {}
+                for r in pend_rows:
+                    counts = by_area.setdefault(r['Área'], {'ROJO': 0, 'AMARILLO': 0,
+                                                            'PENDIENTE': 0, 'VERDE': 0})
+                    counts[r['Semáforo']] = counts.get(r['Semáforo'], 0) + 1
+                for area_name in sorted(by_area, key=str):
+                    c = by_area[area_name]
+                    summary_rows.append({
+                        'Área': area_name,
+                        'Rojo (vencidas)': c.get('ROJO', 0),
+                        'Amarillo (por vencer)': c.get('AMARILLO', 0),
+                        'Sin fecha (pendiente)': c.get('PENDIENTE', 0),
+                        'Total': sum(c.values()),
+                    })
+                if summary_rows:
+                    summary_rows.append({
+                        'Área': 'TOTAL',
+                        'Rojo (vencidas)': sum(r['Rojo (vencidas)'] for r in summary_rows),
+                        'Amarillo (por vencer)': sum(r['Amarillo (por vencer)'] for r in summary_rows),
+                        'Sin fecha (pendiente)': sum(r['Sin fecha (pendiente)'] for r in summary_rows),
+                        'Total': sum(r['Total'] for r in summary_rows),
+                    })
+
+                sheets.append(('Pendientes', pd.DataFrame(pend_rows)))
+                sheets.append(('Resumen', pd.DataFrame(summary_rows)))
+                filename = f"Lubricacion_Pendientes_{today.isoformat()}.xlsx"
+                audit_detail = f"scope=pending rows={len(pend_rows)}"
+
+            output = BytesIO()
+            with pd.ExcelWriter(output, engine='openpyxl') as writer:
+                for sheet_name, df in sheets:
+                    if df.empty:
+                        df = pd.DataFrame({'Info': ['Sin registros para los filtros aplicados']})
+                    df.to_excel(writer, index=False, sheet_name=sheet_name)
+                    ws = writer.sheets[sheet_name]
+                    for idx, col in enumerate(df.columns, start=1):
+                        try:
+                            max_len = max([len(str(col))] +
+                                          [len(str(v)) for v in df[col].head(200).fillna('')])
+                        except Exception:
+                            max_len = len(str(col))
+                        ws.column_dimensions[get_column_letter(idx)].width = min(45, max(10, max_len + 2))
+            output.seek(0)
+
+            audit_log('EXPORT_MASS', module='lubricacion', detail=audit_detail)
+            return send_file(
+                output,
+                download_name=filename,
+                as_attachment=True,
+                mimetype='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+            )
+        except Exception as e:
+            db.session.rollback()
+            logger.exception('Lubrication export error')
+            return jsonify({"error": _friendly_error_message(e, 'exportacion de lubricacion')}), 500
 
     @app.route('/api/lubrication/dashboard', methods=['GET'])
     def get_lubrication_dashboard():
