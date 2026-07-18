@@ -1354,6 +1354,10 @@ class MotorElectricalTest(db.Model):
     current_r: Mapped[float | None] = mapped_column(Float, nullable=True)
     current_s: Mapped[float | None] = mapped_column(Float, nullable=True)
     current_t: Mapped[float | None] = mapped_column(Float, nullable=True)
+    # TENSION de línea (entre fases, medida en la ronda)
+    voltage_rs: Mapped[float | None] = mapped_column(Float, nullable=True)
+    voltage_st: Mapped[float | None] = mapped_column(Float, nullable=True)
+    voltage_tr: Mapped[float | None] = mapped_column(Float, nullable=True)
     # TEMPERATURA
     temperature_c: Mapped[float | None] = mapped_column(Float, nullable=True)
     temp_point: Mapped[str | None] = mapped_column(String(40), nullable=True)
@@ -1380,6 +1384,9 @@ class MotorElectricalTest(db.Model):
             "current_r": self.current_r,
             "current_s": self.current_s,
             "current_t": self.current_t,
+            "voltage_rs": self.voltage_rs,
+            "voltage_st": self.voltage_st,
+            "voltage_tr": self.voltage_tr,
             "temperature_c": self.temperature_c,
             "temp_point": self.temp_point,
             "status": self.status,

@@ -504,6 +504,8 @@
         { group: G_TRABAJO, href: '/plantillas-paradas', icon: 'fas fa-clipboard-list', label: 'Plantillas Parada', tip: 'Plantillas reutilizables de tareas para paradas' },
         { group: G_TRABAJO, href: '/programa-nocturno', icon: 'fas fa-moon', label: 'Programa Nocturno', tip: 'Preventivos turno noche', restricted: true },
 
+        { group: G_TRABAJO, href: '/campo', icon: 'fas fa-mobile-alt', label: 'Modo Campo', tip: 'Vista móvil para técnicos: reportar fallas, cerrar OTs, lubricación y ronda eléctrica' },
+
         { group: G_COMPRAS, href: '/compras', icon: 'fas fa-shopping-cart', label: 'Compras', tip: 'Compras' },
         { group: G_COMPRAS, href: '/almacen', icon: 'fas fa-boxes', label: 'Almacen', tip: 'Almacen' },
         { group: G_COMPRAS, href: '/herramientas', icon: 'fas fa-wrench', label: 'Herramientas', tip: 'Herramientas' },
@@ -548,7 +550,8 @@
 
     const ROLE_LABELS = {
         admin: 'Administrador', jefe_mtto: 'Jefe de Mantenimiento', planner: 'Planner',
-        supervisor: 'Supervisor', tecnico: 'Técnico', operador: 'Operador',
+        supervisor: 'Supervisor', tecnico: 'Técnico', mecanico: 'Mecánico',
+        electricista: 'Electricista', operador: 'Operador',
         almacenero: 'Almacenero', gerencia: 'Gerencia', asistente: 'Asistente',
         practicante: 'Practicante', automotriz: 'Automotriz', viewer: 'Solo Lectura'
     };

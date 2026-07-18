@@ -190,6 +190,8 @@
             <select id="uRole">
                 <option value="operador">Operador</option>
                 <option value="tecnico">Tecnico</option>
+                <option value="mecanico">Mecanico</option>
+                <option value="electricista">Electricista</option>
                 <option value="supervisor">Supervisor</option>
                 <option value="planner">Planner</option>
                 <option value="asistente">Asistente</option>
@@ -228,7 +230,8 @@ let editingId = null;
 
 const ROLE_LABELS = {
     admin: 'Administrador', jefe_mtto: 'Jefe de Mantenimiento', planner: 'Planner',
-    supervisor: 'Supervisor', tecnico: 'Técnico', operador: 'Operador',
+    supervisor: 'Supervisor', tecnico: 'Técnico', mecanico: 'Mecánico',
+    electricista: 'Electricista', operador: 'Operador',
     almacenero: 'Almacenero', gerencia: 'Gerencia', asistente: 'Asistente',
     practicante: 'Practicante', automotriz: 'Automotriz', viewer: 'Solo Lectura'
 };
@@ -425,12 +428,14 @@ function renderPermissions(data) {
 
     const ROLE_LABELS = {
         jefe_mtto: 'Jefe Mtto', planner: 'Planner', supervisor: 'Supervisor',
-        tecnico: 'Tecnico', operador: 'Operador', almacenero: 'Almacenero', gerencia: 'Gerencia',
+        tecnico: 'Tecnico', mecanico: 'Mecanico', electricista: 'Electricista',
+        operador: 'Operador', almacenero: 'Almacenero', gerencia: 'Gerencia',
         asistente: 'Asistente', practicante: 'Practicante', automotriz: 'Automotriz'
     };
     const ROLE_COLORS = {
         jefe_mtto: '#FF9F0A', planner: '#5AC8FA', supervisor: '#BF5AF2',
-        tecnico: '#30D158', operador: '#FFD60A', almacenero: '#FF375F', gerencia: '#0A84FF',
+        tecnico: '#30D158', mecanico: '#66D4CF', electricista: '#FFD60A',
+        operador: '#FFD60A', almacenero: '#FF375F', gerencia: '#0A84FF',
         asistente: '#64D2FF', practicante: '#AC8E68', automotriz: '#FF7A00'
     };
 

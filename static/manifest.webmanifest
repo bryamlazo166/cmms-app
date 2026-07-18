@@ -36,6 +36,7 @@
     }
   ],
   "shortcuts": [
+    { "name": "Modo Campo", "url": "/campo", "icons": [{ "src": "/static/icon-192.png", "sizes": "192x192" }] },
     { "name": "Avisos", "url": "/avisos", "icons": [{ "src": "/static/icon-192.png", "sizes": "192x192" }] },
     { "name": "Ordenes", "url": "/ordenes", "icons": [{ "src": "/static/icon-192.png", "sizes": "192x192" }] },
     { "name": "Lubricacion", "url": "/lubricacion", "icons": [{ "src": "/static/icon-192.png", "sizes": "192x192" }] },

@@ -957,10 +957,12 @@ def register_work_orders_routes(
         if sh_id_filter:
             query = query.filter(WorkOrder.shutdown_id == sh_id_filter)
 
-        # Si el usuario es 'tecnico', restringir a sus OTs (asignado o en personnel)
+        # Si el usuario es personal de campo (tecnico/mecanico/electricista),
+        # restringir a sus OTs (asignado o en personnel)
         try:
             from flask_login import current_user
-            if current_user.is_authenticated and (current_user.role or '').lower() == 'tecnico':
+            if current_user.is_authenticated and (current_user.role or '').lower() in (
+                    'tecnico', 'mecanico', 'electricista'):
                 full_name = (current_user.full_name or '').strip()
                 tech = Technician.query.filter_by(user_id=current_user.id).first()
                 if not tech and full_name:

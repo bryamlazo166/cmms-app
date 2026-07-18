@@ -241,6 +241,31 @@ def register_notices_routes(
             return jsonify({'items': results, 'pagination': pagination_meta})
         return jsonify(results)
 
+    @app.route('/api/notices/tree', methods=['GET'])
+    def notices_tree():
+        """Árbol de equipos compacto para el formulario de reporte (Modo Campo).
+
+        Vive bajo /api/notices (módulo 'avisos') a propósito: los roles de campo
+        (tecnico/mecanico/electricista) tienen avisos.view pero NO activos_config,
+        así que /api/areas etc. les daría 403.
+        """
+        try:
+            from models import Area, Line, Equipment, System, Component
+            return jsonify({
+                "areas": [{"id": a.id, "name": a.name} for a in Area.query.order_by(Area.name)],
+                "lines": [{"id": l.id, "name": l.name, "area_id": l.area_id}
+                          for l in Line.query.order_by(Line.name)],
+                "equipments": [{"id": e.id, "name": e.name, "tag": e.tag, "line_id": e.line_id}
+                               for e in Equipment.query.order_by(Equipment.name)],
+                "systems": [{"id": s.id, "name": s.name, "equipment_id": s.equipment_id}
+                            for s in System.query.order_by(System.name)],
+                "components": [{"id": c.id, "name": c.name, "system_id": c.system_id}
+                               for c in Component.query.order_by(Component.name)],
+            })
+        except Exception as e:
+            logger.exception('notices_tree error')
+            return jsonify({"error": str(e)}), 500
+
     @app.route('/api/notices/<int:id>', methods=['GET', 'PUT', 'DELETE'])
     def handle_notice_id(id):
         if request.method == 'GET':

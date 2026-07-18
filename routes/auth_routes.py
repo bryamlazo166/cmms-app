@@ -10,7 +10,8 @@ from utils.rate_limit import limit_login
 # Roles validos para cuentas de usuario. Debe mantenerse alineado con ROLES
 # (matriz de permisos) + admin/viewer, y con los <option> de users.html.
 VALID_USER_ROLES = (
-    'admin', 'jefe_mtto', 'planner', 'supervisor', 'tecnico', 'operador',
+    'admin', 'jefe_mtto', 'planner', 'supervisor', 'tecnico', 'mecanico',
+    'electricista', 'operador',
     'almacenero', 'gerencia', 'asistente', 'practicante', 'automotriz', 'viewer',
 )
 
@@ -247,7 +248,8 @@ def register_auth_routes(app, db, logger, User, RolePermission=None):
         {'key': 'usuarios', 'label': 'Gestion Usuarios'},
     ]
 
-    ROLES = ['jefe_mtto', 'planner', 'supervisor', 'tecnico', 'operador',
+    ROLES = ['jefe_mtto', 'planner', 'supervisor', 'tecnico', 'mecanico',
+             'electricista', 'operador',
              'almacenero', 'gerencia', 'asistente', 'practicante', 'automotriz']
 
     # Default permissions per role (mirrors _DEFAULT_PERMS in app.py)
@@ -345,6 +347,56 @@ def register_auth_routes(app, db, logger, User, RolePermission=None):
             'activos_rotativos': {'view': False, 'edit': False}, 'activos_config': {'view': False, 'edit': False},
             'responsabilidades': {'view': False, 'edit': False},
             'martillos': {'view': True, 'edit': False},
+            'historial_equipo': {'view': False, 'edit': False}, 'exportar': {'view': False, 'edit': False},
+            'usuarios': {'view': False, 'edit': False},
+        },
+        # Rol de campo mecánico (espejo de _DEFAULT_PERMS en app.py)
+        'mecanico': {
+            'avisos': {'view': True, 'edit': True}, 'ordenes': {'view': True, 'edit': True},
+            'proveedores': {'view': True, 'edit': False}, 'tecnicos': {'view': True, 'edit': False},
+            'compras': {'view': False, 'edit': False}, 'almacen': {'view': False, 'edit': False},
+            'herramientas': {'view': True, 'edit': False}, 'lubricacion': {'view': True, 'edit': True},
+            'inspecciones': {'view': True, 'edit': True}, 'monitoreo': {'view': True, 'edit': True},
+            'espesores': {'view': True, 'edit': True}, 'cockpit': {'view': False, 'edit': False},
+            'indicadores': {'view': False, 'edit': False},
+            'produccion': {'view': False, 'edit': False},
+            'paradas': {'view': True, 'edit': False},
+            'plantillas_paradas': {'view': False, 'edit': False},
+            'programa_nocturno': {'view': True, 'edit': False},
+            'flujo_planta': {'view': False, 'edit': False},
+            'perdidas_produccion': {'view': False, 'edit': False},
+            'insights': {'view': False, 'edit': False},
+            'seguimiento': {'view': False, 'edit': False},
+            'calendario': {'view': True, 'edit': False},
+            'reportes': {'view': False, 'edit': False},
+            'activos_rotativos': {'view': False, 'edit': False}, 'activos_config': {'view': False, 'edit': False},
+            'responsabilidades': {'view': False, 'edit': False},
+            'martillos': {'view': True, 'edit': False},
+            'historial_equipo': {'view': False, 'edit': False}, 'exportar': {'view': False, 'edit': False},
+            'usuarios': {'view': False, 'edit': False},
+        },
+        # Rol de campo eléctrico (espejo de _DEFAULT_PERMS en app.py)
+        'electricista': {
+            'avisos': {'view': True, 'edit': True}, 'ordenes': {'view': True, 'edit': True},
+            'proveedores': {'view': True, 'edit': False}, 'tecnicos': {'view': True, 'edit': False},
+            'compras': {'view': False, 'edit': False}, 'almacen': {'view': False, 'edit': False},
+            'herramientas': {'view': True, 'edit': False}, 'lubricacion': {'view': True, 'edit': False},
+            'inspecciones': {'view': True, 'edit': True}, 'monitoreo': {'view': True, 'edit': True},
+            'espesores': {'view': False, 'edit': False}, 'cockpit': {'view': False, 'edit': False},
+            'indicadores': {'view': False, 'edit': False},
+            'produccion': {'view': False, 'edit': False},
+            'paradas': {'view': True, 'edit': False},
+            'plantillas_paradas': {'view': False, 'edit': False},
+            'programa_nocturno': {'view': True, 'edit': False},
+            'flujo_planta': {'view': False, 'edit': False},
+            'perdidas_produccion': {'view': False, 'edit': False},
+            'insights': {'view': False, 'edit': False},
+            'seguimiento': {'view': False, 'edit': False},
+            'calendario': {'view': True, 'edit': False},
+            'reportes': {'view': False, 'edit': False},
+            'activos_rotativos': {'view': False, 'edit': False}, 'activos_config': {'view': False, 'edit': False},
+            'responsabilidades': {'view': False, 'edit': False},
+            'martillos': {'view': False, 'edit': False},
             'historial_equipo': {'view': False, 'edit': False}, 'exportar': {'view': False, 'edit': False},
             'usuarios': {'view': False, 'edit': False},
         },

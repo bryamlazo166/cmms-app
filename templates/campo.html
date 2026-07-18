@@ -1,0 +1,301 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <link rel="icon" type="image/svg+xml" href="/static/favicon.svg">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+    <meta name="theme-color" content="#0A84FF">
+    <link rel="manifest" href="/manifest.webmanifest">
+    <link rel="apple-touch-icon" href="/static/icon-192.png">
+    <meta name="apple-mobile-web-app-capable" content="yes">
+    <meta name="mobile-web-app-capable" content="yes">
+    <title>CMMS Campo</title>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css">
+    <style>
+        :root{
+            --bg:#111417; --card:#1B2026; --card2:#22282F; --line:#2E3742;
+            --ink:#E8EDF2; --mut:#8B98A5; --blue:#0A84FF; --green:#30D158;
+            --red:#FF453A; --amber:#FFD60A; --purple:#BF5AF2; --cyan:#5AC8FA;
+        }
+        *{box-sizing:border-box;-webkit-tap-highlight-color:transparent}
+        body{margin:0;background:var(--bg);color:var(--ink);
+             font-family:'Segoe UI',system-ui,-apple-system,Roboto,sans-serif;
+             font-size:16px;padding-bottom:24px}
+        .top{position:sticky;top:0;z-index:10;background:linear-gradient(120deg,#14202e,#101820);
+             border-bottom:1px solid var(--line);padding:12px 14px;display:flex;
+             align-items:center;gap:10px}
+        .top .back{width:38px;height:38px;border-radius:10px;background:var(--card2);
+             border:1px solid var(--line);color:var(--ink);display:none;
+             align-items:center;justify-content:center;font-size:1rem;cursor:pointer}
+        .top h1{margin:0;font-size:1.05rem;flex:1;line-height:1.2}
+        .top .who{font-size:.72rem;color:var(--mut)}
+        .wrap{max-width:640px;margin:0 auto;padding:14px}
+        .view{display:none}
+        .view.active{display:block}
+
+        /* home */
+        .big-grid{display:grid;grid-template-columns:1fr 1fr;gap:12px}
+        .big{background:var(--card);border:1px solid var(--line);border-radius:16px;
+             padding:18px 14px;text-align:center;cursor:pointer;position:relative;
+             transition:transform .1s}
+        .big:active{transform:scale(.97)}
+        .big i{font-size:1.9rem;display:block;margin-bottom:10px}
+        .big b{font-size:.92rem;display:block;line-height:1.25}
+        .big small{color:var(--mut);font-size:.72rem;display:block;margin-top:4px}
+        .badge{position:absolute;top:10px;right:10px;background:var(--red);color:#fff;
+             font-size:.72rem;font-weight:700;border-radius:10px;padding:1px 8px;min-width:20px}
+        .badge.zero{display:none}
+        .desk-link{display:block;text-align:center;color:var(--mut);font-size:.8rem;
+             margin-top:22px;text-decoration:none}
+
+        /* listas */
+        .search{width:100%;height:44px;background:var(--card);border:1px solid var(--line);
+             border-radius:12px;color:var(--ink);padding:0 14px;font-size:.95rem;margin-bottom:10px}
+        .chips{display:flex;gap:8px;margin-bottom:12px;flex-wrap:wrap}
+        .chip{border:1px solid var(--line);background:var(--card);color:var(--mut);
+             border-radius:20px;padding:7px 14px;font-size:.82rem;cursor:pointer;font-weight:600}
+        .chip.on{background:var(--blue);border-color:var(--blue);color:#fff}
+        .card{background:var(--card);border:1px solid var(--line);border-radius:14px;
+             padding:13px 14px;margin-bottom:10px;cursor:pointer}
+        .card:active{background:var(--card2)}
+        .card .t{display:flex;justify-content:space-between;align-items:center;gap:8px}
+        .card .code{font-weight:700;color:var(--cyan);font-size:.92rem}
+        .card .desc{color:var(--ink);font-size:.88rem;margin-top:5px;line-height:1.4;
+             display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden}
+        .card .sub{color:var(--mut);font-size:.76rem;margin-top:5px}
+        .pill{font-size:.68rem;font-weight:700;border-radius:10px;padding:2px 9px;white-space:nowrap}
+        .p-blue{background:rgba(10,132,255,.18);color:#6db9ff}
+        .p-green{background:rgba(48,209,88,.18);color:#4ade80}
+        .p-amber{background:rgba(255,214,10,.16);color:#ffe066}
+        .p-red{background:rgba(255,69,58,.2);color:#ff8a80}
+        .p-gray{background:rgba(255,255,255,.08);color:#aab6c2}
+        .empty{padding:36px 10px;text-align:center;color:var(--mut);font-size:.9rem}
+
+        /* formularios */
+        label{display:block;font-size:.75rem;color:var(--mut);text-transform:uppercase;
+             letter-spacing:.05em;margin:14px 0 6px;font-weight:600}
+        select,input[type=text],input[type=number],input[type=date],textarea{
+             width:100%;background:var(--card);border:1px solid var(--line);border-radius:12px;
+             color:var(--ink);padding:12px;font-size:1rem;font-family:inherit}
+        textarea{min-height:90px;resize:vertical}
+        input:focus,select:focus,textarea:focus{outline:none;border-color:var(--blue)}
+        .row2{display:grid;grid-template-columns:1fr 1fr;gap:10px}
+        .row3{display:grid;grid-template-columns:1fr 1fr 1fr;gap:10px}
+        .seg{display:flex;gap:8px;flex-wrap:wrap}
+        .seg .opt{flex:1;text-align:center;border:1px solid var(--line);background:var(--card);
+             color:var(--mut);border-radius:12px;padding:12px 6px;cursor:pointer;
+             font-weight:700;font-size:.85rem;min-width:80px}
+        .seg .opt.on{border-color:var(--blue);background:rgba(10,132,255,.15);color:#fff}
+        .seg .opt.crit-alta.on{border-color:var(--red);background:rgba(255,69,58,.15)}
+        .seg .opt.crit-media.on{border-color:var(--amber);background:rgba(255,214,10,.12)}
+        .seg .opt.crit-baja.on{border-color:var(--green);background:rgba(48,209,88,.14)}
+        .btn{width:100%;height:52px;border:none;border-radius:14px;font-size:1.02rem;
+             font-weight:700;cursor:pointer;margin-top:18px;color:#fff;
+             display:flex;align-items:center;justify-content:center;gap:10px}
+        .btn:disabled{opacity:.55}
+        .btn-blue{background:var(--blue)}
+        .btn-green{background:#1DA855}
+        .btn-gray{background:var(--card2);border:1px solid var(--line);color:var(--ink)}
+        .btn-red{background:#C43B34}
+        .msg{border-radius:12px;padding:13px;margin-top:14px;font-size:.9rem;display:none;line-height:1.5}
+        .msg.ok{background:rgba(48,209,88,.12);border:1px solid rgba(48,209,88,.4);color:#7ee2a0;display:block}
+        .msg.err{background:rgba(255,69,58,.12);border:1px solid rgba(255,69,58,.4);color:#ff9d94;display:block}
+        .photo-name{font-size:.8rem;color:var(--mut);margin-top:6px}
+        .file-btn{display:flex;align-items:center;justify-content:center;gap:8px;height:48px;
+             border:1px dashed var(--line);border-radius:12px;color:var(--mut);cursor:pointer;
+             font-size:.9rem;margin-top:6px}
+        input[type=file]{display:none}
+        .detail-head{background:var(--card);border:1px solid var(--line);border-radius:14px;
+             padding:14px;margin-bottom:6px;font-size:.9rem;line-height:1.55}
+        .kv{color:var(--mut)} .kv b{color:var(--ink)}
+        .sect{margin-top:8px;border-top:1px solid var(--line);padding-top:4px}
+    </style>
+</head>
+<body>
+    <div class="top">
+        <div class="back" id="btnBack" onclick="history.back()"><i class="fas fa-arrow-left"></i></div>
+        <h1 id="topTitle">🔧 CMMS — Modo Campo<div class="who" id="whoami"></div></h1>
+        <a href="/" style="color:var(--mut);font-size:1.15rem" title="Versión escritorio"><i class="fas fa-desktop"></i></a>
+    </div>
+    <div class="wrap">
+
+        <!-- ═══ HOME ═══ -->
+        <div class="view" id="v-home">
+            <div class="big-grid">
+                <div class="big" onclick="nav('reportar')">
+                    <i class="fas fa-triangle-exclamation" style="color:var(--red)"></i>
+                    <b>Reportar Falla</b><small>crea el aviso en 30 seg</small>
+                </div>
+                <div class="big" onclick="nav('ots')">
+                    <i class="fas fa-clipboard-check" style="color:var(--blue)"></i>
+                    <b>Mis OTs</b><small>avanzar y cerrar</small>
+                    <span class="badge zero" id="badgeOts"></span>
+                </div>
+                <div class="big" onclick="nav('lub')">
+                    <i class="fas fa-oil-can" style="color:var(--amber)"></i>
+                    <b>Lubricación</b><small>registrar servicio</small>
+                    <span class="badge zero" id="badgeLub"></span>
+                </div>
+                <div class="big" onclick="nav('electrica')">
+                    <i class="fas fa-bolt" style="color:var(--purple)"></i>
+                    <b>Ronda Eléctrica</b><small>corriente · tensión · megado</small>
+                    <span class="badge zero" id="badgeMot"></span>
+                </div>
+            </div>
+            <a class="desk-link" href="/"><i class="fas fa-desktop"></i> Ir a la versión de escritorio</a>
+        </div>
+
+        <!-- ═══ REPORTAR FALLA ═══ -->
+        <div class="view" id="v-reportar">
+            <label>Área</label><select id="rArea"></select>
+            <label>Línea</label><select id="rLine"></select>
+            <label>Equipo</label><select id="rEquip"></select>
+            <label>Sistema (opcional)</label><select id="rSys"></select>
+            <label>Componente (opcional)</label><select id="rComp"></select>
+            <label>¿Qué está pasando?</label>
+            <textarea id="rDesc" placeholder="Ej: el motor está calentando y suena fuerte…"></textarea>
+            <label>Criticidad</label>
+            <div class="seg" id="rCrit">
+                <div class="opt crit-alta" data-v="Alta">🔴 Alta</div>
+                <div class="opt crit-media on" data-v="Media">🟡 Media</div>
+                <div class="opt crit-baja" data-v="Baja">🟢 Baja</div>
+            </div>
+            <label>Foto (opcional)</label>
+            <label class="file-btn" for="rPhoto"><i class="fas fa-camera"></i> Tomar / elegir foto</label>
+            <input type="file" id="rPhoto" accept="image/*" capture="environment">
+            <div class="photo-name" id="rPhotoName"></div>
+            <button class="btn btn-blue" id="rSubmit" onclick="submitNotice()">
+                <i class="fas fa-paper-plane"></i> Crear aviso</button>
+            <div class="msg" id="rMsg"></div>
+        </div>
+
+        <!-- ═══ MIS OTS ═══ -->
+        <div class="view" id="v-ots">
+            <div class="chips">
+                <div class="chip on" data-f="abiertas" onclick="otFilter(this)">Abiertas</div>
+                <div class="chip" data-f="todas" onclick="otFilter(this)">Todas</div>
+            </div>
+            <div id="otList"><div class="empty">Cargando…</div></div>
+        </div>
+
+        <!-- ═══ DETALLE OT ═══ -->
+        <div class="view" id="v-ot">
+            <div class="detail-head" id="otHead"></div>
+            <label>Comentario de ejecución / trabajo realizado</label>
+            <textarea id="otComments" placeholder="Qué se hizo, qué se encontró…"></textarea>
+            <div class="row2">
+                <div><label>Horas reales</label>
+                    <input type="number" id="otHours" step="0.5" min="0" placeholder="2.5" inputmode="decimal"></div>
+                <div><label>Fecha fin real</label>
+                    <input type="date" id="otEndDate"></div>
+            </div>
+            <button class="btn btn-gray" onclick="saveOt(false)"><i class="fas fa-save"></i> Guardar avance</button>
+            <button class="btn btn-green" onclick="saveOt(true)"><i class="fas fa-check-circle"></i> CERRAR OT</button>
+            <div class="msg" id="otMsg"></div>
+        </div>
+
+        <!-- ═══ LUBRICACIÓN ═══ -->
+        <div class="view" id="v-lub">
+            <input class="search" id="lubSearch" placeholder="🔍 Buscar punto o equipo…" oninput="renderLubList()">
+            <div class="chips">
+                <div class="chip on" data-f="pendientes" onclick="lubFilter(this)">Vencidos / por vencer</div>
+                <div class="chip" data-f="todos" onclick="lubFilter(this)">Todos</div>
+            </div>
+            <div id="lubList"><div class="empty">Cargando…</div></div>
+        </div>
+
+        <!-- ═══ REGISTRAR LUBRICACIÓN ═══ -->
+        <div class="view" id="v-lubreg">
+            <div class="detail-head" id="lubHead"></div>
+            <label>Acción</label>
+            <div class="seg" id="lubAction">
+                <div class="opt on" data-v="RELLENO">Relleno</div>
+                <div class="opt" data-v="CAMBIO_TOTAL">Cambio total</div>
+            </div>
+            <div class="row2">
+                <div><label>Cantidad</label>
+                    <input type="number" id="lubQty" step="0.01" min="0" placeholder="0.5" inputmode="decimal"></div>
+                <div><label>Unidad</label>
+                    <select id="lubUnit"><option>ml</option><option>L</option><option>g</option><option>kg</option><option>bombeadas</option></select></div>
+            </div>
+            <label>Observaciones</label>
+            <div class="seg">
+                <div class="opt" id="lubLeak" onclick="this.classList.toggle('on')">💧 Fuga</div>
+                <div class="opt" id="lubAnom" onclick="this.classList.toggle('on')">⚠️ Anomalía</div>
+            </div>
+            <label>Comentario (opcional — genera aviso si hay fuga/anomalía)</label>
+            <textarea id="lubComments" placeholder="Detalle de lo observado…"></textarea>
+            <button class="btn btn-green" onclick="submitLub()"><i class="fas fa-check"></i> Registrar servicio</button>
+            <div class="msg" id="lubMsg"></div>
+        </div>
+
+        <!-- ═══ RONDA ELÉCTRICA ═══ -->
+        <div class="view" id="v-electrica">
+            <input class="search" id="motSearch" placeholder="🔍 Buscar motor o equipo…" oninput="renderMotList()">
+            <div class="chips">
+                <div class="chip on" data-f="pendientes" onclick="motFilter(this)">Con medición pendiente</div>
+                <div class="chip" data-f="todos" onclick="motFilter(this)">Todos</div>
+            </div>
+            <div id="motList"><div class="empty">Cargando…</div></div>
+        </div>
+
+        <!-- ═══ REGISTRAR MEDICIÓN ELÉCTRICA ═══ -->
+        <div class="view" id="v-motreg">
+            <div class="detail-head" id="motHead"></div>
+            <label>Tipo de medición</label>
+            <div class="seg" id="motType">
+                <div class="opt on" data-v="CORRIENTE">⚡ Corriente + Tensión</div>
+                <div class="opt" data-v="MEGADO">🧪 Megado</div>
+                <div class="opt" data-v="TEMPERATURA">🌡 Temp</div>
+            </div>
+
+            <div id="motFormCorriente">
+                <label>Corriente por fase (A)</label>
+                <div class="row3">
+                    <input type="number" id="mCurR" step="0.1" placeholder="R" inputmode="decimal">
+                    <input type="number" id="mCurS" step="0.1" placeholder="S" inputmode="decimal">
+                    <input type="number" id="mCurT" step="0.1" placeholder="T" inputmode="decimal">
+                </div>
+                <label>Tensión entre fases (V)</label>
+                <div class="row3">
+                    <input type="number" id="mVrs" step="0.1" placeholder="R-S" inputmode="decimal">
+                    <input type="number" id="mVst" step="0.1" placeholder="S-T" inputmode="decimal">
+                    <input type="number" id="mVtr" step="0.1" placeholder="T-R" inputmode="decimal">
+                </div>
+            </div>
+
+            <div id="motFormMegado" style="display:none">
+                <div class="row2">
+                    <div><label>Aislamiento (MΩ)</label>
+                        <input type="number" id="mMohm" step="0.1" min="0" placeholder="500" inputmode="decimal"></div>
+                    <div><label>Tensión de prueba (V)</label>
+                        <select id="mTestV"><option value="500">500</option><option value="1000" selected>1000</option><option value="2500">2500</option><option value="5000">5000</option></select></div>
+                </div>
+            </div>
+
+            <div id="motFormTemp" style="display:none">
+                <div class="row2">
+                    <div><label>Temperatura (°C)</label>
+                        <input type="number" id="mTemp" step="0.1" placeholder="65" inputmode="decimal"></div>
+                    <div><label>Punto medido</label>
+                        <select id="mTempPoint"><option>CARCASA</option><option>RODAMIENTO_LA</option><option>RODAMIENTO_LOA</option><option>BORNERA</option></select></div>
+                </div>
+            </div>
+
+            <label>Notas (opcional)</label>
+            <textarea id="mNotes" style="min-height:60px" placeholder="Observaciones…"></textarea>
+            <button class="btn btn-blue" onclick="submitMotorTest()"><i class="fas fa-bolt"></i> Registrar medición</button>
+            <div class="msg" id="motMsg"></div>
+        </div>
+
+    </div>
+    <script src="/static/js/campo.js?v={{ v }}"></script>
+    <script>
+        // PWA: registrar manifest+SW sin cargar el shell de escritorio
+        if ('serviceWorker' in navigator &&
+            (location.protocol === 'https:' || location.hostname === 'localhost')) {
+            navigator.serviceWorker.register('/sw.js').catch(() => {});
+        }
+    </script>
+</body>
+</html>

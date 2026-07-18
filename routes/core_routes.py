@@ -281,6 +281,13 @@ def register_core_routes(app, db, logger, app_build_tag,
     def thickness_page():
         return render_template('thickness.html')
 
+    @app.route('/campo')
+    def campo_page():
+        """Modo Campo: vista móvil ligera para técnicos (PWA).
+        Sin módulo propio: cualquier usuario logueado entra; cada acción
+        (avisos/OTs/lubricación/motores) la gobiernan los permisos de su rol."""
+        return render_template('campo.html')
+
     @app.route('/responsabilidades')
     def responsibility_page():
         return render_template('responsibility.html')

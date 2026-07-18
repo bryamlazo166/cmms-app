@@ -3,7 +3,7 @@
 // El nombre del cache cambia con cada deploy para forzar refresh limpio.
 // Bump CACHE_NAME (ej v1 → v2) cuando cambien CSS/JS y necesites invalidar
 // los assets cacheados en clientes ya instalados.
-const CACHE_NAME = 'cmms-v23';
+const CACHE_NAME = 'cmms-v24';
 
 // Assets estaticos que se pre-cachean al install (siempre disponibles offline)
 const ASSET_PATHS = [
@@ -15,6 +15,7 @@ const ASSET_PATHS = [
   '/static/js/lubrication.js',
   '/static/js/inspections.js',
   '/static/js/notices.js',
+  '/static/js/campo.js',
   '/static/js/datetime_utils.js',
   '/static/favicon.svg',
   '/static/icon-192.png',
@@ -28,6 +29,7 @@ const ASSET_PATHS = [
 // las cacheara la proxima vez que el usuario las visite logueado.
 const PAGE_PATHS = [
   '/',
+  '/campo',
   '/lubricacion',
   '/inspecciones',
   '/avisos',
