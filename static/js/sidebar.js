@@ -515,6 +515,7 @@
         { group: G_PREVENTIVOS, href: '/motores-electricos', icon: 'fas fa-bolt', label: 'Motores Eléctricos', tip: 'Megado, corriente y temperatura de motores' },
         { group: G_PREVENTIVOS, href: '/inspecciones', icon: 'fas fa-clipboard-check', label: 'Inspecciones', tip: 'Inspecciones' },
         { group: G_PREVENTIVOS, href: '/espesores', icon: 'fas fa-ruler-vertical', label: 'Espesores', tip: 'Espesores UT' },
+        { group: G_PREVENTIVOS, href: '/espesores/predictivo', icon: 'fas fa-chart-line', label: 'Predictivo Espesores', tip: 'Tasa de desgaste y vida remanente proyectada por punto (IA)' },
         { group: G_PREVENTIVOS, href: '/cumplimiento-preventivos', icon: 'fas fa-calendar-check', label: 'Cumplim. Preventivos', tip: 'Frecuencia real vs planificada (lubricación, inspección, monitoreo)', restricted: true },
         { group: G_PREVENTIVOS, href: '/optimizacion-preventivos', icon: 'fas fa-sliders-h', label: 'Optimizar Preventivos', tip: 'Detectar puntos sobre/sub-mantenidos', restricted: true },
 
@@ -719,6 +720,8 @@
                             hidden.push(href);
                         }
                     }
+                    // Sub-páginas que heredan el permiso de su módulo padre
+                    if (hidden.includes('/espesores')) hidden.push('/espesores/predictivo');
                 }
             }
 

@@ -66,6 +66,7 @@ from routes.master_data_routes import register_master_data_routes
 from routes.lubrication_routes import register_lubrication_routes
 from routes.monitoring_routes import register_monitoring_routes
 from routes.thickness_routes import register_thickness_routes
+from routes.thickness_predictive import register_thickness_predictive_routes
 from routes.shutdown_routes import register_shutdown_routes
 from routes.indicators_routes import register_indicators_routes
 from routes.plant_flow_routes import register_plant_flow_routes
@@ -994,6 +995,16 @@ register_thickness_routes(
     ThicknessReading=ThicknessReading,
     Equipment=Equipment,
     MaintenanceNotice=MaintenanceNotice,
+)
+
+register_thickness_predictive_routes(
+    app=app,
+    db=db,
+    logger=logger,
+    ThicknessPoint=ThicknessPoint,
+    ThicknessInspection=ThicknessInspection,
+    ThicknessReading=ThicknessReading,
+    Equipment=Equipment,
 )
 
 register_shutdown_routes(

@@ -1,0 +1,99 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <link rel="icon" type="image/svg+xml" href="/static/favicon.svg">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Predictivo de Espesores - CMMS</title>
+    <!-- CMMS_THEME_INIT -->
+    <script>(function(){try{var t=localStorage.getItem('cmms.theme');if(t=='management'||t=='developer'){document.documentElement.setAttribute('data-theme',t);}}catch(e){}})();</script>
+    <link rel="stylesheet" href="/static/css/style.css?v={{ v }}">
+    <link rel="stylesheet" href="/static/css/sidebar.css?v={{ v }}">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css">
+    <style>
+        .wrap{max-width:1500px;margin:0 auto;padding:16px;}
+        .header{background:linear-gradient(120deg,#1e2430,#151b24);border:1px solid #2d3f56;border-radius:12px;padding:16px;margin-bottom:12px;}
+        .header h1{margin:0;color:#5ac8fa;font-size:1.4rem;}
+        .header p{margin:6px 0 0;color:#9ab0cb;font-size:.85rem;}
+        .legend{display:flex;gap:10px;flex-wrap:wrap;margin:10px 0 14px;font-size:.78rem;color:#9ab0cb;align-items:center}
+        .pill{padding:3px 10px;border-radius:999px;font-weight:700;font-size:.72rem;display:inline-block;white-space:nowrap}
+        .pill.CRITICO{background:rgba(120,20,20,.5);color:#ff8f8f;border:1px solid #a33;}
+        .pill.ROJO{background:rgba(244,67,54,.24);color:#ff9690;}
+        .pill.AMBAR{background:rgba(255,193,7,.22);color:#ffd966;}
+        .pill.VERDE{background:rgba(48,209,88,.18);color:#30D158;}
+        .pill.ESTABLE{background:rgba(90,200,250,.14);color:#7fd4ff;}
+        .pill.SIN_TENDENCIA{background:rgba(255,255,255,.10);color:#bdc7d8;}
+        .pill.SIN_DATOS{background:rgba(255,255,255,.06);color:#8a94a5;}
+        .pill.DATO_DUDOSO{background:rgba(255,140,0,.16);color:#ffb45e;border:1px dashed #b07030;}
+        .dashboard-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(300px,1fr));gap:12px;margin-bottom:16px;}
+        .eq-card{background:#181d24;border:1px solid #2f4257;border-radius:12px;padding:12px;cursor:pointer;transition:transform .15s,border-color .15s;}
+        .eq-card:hover{transform:translateY(-2px);border-color:#5ac8fa;}
+        .eq-card.sel{border-color:#5ac8fa;box-shadow:0 0 0 1px #5ac8fa inset;}
+        .eq-card .tag{font-weight:700;color:#5ac8fa;font-size:1.05rem;}
+        .eq-card .name{color:#bfd2ec;font-size:.85rem;margin-top:2px;}
+        .eq-card .row{display:flex;justify-content:space-between;align-items:center;margin-top:8px;font-size:.78rem;color:#9ab0cb;gap:6px}
+        .eq-card .worst{font-size:.78rem;color:#d5e2f5;margin-top:8px;background:#10151c;border-radius:8px;padding:8px;line-height:1.5}
+        .panel{background:#181d24;border:1px solid #2f4257;border-radius:12px;padding:14px;margin-bottom:12px;}
+        .panel h3{margin:0 0 12px;color:#5ac8fa;font-size:1rem;border-bottom:1px solid #2f4257;padding-bottom:8px;display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:8px}
+        .btn{height:34px;border:1px solid #385273;border-radius:8px;background:#193451;color:#d7e9ff;padding:0 14px;font-weight:600;cursor:pointer;font-size:.84rem;}
+        .btn:hover{background:#234870;}
+        .btn.ia{background:#3a2a4a;border-color:#5a3a7a;color:#d8b8f8}
+        .btn.ia:hover{background:#4a3560}
+        .twrap{overflow-x:auto}
+        table{border-collapse:collapse;width:100%;font-size:.82rem;min-width:760px}
+        th{color:#9ab0cb;text-transform:uppercase;font-size:.68rem;text-align:left;padding:7px 9px;border-bottom:1px solid #2f4257;background:#10151c;white-space:nowrap}
+        td{padding:7px 9px;border-bottom:1px solid #232c38;color:#d5e2f5;vertical-align:top}
+        td.num{font-variant-numeric:tabular-nums;white-space:nowrap}
+        tr.r-CRITICO td{background:rgba(160,30,30,.12)}
+        tr.r-ROJO td{background:rgba(244,67,54,.07)}
+        .zone-head{display:flex;align-items:center;gap:10px;margin:16px 0 8px;cursor:pointer}
+        .zone-head h4{margin:0;color:#bfd2ec;font-size:.95rem}
+        .muted{color:#77879c}
+        .interv{color:#7fd4ff;font-size:.74rem;white-space:nowrap}
+        .narrative{background:#141018;border:1px solid #3a2a4a;border-radius:10px;padding:14px;margin-top:12px;
+                   color:#e3d5f2;font-size:.9rem;line-height:1.6;white-space:pre-wrap;display:none}
+        .empty{padding:30px;text-align:center;color:rgba(255,255,255,.40);font-size:.9rem}
+        .hint{font-size:.78rem;color:#77879c;margin-top:4px}
+    </style>
+</head>
+<body>
+    <nav class="sidebar">
+        <div class="logo-details"><i class="fas fa-industry icon"></i><div class="logo_name">CMMS Pro</div><i class="fas fa-bars" id="btn_toggle"></i></div>
+        <ul class="nav-list"></ul>
+    </nav>
+    <section class="home-section">
+        <div class="wrap">
+            <div class="header">
+                <h1><i class="fas fa-chart-line"></i> Predictivo de Espesores</h1>
+                <p>Tasa de desgaste y vida remanente proyectada por punto UT (criterio API 570).
+                   Detecta reemplazos automáticamente y reinicia la tendencia. Cada digestor nuevo entra solo al darlo de alta y medirlo.</p>
+                <div class="legend">
+                    <span class="pill CRITICO">CRÍTICO — ya bajo el espesor de retiro</span>
+                    <span class="pill ROJO">ROJO — llega al retiro en &lt; 6 meses</span>
+                    <span class="pill AMBAR">ÁMBAR — &lt; 18 meses o cerca de alarma</span>
+                    <span class="pill VERDE">VERDE — &gt; 18 meses</span>
+                    <span class="pill ESTABLE">ESTABLE — sin desgaste medible</span>
+                    <span class="pill SIN_TENDENCIA">SIN TENDENCIA — falta 2ª campaña</span>
+                    <span class="pill DATO_DUDOSO">DATO DUDOSO — lecturas &gt; nominal (revisar medición)</span>
+                </div>
+            </div>
+
+            <div id="summaryGrid" class="dashboard-grid">
+                <div class="empty">Cargando proyecciones…</div>
+            </div>
+
+            <div id="detailPanel" class="panel" style="display:none">
+                <h3>
+                    <span id="detailTitle"></span>
+                    <button class="btn ia" id="btnNarrative" onclick="loadNarrative()"><i class="fas fa-robot"></i> Análisis IA</button>
+                </h3>
+                <div id="narrativeBox" class="narrative"></div>
+                <div id="detailZones"></div>
+            </div>
+        </div>
+    </section>
+
+    <script src="/static/js/thickness_predictive.js?v={{ v }}"></script>
+    <script src="/static/js/sidebar.js?v={{ v }}"></script>
+</body>
+</html>
