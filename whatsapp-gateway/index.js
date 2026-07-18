@@ -139,6 +139,19 @@ async function start() {
   })
 }
 
+function resolvePhone(msg, jid) {
+  // WhatsApp puede entregar el chat como @lid (ID de privacidad) en vez del
+  // numero real. Baileys expone el numero verdadero en campos alternos del
+  // key segun la version (senderPn / participantPn / remoteJidAlt).
+  if (jid.endsWith('@lid')) {
+    const alt = msg.key?.senderPn || msg.key?.participantPn ||
+                msg.key?.remoteJidAlt || msg.key?.participantAlt || ''
+    if (alt) return String(alt).split('@')[0].replace(/\D/g, '')
+    console.warn(`⚠️ Mensaje @lid sin numero real. key=${JSON.stringify(msg.key)}`)
+  }
+  return jid.split('@')[0].replace(/\D/g, '')
+}
+
 async function handleMessage(sock, msg) {
   const jid = msg.key?.remoteJid || ''
   if (!jid || msg.key?.fromMe) return
@@ -147,7 +160,7 @@ async function handleMessage(sock, msg) {
   if (!msg.message) return
   if (seen(msg.key.id)) return
 
-  const phone = jid.split('@')[0].replace(/\D/g, '')
+  const phone = resolvePhone(msg, jid)
   const text = extractText(msg)
   const media = mediaInfo(msg)
 
@@ -162,6 +175,8 @@ async function handleMessage(sock, msg) {
   if (text === '/grupos' && OWNER_NUMBER && phone === OWNER_NUMBER) {
     const groups = await sock.groupFetchAllParticipating()
     const lines = Object.values(groups).map((g) => `• ${g.subject}\n  ${g.id}`)
+    // Tambien al log: permite configurar grupo_destino sin copiar JIDs a mano
+    console.log(`📋 GRUPOS DEL BOT:\n${lines.join('\n') || '(ninguno)'}`)
     await sock.sendMessage(jid, {
       text: lines.length ? `📋 Grupos del bot:\n\n${lines.join('\n')}` : 'El bot no esta en ningun grupo todavia.',
     })
