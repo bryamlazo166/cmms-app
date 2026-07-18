@@ -33,44 +33,75 @@ def test_format_whatsapp_message_listas():
     payload = {
         'notice_code': 'AV-1', 'equipment': 'Molienda › L1 › [EQ] Molino',
         'causa_raiz': 'Desalineación', 'acciones': ['Alinear', 'Revisar anclajes'],
-        'repuestos': [{'name': 'RODAMIENTO 6312', 'code': 'RD-1'},
-                      {'name': 'RETEN', 'code': ''}],
-        'herramientas': ['Extractor', 'Alineador'],
+        'repuestos': [{'name': 'RODAMIENTO 6312', 'code': 'RD-1', 'qty': 2},
+                      {'name': 'RETEN', 'code': '', 'qty': None}],
+        'herramientas': [{'name': 'LLAVE MIXTA 9/16"', 'code': 'HRR-022', 'qty': 1},
+                         {'name': 'Alineador', 'code': '', 'qty': None}],
         'casos_similares': [{'code': 'AV-0123', 'type': 'notice'}],
         'confianza': 'alta',
     }
     msg = format_whatsapp_message(payload)
-    # Cada repuesto en su propia línea; código pegado al repuesto que lo tiene
-    assert '• RODAMIENTO 6312  (cód. RD-1)' in msg
-    # El repuesto sin código no arrastra "cód."
+    # Repuesto con código Y cantidad en su propia línea
+    assert '• RODAMIENTO 6312  (cód. RD-1) — cant. 2' in msg
+    # El repuesto sin código/cantidad no arrastra "cód." ni "cant."
     reten_line = [ln for ln in msg.splitlines() if 'RETEN' in ln][0]
-    assert 'cód.' not in reten_line
-    # Herramientas una por línea
-    assert '• Extractor' in msg and '• Alineador' in msg
+    assert 'cód.' not in reten_line and 'cant.' not in reten_line
+    # Herramienta del historial con código y cantidad
+    assert '• LLAVE MIXTA 9/16"  (cód. HRR-022) — cant. 1' in msg
+    # Herramienta extra sugerida por IA (sin código) también en su línea
+    assert '• Alineador' in msg
     assert 'AV-0123' in msg
     assert 'PRE-DIAGNÓSTICO' in msg
+
+
+def test_format_whatsapp_compat_herramientas_string():
+    # Payloads antiguos guardaban herramientas como strings — no debe romper.
+    from bot.rca import format_whatsapp_message
+    msg = format_whatsapp_message({'notice_code': 'AV-2', 'confianza': 'media',
+                                   'herramientas': ['Extractor']})
+    assert '• Extractor' in msg
 
 
 def test_build_payload_no_inventa_codigos():
     from bot.rca import _build_payload
     ctx = {'code': 'AV-2', 'path': 'x', 'id': 1}
-    spares = [{'name': 'A', 'code': 'CA', 'source': 'catálogo'},
-              {'name': 'B', 'code': 'CB', 'source': 'historial'}]
-    ai = {'causa_raiz': 'c', 'acciones': ['a'], 'herramientas': ['h'],
+    spares = [{'name': 'A', 'code': 'CA', 'qty': 2, 'source': 'catálogo'},
+              {'name': 'B', 'code': 'CB', 'qty': 1, 'source': 'historial'}]
+    ai = {'causa_raiz': 'c', 'acciones': ['a'], 'herramientas_extra': ['h'],
           'repuestos_idx': [0, 99], 'resumen': 'r', 'confianza': 'media'}
-    p = _build_payload(ctx, [], spares, None, ai)
-    # idx 0 válido -> incluido; idx 99 fuera de rango -> descartado
+    p = _build_payload(ctx, [], spares, [], None, ai)
+    # idx 0 válido -> incluido con su cantidad; idx 99 fuera de rango -> descartado
     assert len(p['repuestos']) == 1
     assert p['repuestos'][0]['code'] == 'CA'
+    assert p['repuestos'][0]['qty'] == 2
     assert p['confianza'] == 'media'
+
+
+def test_build_payload_herramientas_historial_y_extras():
+    from bot.rca import _build_payload
+    ctx = {'code': 'AV-4', 'id': 1}
+    tools = [{'name': 'LLAVE MIXTA 38 MM', 'code': 'HRR-021', 'qty': 1},
+             {'name': 'DESTORNILLADOR PLANO', 'code': 'HRR-023', 'qty': 1}]
+    ai = {'causa_raiz': 'c', 'acciones': [], 'repuestos_idx': [],
+          'herramientas_idx': [0], 'herramientas_extra': ['Tecle de 1 ton'],
+          'confianza': 'media'}
+    p = _build_payload(ctx, [], [], tools, None, ai)
+    names = [t['name'] for t in p['herramientas']]
+    # La elegida del historial conserva código y cantidad
+    assert 'LLAVE MIXTA 38 MM' in names
+    chosen = [t for t in p['herramientas'] if t['name'] == 'LLAVE MIXTA 38 MM'][0]
+    assert chosen['code'] == 'HRR-021' and chosen['qty'] == 1
+    # La extra de la IA entra sin código
+    extra = [t for t in p['herramientas'] if t['name'] == 'Tecle de 1 ton'][0]
+    assert extra['code'] == ''
 
 
 def test_build_payload_acciones_string_se_normaliza():
     from bot.rca import _build_payload
     ctx = {'code': 'AV-3', 'id': 1}
-    ai = {'causa_raiz': 'c', 'acciones': 'un solo paso', 'herramientas': None,
+    ai = {'causa_raiz': 'c', 'acciones': 'un solo paso',
           'repuestos_idx': [], 'confianza': 'baja'}
-    p = _build_payload(ctx, [], [], None, ai)
+    p = _build_payload(ctx, [], [], [], None, ai)
     assert p['acciones'] == ['un solo paso']
     assert p['herramientas'] == []
     assert p['repuestos'] == []

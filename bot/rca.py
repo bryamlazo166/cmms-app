@@ -238,7 +238,7 @@ def _load_notice_context(session, text, notice_id):
         "SELECT n.id, n.code, n.description, n.failure_mode, n.failure_category, "
         "       n.criticality, n.blockage_object, "
         "       n.equipment_id, n.component_id, n.system_id, "
-        "       e.tag, e.name, l.name, a.name, c.name, s.name "
+        "       e.tag, e.name, l.name, a.name, c.name, s.name, n.rotative_asset_id "
         "FROM maintenance_notices n "
         "LEFT JOIN equipments e ON n.equipment_id = e.id "
         "LEFT JOIN lines l ON n.line_id = l.id "
@@ -262,26 +262,68 @@ def _load_notice_context(session, text, notice_id):
         "equipment_id": row[7], "component_id": row[8], "system_id": row[9],
         "equipment_tag": row[10], "equipment_name": row[11],
         "component_name": row[14], "system_name": row[15], "path": path,
+        "rotative_asset_id": row[16],
     }
 
 
-def _collect_hard_spares(session, text, ctx, limit=12):
-    """Repuestos con CÓDIGO REAL de la BD: catálogo del componente + historial.
+def _qty_int(v):
+    """Normaliza una cantidad (AVG puede venir float) a entero o None."""
+    try:
+        n = int(round(float(v)))
+        return n if n > 0 else None
+    except (TypeError, ValueError):
+        return None
 
-    Devuelve lista de dicts {name, code, source}. Los códigos vienen SIEMPRE
-    de la BD — la IA no los genera.
+
+def _collect_hard_spares(session, text, ctx, limit=12):
+    """Repuestos con CÓDIGO y CANTIDAD REALES de la BD: historial + catálogo.
+
+    Devuelve lista de dicts {name, code, qty, source}. Del historial de OTs
+    cerradas del equipo se toma la cantidad típica (promedio por OT). Los
+    códigos y cantidades vienen SIEMPRE de la BD — la IA no los genera.
     """
     spares = []
     seen = set()
 
-    def _add(name, code, source):
+    def _add(name, code, source, qty=None):
         key = (name or '').strip().lower() + '|' + (code or '').strip().lower()
         if not name or key in seen:
             return
         seen.add(key)
-        spares.append({"name": name.strip(), "code": (code or '').strip(), "source": source})
+        spares.append({"name": name.strip(), "code": (code or '').strip(),
+                       "qty": qty, "source": source})
 
-    # 1. Catálogo de repuestos del componente
+    # 1. Repuestos usados en OTs cerradas del equipo (historial) — con cantidad
+    if ctx.get('equipment_id'):
+        try:
+            rows = session.execute(text(
+                "SELECT w.name, w.code, ROUND(AVG(m.quantity)) AS qty, COUNT(*) AS n "
+                "FROM ot_materials m "
+                "JOIN work_orders o ON m.work_order_id = o.id "
+                "JOIN warehouse_items w ON m.item_id = w.id "
+                "WHERE o.equipment_id = :eq AND m.item_type = 'warehouse' AND o.status = 'Cerrada' "
+                "GROUP BY w.name, w.code ORDER BY n DESC LIMIT 8"
+            ), {"eq": ctx['equipment_id']}).fetchall()
+            for r in rows:
+                _add(r[0], r[1], 'historial', qty=_qty_int(r[2]))
+        except Exception as e:
+            logger.debug(f"historial repuestos lookup: {e}")
+
+    # 2. BOM del activo rotativo vinculado (conectado a almacén, con cantidad)
+    if ctx.get('rotative_asset_id'):
+        try:
+            rows = session.execute(text(
+                "SELECT COALESCE(w.name, b.free_text) AS name, w.code, b.quantity "
+                "FROM rotative_asset_bom b "
+                "LEFT JOIN warehouse_items w ON b.warehouse_item_id = w.id "
+                "WHERE b.rotative_asset_id = :ra ORDER BY b.id LIMIT 10"
+            ), {"ra": ctx['rotative_asset_id']}).fetchall()
+            for r in rows:
+                _add(r[0], r[1], 'BOM', qty=_qty_int(r[2]))
+        except Exception as e:
+            logger.debug(f"BOM rotativo lookup: {e}")
+
+    # 3. Catálogo de repuestos del componente (sin cantidad de uso)
     if ctx.get('component_id'):
         try:
             rows = session.execute(text(
@@ -292,22 +334,37 @@ def _collect_hard_spares(session, text, ctx, limit=12):
         except Exception as e:
             logger.debug(f"spare_parts lookup: {e}")
 
-    # 2. Repuestos más usados en OTs cerradas del mismo equipo (historial)
-    if ctx.get('equipment_id'):
-        try:
-            rows = session.execute(text(
-                "SELECT w.name, w.code, COUNT(*) AS n FROM ot_materials m "
-                "JOIN work_orders o ON m.work_order_id = o.id "
-                "JOIN warehouse_items w ON m.item_id = w.id "
-                "WHERE o.equipment_id = :eq AND m.item_type = 'warehouse' AND o.status = 'Cerrada' "
-                "GROUP BY w.name, w.code ORDER BY n DESC LIMIT 8"
-            ), {"eq": ctx['equipment_id']}).fetchall()
-            for r in rows:
-                _add(r[0], r[1], 'historial')
-        except Exception as e:
-            logger.debug(f"historial repuestos lookup: {e}")
-
     return spares[:limit]
+
+
+def _collect_hard_tools(session, text, ctx, limit=10):
+    """Herramientas REALES usadas en OTs cerradas del equipo (con código y cant).
+
+    Devuelve lista de dicts {name, code, qty}. Vienen de ot_materials
+    (item_type='tool') → tabla tools; la IA no inventa estos datos.
+    """
+    tools = []
+    seen = set()
+    if not ctx.get('equipment_id'):
+        return tools
+    try:
+        rows = session.execute(text(
+            "SELECT t.name, t.code, ROUND(AVG(m.quantity)) AS qty, COUNT(*) AS n "
+            "FROM ot_materials m "
+            "JOIN work_orders o ON m.work_order_id = o.id "
+            "JOIN tools t ON m.item_id = t.id "
+            "WHERE o.equipment_id = :eq AND m.item_type = 'tool' AND o.status = 'Cerrada' "
+            "GROUP BY t.name, t.code ORDER BY n DESC LIMIT :lim"
+        ), {"eq": ctx['equipment_id'], "lim": limit}).fetchall()
+        for r in rows:
+            key = (r[0] or '').strip().lower()
+            if r[0] and key not in seen:
+                seen.add(key)
+                tools.append({"name": r[0].strip(), "code": (r[1] or '').strip(),
+                              "qty": _qty_int(r[2])})
+    except Exception as e:
+        logger.debug(f"historial herramientas lookup: {e}")
+    return tools
 
 
 def _collect_similar_cases(session, text, ctx, top_k=6, min_sim=0.35):
@@ -347,6 +404,36 @@ def _collect_similar_cases(session, text, ctx, top_k=6, min_sim=0.35):
     return cases
 
 
+def _collect_specs(session, text, ctx, limit=18):
+    """Especificaciones técnicas del equipo y componente del aviso.
+
+    Lee equipment_specs y component_specs (clave/valor que el usuario registra
+    en los activos: modelo de faja, potencia, RPM, medidas...). Ayudan a la IA
+    a dar un análisis más preciso. Devuelve lista de strings "Clave: valor".
+    """
+    specs = []
+    try:
+        if ctx.get('component_id'):
+            rows = session.execute(text(
+                "SELECT key_name, value_text, unit FROM component_specs "
+                "WHERE component_id = :c ORDER BY order_index LIMIT :lim"
+            ), {"c": ctx['component_id'], "lim": limit}).fetchall()
+            for r in rows:
+                unit = f" {r[2]}" if r[2] else ""
+                specs.append(f"[componente] {r[0]}: {r[1]}{unit}")
+        if ctx.get('equipment_id') and len(specs) < limit:
+            rows = session.execute(text(
+                "SELECT key_name, value_text, unit FROM equipment_specs "
+                "WHERE equipment_id = :e ORDER BY order_index LIMIT :lim"
+            ), {"e": ctx['equipment_id'], "lim": limit - len(specs)}).fetchall()
+            for r in rows:
+                unit = f" {r[2]}" if r[2] else ""
+                specs.append(f"[equipo] {r[0]}: {r[1]}{unit}")
+    except Exception as e:
+        logger.debug(f"_collect_specs lookup: {e}")
+    return specs
+
+
 def _recommended_action(session, text, ctx):
     """recommended_action del failure_catalog para el modo de falla del aviso."""
     fm = ctx.get('failure_mode')
@@ -373,22 +460,25 @@ Devuelve un pre-diagnóstico en JSON ESTRICTO (sin texto fuera del JSON):
 {{
   "causa_raiz": "hipótesis breve y concreta de la causa raíz probable (1-2 frases)",
   "acciones": ["paso de intervención concreto", "otro paso", ...],
-  "herramientas": ["herramienta necesaria", ...],
   "repuestos_idx": [índices enteros de la lista de REPUESTOS DISPONIBLES que aplican],
+  "herramientas_idx": [índices enteros de la lista de HERRAMIENTAS DISPONIBLES que se necesitan],
+  "herramientas_extra": ["herramienta necesaria que NO esté en la lista", ...],
   "resumen": "una sola frase para el técnico",
   "confianza": "alta|media|baja"
 }}
 
 REGLAS:
 - Usa los CASOS HISTÓRICOS como evidencia; si sugieren una causa o solución, priorízala.
-- repuestos_idx: SOLO índices que existan en la lista dada. Si ninguno aplica, [].
-  NUNCA inventes repuestos ni códigos que no estén en la lista.
-- acciones y herramientas: listas cortas, cada elemento una acción/herramienta concreta.
+- repuestos_idx y herramientas_idx: SOLO índices que existan en las listas dadas. Si ninguno
+  aplica, []. NUNCA inventes códigos ni cantidades: eso viene de la BD.
+- herramientas_extra: solo herramientas realmente necesarias que NO aparezcan en la lista de
+  HERRAMIENTAS DISPONIBLES (texto simple, sin código). Si no hace falta ninguna, [].
+- acciones: lista corta, cada elemento un paso concreto.
 - confianza: 'alta' solo si hay casos históricos claros o la causa es evidente; 'baja' si hay poca información.
 - Responde SOLO el JSON."""
 
 
-def _call_llm(ctx, cases, spares, rec_action):
+def _call_llm(ctx, cases, spares, tools, rec_action, specs=None):
     """Llama a DeepSeek con el contexto. Devuelve dict o None."""
     api_key = os.getenv('DEEPSEEK_API_KEY')
     if not api_key:
@@ -406,6 +496,11 @@ def _call_llm(ctx, cases, spares, rec_action):
     if rec_action:
         lines.append(f"\nAcción recomendada del catálogo de fallas: {rec_action}")
 
+    if specs:
+        lines.append("\nESPECIFICACIONES TÉCNICAS registradas del equipo/componente:")
+        for s in specs:
+            lines.append(f"- {s}")
+
     if cases:
         lines.append("\nCASOS HISTÓRICOS PARECIDOS:")
         for c in cases:
@@ -420,6 +515,14 @@ def _call_llm(ctx, cases, spares, rec_action):
             lines.append(f"{i}: {s['name']}{code} — {s.get('source')}")
     else:
         lines.append("\n(Sin repuestos en catálogo ni historial para este equipo.)")
+
+    if tools:
+        lines.append("\nHERRAMIENTAS DISPONIBLES (del historial de OTs de este equipo; índice: nombre [código]):")
+        for i, t in enumerate(tools):
+            code = f" [{t['code']}]" if t.get('code') else ""
+            lines.append(f"{i}: {t['name']}{code}")
+    else:
+        lines.append("\n(Sin herramientas registradas en el historial de este equipo.)")
 
     try:
         r = requests.post(DEEPSEEK_URL, headers={
@@ -445,24 +548,23 @@ def _call_llm(ctx, cases, spares, rec_action):
         return None
 
 
-def _build_payload(ctx, cases, spares, rec_action, ai):
-    """Combina datos duros (repuestos con código de BD) con la salida de la IA."""
+def _pick_by_idx(items, idxs, fields):
+    """Mapea los índices elegidos por la IA a los datos duros de la BD."""
+    out = []
+    if not isinstance(idxs, list):
+        return out
+    for i in idxs:
+        try:
+            it = items[int(i)]
+            out.append({k: it.get(k) for k in fields})
+        except (ValueError, IndexError, TypeError):
+            continue
+    return out
+
+
+def _build_payload(ctx, cases, spares, tools, rec_action, ai):
+    """Combina datos duros (repuestos/herramientas con código+cantidad de BD) con la IA."""
     ai = ai or {}
-    # Repuestos: mapear los índices elegidos por la IA a la lista dura.
-    chosen = []
-    idxs = ai.get('repuestos_idx') or []
-    if isinstance(idxs, list):
-        for i in idxs:
-            try:
-                s = spares[int(i)]
-                chosen.append({"name": s['name'], "code": s.get('code') or '',
-                               "source": s.get('source')})
-            except (ValueError, IndexError, TypeError):
-                continue
-    # Si la IA no eligió pero hay repuestos de catálogo, ofrecer los del componente.
-    if not chosen and spares:
-        chosen = [{"name": s['name'], "code": s.get('code') or '', "source": s.get('source')}
-                  for s in spares if s.get('source') == 'catálogo'][:5]
 
     def _as_list(v):
         if isinstance(v, list):
@@ -471,13 +573,32 @@ def _build_payload(ctx, cases, spares, rec_action, ai):
             return [v.strip()]
         return []
 
+    # Repuestos: índices elegidos por la IA -> datos duros (nombre/código/cantidad).
+    chosen_spares = _pick_by_idx(spares, ai.get('repuestos_idx'), ('name', 'code', 'qty', 'source'))
+    if not chosen_spares and spares:
+        # Fallback: los del catálogo del componente.
+        chosen_spares = [{k: s.get(k) for k in ('name', 'code', 'qty', 'source')}
+                         for s in spares if s.get('source') == 'catálogo'][:5]
+
+    # Herramientas del historial (código+cantidad) + extras sugeridas por la IA (texto).
+    chosen_tools = _pick_by_idx(tools, ai.get('herramientas_idx'), ('name', 'code', 'qty'))
+    if not chosen_tools and tools:
+        # Fallback: si la IA no eligió, ofrecer las del historial (limit).
+        chosen_tools = [{k: t.get(k) for k in ('name', 'code', 'qty')} for t in tools[:6]]
+    # 'herramientas_extra' (o 'herramientas' por compat) = sugeridas sin código.
+    extra = _as_list(ai.get('herramientas_extra') or ai.get('herramientas'))
+    have = {(t.get('name') or '').lower() for t in chosen_tools}
+    for name in extra:
+        if name.lower() not in have:
+            chosen_tools.append({"name": name, "code": "", "qty": None})
+
     return {
         "notice_code": ctx.get('code'),
         "equipment": ctx.get('path'),
         "causa_raiz": (ai.get('causa_raiz') or '').strip() or None,
         "acciones": _as_list(ai.get('acciones')),
-        "herramientas": _as_list(ai.get('herramientas')),
-        "repuestos": chosen,
+        "herramientas": chosen_tools,
+        "repuestos": chosen_spares,
         "casos_similares": [{"code": c['code'], "type": c['type']} for c in cases],
         "resumen": (ai.get('resumen') or '').strip() or None,
         "confianza": (ai.get('confianza') or 'media').strip().lower(),
@@ -510,13 +631,19 @@ def format_whatsapp_message(payload):
         lines.append("📦 *Repuestos probables:*")
         for r in payload['repuestos']:
             code = f"  (cód. {r['code']})" if r.get('code') else ""
-            lines.append(f"• {r['name']}{code}")
+            qty = f" — cant. {r['qty']}" if r.get('qty') else ""
+            lines.append(f"• {r['name']}{code}{qty}")
         lines.append("")
 
     if payload.get('herramientas'):
         lines.append("🔩 *Herramientas:*")
         for t in payload['herramientas']:
-            lines.append(f"• {t}")
+            if isinstance(t, dict):
+                code = f"  (cód. {t['code']})" if t.get('code') else ""
+                qty = f" — cant. {t['qty']}" if t.get('qty') else ""
+                lines.append(f"• {t.get('name')}{code}{qty}")
+            else:  # compat: payloads antiguos guardaban strings
+                lines.append(f"• {t}")
         lines.append("")
 
     if payload.get('casos_similares'):
@@ -578,14 +705,16 @@ def generate_rca(app, notice_id, push=True):
                 return None
             cases = _collect_similar_cases(_db.session, text, ctx)
             spares = _collect_hard_spares(_db.session, text, ctx)
+            tools = _collect_hard_tools(_db.session, text, ctx)
+            specs = _collect_specs(_db.session, text, ctx)
             rec_action = _recommended_action(_db.session, text, ctx)
     except Exception as e:
         logger.error(f"generate_rca contexto error: {e}")
         return None
 
-    ai = _call_llm(ctx, cases, spares, rec_action)
+    ai = _call_llm(ctx, cases, spares, tools, rec_action, specs=specs)
     status = 'ok' if ai else 'no_ai'
-    payload = _build_payload(ctx, cases, spares, rec_action, ai)
+    payload = _build_payload(ctx, cases, spares, tools, rec_action, ai)
 
     try:
         saved = _save_rca(app, ctx, payload, status=status)

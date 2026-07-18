@@ -593,10 +593,13 @@ function renderRca(rca) {
             + rca.acciones.map(a => `<li>${_rcaEsc(a)}</li>`).join('') + `</ul></div>`;
     if (rca.repuestos && rca.repuestos.length)
         h += `<div style="margin-bottom:8px"><b style="color:#30D158">📦 Repuestos probables:</b><ul style="margin:4px 0 0;padding-left:20px">`
-            + rca.repuestos.map(r => `<li>${_rcaEsc(r.name)}${r.code ? ` <span style="color:#888">(cód. ${_rcaEsc(r.code)})</span>` : ''}</li>`).join('') + `</ul></div>`;
+            + rca.repuestos.map(r => `<li>${_rcaEsc(r.name)}${r.code ? ` <span style="color:#888">(cód. ${_rcaEsc(r.code)})</span>` : ''}${r.qty ? ` <span style="color:#30D158">× ${_rcaEsc(r.qty)}</span>` : ''}</li>`).join('') + `</ul></div>`;
     if (rca.herramientas && rca.herramientas.length)
         h += `<div style="margin-bottom:8px"><b style="color:#64D2FF">🔩 Herramientas:</b><ul style="margin:4px 0 0;padding-left:20px">`
-            + rca.herramientas.map(t => `<li>${_rcaEsc(t)}</li>`).join('') + `</ul></div>`;
+            + rca.herramientas.map(t => {
+                if (typeof t === 'string') return `<li>${_rcaEsc(t)}</li>`;  // payloads antiguos
+                return `<li>${_rcaEsc(t.name)}${t.code ? ` <span style="color:#888">(cód. ${_rcaEsc(t.code)})</span>` : ''}${t.qty ? ` <span style="color:#64D2FF">× ${_rcaEsc(t.qty)}</span>` : ''}</li>`;
+            }).join('') + `</ul></div>`;
     if (rca.casos_similares && rca.casos_similares.length)
         h += `<div style="margin-bottom:8px"><b style="color:#BF5AF2">📚 Casos similares:</b> `
             + rca.casos_similares.map(c => _rcaEsc(c.code)).join(', ') + `</div>`;
