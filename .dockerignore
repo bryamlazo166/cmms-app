@@ -1,0 +1,21 @@
+# Solo lo usa el build del VPS (deploy/vps/Dockerfile). Render no usa Docker.
+.git
+.venv
+venv
+__pycache__
+**/__pycache__
+*.pyc
+.env
+**/.env
+.env.*
+backups/
+scripts/_archive/
+whatsapp-gateway/node_modules
+whatsapp-gateway/auth_info*
+tests/
+*.log
+.tmp_server_*.log
+.pytest_cache
+**/.pytest_cache
+instance/
+*.db

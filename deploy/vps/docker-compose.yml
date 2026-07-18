@@ -1,0 +1,49 @@
+# CMMS en el VPS como espejo SECUNDARIO (primario: GitHub + Supabase + Render).
+# Todo corre sin sudo: el usuario pertenece al grupo docker.
+#
+#   docker compose up -d --build      # levantar / reconstruir
+#   bash sync_from_supabase.sh        # sincronizacion manual Supabase -> VPS
+#
+# El archivo .env (junto a este compose) NO va al repo: contiene secretos.
+name: cmms
+
+services:
+  db:
+    image: pgvector/pgvector:pg17
+    container_name: cmms-db
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: cmms
+      POSTGRES_PASSWORD: ${CMMS_DB_PASSWORD:?falta CMMS_DB_PASSWORD en deploy/vps/.env}
+      POSTGRES_DB: cmms
+      TZ: America/Lima
+    ports:
+      # Solo accesible desde el propio VPS (no expuesto a internet)
+      - "127.0.0.1:5433:5432"
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+      - ${CMMS_BACKUPS_DIR:-../../../backups}:/backups
+      - ./init:/docker-entrypoint-initdb.d:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U cmms -d cmms"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+
+  app:
+    build:
+      context: ../..
+      dockerfile: deploy/vps/Dockerfile
+    container_name: cmms-app
+    restart: unless-stopped
+    env_file: .env
+    environment:
+      TZ: America/Lima
+    ports:
+      - "8080:8080"
+    depends_on:
+      db:
+        condition: service_healthy
+
+volumes:
+  pgdata:
