@@ -1,0 +1,7 @@
+# Sesion de WhatsApp — NUNCA subir al repo (credenciales del numero)
+auth_info/
+qr.png
+
+node_modules/
+.env
+*.log

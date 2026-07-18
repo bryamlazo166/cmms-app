@@ -1,0 +1,296 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <link rel="icon" type="image/svg+xml" href="/static/favicon.svg">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Usuarios Bot WhatsApp — CMMS</title>
+    <script>(function(){try{var t=localStorage.getItem('cmms.theme');if(t=='management'||t=='developer'){document.documentElement.setAttribute('data-theme',t);}}catch(e){}})();</script>
+    <link rel="stylesheet" href="/static/css/style.css?v={{ v }}">
+    <link rel="stylesheet" href="/static/css/sidebar.css?v={{ v }}">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css">
+    <style>
+        .wrap{max-width:1250px;margin:0 auto;padding:12px 16px}
+        h2 i{margin-right:8px;color:#25D366}
+        .subtitle{color:rgba(255,255,255,.50);font-size:.84rem;margin-bottom:16px}
+        .panel{background:var(--bg-primary,#1C1C1E);border:1px solid rgba(255,255,255,.08);border-radius:14px;padding:16px;margin-bottom:16px}
+        .panel h3{margin:0 0 12px;font-size:1rem;color:rgba(255,255,255,.88)}
+        .info-box{background:rgba(37,211,102,.08);border:1px solid rgba(37,211,102,.25);border-radius:10px;padding:12px;margin-bottom:16px;font-size:.84rem;color:#c6ecd4}
+        .info-box i{margin-right:6px;color:#25D366}
+        .info-box code{background:rgba(255,255,255,.10);padding:1px 6px;border-radius:5px}
+        .areas-chips{margin-top:8px;font-size:.78rem;color:rgba(255,255,255,.55)}
+        .areas-chips span{display:inline-block;background:rgba(255,255,255,.07);border-radius:8px;padding:2px 8px;margin:2px 4px 2px 0}
+        .form-grid{display:grid;grid-template-columns:1.1fr 1.3fr 1.1fr 1fr 1.4fr 1.1fr auto;gap:10px;align-items:end;margin-top:10px}
+        @media (max-width:1000px){.form-grid{grid-template-columns:1fr 1fr;}}
+        .form-grid label{display:block;font-size:.72rem;color:rgba(255,255,255,.55);text-transform:uppercase;letter-spacing:.4px;margin-bottom:4px}
+        .form-grid input, .form-grid select{width:100%;height:36px;background:rgba(255,255,255,.06);border:1px solid rgba(255,255,255,.10);border-radius:8px;color:#fff;padding:0 10px;font-size:.86rem;box-sizing:border-box}
+        .form-grid input:focus, .form-grid select:focus{border-color:#25D366;outline:none}
+        .btn{height:36px;border:none;border-radius:8px;padding:0 14px;font-size:.85rem;font-weight:600;cursor:pointer;display:inline-flex;align-items:center;gap:6px;transition:opacity 150ms}
+        .btn:hover{opacity:.85}
+        .btn-primary{background:#1DA855;color:#fff}
+        .btn-secondary{background:rgba(255,255,255,.10);color:rgba(255,255,255,.70)}
+        .btn-danger{background:rgba(255,69,58,.20);color:#FF6B61;border:1px solid rgba(255,69,58,.30)}
+        .btn-sm{height:28px;padding:0 10px;font-size:.78rem}
+        .table-sm{width:100%;border-collapse:collapse;margin-top:6px}
+        .table-sm th, .table-sm td{padding:9px 10px;text-align:left;font-size:.86rem;border-bottom:1px solid rgba(255,255,255,.06)}
+        .table-sm th{color:#9ab0cb;text-transform:uppercase;font-size:.70rem;background:rgba(255,255,255,.02)}
+        .table-sm td.actions{white-space:nowrap;text-align:right}
+        .pill{display:inline-block;padding:2px 8px;border-radius:10px;font-size:.70rem;font-weight:600}
+        .pill-planta{background:rgba(191,90,242,.18);color:#D77AF5}
+        .pill-area{background:rgba(10,132,255,.18);color:#5AC8FA}
+        .pill-tecnico{background:rgba(94,239,160,.15);color:#5EEF9A}
+        .pill-on{background:rgba(48,209,88,.18);color:#34D472}
+        .pill-off{background:rgba(255,69,58,.18);color:#FF6B61}
+        .empty{padding:30px;text-align:center;color:rgba(255,255,255,.40);font-size:.88rem}
+        .err{color:#FF6B61;font-size:.82rem;margin-top:8px}
+        .row-inactive td{opacity:.55}
+        td input, td select{width:100%;background:rgba(255,255,255,.06);border:1px solid rgba(255,255,255,.10);border-radius:6px;color:#fff;padding:4px 8px;font-size:.82rem;height:30px;box-sizing:border-box}
+        .jid{font-size:.72rem;color:rgba(255,255,255,.40);display:block}
+    </style>
+</head>
+<body>
+    <nav class="sidebar">
+        <div class="logo-details"><i class="fas fa-industry icon"></i><div class="logo_name">CMMS Pro</div><i class="fas fa-bars" id="btn_toggle"></i></div>
+        <ul class="nav-list"></ul>
+    </nav>
+    <section class="home-section">
+        <div class="wrap">
+            <h2><i class="fab fa-whatsapp"></i>Usuarios del Bot WhatsApp</h2>
+            <p class="subtitle">Numeros autorizados a reportar fallas por WhatsApp. Cada numero define que areas del arbol ve y a que grupo se reenvia su aviso.</p>
+
+            <div class="info-box">
+                <i class="fas fa-info-circle"></i>
+                <strong>Formato del numero:</strong> solo digitos con codigo de pais, ej: <code>51987654321</code>.
+                <strong>Grupo destino:</strong> es el JID del grupo (termina en <code>@g.us</code>) — se obtiene enviando <code>/grupos</code> al bot desde el numero del administrador (OWNER_NUMBER).
+                <strong>Areas visibles:</strong> IDs separados por coma (vacio = todas las areas).
+                <div class="areas-chips" id="areasChips">Cargando areas…</div>
+            </div>
+
+            <div class="panel">
+                <h3><i class="fas fa-user-plus" style="color:#34D472;margin-right:6px"></i>Agregar numero</h3>
+                <div class="form-grid">
+                    <div>
+                        <label>Numero (solo digitos)</label>
+                        <input type="text" id="newPhone" placeholder="51987654321">
+                    </div>
+                    <div>
+                        <label>Nombre</label>
+                        <input type="text" id="newNombre" placeholder="Juan Carlos / Cel Area Molino">
+                    </div>
+                    <div>
+                        <label>Rol</label>
+                        <select id="newRol">
+                            <option value="tecnico">Tecnico</option>
+                            <option value="supervisor_area" selected>Supervisor de area</option>
+                            <option value="supervisor_planta">Supervisor de planta</option>
+                        </select>
+                    </div>
+                    <div>
+                        <label>Areas (IDs, coma)</label>
+                        <input type="text" id="newAreas" placeholder="3 o 3,4 (vacio=todas)">
+                    </div>
+                    <div>
+                        <label>Grupo destino (JID @g.us)</label>
+                        <input type="text" id="newGrupo" placeholder="120363...@g.us">
+                    </div>
+                    <div>
+                        <label>Nombre del grupo</label>
+                        <input type="text" id="newGrupoNombre" placeholder="Produccion-Mantenimiento">
+                    </div>
+                    <div>
+                        <button class="btn btn-primary" onclick="addUser()"><i class="fas fa-plus"></i> Agregar</button>
+                    </div>
+                </div>
+                <div id="addErr" class="err"></div>
+            </div>
+
+            <div class="panel">
+                <h3><i class="fas fa-users" style="color:#25D366;margin-right:6px"></i>Numeros registrados</h3>
+                <table class="table-sm">
+                    <thead>
+                        <tr>
+                            <th>Numero</th>
+                            <th>Nombre</th>
+                            <th>Rol</th>
+                            <th>Areas</th>
+                            <th>Grupo destino</th>
+                            <th>Estado</th>
+                            <th style="text-align:right">Acciones</th>
+                        </tr>
+                    </thead>
+                    <tbody id="usersBody">
+                        <tr><td colspan="7" class="empty">Cargando…</td></tr>
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    </section>
+
+    <script src="/static/js/datetime_utils.js?v={{ v }}"></script>
+    <script>
+        let AREAS = {};   // id -> name
+        function escapeHtml(s){return String(s==null?'':s).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));}
+
+        async function loadMeta(){
+            try {
+                const r = await fetch('/api/admin/whatsapp-users/meta');
+                const d = await r.json();
+                if (r.ok && d.areas) {
+                    AREAS = Object.fromEntries(d.areas.map(a => [String(a.id), a.name]));
+                    document.getElementById('areasChips').innerHTML =
+                        '<strong>Areas:</strong> ' + d.areas.map(a => `<span>${a.id} = ${escapeHtml(a.name)}</span>`).join('');
+                }
+            } catch (e) { /* silencioso */ }
+        }
+
+        function areasLabel(csv){
+            if (!csv) return '<em style="color:rgba(255,255,255,.4)">todas</em>';
+            return escapeHtml(csv.split(',').map(x => AREAS[x.trim()] || x.trim()).join(', '));
+        }
+
+        function rolPill(rol){
+            if (rol === 'supervisor_planta') return '<span class="pill pill-planta">Sup. Planta</span>';
+            if (rol === 'tecnico') return '<span class="pill pill-tecnico">Tecnico</span>';
+            return '<span class="pill pill-area">Sup. Area</span>';
+        }
+
+        async function loadUsers(){
+            const tbody = document.getElementById('usersBody');
+            try {
+                const r = await fetch('/api/admin/whatsapp-users');
+                const data = await r.json();
+                if (!r.ok) { tbody.innerHTML = `<tr><td colspan="7" class="empty">Error: ${data.error||r.statusText}</td></tr>`; return; }
+                if (!data.length) { tbody.innerHTML = `<tr><td colspan="7" class="empty">No hay numeros registrados todavia.</td></tr>`; return; }
+                tbody.innerHTML = data.map(u => renderRow(u)).join('');
+            } catch (e) {
+                tbody.innerHTML = `<tr><td colspan="7" class="empty">Error: ${e.message}</td></tr>`;
+            }
+        }
+
+        function renderRow(u){
+            const inactive = u.activo ? '' : 'row-inactive';
+            const estadoPill = u.activo
+                ? '<span class="pill pill-on">Activo</span>'
+                : '<span class="pill pill-off">Inactivo</span>';
+            const toggleLabel = u.activo ? 'Desactivar' : 'Activar';
+            const toggleIcon = u.activo ? 'fa-pause' : 'fa-play';
+            const grupo = u.grupo_nombre
+                ? `${escapeHtml(u.grupo_nombre)}<span class="jid">${escapeHtml(u.grupo_destino||'')}</span>`
+                : escapeHtml(u.grupo_destino || '—');
+            return `
+                <tr class="${inactive}" data-id="${u.phone_number}">
+                    <td><code>${escapeHtml(u.phone_number)}</code></td>
+                    <td>${escapeHtml(u.nombre)}</td>
+                    <td>${rolPill(u.rol)}</td>
+                    <td>${u.puede_ver_todo ? '<em>todas (planta)</em>' : areasLabel(u.areas_visibles)}</td>
+                    <td>${grupo}</td>
+                    <td>${estadoPill}</td>
+                    <td class="actions">
+                        <button class="btn btn-secondary btn-sm" onclick="editRow('${escapeHtml(u.phone_number)}')" title="Editar"><i class="fas fa-pen"></i></button>
+                        <button class="btn btn-secondary btn-sm" onclick="toggleActive('${escapeHtml(u.phone_number)}', ${!u.activo})" title="${toggleLabel}"><i class="fas ${toggleIcon}"></i></button>
+                        <button class="btn btn-danger btn-sm" onclick="deleteUser('${escapeHtml(u.phone_number)}', '${escapeHtml(u.nombre).replace(/'/g,"&#39;")}')" title="Eliminar"><i class="fas fa-trash"></i></button>
+                    </td>
+                </tr>`;
+        }
+
+        async function addUser(){
+            const errEl = document.getElementById('addErr');
+            errEl.textContent = '';
+            const body = {
+                phone_number: document.getElementById('newPhone').value.trim(),
+                nombre: document.getElementById('newNombre').value.trim(),
+                rol: document.getElementById('newRol').value,
+                areas_visibles: document.getElementById('newAreas').value.trim(),
+                grupo_destino: document.getElementById('newGrupo').value.trim(),
+                grupo_nombre: document.getElementById('newGrupoNombre').value.trim(),
+            };
+            if (!body.phone_number || !body.nombre) { errEl.textContent = 'Numero y nombre son obligatorios.'; return; }
+            try {
+                const r = await fetch('/api/admin/whatsapp-users', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(body)
+                });
+                const d = await r.json();
+                if (!r.ok) { errEl.textContent = d.error || 'Error al crear.'; return; }
+                ['newPhone','newNombre','newAreas','newGrupo','newGrupoNombre'].forEach(id => document.getElementById(id).value = '');
+                document.getElementById('newRol').value = 'supervisor_area';
+                loadUsers();
+            } catch (e) {
+                errEl.textContent = e.message;
+            }
+        }
+
+        async function toggleActive(phone, nuevo){
+            try {
+                const r = await fetch('/api/admin/whatsapp-users/' + phone, {
+                    method: 'PUT',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ activo: nuevo })
+                });
+                if (!r.ok) { const d = await r.json(); alert('Error: ' + (d.error || r.statusText)); return; }
+                loadUsers();
+            } catch (e) { alert('Error: ' + e.message); }
+        }
+
+        async function deleteUser(phone, nombre){
+            if (!confirm(`¿Eliminar a ${nombre} (${phone})?`)) return;
+            try {
+                const r = await fetch('/api/admin/whatsapp-users/' + phone, { method: 'DELETE' });
+                if (!r.ok) { const d = await r.json(); alert('Error: ' + (d.error || r.statusText)); return; }
+                loadUsers();
+            } catch (e) { alert('Error: ' + e.message); }
+        }
+
+        function editRow(phone){
+            const tr = document.querySelector(`tr[data-id="${phone}"]`);
+            if (!tr) return;
+            const tds = tr.querySelectorAll('td');
+            const nombre = tds[1].textContent;
+            const rol = tr.querySelector('.pill-planta') ? 'supervisor_planta'
+                      : tr.querySelector('.pill-tecnico') ? 'tecnico' : 'supervisor_area';
+            const jidEl = tds[4].querySelector('.jid');
+            const grupoJid = jidEl ? jidEl.textContent : (tds[4].textContent === '—' ? '' : tds[4].textContent);
+            const grupoNombre = jidEl ? tds[4].childNodes[0].textContent : '';
+            tds[1].innerHTML = `<input type="text" id="e-nombre" value="${escapeHtml(nombre)}">`;
+            tds[2].innerHTML = `<select id="e-rol">
+                <option value="tecnico" ${rol==='tecnico'?'selected':''}>Tecnico</option>
+                <option value="supervisor_area" ${rol==='supervisor_area'?'selected':''}>Sup. Area</option>
+                <option value="supervisor_planta" ${rol==='supervisor_planta'?'selected':''}>Sup. Planta</option>
+            </select>`;
+            tds[3].innerHTML = `<input type="text" id="e-areas" placeholder="3,4 (vacio=todas)">`;
+            tds[4].innerHTML = `<input type="text" id="e-grupo" value="${escapeHtml(grupoJid)}" placeholder="JID @g.us">
+                                <input type="text" id="e-grupo-nombre" value="${escapeHtml(grupoNombre)}" placeholder="Nombre grupo" style="margin-top:4px">`;
+            tds[6].innerHTML = `
+                <button class="btn btn-primary btn-sm" onclick="saveEdit('${escapeHtml(phone)}')"><i class="fas fa-check"></i></button>
+                <button class="btn btn-secondary btn-sm" onclick="loadUsers()"><i class="fas fa-times"></i></button>
+            `;
+        }
+
+        async function saveEdit(phone){
+            const body = {
+                nombre: document.getElementById('e-nombre').value.trim(),
+                rol: document.getElementById('e-rol').value,
+                grupo_destino: document.getElementById('e-grupo').value.trim(),
+                grupo_nombre: document.getElementById('e-grupo-nombre').value.trim(),
+                puede_ver_todo: document.getElementById('e-rol').value === 'supervisor_planta',
+            };
+            const areas = document.getElementById('e-areas').value.trim();
+            if (areas !== '') body.areas_visibles = areas;
+            if (!body.nombre) { alert('Nombre no puede estar vacio.'); return; }
+            try {
+                const r = await fetch('/api/admin/whatsapp-users/' + phone, {
+                    method: 'PUT',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(body)
+                });
+                if (!r.ok) { const d = await r.json(); alert('Error: ' + (d.error || r.statusText)); return; }
+                loadUsers();
+            } catch (e) { alert('Error: ' + e.message); }
+        }
+
+        document.addEventListener('DOMContentLoaded', () => { loadMeta().then(loadUsers); });
+    </script>
+    <script src="/static/js/sidebar.js?v={{ v }}"></script>
+</body>
+</html>

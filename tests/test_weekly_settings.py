@@ -352,8 +352,14 @@ def test_diagnostico_informe_html(auth_admin):
     assert 'Diagnostico_Gestion_Mantenimiento' in r2.headers.get('Content-Disposition', '')
 
 
-def test_diagnostico_narrativa_sin_api_key(auth_admin):
-    """Sin DEEPSEEK_API_KEY el endpoint responde 501 con mensaje claro."""
+def test_diagnostico_narrativa_sin_api_key(auth_admin, monkeypatch):
+    """Sin DEEPSEEK_API_KEY el endpoint responde 501 con mensaje claro.
+
+    La clave puede existir en el .env local (bot WhatsApp/Telegram); el test
+    garantiza su propia precondicion parcheando la constante del modulo.
+    """
+    import bot.telegram_bot as _tg
+    monkeypatch.setattr(_tg, 'DEEPSEEK_API_KEY', None)
     r = auth_admin.post('/api/diagnostico/narrativa', data=json.dumps({
         'meta': {'label': 'Test'}, 'kpis_mes': {}, 'kpis_prev': {},
     }), content_type='application/json')
