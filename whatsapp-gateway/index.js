@@ -32,7 +32,17 @@ const AUTH_DIR = 'auth_info'
 const QR_FILE = 'qr.png'
 const MAX_MEDIA_BYTES = 16 * 1024 * 1024 // 16 MB
 
+// Cola de salida: Flask encola mensajes proactivos (pre-diagnostico IA para el
+// grupo de mantenimiento, avisos al reportero) y el gateway los sondea y envia.
+// Asi el gateway NO abre ningun puerto: sigue siendo cliente de Flask.
+const OUTBOX_URL = WEBHOOK_URL.replace(/\/webhook$/, '/outbox')
+const OUTBOX_ACK_URL = WEBHOOK_URL.replace(/\/webhook$/, '/outbox/ack')
+const OUTBOX_POLL_MS = Number(process.env.OUTBOX_POLL_MS || 15000)
+
 const logger = pino({ level: 'warn' })
+
+let currentSock = null    // socket vigente (se actualiza en cada reconexion)
+let pollerStarted = false // el loop de outbox se arranca una sola vez
 
 // Dedup en memoria de message ids (Baileys puede re-emitir upserts)
 const seenIds = new Set()
@@ -114,6 +124,12 @@ async function start() {
       console.log(`\n✅ Gateway conectado a WhatsApp como +${me}`)
       console.log(`   Webhook destino: ${WEBHOOK_URL}\n`)
       if (existsSync(QR_FILE)) { try { unlinkSync(QR_FILE) } catch {} }
+      currentSock = sock
+      if (!pollerStarted) {
+        pollerStarted = true
+        outboxLoop()
+        console.log(`🔁 Sondeo de cola de salida activo (cada ${OUTBOX_POLL_MS / 1000}s)\n`)
+      }
     }
     if (connection === 'close') {
       const code = lastDisconnect?.error?.output?.statusCode
@@ -259,6 +275,67 @@ async function handleMessage(sock, msg) {
       await sock.sendMessage(fwd.to, { text: fwd.text })
     }
     console.log(`📤 Reenviado a grupo ${fwd.to}`)
+  }
+}
+
+// ── Cola de salida (mensajes proactivos: pre-diagnostico IA, avisos) ────────
+
+async function pollOutboxOnce() {
+  if (!currentSock) return
+  let messages = []
+  try {
+    const res = await fetch(OUTBOX_URL, {
+      headers: { 'X-Gateway-Token': GATEWAY_TOKEN },
+      signal: AbortSignal.timeout(30000),
+    })
+    if (!res.ok) return
+    const data = await res.json()
+    messages = data?.messages || []
+  } catch (e) {
+    return // Flask no disponible: reintentar en el proximo ciclo
+  }
+  if (!messages.length) return
+
+  const results = []
+  for (const m of messages) {
+    if (!m?.to || !m?.body) { results.push({ id: m?.id, ok: false }); continue }
+    try {
+      await humanDelay()
+      if (m.media_base64) {
+        const buf = Buffer.from(m.media_base64, 'base64')
+        const content = m.media_type === 'video'
+          ? { video: buf, caption: m.body }
+          : m.media_type === 'image'
+            ? { image: buf, caption: m.body }
+            : { document: buf, caption: m.body }
+        await currentSock.sendMessage(m.to, content)
+      } else {
+        await currentSock.sendMessage(m.to, { text: m.body })
+      }
+      results.push({ id: m.id, ok: true })
+      console.log(`📤 Outbox enviado #${m.id} -> ${m.to}`)
+    } catch (e) {
+      console.warn(`Outbox #${m.id} fallo:`, e.message)
+      results.push({ id: m.id, ok: false })
+    }
+  }
+
+  try {
+    await fetch(OUTBOX_ACK_URL, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'X-Gateway-Token': GATEWAY_TOKEN },
+      body: JSON.stringify({ results }),
+      signal: AbortSignal.timeout(30000),
+    })
+  } catch (e) {
+    console.warn('Outbox ack fallo:', e.message) // el reclaim de Flask lo recupera
+  }
+}
+
+async function outboxLoop() {
+  for (;;) {
+    try { await pollOutboxOnce() } catch (e) { console.warn('outboxLoop:', e.message) }
+    await sleep(OUTBOX_POLL_MS)
   }
 }
 

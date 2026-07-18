@@ -394,6 +394,8 @@ document.addEventListener('DOMContentLoaded', async () => {
         document.getElementById('noticeForm').reset();
         document.getElementById('noticeId').value = '';
         document.getElementById('photoSection').style.display = 'none';
+        const rcaSec = document.getElementById('rcaSection');
+        if (rcaSec) rcaSec.style.display = 'none';
 
         // Default Date: Today
         const today = new Date().toISOString().split('T')[0];
@@ -560,9 +562,86 @@ window.editNotice = async (id) => {
         // Show photo section for existing notices
         document.getElementById('photoSection').style.display = '';
         loadNoticePhotos(n.id);
+        loadNoticeRca(n.id);
         document.getElementById('noticeModal').showModal();
 
     } catch (e) { console.error(e); }
+}
+
+
+// ── Pre-diagnóstico IA (RCA) — solo mantenimiento ─────────────────────────
+function _rcaEsc(s) {
+    const d = document.createElement('div');
+    d.textContent = (s == null ? '' : String(s));
+    return d.innerHTML;
+}
+
+function renderRca(rca) {
+    const body = document.getElementById('rcaBody');
+    if (!body) return;
+    if (!rca) {
+        body.innerHTML = '<span style="color:#888">Aún no hay pre-diagnóstico (se genera solo al crear el aviso). '
+            + 'Pulsa <b>Regenerar</b> para crearlo ahora.</span>';
+        return;
+    }
+    const confMap = { alta: '🟢 alta', media: '🟡 media', baja: '🟠 baja' };
+    let h = '';
+    if (rca.causa_raiz)
+        h += `<div style="margin-bottom:8px"><b style="color:#FF9F0A">⚠️ Causa raíz probable:</b><br>${_rcaEsc(rca.causa_raiz)}</div>`;
+    if (rca.acciones && rca.acciones.length)
+        h += `<div style="margin-bottom:8px"><b style="color:#5AC8FA">🛠️ Acciones:</b><ul style="margin:4px 0 0;padding-left:20px">`
+            + rca.acciones.map(a => `<li>${_rcaEsc(a)}</li>`).join('') + `</ul></div>`;
+    if (rca.repuestos && rca.repuestos.length)
+        h += `<div style="margin-bottom:8px"><b style="color:#30D158">📦 Repuestos probables:</b><ul style="margin:4px 0 0;padding-left:20px">`
+            + rca.repuestos.map(r => `<li>${_rcaEsc(r.name)}${r.code ? ` <span style="color:#888">(cód. ${_rcaEsc(r.code)})</span>` : ''}</li>`).join('') + `</ul></div>`;
+    if (rca.herramientas && rca.herramientas.length)
+        h += `<div style="margin-bottom:8px"><b style="color:#64D2FF">🔩 Herramientas:</b><ul style="margin:4px 0 0;padding-left:20px">`
+            + rca.herramientas.map(t => `<li>${_rcaEsc(t)}</li>`).join('') + `</ul></div>`;
+    if (rca.casos_similares && rca.casos_similares.length)
+        h += `<div style="margin-bottom:8px"><b style="color:#BF5AF2">📚 Casos similares:</b> `
+            + rca.casos_similares.map(c => _rcaEsc(c.code)).join(', ') + `</div>`;
+    if (!h)
+        h = '<span style="color:#888">El diagnóstico no arrojó sugerencias (poca información histórica).</span>';
+    const conf = confMap[rca.confianza] || '🟡 media';
+    h += `<div style="color:#888;font-size:.78rem;margin-top:8px;border-top:1px solid #333;padding-top:6px">`
+        + `Confianza: ${conf} · Generado: ${_rcaEsc(rca.generated_at || '-')} · <i>No se comparte con producción</i></div>`;
+    body.innerHTML = h;
+}
+
+async function loadNoticeRca(id) {
+    const section = document.getElementById('rcaSection');
+    const body = document.getElementById('rcaBody');
+    if (!section || !body) return;
+    section.style.display = '';
+    body.innerHTML = '<span style="color:#888">Cargando pre-diagnóstico…</span>';
+    try {
+        const n = await fetch(`/api/notices/${id}`).then(r => r.json());
+        renderRca(n.rca);
+    } catch (e) {
+        body.innerHTML = '<span style="color:#888">No se pudo cargar el pre-diagnóstico.</span>';
+    }
+}
+
+window.regenerateRca = async function () {
+    const id = document.getElementById('noticeId').value;
+    if (!id) return;
+    const btn = document.getElementById('rcaRegenBtn');
+    const body = document.getElementById('rcaBody');
+    if (btn) { btn.disabled = true; btn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Generando…'; }
+    if (body) body.innerHTML = '<span style="color:#888">Generando pre-diagnóstico… (puede tardar unos segundos)</span>';
+    try {
+        const res = await fetch(`/api/notices/${id}/rca/regenerate`, {
+            method: 'POST', headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ push: false }),
+        });
+        const data = await res.json();
+        if (data.rca) renderRca(data.rca);
+        else if (body) body.innerHTML = `<span style="color:#FF6961">${_rcaEsc(data.error || 'No se pudo generar')}</span>`;
+    } catch (e) {
+        if (body) body.innerHTML = '<span style="color:#FF6961">Error al generar el diagnóstico.</span>';
+    } finally {
+        if (btn) { btn.disabled = false; btn.innerHTML = '<i class="fas fa-sync"></i> Regenerar'; }
+    }
 }
 
 

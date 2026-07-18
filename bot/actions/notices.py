@@ -78,6 +78,13 @@ def create_notice(app, data):
             nid = _db.session.execute(text("SELECT id FROM maintenance_notices WHERE code = :c"), {"c": code}).scalar()
             _db.session.remove()
             data['_resolved_scope'] = scope
+            # Copiloto de diagnóstico: pre-diagnóstico IA para mantenimiento
+            # (hilo aparte; nunca debe romper la creación del aviso).
+            try:
+                from bot.rca import trigger_rca_async
+                trigger_rca_async(app, nid)
+            except Exception as _rca_e:
+                logger.warning(f"trigger RCA falló (aviso {code}): {_rca_e}")
             return code, nid, None
         except Exception as e:
             _db.session.rollback()

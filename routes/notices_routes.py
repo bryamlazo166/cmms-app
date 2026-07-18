@@ -136,6 +136,15 @@ def register_notices_routes(
                 except Exception as _ei:
                     logger.warning(f"RAG index aviso {new_entry.id} fallo: {_ei}")
 
+                # Copiloto de diagnostico (RCA IA) para mantenimiento — solo si
+                # el aviso no fue marcado como duplicado.
+                if not is_duplicate:
+                    try:
+                        from bot.rca import trigger_rca_async
+                        trigger_rca_async(app, new_entry.id)
+                    except Exception as _er:
+                        logger.warning(f"trigger RCA aviso {new_entry.id} fallo: {_er}")
+
                 resp_data = new_entry.to_dict()
                 if is_duplicate:
                     resp_data['is_duplicate'] = True
@@ -238,7 +247,15 @@ def register_notices_routes(
             notice = MaintenanceNotice.query.get(id)
             if not notice:
                 return jsonify({"error": "Notice not found"}), 404
-            return jsonify(notice.to_dict())
+            data = notice.to_dict()
+            # Pre-diagnóstico IA (RCA) — visible solo aquí, en el CMMS con login.
+            try:
+                from bot.rca import get_rca
+                data['rca'] = get_rca(app, id)
+            except Exception as _re:
+                logger.warning(f"get_rca aviso {id} fallo: {_re}")
+                data['rca'] = None
+            return jsonify(data)
         if request.method == 'PUT':
             data = request.json or {}
             # Preservar la HORA de captura: si el front reenvia request_date como
@@ -344,6 +361,27 @@ def register_notices_routes(
         except Exception as e:
             db.session.rollback()
             logger.exception(f"Error patching notice reported_at {id}")
+            return jsonify({"error": str(e)}), 500
+
+    @app.route('/api/notices/<int:id>/rca/regenerate', methods=['POST'])
+    def regenerate_notice_rca(id):
+        """Regenera el pre-diagnóstico IA de un aviso (bajo demanda desde la ficha).
+
+        Por defecto NO reenvía al grupo de mantenimiento (push=false): solo
+        actualiza la ficha. Pasar {"push": true} para volver a avisar al grupo.
+        """
+        try:
+            notice = MaintenanceNotice.query.get(id)
+            if not notice:
+                return jsonify({"error": "Notice not found"}), 404
+            from bot.rca import generate_rca
+            push = bool((request.get_json(silent=True) or {}).get('push', False))
+            payload = generate_rca(app, id, push=push)
+            if payload is None:
+                return jsonify({"error": "No se pudo generar el diagnóstico (¿falta DEEPSEEK_API_KEY?)"}), 503
+            return jsonify({"ok": True, "rca": payload})
+        except Exception as e:
+            logger.exception(f"regenerate RCA {id}")
             return jsonify({"error": str(e)}), 500
 
     @app.route('/api/predictive/check-duplicates', methods=['GET'])

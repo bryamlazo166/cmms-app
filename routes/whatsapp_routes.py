@@ -24,16 +24,22 @@ def register_whatsapp_routes(app, db, logger):
     def _is_admin():
         return getattr(current_user, 'role', None) == 'admin'
 
-    @app.route('/api/public/whatsapp/webhook', methods=['POST'])
-    def whatsapp_webhook():
+    def _gateway_auth():
+        """Auth machine-to-machine del gateway. Devuelve (resp, status) si falla, o None si OK."""
         expected = (os.getenv('WHATSAPP_GATEWAY_TOKEN') or '').strip()
         if not expected:
-            return jsonify({"error": "Webhook WhatsApp deshabilitado (falta WHATSAPP_GATEWAY_TOKEN)"}), 503
-
+            return jsonify({"error": "Endpoint WhatsApp deshabilitado (falta WHATSAPP_GATEWAY_TOKEN)"}), 503
         provided = request.headers.get('X-Gateway-Token', '')
         if not hmac.compare_digest(provided, expected):
-            logger.warning(f"WhatsApp webhook: token invalido desde {request.remote_addr}")
+            logger.warning(f"WhatsApp gateway: token invalido desde {request.remote_addr}")
             return jsonify({"error": "Token invalido"}), 403
+        return None
+
+    @app.route('/api/public/whatsapp/webhook', methods=['POST'])
+    def whatsapp_webhook():
+        auth_err = _gateway_auth()
+        if auth_err:
+            return auth_err
 
         payload = request.get_json(silent=True) or {}
         if not payload.get('phone'):
@@ -48,6 +54,40 @@ def register_whatsapp_routes(app, db, logger):
             # 200 con mensaje de cortesia: el gateway se lo muestra al usuario
             # en vez de un error generico de conexion.
             return jsonify({"replies": ["⚠️ Error interno del CMMS procesando tu mensaje. Ya quedo registrado en los logs."]}), 200
+
+    # ── Cola de salida: el gateway sondea y envía (RCA, notificaciones) ───
+    # Machine-to-machine (X-Gateway-Token). El gateway hace GET cada ~15 s,
+    # envía cada mensaje por WhatsApp con retardo humano y confirma con ack.
+    # Así Flask puede empujar mensajes proactivos SIN que el gateway abra
+    # ningún puerto (sigue siendo cliente de Flask, seguro anti-baneo).
+
+    @app.route('/api/public/whatsapp/outbox', methods=['GET'])
+    def whatsapp_outbox_pull():
+        auth_err = _gateway_auth()
+        if auth_err:
+            return auth_err
+        try:
+            from bot.rca import claim_outbox
+            limit = request.args.get('limit', default=5, type=int)
+            msgs = claim_outbox(app, limit=min(max(limit, 1), 10))
+            return jsonify({"messages": msgs})
+        except Exception as e:
+            logger.error(f"whatsapp_outbox_pull error: {e}", exc_info=True)
+            return jsonify({"messages": []}), 200
+
+    @app.route('/api/public/whatsapp/outbox/ack', methods=['POST'])
+    def whatsapp_outbox_ack():
+        auth_err = _gateway_auth()
+        if auth_err:
+            return auth_err
+        try:
+            from bot.rca import ack_outbox
+            results = (request.get_json(silent=True) or {}).get('results') or []
+            ack_outbox(app, results)
+            return jsonify({"ok": True})
+        except Exception as e:
+            logger.error(f"whatsapp_outbox_ack error: {e}", exc_info=True)
+            return jsonify({"ok": False}), 200
 
     # ── Panel admin: usuarios del bot WhatsApp ────────────────────────────
 

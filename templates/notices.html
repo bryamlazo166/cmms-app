@@ -557,6 +557,16 @@
                             </div>
                         </div>
 
+                        <!-- Pre-diagnostico IA (RCA) — solo mantenimiento (existing notices) -->
+                        <div id="rcaSection" style="display:none;margin-top:15px;padding:12px;background:#141018;border:1px solid #3a2a4a;border-radius:8px">
+                            <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px;gap:8px">
+                                <h4 style="margin:0;color:#BF5AF2;font-size:.88rem"><i class="fas fa-robot"></i> Pre-diagnóstico IA
+                                    <small style="color:#888;font-weight:normal">(uso interno de mantenimiento)</small></h4>
+                                <button type="button" onclick="regenerateRca()" id="rcaRegenBtn" style="height:28px;padding:0 10px;background:#3a2a4a;border:1px solid #5a3a7a;border-radius:6px;color:#d8b8f8;font-size:.75rem;cursor:pointer;white-space:nowrap"><i class="fas fa-sync"></i> Regenerar</button>
+                            </div>
+                            <div id="rcaBody" style="font-size:.85rem;color:#ccc;line-height:1.45">Cargando…</div>
+                        </div>
+
                     <div style="margin-top: 20px; text-align: right;">
                         <button type="button" onclick="document.getElementById('noticeModal').close()"
                             style="background: transparent; color: #888; border: 1px solid #888; margin-right: 10px;">Cancelar</button>
