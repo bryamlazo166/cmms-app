@@ -114,9 +114,24 @@ def test_outbox_ack_fallo_reintenta(app):
     assert st == 'pending'
 
 
+def _reset_maint_groups(app, *jids):
+    from bot.rca import ensure_rca_tables
+    from database import db
+    from sqlalchemy import text
+    ensure_rca_tables(app)
+    with app.app_context():
+        db.session.execute(text("DELETE FROM rca_maint_groups"))
+        for j in jids:
+            db.session.execute(text(
+                "INSERT INTO rca_maint_groups (jid, nombre, activo) VALUES (:j, 'Mtto', TRUE)"),
+                {"j": j})
+        db.session.commit()
+
+
 def test_generate_rca_guarda_no_filtra_y_encola(app, monkeypatch):
     import bot.rca as rca
     nid = _seed_notice(app, 'AV-9010')
+    _reset_maint_groups(app, '999@g.us')
 
     monkeypatch.setattr(rca, '_collect_similar_cases',
                         lambda *a, **k: [{'type': 'notice', 'code': 'AV-0001',
@@ -130,7 +145,6 @@ def test_generate_rca_guarda_no_filtra_y_encola(app, monkeypatch):
                                          'herramientas': ['llave'],
                                          'repuestos_idx': [0], 'resumen': 'ok',
                                          'confianza': 'alta'})
-    monkeypatch.setenv('WHATSAPP_MAINT_GROUP_JID', '999@g.us')
 
     payload = rca.generate_rca(app, nid, push=True)
     assert payload['causa_raiz'] == 'desgaste severo'
@@ -148,12 +162,35 @@ def test_generate_rca_guarda_no_filtra_y_encola(app, monkeypatch):
     assert desc == 'falla de prueba'
 
     # Encoló el pre-diagnóstico al grupo de mantenimiento
-    claimed = rca.claim_outbox(app, limit=20)
+    claimed = rca.claim_outbox(app, limit=50)
     assert any(m['to'] == '999@g.us' and 'PRE-DIAGNÓSTICO' in m['body'] for m in claimed)
+
+
+def test_generate_rca_encola_a_varios_grupos(app, monkeypatch):
+    import bot.rca as rca
+    from database import db
+    from sqlalchemy import text
+    nid = _seed_notice(app, 'AV-9012')
+    _reset_maint_groups(app, 'mec@g.us', 'elec@g.us')
+    monkeypatch.setattr(rca, '_collect_similar_cases', lambda *a, **k: [])
+    monkeypatch.setattr(rca, '_collect_hard_spares', lambda *a, **k: [])
+    monkeypatch.setattr(rca, '_call_llm',
+                        lambda *a, **k: {'causa_raiz': 'x', 'acciones': ['a'],
+                                         'herramientas': [], 'repuestos_idx': [],
+                                         'confianza': 'media'})
+    rca.generate_rca(app, nid, push=True)
+    with app.app_context():
+        n = db.session.execute(text(
+            "SELECT count(*) FROM wa_outbox WHERE context='rca:AV-9012'")).scalar()
+    assert n == 2  # un mensaje por cada grupo de mantenimiento activo
 
 
 def test_generate_rca_sin_grupo_no_encola(app, monkeypatch):
     import bot.rca as rca
+    from database import db
+    from sqlalchemy import text
+    _reset_maint_groups(app)  # sin grupos
+    monkeypatch.delenv('WHATSAPP_MAINT_GROUP_JID', raising=False)
     nid = _seed_notice(app, 'AV-9011')
     monkeypatch.setattr(rca, '_collect_similar_cases', lambda *a, **k: [])
     monkeypatch.setattr(rca, '_collect_hard_spares', lambda *a, **k: [])
@@ -161,12 +198,62 @@ def test_generate_rca_sin_grupo_no_encola(app, monkeypatch):
                         lambda *a, **k: {'causa_raiz': 'x', 'acciones': [],
                                          'herramientas': [], 'repuestos_idx': [],
                                          'confianza': 'baja'})
-    monkeypatch.delenv('WHATSAPP_MAINT_GROUP_JID', raising=False)
     payload = rca.generate_rca(app, nid, push=True)
     assert payload is not None
-    # Sin grupo configurado no debe haber encolado nada nuevo a un jid de mtto
-    claimed = rca.claim_outbox(app, limit=50)
-    assert not any('rca:AV-9011' == '' for m in claimed)  # sanity: no crash
+    with app.app_context():
+        n = db.session.execute(text(
+            "SELECT count(*) FROM wa_outbox WHERE context='rca:AV-9011'")).scalar()
+    assert n == 0  # sin grupos configurados, no encola nada
+
+
+def test_get_maint_group_jids_tabla_tiene_prioridad(app, monkeypatch):
+    from bot.rca import get_maint_group_jids
+    _reset_maint_groups(app)  # vacía
+    monkeypatch.setenv('WHATSAPP_MAINT_GROUP_JID', 'envfallback@g.us')
+    # Tabla vacía -> cae al fallback de la env
+    assert get_maint_group_jids(app) == ['envfallback@g.us']
+    # Con grupos en tabla -> usa la tabla e ignora la env
+    _reset_maint_groups(app, '111@g.us', '222@g.us')
+    jids = get_maint_group_jids(app)
+    assert '111@g.us' in jids and '222@g.us' in jids
+    assert 'envfallback@g.us' not in jids
+
+
+def test_rca_groups_crud_endpoints(auth_admin, app):
+    _reset_maint_groups(app)
+    # Rechaza lo que no es un grupo (@g.us)
+    r = auth_admin.post('/api/admin/whatsapp-rca-groups',
+                        data=json.dumps({'jid': '51999@c.us', 'nombre': 'x'}),
+                        content_type='application/json')
+    assert r.status_code == 400
+    # Crea un grupo válido
+    r = auth_admin.post('/api/admin/whatsapp-rca-groups',
+                        data=json.dumps({'jid': '120363@g.us', 'nombre': 'Mtto Mec'}),
+                        content_type='application/json')
+    assert r.status_code == 201
+    # Lista
+    data = auth_admin.get('/api/admin/whatsapp-rca-groups').get_json()
+    match = [g for g in data if g['jid'] == '120363@g.us']
+    assert match
+    gid = match[0]['id']
+    # Duplicado -> 409
+    r = auth_admin.post('/api/admin/whatsapp-rca-groups',
+                        data=json.dumps({'jid': '120363@g.us'}),
+                        content_type='application/json')
+    assert r.status_code == 409
+    # Toggle activo
+    r = auth_admin.put(f'/api/admin/whatsapp-rca-groups/{gid}',
+                       data=json.dumps({'activo': False}),
+                       content_type='application/json')
+    assert r.status_code == 200
+    # Delete
+    r = auth_admin.delete(f'/api/admin/whatsapp-rca-groups/{gid}')
+    assert r.status_code == 200
+
+
+def test_rca_groups_solo_admin(auth_viewer):
+    r = auth_viewer.get('/api/admin/whatsapp-rca-groups')
+    assert r.status_code == 403
 
 
 def test_outbox_endpoint_auth(client, monkeypatch):

@@ -84,6 +84,16 @@ def ensure_rca_tables(app):
                     "claimed_at TIMESTAMP, "
                     "sent_at TIMESTAMP)"
                 ))
+                # Grupos de WhatsApp de MANTENIMIENTO a los que se reenvía el
+                # RCA. Se gestiona desde /admin/whatsapp-users. Pueden ser varios.
+                _db.session.execute(text(
+                    "CREATE TABLE IF NOT EXISTS rca_maint_groups ("
+                    f"{id_col}, "
+                    "jid VARCHAR(80) UNIQUE NOT NULL, "
+                    "nombre VARCHAR(120), "
+                    "activo BOOLEAN DEFAULT TRUE, "
+                    "created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP)"
+                ))
                 _db.session.commit()
             _tables_ready = True
             return True
@@ -118,6 +128,33 @@ def enqueue_wa_message(app, to_jid, body, context=None,
     except Exception as e:
         logger.error(f"enqueue_wa_message error: {e}")
         return None
+
+
+def get_maint_group_jids(app):
+    """JIDs de los grupos de MANTENIMIENTO activos a los que va el RCA.
+
+    Fuente principal: tabla rca_maint_groups (gestionada desde el panel
+    /admin/whatsapp-users). Fallback de compatibilidad: la env
+    WHATSAPP_MAINT_GROUP_JID (uno o varios JIDs separados por coma) si la
+    tabla está vacía. Devuelve lista de JIDs.
+    """
+    jids = []
+    if ensure_rca_tables(app):
+        try:
+            from sqlalchemy import text
+            from database import db as _db
+            with app.app_context():
+                rows = _db.session.execute(text(
+                    "SELECT jid FROM rca_maint_groups WHERE activo = TRUE ORDER BY id"
+                )).fetchall()
+                jids = [r[0] for r in rows if r[0]]
+        except Exception as e:
+            logger.warning(f"get_maint_group_jids error: {e}")
+    if not jids:
+        env = (os.getenv('WHATSAPP_MAINT_GROUP_JID') or '').strip()
+        if env:
+            jids = [j.strip() for j in env.split(',') if j.strip()]
+    return jids
 
 
 def claim_outbox(app, limit=5, reclaim_seconds=180):
@@ -556,14 +593,15 @@ def generate_rca(app, notice_id, push=True):
         logger.error(f"generate_rca guardado error: {e}")
         saved = payload
 
-    # Push al grupo de mantenimiento (canal cerrado, nunca a producción)
+    # Push a los grupos de mantenimiento (canal cerrado, nunca a producción)
     if push:
-        group = (os.getenv('WHATSAPP_MAINT_GROUP_JID') or '').strip()
-        if group:
-            enqueue_wa_message(app, group, format_whatsapp_message(saved),
-                               context=f"rca:{ctx.get('code')}")
+        groups = get_maint_group_jids(app)
+        if groups:
+            msg = format_whatsapp_message(saved)
+            for g in groups:
+                enqueue_wa_message(app, g, msg, context=f"rca:{ctx.get('code')}")
         else:
-            logger.info("WHATSAPP_MAINT_GROUP_JID no configurado — RCA guardado sin push a WhatsApp")
+            logger.info("Sin grupos de mantenimiento configurados — RCA guardado sin push a WhatsApp")
     return saved
 
 

@@ -46,6 +46,13 @@
         .row-inactive td{opacity:.55}
         td input, td select{width:100%;background:rgba(255,255,255,.06);border:1px solid rgba(255,255,255,.10);border-radius:6px;color:#fff;padding:4px 8px;font-size:.82rem;height:30px;box-sizing:border-box}
         .jid{font-size:.72rem;color:rgba(255,255,255,.40);display:block}
+        .rca-warn{background:rgba(191,90,242,.10);border:1px solid rgba(191,90,242,.38);border-radius:10px;padding:13px 14px;margin-bottom:14px;font-size:.84rem;color:#e6cef7;line-height:1.55}
+        .rca-warn .big{color:#FF9F0A;font-size:1rem}
+        .rca-warn i{margin-right:6px;color:#FF9F0A}
+        .rca-warn code{background:rgba(255,255,255,.12);padding:1px 6px;border-radius:5px}
+        .rca-warn u{color:#FFD08A}
+        .pill-rca-on{background:rgba(48,209,88,.18);color:#34D472}
+        .pill-rca-off{background:rgba(255,69,58,.18);color:#FF6B61}
     </style>
 </head>
 <body>
@@ -120,6 +127,53 @@
                     </thead>
                     <tbody id="usersBody">
                         <tr><td colspan="7" class="empty">Cargando…</td></tr>
+                    </tbody>
+                </table>
+            </div>
+
+            <!-- ── Grupos de MANTENIMIENTO para el pre-diagnóstico IA (RCA) ── -->
+            <div class="panel" style="border-color:rgba(191,90,242,.40)">
+                <h3><i class="fas fa-robot" style="color:#BF5AF2;margin-right:6px"></i>Grupos de mantenimiento para el pre-diagnóstico IA (RCA)</h3>
+
+                <div class="rca-warn">
+                    <span class="big"><i class="fas fa-triangle-exclamation"></i><strong>SOLO grupos de MANTENIMIENTO.</strong></span>
+                    El pre-diagnóstico IA (causa raíz, repuestos y herramientas) es información técnica interna.
+                    Se enviará <strong>únicamente</strong> a los grupos que agregues aquí.
+                    <u>Nunca pongas aquí un grupo de producción</u> ni el número de una persona: el diagnóstico
+                    NO debe llegar a quien reporta la falla.
+                    <br><br>
+                    ℹ️ Estos grupos son <strong>distintos</strong> del "Grupo destino" de cada número (ese es donde se
+                    reenvía el aviso a producción). El JID se obtiene enviando <code>/grupos</code> al bot y debe
+                    terminar en <code>@g.us</code>. Puedes agregar <strong>más de un grupo</strong> (ej: mantenimiento
+                    mecánico y eléctrico).
+                </div>
+
+                <div class="form-grid" style="grid-template-columns:1.7fr 1.4fr auto">
+                    <div>
+                        <label>JID del grupo de mantenimiento (@g.us)</label>
+                        <input type="text" id="rcaJid" placeholder="120363...@g.us">
+                    </div>
+                    <div>
+                        <label>Nombre del grupo (referencia)</label>
+                        <input type="text" id="rcaNombre" placeholder="Mantenimiento Mecánico">
+                    </div>
+                    <div>
+                        <button class="btn btn-primary" onclick="addRcaGroup()" style="background:#8E44CE"><i class="fas fa-plus"></i> Agregar grupo RCA</button>
+                    </div>
+                </div>
+                <div id="rcaErr" class="err"></div>
+
+                <table class="table-sm" style="margin-top:12px">
+                    <thead>
+                        <tr>
+                            <th>Grupo</th>
+                            <th>JID</th>
+                            <th>Estado</th>
+                            <th style="text-align:right">Acciones</th>
+                        </tr>
+                    </thead>
+                    <tbody id="rcaBody">
+                        <tr><td colspan="4" class="empty">Cargando…</td></tr>
                     </tbody>
                 </table>
             </div>
@@ -289,7 +343,80 @@
             } catch (e) { alert('Error: ' + e.message); }
         }
 
-        document.addEventListener('DOMContentLoaded', () => { loadMeta().then(loadUsers); });
+        // ── Grupos de mantenimiento para el RCA ───────────────────────────
+        async function loadRcaGroups(){
+            const tbody = document.getElementById('rcaBody');
+            try {
+                const r = await fetch('/api/admin/whatsapp-rca-groups');
+                const data = await r.json();
+                if (!r.ok) { tbody.innerHTML = `<tr><td colspan="4" class="empty">Error: ${data.error||r.statusText}</td></tr>`; return; }
+                if (!data.length) {
+                    tbody.innerHTML = `<tr><td colspan="4" class="empty">Aun no hay grupos de mantenimiento. El RCA se genera y guarda igual, pero no se reenvia por WhatsApp hasta que agregues al menos uno.</td></tr>`;
+                    return;
+                }
+                tbody.innerHTML = data.map(g => {
+                    const on = g.activo;
+                    const pill = on ? '<span class="pill pill-rca-on">Activo</span>' : '<span class="pill pill-rca-off">Inactivo</span>';
+                    const nombreSafe = escapeHtml(g.nombre || g.jid).replace(/'/g, "&#39;");
+                    return `<tr>
+                        <td>${escapeHtml(g.nombre || '(sin nombre)')}</td>
+                        <td><code style="font-size:.72rem">${escapeHtml(g.jid)}</code></td>
+                        <td>${pill}</td>
+                        <td class="actions">
+                            <button class="btn btn-secondary btn-sm" onclick="toggleRcaGroup(${g.id}, ${!on})" title="${on?'Desactivar':'Activar'}"><i class="fas ${on?'fa-pause':'fa-play'}"></i></button>
+                            <button class="btn btn-danger btn-sm" onclick="deleteRcaGroup(${g.id}, '${nombreSafe}')" title="Eliminar"><i class="fas fa-trash"></i></button>
+                        </td>
+                    </tr>`;
+                }).join('');
+            } catch (e) {
+                tbody.innerHTML = `<tr><td colspan="4" class="empty">Error: ${e.message}</td></tr>`;
+            }
+        }
+
+        async function addRcaGroup(){
+            const errEl = document.getElementById('rcaErr');
+            errEl.textContent = '';
+            const jid = document.getElementById('rcaJid').value.trim();
+            const nombre = document.getElementById('rcaNombre').value.trim();
+            if (!jid) { errEl.textContent = 'El JID del grupo es obligatorio.'; return; }
+            if (!jid.endsWith('@g.us')) {
+                errEl.textContent = 'El JID debe terminar en @g.us (es un GRUPO, no una persona). Enviale /grupos al bot para obtenerlo.';
+                return;
+            }
+            try {
+                const r = await fetch('/api/admin/whatsapp-rca-groups', {
+                    method: 'POST', headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ jid, nombre })
+                });
+                const d = await r.json();
+                if (!r.ok) { errEl.textContent = d.error || 'Error al agregar.'; return; }
+                document.getElementById('rcaJid').value = '';
+                document.getElementById('rcaNombre').value = '';
+                loadRcaGroups();
+            } catch (e) { errEl.textContent = e.message; }
+        }
+
+        async function toggleRcaGroup(id, activo){
+            try {
+                const r = await fetch('/api/admin/whatsapp-rca-groups/' + id, {
+                    method: 'PUT', headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ activo })
+                });
+                if (!r.ok) { const d = await r.json(); alert('Error: ' + (d.error||r.statusText)); return; }
+                loadRcaGroups();
+            } catch (e) { alert('Error: ' + e.message); }
+        }
+
+        async function deleteRcaGroup(id, label){
+            if (!confirm(`¿Quitar el grupo "${label}" del reenvio del pre-diagnostico RCA?`)) return;
+            try {
+                const r = await fetch('/api/admin/whatsapp-rca-groups/' + id, { method: 'DELETE' });
+                if (!r.ok) { const d = await r.json(); alert('Error: ' + (d.error||r.statusText)); return; }
+                loadRcaGroups();
+            } catch (e) { alert('Error: ' + e.message); }
+        }
+
+        document.addEventListener('DOMContentLoaded', () => { loadMeta().then(loadUsers); loadRcaGroups(); });
     </script>
     <script src="/static/js/sidebar.js?v={{ v }}"></script>
 </body>

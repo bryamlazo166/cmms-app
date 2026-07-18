@@ -243,6 +243,108 @@ def register_whatsapp_routes(app, db, logger):
             logger.exception('delete_whatsapp_user error')
             return jsonify({"error": str(e)}), 500
 
+    # ── Grupos de mantenimiento para el RCA (pre-diagnóstico IA) ──────────
+    # El pre-diagnóstico técnico SOLO va a estos grupos (mantenimiento), nunca
+    # a los grupos de producción. Se gestionan aparte para no confundirlos con
+    # el "grupo destino" de cada número (que sí es de producción).
+
+    def _ensure_rca_tables():
+        from bot.rca import ensure_rca_tables
+        ensure_rca_tables(app)
+
+    @app.route('/api/admin/whatsapp-rca-groups', methods=['GET'])
+    @login_required
+    def list_rca_groups():
+        if not _is_admin():
+            return jsonify({"error": "Solo admin"}), 403
+        _ensure_rca_tables()
+        try:
+            rows = db.session.execute(text(
+                "SELECT id, jid, nombre, activo FROM rca_maint_groups ORDER BY id"
+            )).fetchall()
+            return jsonify([{"id": r[0], "jid": r[1], "nombre": r[2],
+                             "activo": bool(r[3])} for r in rows])
+        except Exception as e:
+            logger.exception('list_rca_groups error')
+            return jsonify({"error": str(e)}), 500
+
+    @app.route('/api/admin/whatsapp-rca-groups', methods=['POST'])
+    @login_required
+    def create_rca_group():
+        if not _is_admin():
+            return jsonify({"error": "Solo admin"}), 403
+        _ensure_rca_tables()
+        data = request.get_json() or {}
+        try:
+            jid = (data.get('jid') or '').strip()
+            nombre = (data.get('nombre') or '').strip() or None
+            if not jid:
+                return jsonify({"error": "El JID del grupo es obligatorio"}), 400
+            # Un grupo de WhatsApp SIEMPRE termina en @g.us — evita que por error
+            # se pegue un número de persona (que reenviaría el RCA a un individuo).
+            if not jid.endswith('@g.us'):
+                return jsonify({"error": "Eso no parece un grupo. El JID debe terminar en @g.us "
+                                         "(obtenlo enviando /grupos al bot)."}), 400
+            existing = db.session.execute(text(
+                "SELECT 1 FROM rca_maint_groups WHERE jid = :j"), {"j": jid}).scalar()
+            if existing:
+                return jsonify({"error": "Ese grupo ya está registrado"}), 409
+            db.session.execute(text(
+                "INSERT INTO rca_maint_groups (jid, nombre, activo) VALUES (:j, :n, TRUE)"
+            ), {"j": jid, "n": nombre})
+            db.session.commit()
+            return jsonify({"ok": True}), 201
+        except Exception as e:
+            db.session.rollback()
+            logger.exception('create_rca_group error')
+            return jsonify({"error": str(e)}), 500
+
+    @app.route('/api/admin/whatsapp-rca-groups/<int:gid>', methods=['PUT'])
+    @login_required
+    def update_rca_group(gid):
+        if not _is_admin():
+            return jsonify({"error": "Solo admin"}), 403
+        data = request.get_json() or {}
+        try:
+            updates = {}
+            if 'nombre' in data:
+                updates['nombre'] = (data['nombre'] or '').strip() or None
+            if 'activo' in data:
+                updates['activo'] = bool(data['activo'])
+            if not updates:
+                return jsonify({"error": "Sin campos para actualizar"}), 400
+            set_clause = ", ".join(f"{k} = :{k}" for k in updates)
+            updates['id'] = gid
+            r = db.session.execute(text(
+                f"UPDATE rca_maint_groups SET {set_clause} WHERE id = :id"), updates)
+            if r.rowcount == 0:
+                db.session.rollback()
+                return jsonify({"error": "No encontrado"}), 404
+            db.session.commit()
+            return jsonify({"ok": True})
+        except Exception as e:
+            db.session.rollback()
+            logger.exception('update_rca_group error')
+            return jsonify({"error": str(e)}), 500
+
+    @app.route('/api/admin/whatsapp-rca-groups/<int:gid>', methods=['DELETE'])
+    @login_required
+    def delete_rca_group(gid):
+        if not _is_admin():
+            return jsonify({"error": "Solo admin"}), 403
+        try:
+            r = db.session.execute(text(
+                "DELETE FROM rca_maint_groups WHERE id = :id"), {"id": gid})
+            if r.rowcount == 0:
+                db.session.rollback()
+                return jsonify({"error": "No encontrado"}), 404
+            db.session.commit()
+            return jsonify({"ok": True})
+        except Exception as e:
+            db.session.rollback()
+            logger.exception('delete_rca_group error')
+            return jsonify({"error": str(e)}), 500
+
     @app.route('/admin/whatsapp-users', methods=['GET'])
     @login_required
     def whatsapp_users_page():
