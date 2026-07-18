@@ -538,6 +538,7 @@
     const ADMIN_MENU_ITEMS = [
         { group: G_ADMIN, href: '/usuarios', icon: 'fas fa-users-cog', label: 'Usuarios', tip: 'Usuarios' },
         { group: G_ADMIN, href: '/admin/telegram-users', icon: 'fab fa-telegram', label: 'Reporters Bot', tip: 'Usuarios autorizados del bot Telegram' },
+        { group: G_ADMIN, href: '/admin/whatsapp-users', icon: 'fab fa-whatsapp', label: 'Bot WhatsApp', tip: 'Numeros autorizados del bot WhatsApp: rol, areas y grupo destino' },
         { group: G_ADMIN, href: '/admin/bot-usage', icon: 'fas fa-robot', label: 'Uso del Bot', tip: 'Telemetría y costo del bot Telegram' },
         { group: G_ADMIN, href: '/mantenimiento-bd', icon: 'fas fa-database', label: 'Mant. BD', tip: 'Mantenimiento BD' },
         { group: G_ADMIN, href: '/admin/backup', icon: 'fas fa-cloud-download-alt', label: 'Backup BD', tip: 'Snapshot/restore de BD', restricted: true },
