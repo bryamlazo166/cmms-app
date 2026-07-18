@@ -42,6 +42,11 @@ COMPONENT_SYNONYMS = {
     'pinon': ['pinon', 'piñon', 'engranaje', 'gear'],
     'eje': ['eje', 'flecha', 'shaft'],
     'rodillo': ['rodillo', 'polin', 'roller'],
+    # En los TH (transportadores helicoidales) el personal dice "espira",
+    # "disco" o "tornillo" para referirse al componente HELICE del arbol.
+    'helice': ['helice', 'hélice', 'espira', 'espiral', 'disco helicoidal',
+               'discos del tornillo', 'disco del tornillo', 'tornillo helicoidal',
+               'tornillo sin fin', 'sinfin', 'sin fin', 'gusano'],
     'transportador': ['transportador', 'faja transportadora', 'banda transportadora', 'conveyor'],
     'bomba': ['bomba', 'pump', 'bba'],
     'compresor': ['compresor', 'compressor'],

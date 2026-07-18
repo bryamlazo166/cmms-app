@@ -234,6 +234,9 @@ REGLAS:
   nombre coincida. NUNCA inventes tags. Si no hay match claro -> null y scope FUERA_PLAN o GENERAL.
 - Si reporta bloqueo/atasco ("se trabo", "se bloqueo", "entro una piedra"), failure_mode=Atascamiento
   y blockage_object con el objeto (si no lo dice, null).
+- VOCABULARIO DE PLANTA: en los transportadores helicoidales (TH), "espira", "hélice",
+  "disco del tornillo" o "tornillo helicoidal" se refieren al componente HELICE
+  -> component_name: "helice".
 - criticality: Alta si hay parada de produccion, riesgo de incendio/seguridad o dano mayor;
   Media para degradacion funcional; Baja para detalles menores.
 - HOY es {today}. Calcula fechas relativas ("ayer" -> {yesterday}).
@@ -342,7 +345,9 @@ def _append_observation(app, notice_code, user, obs_text):
     try:
         from sqlalchemy import text
         from database import db as _db
-        stamp = f"[+ Obs de {user.get('nombre')} via WhatsApp {date.today().isoformat()}]: {obs_text[:400]}"
+        from utils.tz import now_lima_naive
+        stamp = (f"[+ Obs de {user.get('nombre')} via WhatsApp "
+                 f"{now_lima_naive().strftime('%Y-%m-%d %H:%M')}]: {obs_text[:400]}")
         with app.app_context():
             _db.session.execute(text(
                 "UPDATE maintenance_notices SET description = description || :obs "
@@ -357,7 +362,7 @@ def _append_observation(app, notice_code, user, obs_text):
 
 # ── Creacion del aviso + evidencia + mensaje al grupo ─────────────────────
 
-def _create_notice_from_extraction(app, user, extraction):
+def _create_notice_from_extraction(app, user, extraction, reported_at=None):
     """Crea el aviso real via bot.actions.notices.create_notice."""
     from bot.actions.notices import create_notice
     data = {
@@ -371,6 +376,10 @@ def _create_notice_from_extraction(app, user, extraction):
         "free_location": extraction.get('free_location'),
         "reporter_name": user.get('nombre') or 'WhatsApp',
         "reporter_type": "whatsapp",
+        # Hora real en que la persona reporto (Lima) + canal — alimenta los
+        # KPIs de tiempo de respuesta (reported_at / report_channel del modelo).
+        "reported_at": reported_at,
+        "report_channel": "WHATSAPP",
     }
     if extraction.get('event_date'):
         data['event_date'] = extraction['event_date']
@@ -415,10 +424,12 @@ def _attach_media_to_notice(app, notice_id, media):
         return None
 
 
-def _group_message(code, user, extraction, resolved, is_update=False):
+def _group_message(code, user, extraction, resolved, is_update=False, reported_at=None):
     header = "🔁 *ACTUALIZACION DE AVISO*" if is_update else "🔧 *NUEVO AVISO DE MANTENIMIENTO*"
     lines = [f"{header} — {code}", ""]
     lines.append(f"👤 Reporto: {user.get('nombre')} ({user.get('rol') or '-'})")
+    if reported_at:
+        lines.append(f"🕐 Fecha/hora del reporte: {reported_at}")
     if resolved.get('path'):
         lines.append(f"📍 {resolved['path']}")
     elif extraction.get('free_location'):
@@ -540,12 +551,18 @@ def handle_incoming(app, payload):
 
     resolved = _resolve_display(app, extraction)
 
+    # Hora real del reporte (Lima): se sella con el PRIMER mensaje, no al
+    # confirmar — es lo que alimenta reported_at del aviso.
+    from utils.tz import now_lima_naive
+    reported_at = now_lima_naive().strftime('%Y-%m-%d %H:%M')
+
     # Anti-duplicados (solo con equipo identificado)
     dups = _find_open_duplicates(app, resolved.get('equipment_id'))
     if dups:
         _set_session(phone, {"state": "dup", "extraction": extraction,
                              "resolved": resolved, "dups": dups,
-                             "media_pending": media, "original_text": text})
+                             "media_pending": media, "original_text": text,
+                             "reported_at": reported_at})
         lines = ["⚠️ *Ojo:* ya hay aviso(s) abierto(s) de este equipo:", ""]
         for d in dups:
             lines.append(f"• *{d['code']}* — {d['description']}")
@@ -560,7 +577,7 @@ def handle_incoming(app, payload):
     # Sin duplicados → pedir confirmacion
     _set_session(phone, {"state": "confirm", "extraction": extraction,
                          "resolved": resolved, "media_pending": media,
-                         "original_text": text})
+                         "original_text": text, "reported_at": reported_at})
     return {"replies": [_confirm_message(extraction, resolved, _dry_run())]}
 
 
@@ -626,7 +643,8 @@ def _handle_dup_state(app, phone, user, session, text, lower):
         if user.get('grupo_destino'):
             forwards.append({
                 "to": user['grupo_destino'],
-                "text": _group_message(code, user, extraction, resolved, is_update=True),
+                "text": _group_message(code, user, extraction, resolved, is_update=True,
+                                       reported_at=session.get('reported_at')),
             })
         return {"replies": [
             f"✅ Tu observacion quedo agregada al *{code}*.\n"
@@ -682,9 +700,11 @@ def _do_create(app, phone, user, session):
     extraction = session['extraction']
     resolved = session['resolved']
     media_pending = session.get('media_pending')
+    reported_at = session.get('reported_at')
 
     if _dry_run():
-        preview = _group_message('AV-SIMULADO', user, extraction, resolved)
+        preview = _group_message('AV-SIMULADO', user, extraction, resolved,
+                                 reported_at=reported_at)
         # Mantener el flujo completo tambien en modo prueba: pasar al paso
         # de evidencia igual que en produccion (sin escribir nada).
         _set_session(phone, {"state": "media", "notice_code": "AV-SIMULADO",
@@ -699,7 +719,8 @@ def _do_create(app, phone, user, session):
             "_(La foto se comprime y adjunta al aviso; el video solo se reenvia al grupo.)_"
         ]}
 
-    code, notice_id, err = _create_notice_from_extraction(app, user, extraction)
+    code, notice_id, err = _create_notice_from_extraction(app, user, extraction,
+                                                          reported_at=reported_at)
     if err or not code:
         _clear_session(phone)
         logger.error(f"WhatsApp create_notice fallo: {err}")
@@ -708,7 +729,8 @@ def _do_create(app, phone, user, session):
     forwards = []
     if user.get('grupo_destino'):
         fwd = {"to": user['grupo_destino'],
-               "text": _group_message(code, user, extraction, resolved)}
+               "text": _group_message(code, user, extraction, resolved,
+                                      reported_at=reported_at)}
         # si el reporte original traia foto, adjuntarla al grupo tambien
         if media_pending and media_pending.get('base64'):
             fwd["media_base64"] = media_pending['base64']

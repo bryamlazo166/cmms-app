@@ -72,6 +72,14 @@ def wa_env(app, monkeypatch):
             db.session.add(sys)
             db.session.flush()
             db.session.add(Component(name='MOTOR ELECTRICO', system_id=sys.id))
+            # TH con HELICE para validar el sinonimo espira/disco -> HELICE
+            th = Equipment(name='TH ALIMENTADOR TEST', tag='THTEST', line_id=line.id)
+            db.session.add(th)
+            db.session.flush()
+            th_sys = System(name='SISTEMA MECANICO', equipment_id=th.id)
+            db.session.add(th_sys)
+            db.session.flush()
+            db.session.add(Component(name='HELICE', system_id=th_sys.id))
         u = db.session.execute(text(
             "SELECT id FROM bot_whatsapp_users WHERE phone_number = :p"), {"p": PHONE}).fetchone()
         if not u:
@@ -177,12 +185,18 @@ def test_flujo_real_crea_aviso_y_reenvia(app, client, wa_env, monkeypatch):
     from database import db
     with app.app_context():
         row = db.session.execute(_t(
-            "SELECT code, status, criticality, equipment_id FROM maintenance_notices "
+            "SELECT code, status, criticality, equipment_id, reported_at, report_channel "
+            "FROM maintenance_notices "
             "WHERE reporter_type = 'whatsapp' ORDER BY id DESC LIMIT 1")).fetchone()
     assert row is not None
     assert row[1] == 'Pendiente'
     assert row[2] == 'Alta'
     assert row[3] is not None                   # quedo vinculado al equipo
+    # fecha y hora reales del reporte + canal (KPIs de tiempo de respuesta)
+    assert row[4] and len(row[4]) == 16         # 'YYYY-MM-DD HH:MM'
+    assert row[5] == 'WHATSAPP'
+    # y la hora aparece en el mensaje al grupo
+    assert 'Fecha/hora del reporte' in fwd_text
     # 3) enviar VIDEO como evidencia: NO se sube a Supabase, SI se reenvia al grupo
     from bot import whatsapp_handler as wh
     llamadas_upload = []
@@ -233,6 +247,16 @@ def test_cancelar_en_confirmacion(app, client, wa_env, monkeypatch):
 def test_audio_no_soportado(client, wa_env):
     r = _post(client, text='', media={'type': 'audio', 'mimetype': 'audio/ogg', 'base64': 'aGk='})
     assert 'audio' in r.get_json()['replies'][0].lower()
+
+
+def test_sinonimo_espira_resuelve_helice(app, wa_env):
+    """'espira'/'disco del tornillo' en un TH debe resolver al componente HELICE."""
+    from bot import whatsapp_handler as wh
+    for termino in ('espira', 'disco del tornillo', 'tornillo helicoidal'):
+        resolved = wh._resolve_display(app, {
+            'equipment_tag': 'THTEST', 'component_name': termino})
+        assert resolved['component_id'] is not None, f"'{termino}' no resolvio componente"
+        assert 'HELICE' in (resolved['path'] or ''), f"'{termino}' no llego a HELICE"
 
 
 # ── Panel admin de numeros ────────────────────────────────────────────────

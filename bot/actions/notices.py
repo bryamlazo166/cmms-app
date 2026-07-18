@@ -56,9 +56,11 @@ def create_notice(app, data):
             _db.session.execute(text("""
                 INSERT INTO maintenance_notices (code, description, criticality, priority, request_date,
                     maintenance_type, status, reporter_name, reporter_type,
+                    reported_at, report_channel,
                     area_id, line_id, equipment_id, system_id, component_id, rotative_asset_id, shift,
                     scope, free_location, failure_mode, failure_category, blockage_object)
                 VALUES (:code, :desc, :crit, :prio, :rdate, :mtype, 'Pendiente', :reporter, :rtype,
+                    :rep_at, :rep_ch,
                     :ar, :ln, :eq, :sys, :comp, :ra, :shift, :scope, :loc, :fm, :fc, :bo)
             """), {
                 "code": code, "desc": ' | '.join(desc_parts),
@@ -66,6 +68,7 @@ def create_notice(app, data):
                 "rdate": req_date, "mtype": data.get('maintenance_type', 'Correctivo'),
                 "reporter": data.get('reporter_name', 'Bot Telegram'),
                 "rtype": data.get('reporter_type', 'telegram'),
+                "rep_at": data.get('reported_at'), "rep_ch": data.get('report_channel'),
                 "ar": ar_id, "ln": ln_id, "eq": eq_id, "sys": sys_id, "comp": comp_id, "ra": ra_id,
                 "shift": data.get('shift'),
                 "scope": scope, "loc": free_loc,
