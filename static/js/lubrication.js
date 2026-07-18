@@ -548,11 +548,14 @@ function renderExecutions(rows) {
 }
 
 /* ──────────────────────────────────────────────────────────────
-   FILTROS DEL HISTORIAL (Area → Equipo → Sistema → Componente,
-   por nombre, en cascada) + resumen de intervalos reales.
+   FILTROS DEL HISTORIAL (Area → Linea → Equipo → Sistema →
+   Componente, por nombre, en cascada) + resumen de intervalos
+   reales. La Linea desambigua equipos con nombres parecidos en
+   areas grandes (ej: varios TH o chumaceras homonimas).
    ────────────────────────────────────────────────────────────── */
 const _HIST_LEVELS = [
     { id: 'hArea',      key: p => p.area_name || '' },
+    { id: 'hLine',      key: p => p.line_name || '' },
     { id: 'hEquipment', key: p => p.equipment_name || '' },
     { id: 'hSystem',    key: p => p.system_name || '' },
     { id: 'hComponent', key: p => p.component_name || '' },
@@ -588,7 +591,7 @@ function updateHistFilterOptions() {
 
 function _histQueryParams() {
     const params = new URLSearchParams();
-    const map = { hArea: 'area', hEquipment: 'equipment', hSystem: 'system', hComponent: 'component' };
+    const map = { hArea: 'area', hLine: 'line', hEquipment: 'equipment', hSystem: 'system', hComponent: 'component' };
     Object.entries(map).forEach(([id, key]) => {
         const v = (q(id) || {}).value || '';
         if (v) params.set(key, v);
@@ -624,7 +627,7 @@ function renderHistSummary(rows, hasFilters) {
 }
 
 function clearHistFilters() {
-    ['hArea', 'hEquipment', 'hSystem', 'hComponent', 'hFrom', 'hTo'].forEach(id => {
+    ['hArea', 'hLine', 'hEquipment', 'hSystem', 'hComponent', 'hFrom', 'hTo'].forEach(id => {
         const el = q(id);
         if (el) el.value = '';
     });
