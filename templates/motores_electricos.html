@@ -205,7 +205,7 @@
                 <div id="tTempRows"></div>
                 <button type="button" class="btn sm" onclick="addTempRow()"><i class="fas fa-plus"></i> Añadir punto</button>
                 <datalist id="tempPointsDL">
-                    <option value="CARCASA"><option value="BOBINADO"><option value="RODAMIENTO_LA"><option value="RODAMIENTO_LOA"><option value="BORNERA">
+                    <option value="CARCASA"><option value="BOBINADO"><option value="RODAMIENTO LADO ACOPLE"><option value="RODAMIENTO LADO OPUESTO"><option value="BORNERA">
                 </datalist>
             </div>
             <div class="row">
@@ -399,7 +399,7 @@ function renderTable() {
 
 // ── Registrar prueba ─────────────────────────────────────────────────
 let _testMotorId = null, _testType = null;
-const TEMP_POINTS = ['CARCASA','BOBINADO','RODAMIENTO_LA','RODAMIENTO_LOA','BORNERA'];
+const TEMP_POINTS = ['CARCASA','BOBINADO','RODAMIENTO LADO ACOPLE','RODAMIENTO LADO OPUESTO','BORNERA'];
 function addTempRow(point) {
     const div = document.createElement('div');
     div.className = 'temp-row';

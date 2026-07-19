@@ -453,7 +453,7 @@ function renderMotList() {
 
 // Temperatura multipunto: filas dinámicas (punto + °C), prellenadas con los
 // puntos estándar del motor; se pueden añadir puntos adicionales.
-const TEMP_POINTS = ['CARCASA', 'BOBINADO', 'RODAMIENTO_LA', 'RODAMIENTO_LOA', 'BORNERA'];
+const TEMP_POINTS = ['CARCASA', 'BOBINADO', 'RODAMIENTO LADO ACOPLE', 'RODAMIENTO LADO OPUESTO', 'BORNERA'];
 function addTempRow(point) {
     const div = document.createElement('div');
     div.className = 'temp-row';
