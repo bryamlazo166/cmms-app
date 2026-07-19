@@ -1365,9 +1365,16 @@ class MotorElectricalTest(db.Model):
     test_type: Mapped[str] = mapped_column(String(20), nullable=False)   # MEGADO | CORRIENTE | TEMPERATURA
     test_date: Mapped[str] = mapped_column(String(20), nullable=False)
     context: Mapped[str | None] = mapped_column(String(20), nullable=True)  # PROGRAMADO|INSTALACION|CORRECTIVO|OTRO
-    # MEGADO
+    # MEGADO — insulation_mohm guarda el PEOR (mínimo) valor de la prueba
     insulation_mohm: Mapped[float | None] = mapped_column(Float, nullable=True)
     test_voltage_v: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    # MEGADO por combinaciones: fase-fase y fase-tierra (MΩ)
+    meg_rs_mohm: Mapped[float | None] = mapped_column(Float, nullable=True)
+    meg_st_mohm: Mapped[float | None] = mapped_column(Float, nullable=True)
+    meg_tr_mohm: Mapped[float | None] = mapped_column(Float, nullable=True)
+    meg_rg_mohm: Mapped[float | None] = mapped_column(Float, nullable=True)   # R-Tierra
+    meg_sg_mohm: Mapped[float | None] = mapped_column(Float, nullable=True)   # S-Tierra
+    meg_tg_mohm: Mapped[float | None] = mapped_column(Float, nullable=True)   # T-Tierra
     # CORRIENTE (por fase)
     current_r: Mapped[float | None] = mapped_column(Float, nullable=True)
     current_s: Mapped[float | None] = mapped_column(Float, nullable=True)
@@ -1399,6 +1406,12 @@ class MotorElectricalTest(db.Model):
             "context": self.context,
             "insulation_mohm": self.insulation_mohm,
             "test_voltage_v": self.test_voltage_v,
+            "meg_rs_mohm": self.meg_rs_mohm,
+            "meg_st_mohm": self.meg_st_mohm,
+            "meg_tr_mohm": self.meg_tr_mohm,
+            "meg_rg_mohm": self.meg_rg_mohm,
+            "meg_sg_mohm": self.meg_sg_mohm,
+            "meg_tg_mohm": self.meg_tg_mohm,
             "current_r": self.current_r,
             "current_s": self.current_s,
             "current_t": self.current_t,

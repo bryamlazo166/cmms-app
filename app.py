@@ -1393,6 +1393,13 @@ _ENSURE_COLUMNS = [
     ("motor_electrical_tests", "voltage_rs", "FLOAT"),
     ("motor_electrical_tests", "voltage_st", "FLOAT"),
     ("motor_electrical_tests", "voltage_tr", "FLOAT"),
+    # Megado por combinaciones: fase-fase (R-S, S-T, T-R) y fase-tierra (R, S, T)
+    ("motor_electrical_tests", "meg_rs_mohm", "FLOAT"),
+    ("motor_electrical_tests", "meg_st_mohm", "FLOAT"),
+    ("motor_electrical_tests", "meg_tr_mohm", "FLOAT"),
+    ("motor_electrical_tests", "meg_rg_mohm", "FLOAT"),
+    ("motor_electrical_tests", "meg_sg_mohm", "FLOAT"),
+    ("motor_electrical_tests", "meg_tg_mohm", "FLOAT"),
     # Motores electricos: megado (semestral + ad-hoc), corriente y temperatura.
     ("rotative_assets", "is_electric_motor", "BOOLEAN DEFAULT false"),
     ("rotative_assets", "megado_frequency_days", "INTEGER DEFAULT 180"),

@@ -451,11 +451,29 @@ function renderMotList() {
         </div>`).join('');
 }
 
+// Temperatura multipunto: filas dinámicas (punto + °C), prellenadas con los
+// puntos estándar del motor; se pueden añadir puntos adicionales.
+const TEMP_POINTS = ['CARCASA', 'BOBINADO', 'RODAMIENTO_LA', 'RODAMIENTO_LOA', 'BORNERA'];
+function addTempRow(point) {
+    const div = document.createElement('div');
+    div.className = 'temp-row';
+    div.innerHTML = `<input type="text" list="mTempPointsDL" class="tp-point" placeholder="Punto" value="${esc(typeof point === 'string' ? point : '')}">` +
+        `<input type="number" step="0.1" class="tp-val" placeholder="°C" inputmode="decimal">` +
+        `<button type="button" class="tp-del" onclick="this.parentElement.remove()">✕</button>`;
+    $('mTempRows').appendChild(div);
+}
+function resetTempRows() {
+    $('mTempRows').innerHTML = '';
+    TEMP_POINTS.forEach(p => addTempRow(p));
+}
+
 function openMot(id) {
     currentMot = MOTS.find(m => m.id === id);
     if (!currentMot) return;
     clearMsg('motMsg');
-    ['mCurR', 'mCurS', 'mCurT', 'mVrs', 'mVst', 'mVtr', 'mMohm', 'mTemp', 'mNotes'].forEach(i => $(i).value = '');
+    ['mCurR', 'mCurS', 'mCurT', 'mVrs', 'mVst', 'mVtr',
+     'mMegRS', 'mMegST', 'mMegTR', 'mMegRG', 'mMegSG', 'mMegTG', 'mNotes'].forEach(i => $(i).value = '');
+    resetTempRows();
     const m = currentMot;
     $('motHead').innerHTML = `
         <b>${esc(m.name || '')}</b> <span style="opacity:.5">· ${esc(m.code || '')}</span><br>
@@ -489,13 +507,19 @@ async function submitMotorTest() {
             msg('motMsg', false, 'Ingresa al menos una corriente o tensión.'); return;
         }
     } else if (type === 'MEGADO') {
-        body.insulation_mohm = val('mMohm');
+        body.meg_rs_mohm = val('mMegRS'); body.meg_st_mohm = val('mMegST'); body.meg_tr_mohm = val('mMegTR');
+        body.meg_rg_mohm = val('mMegRG'); body.meg_sg_mohm = val('mMegSG'); body.meg_tg_mohm = val('mMegTG');
         body.test_voltage_v = $('mTestV').value;
-        if (body.insulation_mohm == null) { msg('motMsg', false, 'Ingresa el valor de aislamiento en MΩ.'); return; }
+        if ([body.meg_rs_mohm, body.meg_st_mohm, body.meg_tr_mohm,
+             body.meg_rg_mohm, body.meg_sg_mohm, body.meg_tg_mohm].every(v => v == null)) {
+            msg('motMsg', false, 'Ingresa al menos una combinación de megado (fase-fase o fase-tierra).'); return;
+        }
     } else {
-        body.temperature_c = val('mTemp');
-        body.temp_point = $('mTempPoint').value;
-        if (body.temperature_c == null) { msg('motMsg', false, 'Ingresa la temperatura.'); return; }
+        body.temp_readings = [...document.querySelectorAll('#mTempRows .temp-row')].map(row => ({
+            point: row.querySelector('.tp-point').value.trim(),
+            value: row.querySelector('.tp-val').value,
+        })).filter(x => x.value !== '');
+        if (!body.temp_readings.length) { msg('motMsg', false, 'Ingresa al menos una temperatura.'); return; }
     }
     try {
         const r = await fetch(`/api/motors/${currentMot.id}/tests`, {
@@ -508,7 +532,8 @@ async function submitMotorTest() {
         let extra = '';
         if (st === 'ROJO') extra = '<br>🚨 <b>Valor fuera de rango</b> — se generó aviso correctivo automático.';
         else if (st === 'VERDE') extra = '<br>🟢 Valor dentro de rango.';
-        msg('motMsg', true, `✅ Medición registrada en <b>${esc(currentMot.code)}</b>.${extra}`);
+        const n = d.saved_count || 1;
+        msg('motMsg', true, `✅ ${n > 1 ? n + ' mediciones registradas' : 'Medición registrada'} en <b>${esc(currentMot.code)}</b>.${extra}`);
         MOTS = [];  // recargar al volver
         setTimeout(() => nav('electrica'), 1400);
     } catch (e) { msg('motMsg', false, 'Error de red.'); }

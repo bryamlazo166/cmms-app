@@ -1,7 +1,9 @@
 """Módulo Motores Eléctricos.
 
-Megado (resistencia de aislamiento, semestral + ad-hoc), corriente por fase
-(R/S/T) y temperatura de los motores eléctricos de la planta. Los motores son
+Megado (resistencia de aislamiento por combinaciones fase-fase y fase-tierra,
+semestral + ad-hoc), corriente por fase (R/S/T), tensión entre fases
+(R-S/S-T/T-R) y temperatura multipunto de los motores eléctricos de la
+planta. Los motores son
 RotativeAsset marcados con is_electric_motor=True (cubre motores sueltos y
 acoplados: motorreductores, bombas, ventiladores). Los registros se anclan al
 motor para que el historial lo siga cuando se mueve entre taller y equipos.
@@ -141,6 +143,9 @@ def register_motors_routes(app, db, logger, RotativeAsset, MotorElectricalTest,
                     'last_current_r': cur.current_r if cur else None,
                     'last_current_s': cur.current_s if cur else None,
                     'last_current_t': cur.current_t if cur else None,
+                    'last_voltage_rs': cur.voltage_rs if cur else None,
+                    'last_voltage_st': cur.voltage_st if cur else None,
+                    'last_voltage_tr': cur.voltage_tr if cur else None,
                     'last_current_load_pct': load_pct,
                     'last_current_overload': overload_status,
                     'last_temp_date': tem.test_date if tem else None,
@@ -207,6 +212,10 @@ def register_motors_routes(app, db, logger, RotativeAsset, MotorElectricalTest,
                 context=(data.get('context') or 'PROGRAMADO'),
                 insulation_mohm=_f('insulation_mohm'),
                 test_voltage_v=_i('test_voltage_v'),
+                meg_rs_mohm=_f('meg_rs_mohm'), meg_st_mohm=_f('meg_st_mohm'),
+                meg_tr_mohm=_f('meg_tr_mohm'),
+                meg_rg_mohm=_f('meg_rg_mohm'), meg_sg_mohm=_f('meg_sg_mohm'),
+                meg_tg_mohm=_f('meg_tg_mohm'),
                 current_r=_f('current_r'), current_s=_f('current_s'), current_t=_f('current_t'),
                 voltage_rs=_f('voltage_rs'), voltage_st=_f('voltage_st'), voltage_tr=_f('voltage_tr'),
                 temperature_c=_f('temperature_c'),
@@ -217,8 +226,43 @@ def register_motors_routes(app, db, logger, RotativeAsset, MotorElectricalTest,
                 photo_url=(data.get('photo_url') or None),
             )
 
+            # TEMPERATURA multipunto: temp_readings = [{point, value}, ...]
+            # crea un registro por punto (comparten fecha/contexto/notas).
+            extra_tests = []
+            if ttype == 'TEMPERATURA':
+                clean = []
+                for rd in (data.get('temp_readings') or []):
+                    if not isinstance(rd, dict):
+                        continue
+                    try:
+                        v = float(rd.get('value'))
+                    except (TypeError, ValueError):
+                        continue
+                    clean.append(((rd.get('point') or '').strip() or None, v))
+                if clean:
+                    test.temp_point, test.temperature_c = clean[0]
+                    for p, v in clean[1:]:
+                        extra_tests.append(MotorElectricalTest(
+                            rotative_asset_id=asset.id, test_type='TEMPERATURA',
+                            test_date=test_date, context=test.context,
+                            temperature_c=v, temp_point=p,
+                            equipment_id=asset.equipment_id,
+                            executed_by=test.executed_by, notes=test.notes,
+                        ))
+
             value_status = None
+            worst_combo = None
             if ttype == 'MEGADO':
+                # insulation_mohm = el PEOR (mínimo) de las combinaciones medidas
+                combos = [('R-S', test.meg_rs_mohm), ('S-T', test.meg_st_mohm),
+                          ('T-R', test.meg_tr_mohm), ('R-Tierra', test.meg_rg_mohm),
+                          ('S-Tierra', test.meg_sg_mohm), ('T-Tierra', test.meg_tg_mohm)]
+                measured = [(lbl, v) for lbl, v in combos if v is not None]
+                if measured:
+                    lbl, v = min(measured, key=lambda x: x[1])
+                    if test.insulation_mohm is None or v <= test.insulation_mohm:
+                        test.insulation_mohm = v
+                        worst_combo = lbl
                 # Semáforo por valor: aislamiento bajo el mínimo => ROJO
                 if test.insulation_mohm is not None and asset.megado_min_mohm is not None:
                     value_status = 'ROJO' if test.insulation_mohm < float(asset.megado_min_mohm) else 'VERDE'
@@ -239,7 +283,9 @@ def register_motors_routes(app, db, logger, RotativeAsset, MotorElectricalTest,
                         equipment_id=asset.equipment_id, system_id=asset.system_id,
                         component_id=asset.component_id,
                         description=(f"[MEGADO] {asset.code} {asset.name}: aislamiento "
-                                     f"{test.insulation_mohm} MΩ < mínimo {asset.megado_min_mohm} MΩ"),
+                                     f"{test.insulation_mohm} MΩ"
+                                     f"{f' ({worst_combo})' if worst_combo else ''}"
+                                     f" < mínimo {asset.megado_min_mohm} MΩ"),
                         maintenance_type="Correctivo", priority="Alta",
                         status="Pendiente", request_date=dt.date.today().isoformat(),
                         rotative_asset_id=asset.id,
@@ -283,9 +329,12 @@ def register_motors_routes(app, db, logger, RotativeAsset, MotorElectricalTest,
                         test.created_notice_id = notice.id
 
             db.session.add(test)
+            for et in extra_tests:
+                db.session.add(et)
             db.session.commit()
             payload = test.to_dict()
             payload['value_status'] = value_status
+            payload['saved_count'] = 1 + len(extra_tests)
             return jsonify(payload), 201
         except Exception as e:
             db.session.rollback()

@@ -62,6 +62,10 @@
         .dlg-head{padding:14px 18px;border-bottom:1px solid #263545;font-weight:700;color:#5AC8FA;display:flex;justify-content:space-between;align-items:center;}
         .dlg-body{padding:16px 18px;display:grid;gap:10px;}
         .dlg-body .row{display:grid;grid-template-columns:1fr 1fr;gap:10px;}
+        .dlg-body .row3{display:grid;grid-template-columns:1fr 1fr 1fr;gap:10px;}
+        .dlg-body .grp-lbl{font-size:.72rem;color:#7fd0ff;text-transform:uppercase;letter-spacing:.4px;font-weight:700;margin-top:4px;}
+        .temp-row{display:grid;grid-template-columns:1fr 110px 32px;gap:8px;align-items:center;margin-bottom:6px;}
+        .temp-row .tp-del{background:rgba(255,69,58,.12);color:#ff8a80;border:1px solid rgba(255,69,58,.3);border-radius:7px;height:32px;cursor:pointer;}
         .dlg-body label{font-size:.72rem;color:#9ab3d0;display:block;margin-bottom:3px;}
         .dlg-body input,.dlg-body select,.dlg-body textarea{width:100%;background:#0f1319;color:#d5e2f5;border:1px solid #344964;border-radius:7px;padding:7px 9px;font-size:.84rem;}
         .dlg-foot{padding:12px 18px;border-top:1px solid #263545;display:flex;justify-content:flex-end;gap:8px;}
@@ -160,29 +164,49 @@
             </div>
             <!-- MEGADO -->
             <div id="grpMegado" style="display:none;">
-                <div class="row">
-                    <div><label>Aislamiento (MΩ)</label><input type="number" step="0.01" id="tMohm" placeholder="ej: 250"></div>
-                    <div><label>Voltaje de prueba (V)</label><select id="tVolt"><option value="">—</option><option value="250">250</option><option value="500">500</option><option value="1000">1000</option></select></div>
+                <div class="grp-lbl">Megado fase-fase (MΩ)</div>
+                <div class="row3">
+                    <div><label>R-S</label><input type="number" step="0.01" id="tMegRS" placeholder="MΩ"></div>
+                    <div><label>S-T</label><input type="number" step="0.01" id="tMegST" placeholder="MΩ"></div>
+                    <div><label>T-R</label><input type="number" step="0.01" id="tMegTR" placeholder="MΩ"></div>
                 </div>
-                <div><label>Link de foto/informe (opcional)</label><input type="url" id="tPhoto" placeholder="https://drive.google.com/..."></div>
-            </div>
-            <!-- CORRIENTE -->
-            <div id="grpCorriente" style="display:none;">
-                <div class="row">
-                    <div><label>Corriente R (A)</label><input type="number" step="0.01" id="tR"></div>
-                    <div><label>Corriente S (A)</label><input type="number" step="0.01" id="tS"></div>
+                <div class="grp-lbl">Megado fase-tierra (MΩ)</div>
+                <div class="row3">
+                    <div><label>R-Tierra</label><input type="number" step="0.01" id="tMegRG" placeholder="MΩ"></div>
+                    <div><label>S-Tierra</label><input type="number" step="0.01" id="tMegSG" placeholder="MΩ"></div>
+                    <div><label>T-Tierra</label><input type="number" step="0.01" id="tMegTG" placeholder="MΩ"></div>
                 </div>
-                <div class="row">
-                    <div><label>Corriente T (A)</label><input type="number" step="0.01" id="tT"></div>
+                <div class="row" style="margin-top:8px;">
+                    <div><label>Voltaje de prueba (V)</label><select id="tVolt"><option value="">—</option><option value="250">250</option><option value="500">500</option><option value="1000">1000</option><option value="2500">2500</option><option value="5000">5000</option></select></div>
                     <div></div>
                 </div>
+                <div class="muted">Registra las combinaciones que midas (mínimo una). El semáforo evalúa el peor valor.</div>
+                <div><label>Link de foto/informe (opcional)</label><input type="url" id="tPhoto" placeholder="https://drive.google.com/..."></div>
             </div>
-            <!-- TEMPERATURA -->
-            <div id="grpTemp" style="display:none;">
-                <div class="row">
-                    <div><label>Temperatura (°C)</label><input type="number" step="0.1" id="tTemp"></div>
-                    <div><label>Punto</label><select id="tTempPoint"><option value="">—</option><option value="Carcasa">Carcasa</option><option value="Bobinado">Bobinado</option><option value="Rodamiento DE">Rodamiento DE</option><option value="Rodamiento NDE">Rodamiento NDE</option></select></div>
+            <!-- CORRIENTE + TENSIÓN -->
+            <div id="grpCorriente" style="display:none;">
+                <div class="grp-lbl">Corriente por fase (A)</div>
+                <div class="row3">
+                    <div><label>R</label><input type="number" step="0.01" id="tR" placeholder="A"></div>
+                    <div><label>S</label><input type="number" step="0.01" id="tS" placeholder="A"></div>
+                    <div><label>T</label><input type="number" step="0.01" id="tT" placeholder="A"></div>
                 </div>
+                <div class="grp-lbl">Tensión entre fases (V)</div>
+                <div class="row3">
+                    <div><label>R-S</label><input type="number" step="0.1" id="tVrs" placeholder="V"></div>
+                    <div><label>S-T</label><input type="number" step="0.1" id="tVst" placeholder="V"></div>
+                    <div><label>T-R</label><input type="number" step="0.1" id="tVtr" placeholder="V"></div>
+                </div>
+            </div>
+            <!-- TEMPERATURA (multipunto) -->
+            <div id="grpTemp" style="display:none;">
+                <div class="grp-lbl">Temperatura por punto (°C)</div>
+                <div class="muted">Completa los puntos medidos; deja en blanco los demás. Puedes añadir puntos adicionales.</div>
+                <div id="tTempRows"></div>
+                <button type="button" class="btn sm" onclick="addTempRow()"><i class="fas fa-plus"></i> Añadir punto</button>
+                <datalist id="tempPointsDL">
+                    <option value="CARCASA"><option value="BOBINADO"><option value="RODAMIENTO_LA"><option value="RODAMIENTO_LOA"><option value="BORNERA">
+                </datalist>
             </div>
             <div class="row">
                 <div><label>Ejecutó</label><input type="text" id="tBy" placeholder="Nombre"></div>
@@ -345,7 +369,9 @@ function renderTable() {
         if (r.last_current_r != null || r.last_current_s != null || r.last_current_t != null) {
             const c = r.last_current_overload === 'ROJO' ? '#ff6b61' : r.last_current_overload === 'AMARILLO' ? '#FFA834' : '#30D158';
             const pct = r.last_current_load_pct != null ? `<span style="color:${c};font-weight:700;"> · ${r.last_current_load_pct}% In</span>` : '';
-            curHtml = `${_num(r.last_current_r)} / ${_num(r.last_current_s)} / ${_num(r.last_current_t)}${pct}<div class="muted">${r.last_current_date || ''}</div>`;
+            const volt = (r.last_voltage_rs != null || r.last_voltage_st != null || r.last_voltage_tr != null)
+                ? `<div class="muted">V: ${_num(r.last_voltage_rs)} / ${_num(r.last_voltage_st)} / ${_num(r.last_voltage_tr)}</div>` : '';
+            curHtml = `${_num(r.last_current_r)} / ${_num(r.last_current_s)} / ${_num(r.last_current_t)}${pct}${volt}<div class="muted">${r.last_current_date || ''}</div>`;
         }
         const tem = r.last_temperature_c != null ? `${r.last_temperature_c} °C<div class="muted">${r.last_temp_date || ''}</div>` : '<span class="muted">—</span>';
         const loc = r.equipment_tag ? `<b style="color:#FF9F0A;">${r.equipment_tag}</b> ${r.equipment_name || ''}<div class="muted">${r.area_name || '-'}</div>` : '<span class="muted">sin instalar</span>';
@@ -373,38 +399,63 @@ function renderTable() {
 
 // ── Registrar prueba ─────────────────────────────────────────────────
 let _testMotorId = null, _testType = null;
+const TEMP_POINTS = ['CARCASA','BOBINADO','RODAMIENTO_LA','RODAMIENTO_LOA','BORNERA'];
+function addTempRow(point) {
+    const div = document.createElement('div');
+    div.className = 'temp-row';
+    div.innerHTML = `<input list="tempPointsDL" class="tp-point" placeholder="Punto (ej: CARCASA)" value="${point || ''}">
+        <input type="number" step="0.1" class="tp-val" placeholder="°C">
+        <button type="button" class="tp-del" title="Quitar punto" onclick="this.parentElement.remove()">✕</button>`;
+    document.getElementById('tTempRows').appendChild(div);
+}
+function resetTempRows() {
+    document.getElementById('tTempRows').innerHTML = '';
+    TEMP_POINTS.forEach(p => addTempRow(p));
+}
 function openTest(id, type) {
     _testMotorId = id; _testType = type;
     const m = _allRows.find(r => r.id === id);
-    document.getElementById('testTitle').textContent = (type === 'MEGADO' ? 'Registrar megado' : type === 'CORRIENTE' ? 'Registrar corriente' : 'Registrar temperatura');
+    document.getElementById('testTitle').textContent = (type === 'MEGADO' ? 'Registrar megado' : type === 'CORRIENTE' ? 'Registrar corriente + tensión' : 'Registrar temperaturas');
     document.getElementById('testMotorLbl').textContent = m ? `${m.code} · ${m.name || ''}` : '';
     document.getElementById('tDate').value = todayISO();
     document.getElementById('tContext').value = 'PROGRAMADO';
-    ['tMohm','tVolt','tR','tS','tT','tTemp','tTempPoint','tBy','tNotes','tPhoto'].forEach(i => { const el = document.getElementById(i); if (el) el.value = ''; });
+    ['tMegRS','tMegST','tMegTR','tMegRG','tMegSG','tMegTG','tVolt','tR','tS','tT','tVrs','tVst','tVtr','tBy','tNotes','tPhoto'].forEach(i => { const el = document.getElementById(i); if (el) el.value = ''; });
+    resetTempRows();
     document.getElementById('grpMegado').style.display = type === 'MEGADO' ? 'block' : 'none';
     document.getElementById('grpCorriente').style.display = type === 'CORRIENTE' ? 'block' : 'none';
     document.getElementById('grpTemp').style.display = type === 'TEMPERATURA' ? 'block' : 'none';
     document.getElementById('testModal').showModal();
 }
 async function submitTest() {
+    const gv = i => document.getElementById(i).value || null;
     const body = {
         test_type: _testType,
         test_date: document.getElementById('tDate').value || todayISO(),
         context: document.getElementById('tContext').value,
-        executed_by: document.getElementById('tBy').value || null,
-        notes: document.getElementById('tNotes').value || null,
+        executed_by: gv('tBy'),
+        notes: gv('tNotes'),
     };
     if (_testType === 'MEGADO') {
-        body.insulation_mohm = document.getElementById('tMohm').value || null;
-        body.test_voltage_v = document.getElementById('tVolt').value || null;
-        body.photo_url = document.getElementById('tPhoto').value || null;
+        body.meg_rs_mohm = gv('tMegRS'); body.meg_st_mohm = gv('tMegST'); body.meg_tr_mohm = gv('tMegTR');
+        body.meg_rg_mohm = gv('tMegRG'); body.meg_sg_mohm = gv('tMegSG'); body.meg_tg_mohm = gv('tMegTG');
+        body.test_voltage_v = gv('tVolt');
+        body.photo_url = gv('tPhoto');
+        if ([body.meg_rs_mohm, body.meg_st_mohm, body.meg_tr_mohm, body.meg_rg_mohm, body.meg_sg_mohm, body.meg_tg_mohm].every(v => v == null)) {
+            alert('Ingresa al menos una combinación de megado (fase-fase o fase-tierra).'); return;
+        }
     } else if (_testType === 'CORRIENTE') {
-        body.current_r = document.getElementById('tR').value || null;
-        body.current_s = document.getElementById('tS').value || null;
-        body.current_t = document.getElementById('tT').value || null;
+        body.current_r = gv('tR'); body.current_s = gv('tS'); body.current_t = gv('tT');
+        body.voltage_rs = gv('tVrs'); body.voltage_st = gv('tVst'); body.voltage_tr = gv('tVtr');
+        if ([body.current_r, body.current_s, body.current_t, body.voltage_rs, body.voltage_st, body.voltage_tr].every(v => v == null)) {
+            alert('Ingresa al menos una corriente o tensión.'); return;
+        }
     } else {
-        body.temperature_c = document.getElementById('tTemp').value || null;
-        body.temp_point = document.getElementById('tTempPoint').value || null;
+        const readings = [...document.querySelectorAll('#tTempRows .temp-row')].map(row => ({
+            point: row.querySelector('.tp-point').value.trim(),
+            value: row.querySelector('.tp-val').value,
+        })).filter(x => x.value !== '');
+        if (!readings.length) { alert('Ingresa al menos una temperatura.'); return; }
+        body.temp_readings = readings;
     }
     try {
         const r = await fetch(`/api/motors/${_testMotorId}/tests`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
@@ -428,9 +479,24 @@ async function openHistory(id) {
         if (!tests.length) { document.getElementById('histBody').innerHTML = '<div class="muted">Sin registros.</div>'; return; }
         document.getElementById('histBody').innerHTML = tests.map(t => {
             let val = '';
-            if (t.test_type === 'MEGADO') val = `${t.insulation_mohm != null ? t.insulation_mohm + ' MΩ' : ''}${t.test_voltage_v ? ' @ ' + t.test_voltage_v + 'V' : ''}${t.status ? ' · ' + t.status : ''}`;
-            else if (t.test_type === 'CORRIENTE') val = `R:${_num(t.current_r)} S:${_num(t.current_s)} T:${_num(t.current_t)} A`;
-            else val = `${t.temperature_c != null ? t.temperature_c + ' °C' : ''}${t.temp_point ? ' (' + t.temp_point + ')' : ''}`;
+            if (t.test_type === 'MEGADO') {
+                const ff = [], ft = [];
+                if (t.meg_rs_mohm != null) ff.push('R-S ' + t.meg_rs_mohm);
+                if (t.meg_st_mohm != null) ff.push('S-T ' + t.meg_st_mohm);
+                if (t.meg_tr_mohm != null) ff.push('T-R ' + t.meg_tr_mohm);
+                if (t.meg_rg_mohm != null) ft.push('R ' + t.meg_rg_mohm);
+                if (t.meg_sg_mohm != null) ft.push('S ' + t.meg_sg_mohm);
+                if (t.meg_tg_mohm != null) ft.push('T ' + t.meg_tg_mohm);
+                const parts = [];
+                if (ff.length) parts.push('F-F: ' + ff.join(' / '));
+                if (ft.length) parts.push('F-Tierra: ' + ft.join(' / '));
+                const combos = parts.length ? parts.join(' · ') + ' MΩ · peor ' : '';
+                val = `${combos}${t.insulation_mohm != null ? t.insulation_mohm + ' MΩ' : ''}${t.test_voltage_v ? ' @ ' + t.test_voltage_v + 'V' : ''}${t.status ? ' · ' + t.status : ''}`;
+            } else if (t.test_type === 'CORRIENTE') {
+                val = `R:${_num(t.current_r)} S:${_num(t.current_s)} T:${_num(t.current_t)} A`;
+                if (t.voltage_rs != null || t.voltage_st != null || t.voltage_tr != null)
+                    val += ` · V: ${_num(t.voltage_rs)}/${_num(t.voltage_st)}/${_num(t.voltage_tr)}`;
+            } else val = `${t.temperature_c != null ? t.temperature_c + ' °C' : ''}${t.temp_point ? ' (' + t.temp_point + ')' : ''}`;
             return `<div class="hist-row">
                 <span class="chip ${t.test_type}">${t.test_type}</span>
                 <b style="margin-left:6px;">${t.test_date}</b>
@@ -477,10 +543,10 @@ async function saveManage() {
 function exportCSV() {
     if (!_allRows.length) { alert('Sin datos.'); return; }
     const rows = _filtered();
-    const headers = ['Codigo','Motor','Categoria','Estado','Equipo','Area','Megado_estado','Ultimo_megado','MOhm','Prox_megado','Corriente_R','Corriente_S','Corriente_T','Fecha_corriente','Temperatura_C','Fecha_temp'];
+    const headers = ['Codigo','Motor','Categoria','Estado','Equipo','Area','Megado_estado','Ultimo_megado','MOhm_peor','Prox_megado','Corriente_R','Corriente_S','Corriente_T','Tension_RS','Tension_ST','Tension_TR','Fecha_corriente','Temperatura_C','Fecha_temp'];
     const esc = v => '"' + String(v == null ? '' : v).replace(/"/g, '""') + '"';
     const lines = [headers.map(esc).join(',')];
-    rows.forEach(r => lines.push([r.code, r.name, r.category, r.status, r.equipment_tag, r.area_name, r.megado_status, r.last_megado_date, r.last_megado_mohm, r.next_megado_due, r.last_current_r, r.last_current_s, r.last_current_t, r.last_current_date, r.last_temperature_c, r.last_temp_date].map(esc).join(',')));
+    rows.forEach(r => lines.push([r.code, r.name, r.category, r.status, r.equipment_tag, r.area_name, r.megado_status, r.last_megado_date, r.last_megado_mohm, r.next_megado_due, r.last_current_r, r.last_current_s, r.last_current_t, r.last_voltage_rs, r.last_voltage_st, r.last_voltage_tr, r.last_current_date, r.last_temperature_c, r.last_temp_date].map(esc).join(',')));
     const blob = new Blob(['﻿' + lines.join('\r\n')], { type: 'text/csv;charset=utf-8;' });
     const a = document.createElement('a'); a.href = URL.createObjectURL(blob); a.download = 'motores_electricos.csv'; a.click(); URL.revokeObjectURL(a.href);
 }

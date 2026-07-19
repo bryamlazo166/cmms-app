@@ -81,6 +81,12 @@
         input:focus,select:focus,textarea:focus{outline:none;border-color:var(--blue)}
         .row2{display:grid;grid-template-columns:1fr 1fr;gap:10px}
         .row3{display:grid;grid-template-columns:1fr 1fr 1fr;gap:10px}
+        .hint{color:var(--mut);font-size:.78rem;margin:6px 0 2px;line-height:1.4}
+        .temp-row{display:grid;grid-template-columns:1fr 96px 42px;gap:8px;margin-bottom:8px;align-items:center}
+        .temp-row .tp-del{background:rgba(255,69,58,.14);color:#ff8a80;border:1px solid rgba(255,69,58,.35);
+             border-radius:10px;height:44px;font-size:1rem;cursor:pointer}
+        .add-row{width:100%;background:var(--card2);border:1px dashed var(--line);border-radius:12px;
+             color:var(--mut);padding:11px;font-size:.88rem;font-weight:600;cursor:pointer;margin-top:2px}
         .seg{display:flex;gap:8px;flex-wrap:wrap}
         .seg .opt{flex:1;text-align:center;border:1px solid var(--line);background:var(--card);
              color:var(--mut);border-radius:12px;padding:12px 6px;cursor:pointer;
@@ -265,21 +271,31 @@
             </div>
 
             <div id="motFormMegado" style="display:none">
-                <div class="row2">
-                    <div><label>Aislamiento (MΩ)</label>
-                        <input type="number" id="mMohm" step="0.1" min="0" placeholder="500" inputmode="decimal"></div>
-                    <div><label>Tensión de prueba (V)</label>
-                        <select id="mTestV"><option value="500">500</option><option value="1000" selected>1000</option><option value="2500">2500</option><option value="5000">5000</option></select></div>
+                <label>Megado fase-fase (MΩ)</label>
+                <div class="row3">
+                    <input type="number" id="mMegRS" step="0.1" min="0" placeholder="R-S" inputmode="decimal">
+                    <input type="number" id="mMegST" step="0.1" min="0" placeholder="S-T" inputmode="decimal">
+                    <input type="number" id="mMegTR" step="0.1" min="0" placeholder="T-R" inputmode="decimal">
                 </div>
+                <label>Megado fase-tierra (MΩ)</label>
+                <div class="row3">
+                    <input type="number" id="mMegRG" step="0.1" min="0" placeholder="R" inputmode="decimal">
+                    <input type="number" id="mMegSG" step="0.1" min="0" placeholder="S" inputmode="decimal">
+                    <input type="number" id="mMegTG" step="0.1" min="0" placeholder="T" inputmode="decimal">
+                </div>
+                <div class="hint">Registra las combinaciones que midas (mínimo una). El semáforo usa el peor valor.</div>
+                <label>Tensión de prueba (V)</label>
+                <select id="mTestV"><option value="250">250</option><option value="500">500</option><option value="1000" selected>1000</option><option value="2500">2500</option><option value="5000">5000</option></select>
             </div>
 
             <div id="motFormTemp" style="display:none">
-                <div class="row2">
-                    <div><label>Temperatura (°C)</label>
-                        <input type="number" id="mTemp" step="0.1" placeholder="65" inputmode="decimal"></div>
-                    <div><label>Punto medido</label>
-                        <select id="mTempPoint"><option>CARCASA</option><option>RODAMIENTO_LA</option><option>RODAMIENTO_LOA</option><option>BORNERA</option></select></div>
-                </div>
+                <label>Temperatura por punto (°C)</label>
+                <div class="hint">Completa los puntos medidos; deja en blanco los demás.</div>
+                <div id="mTempRows"></div>
+                <button type="button" class="add-row" onclick="addTempRow()"><i class="fas fa-plus"></i> Añadir punto</button>
+                <datalist id="mTempPointsDL">
+                    <option value="CARCASA"><option value="BOBINADO"><option value="RODAMIENTO_LA"><option value="RODAMIENTO_LOA"><option value="BORNERA">
+                </datalist>
             </div>
 
             <label>Notas (opcional)</label>
