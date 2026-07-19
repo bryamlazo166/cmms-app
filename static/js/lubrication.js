@@ -188,6 +188,7 @@ function renderPoints(points) {
 // pasan los DEMAS filtros, para que las opciones siempre sean alcanzables.
 const _TABLE_FILTERS = [
     { id: 'tfArea',      key: p => p.area_name || '' },
+    { id: 'tfLine',      key: p => p.line_name || '' },
     { id: 'tfEquipment', key: p => p.equipment_name || '' },
     { id: 'tfSystem',    key: p => p.system_name || '' },
     { id: 'tfComponent', key: p => p.component_name || '' },
@@ -279,7 +280,7 @@ function updateTableFilterOptions() {
 }
 
 function clearTableFilters() {
-    ['tfSearch', 'tfArea', 'tfEquipment', 'tfSystem', 'tfComponent',
+    ['tfSearch', 'tfArea', 'tfLine', 'tfEquipment', 'tfSystem', 'tfComponent',
      'tfLubricant', 'tfFreq', 'tfSema', 'tfDue'].forEach(id => {
         const el = q(id);
         if (el) el.value = '';
@@ -671,7 +672,7 @@ async function loadExecutions() {
 function exportPendingExcel() {
     const params = new URLSearchParams({ scope: 'pending' });
     const map = {
-        tfArea: 'area', tfEquipment: 'equipment', tfSystem: 'system',
+        tfArea: 'area', tfLine: 'line', tfEquipment: 'equipment', tfSystem: 'system',
         tfComponent: 'component', tfLubricant: 'lubricant', tfFreq: 'freq',
         tfSema: 'sema', tfDue: 'due', tfSearch: 'search', fResponsible: 'responsible',
     };
@@ -862,7 +863,7 @@ async function boot() {
         q('btnExec').addEventListener('click', registerExecution);
         if (q('fPointSearch')) q('fPointSearch').addEventListener('input', renderPointSelect);
         // Filtros de la lista de puntos
-        ['tfArea', 'tfEquipment', 'tfSystem', 'tfComponent', 'tfLubricant',
+        ['tfArea', 'tfLine', 'tfEquipment', 'tfSystem', 'tfComponent', 'tfLubricant',
          'tfFreq', 'tfSema', 'tfDue'].forEach(id => {
             if (q(id)) q(id).addEventListener('change', renderPointsView);
         });

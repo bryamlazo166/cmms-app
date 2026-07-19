@@ -1539,6 +1539,18 @@ async function searchForExecution() {
     document.getElementById('exec-ot-code').innerText = ot.code || `OT-${ot.id}`;
     document.getElementById('exec-desc').innerText = ot.description || 'Sin descripcion';
 
+    // Trabajo realizado: el comentario del cierre queda visible al revisar
+    // la OT (auditoria/historial). Solo aparece si existe.
+    const execDoneBlock = document.getElementById('exec-executed-block');
+    if (execDoneBlock) {
+        if (ot.execution_comments) {
+            execDoneBlock.style.display = 'block';
+            document.getElementById('exec-executed-text').textContent = ot.execution_comments;
+        } else {
+            execDoneBlock.style.display = 'none';
+        }
+    }
+
     const badge = document.getElementById('exec-status');
     badge.innerText = ot.status;
     badge.className = 'status-badge ' + (ot.status === 'En Progreso' ? 'status-progress' : ot.status === 'Cerrada' ? 'status-closed' : 'status-open');
