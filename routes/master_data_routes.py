@@ -265,6 +265,94 @@ def register_master_data_routes(
             db.session.rollback()
             return jsonify({"error": str(e)}), 500
 
+    @app.route('/api/equipments/<int:id>/service-status', methods=['POST'])
+    def set_equipment_service_status(id):
+        """Estado operativo del equipo (overhaul / parada larga).
+
+        Body: { in_service: bool, reason?: str, mark_lubricated?: bool }
+
+        - in_service=false: marca el equipo FUERA DE SERVICIO. Sus preventivos
+          (lubricacion, inspecciones, monitoreo, ronda electrica) quedan
+          suspendidos de forma DERIVADA — no se toca el is_active de cada
+          punto — y salen del % de cumplimiento.
+        - in_service=true: reactiva. Si mark_lubricated=true, registra una
+          ejecucion CAMBIO_TOTAL con fecha de hoy en cada punto de lubricacion
+          activo del equipo (trazable en el historial como lubricacion de
+          overhaul) para que el cronograma arranque limpio.
+        """
+        denied = _require_perm('activos_config', 'edit')
+        if denied:
+            return denied
+        from datetime import date as _date
+        from models import (LubricationPoint, LubricationExecution,
+                            MonitoringPoint, InspectionRoute, RotativeAsset)
+        from utils.schedule_helpers import _calculate_lubrication_schedule
+
+        eq = Equipment.query.get(id)
+        if not eq:
+            return jsonify({"error": "Equipo no encontrado"}), 404
+        try:
+            data = request.json or {}
+            in_service = bool(data.get('in_service', True))
+            today = _date.today().isoformat()
+
+            # Conteo de preventivos afectados (solo informativo, para la UI)
+            affected = {
+                'lubricacion': LubricationPoint.query.filter_by(
+                    equipment_id=eq.id, is_active=True).count(),
+                'monitoreo': MonitoringPoint.query.filter_by(
+                    equipment_id=eq.id, is_active=True).count(),
+                'inspecciones': InspectionRoute.query.filter_by(
+                    equipment_id=eq.id, is_active=True).count(),
+                'motores': RotativeAsset.query.filter_by(
+                    equipment_id=eq.id, is_active=True,
+                    is_electric_motor=True).count(),
+            }
+
+            lubricated = 0
+            if not in_service:
+                eq.in_service = False
+                eq.out_of_service_since = today
+                eq.out_of_service_reason = (data.get('reason') or '').strip()[:200] or None
+            else:
+                eq.in_service = True
+                eq.out_of_service_since = None
+                eq.out_of_service_reason = None
+                # Opcional: registrar lubricacion general de overhaul para que
+                # los puntos no aparezcan como "atrasados N dias" falsos.
+                if data.get('mark_lubricated'):
+                    executed_by = (getattr(current_user, 'full_name', None)
+                                   or getattr(current_user, 'username', None)
+                                   or 'Reactivacion de equipo')
+                    points = LubricationPoint.query.filter_by(
+                        equipment_id=eq.id, is_active=True).all()
+                    for p in points:
+                        db.session.add(LubricationExecution(
+                            point_id=p.id,
+                            execution_date=today,
+                            action_type='CAMBIO_TOTAL',
+                            quantity_unit=p.quantity_unit or 'L',
+                            executed_by=executed_by,
+                            comments='Lubricacion general en overhaul (reactivacion del equipo)',
+                        ))
+                        p.last_service_date = today
+                        next_due, semaphore = _calculate_lubrication_schedule(
+                            p.last_service_date, p.frequency_days, p.warning_days)
+                        p.next_due_date = next_due
+                        p.semaphore_status = semaphore
+                        lubricated += 1
+
+            db.session.commit()
+            return jsonify({
+                "ok": True,
+                "equipment": eq.to_dict(),
+                "affected": affected,
+                "lubricated_points": lubricated,
+            })
+        except Exception as e:
+            db.session.rollback()
+            return jsonify({"error": str(e)}), 500
+
     @app.route('/api/systems', methods=['GET', 'POST'])
     def handle_systems():
         if request.method == 'POST':

@@ -174,6 +174,21 @@ function updateKPIs(d) {
     q('kpiRed').textContent = fnum(d.red);
     q('kpiPending').textContent = fnum(d.pending);
     q('kpiCompliance').textContent = `${fnum(d.compliance_percent, 1)}%`;
+    // Puntos suspendidos por equipo fuera de servicio (overhaul): fuera del
+    // denominador del cumplimiento. Nota bajo el total para que se sepa.
+    let susEl = q('kpiSuspendedNote');
+    if (d.suspended > 0) {
+        if (!susEl) {
+            susEl = document.createElement('div');
+            susEl.id = 'kpiSuspendedNote';
+            susEl.style.cssText = 'font-size:.68rem;color:#FF9F0A;margin-top:2px;';
+            q('kpiTotal').parentElement.appendChild(susEl);
+        }
+        susEl.textContent = `⏸ ${d.suspended} suspendido${d.suspended === 1 ? '' : 's'} (equipo F/S)`;
+        susEl.title = 'Puntos de equipos fuera de servicio (overhaul): no cuentan en el % de cumplimiento';
+    } else if (susEl) {
+        susEl.remove();
+    }
 }
 
 function renderPoints(points) {
@@ -319,14 +334,23 @@ function renderPointsTable() {
     };
     tbody.innerHTML = points.map(p => {
         const inactive = p.is_active === false;
-        const rowStyle = inactive ? 'opacity:0.45;' : '';
-        const semaphore = inactive ? 'INACTIVO' : (p.semaphore_status || 'PENDIENTE');
-        const pillClass = inactive ? 'INACTIVO' : (p.semaphore_status || '');
+        // Suspension derivada: el equipo esta fuera de servicio (overhaul).
+        // El punto conserva su is_active; solo se marca y no cuenta en KPIs.
+        const suspended = !inactive && p.equipment_in_service === false;
+        const rowStyle = (inactive || suspended) ? 'opacity:0.45;' : '';
+        const oosTitle = suspended
+            ? `Equipo fuera de servicio${p.equipment_oos_since ? ' desde ' + p.equipment_oos_since : ''}${p.equipment_oos_reason ? ': ' + p.equipment_oos_reason : ''}`
+            : '';
+        const semaPill = inactive
+            ? '<span class="pill INACTIVO">INACTIVO</span>'
+            : suspended
+                ? `<span style="background:rgba(255,159,10,.15);color:#FF9F0A;border:1px solid rgba(255,159,10,.4);padding:2px 8px;border-radius:10px;font-size:.72rem;font-weight:700;white-space:nowrap;" title="${_esc(oosTitle)}">⏸ EQUIPO F/S</span>`
+                : `<span class="pill ${p.semaphore_status || ''}">${p.semaphore_status || 'PENDIENTE'}</span>`;
         const toggleIcon = inactive ? 'fa-rotate-left' : 'fa-ban';
         const toggleTitle = inactive ? 'Reactivar' : 'Desactivar';
         const toggleClass = inactive ? 'btn-reactivate' : 'btn-del';
         const party = p.effective_responsible_party || 'INTERNO';
-        return `<tr style="${rowStyle}">
+        return `<tr style="${rowStyle}"${suspended ? ` title="${_esc(oosTitle)}"` : ''}>
             <td>${p.code || '-'}</td>
             <td>${p.name || '-'}</td>
             <td>${p.equipment_name || '-'}</td>
@@ -336,7 +360,7 @@ function renderPointsTable() {
             <td>${p.frequency_days || '-'} d</td>
             <td>${p.last_service_date || '-'}</td>
             <td>${p.next_due_date || '-'}</td>
-            <td><span class="pill ${pillClass}">${semaphore}</span></td>
+            <td>${semaPill}</td>
             <td>${respBadge(party)}</td>
             <td>
                 ${inactive ? '' : `<button class="btn-icon btn-edit" title="Editar" onclick="openEditModal(${p.id})"><i class="fas fa-pen"></i></button>`}

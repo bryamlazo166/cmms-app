@@ -248,6 +248,16 @@ class Equipment(db.Model):
     # /flujo-planta y calcular dependencias serie/paralelo para indicadores.
     process_order: Mapped[int | None] = mapped_column(Integer, nullable=True)
     feeds_into_equipment_id: Mapped[int | None] = mapped_column(ForeignKey('equipments.id'), nullable=True)
+    # Estado operativo. Si False el equipo esta FUERA DE SERVICIO (overhaul,
+    # parada larga): sus preventivos (lubricacion, inspecciones, monitoreo,
+    # ronda electrica) quedan SUSPENDIDOS de forma DERIVADA — sin tocar el
+    # is_active individual de cada punto, para que al reactivar el equipo
+    # cada punto vuelva exactamente al estado que tenia — y salen del
+    # denominador de los % de cumplimiento. No confundir con include_in_kpi
+    # (que gobierna indicadores de produccion/disponibilidad).
+    in_service: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
+    out_of_service_since: Mapped[str | None] = mapped_column(String(20), nullable=True)
+    out_of_service_reason: Mapped[str | None] = mapped_column(String(200), nullable=True)
 
     line = relationship("Line", back_populates="equipments")
     systems = relationship("System", back_populates="equipment", cascade="all, delete-orphan")
@@ -265,7 +275,10 @@ class Equipment(db.Model):
                 "default_provider_id": self.default_provider_id,
                 "default_provider_name": self.default_provider.name if self.default_provider else None,
                 "process_order": self.process_order,
-                "feeds_into_equipment_id": self.feeds_into_equipment_id}
+                "feeds_into_equipment_id": self.feeds_into_equipment_id,
+                "in_service": self.in_service,
+                "out_of_service_since": self.out_of_service_since,
+                "out_of_service_reason": self.out_of_service_reason}
 
 
 # Aristas adicionales del flujo de planta. La conexion principal va en
@@ -1061,6 +1074,11 @@ class LubricationPoint(db.Model):
             "next_due_date": self.next_due_date,
             "semaphore_status": self.semaphore_status,
             "is_active": self.is_active,
+            # Suspension derivada: False cuando el equipo esta fuera de
+            # servicio (overhaul). El punto conserva su is_active propio.
+            "equipment_in_service": self.equipment.in_service if self.equipment else True,
+            "equipment_oos_reason": self.equipment.out_of_service_reason if self.equipment else None,
+            "equipment_oos_since": self.equipment.out_of_service_since if self.equipment else None,
             "responsible_party_override": self.responsible_party_override,
             "provider_id_override": self.provider_id_override,
             # Responsable efectivo (resuelve override -> default del equipo -> INTERNO)

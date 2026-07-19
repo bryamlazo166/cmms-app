@@ -262,8 +262,14 @@ function renderList(elementId, items, onClick, entityType) {
         div.style.justifyContent = 'space-between';
         div.style.alignItems = 'center';
 
+        const outOfService = entityType === 'Equipment' && item.in_service === false;
         const span = document.createElement('span');
         span.textContent = item.name + (item.tag ? ` (${item.tag})` : '');
+        if (outOfService) {
+            span.textContent += ' — ⏸ FUERA DE SERVICIO';
+            span.style.color = '#FF9F0A';
+            span.title = `Fuera de servicio${item.out_of_service_since ? ' desde ' + item.out_of_service_since : ''}${item.out_of_service_reason ? ': ' + item.out_of_service_reason : ''}. Sus preventivos (lubricacion, ronda electrica...) estan suspendidos y no cuentan en el % de cumplimiento.`;
+        }
         span.style.cursor = 'pointer';
         span.style.flexGrow = '1';
         span.onclick = () => {
@@ -272,6 +278,27 @@ function renderList(elementId, items, onClick, entityType) {
             div.classList.add('selected');
             onClick(item.id);
         };
+
+        // Equipo: boton de estado operativo (overhaul / parada larga).
+        // Suspende en cascada los preventivos sin tocar cada punto.
+        if (entityType === 'Equipment') {
+            const svcBtn = document.createElement('button');
+            svcBtn.innerHTML = outOfService ? '▶️' : '⏸️';
+            svcBtn.title = outOfService
+                ? 'Reactivar equipo (vuelve al plan de preventivos)'
+                : 'Poner FUERA DE SERVICIO (overhaul): suspende sus lubricaciones, inspecciones y ronda electrica sin borrar nada';
+            svcBtn.style.background = 'transparent';
+            svcBtn.style.border = 'none';
+            svcBtn.style.cursor = 'pointer';
+            svcBtn.onclick = (e) => {
+                e.stopPropagation();
+                toggleEquipmentService(item);
+            };
+            div.appendChild(span);
+            div.appendChild(svcBtn);
+        } else {
+            div.appendChild(span);
+        }
 
         const btn = document.createElement('button');
         btn.innerHTML = '📋';
@@ -284,11 +311,55 @@ function renderList(elementId, items, onClick, entityType) {
             window.location.href = `/avisos?create=true&type=${entityType}&id=${item.id}`;
         };
 
-        div.appendChild(span);
         div.appendChild(btn);
 
         list.appendChild(div);
     });
+}
+
+// Estado operativo del equipo: fuera de servicio (overhaul) <-> operativo.
+async function toggleEquipmentService(item) {
+    if (item.in_service !== false) {
+        const reason = prompt(
+            `Poner "${item.name}" FUERA DE SERVICIO.\n\n` +
+            'Sus preventivos (lubricacion, inspecciones, monitoreo y ronda electrica) ' +
+            'quedaran SUSPENDIDOS y no contaran en el % de cumplimiento. ' +
+            'No se borra ni desactiva nada: al reactivar el equipo todo vuelve solo.\n\n' +
+            'Motivo (ej. "Overhaul anual"):');
+        if (reason === null) return;
+        const res = await fetch(`/api/equipments/${item.id}/service-status`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ in_service: false, reason: reason })
+        });
+        const d = await res.json();
+        if (!res.ok) return alert('Error: ' + (d.error || 'desconocido'));
+        const a = d.affected || {};
+        alert(`"${item.name}" quedo FUERA DE SERVICIO.\n\nPreventivos suspendidos:\n` +
+            `- Lubricacion: ${a.lubricacion || 0} puntos\n` +
+            `- Inspecciones: ${a.inspecciones || 0}\n` +
+            `- Monitoreo: ${a.monitoreo || 0}\n` +
+            `- Motores (ronda electrica): ${a.motores || 0}`);
+    } else {
+        if (!confirm(`Reactivar "${item.name}"?\n\nSus preventivos vuelven al plan y al % de cumplimiento.`)) return;
+        const markLub = confirm(
+            'Se lubricaron los puntos durante el overhaul?\n\n' +
+            'ACEPTAR: registra hoy una lubricacion general (CAMBIO TOTAL) en todos los ' +
+            'puntos activos del equipo — queda en el historial como "overhaul" y el ' +
+            'cronograma arranca limpio.\n\n' +
+            'CANCELAR: no registra nada — los puntos conservan sus fechas y si estan ' +
+            'vencidos apareceran como pendientes (atraso real).');
+        const res = await fetch(`/api/equipments/${item.id}/service-status`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ in_service: true, mark_lubricated: markLub })
+        });
+        const d = await res.json();
+        if (!res.ok) return alert('Error: ' + (d.error || 'desconocido'));
+        alert(`"${item.name}" REACTIVADO.` +
+            (markLub ? `\n\nLubricacion de overhaul registrada en ${d.lubricated_points || 0} puntos.` : ''));
+    }
+    if (state.selectedLineId) loadEquipments(state.selectedLineId);
 }
 
 function clearColumnsFrom(stepIdx) {

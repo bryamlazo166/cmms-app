@@ -1383,6 +1383,12 @@ _ENSURE_COLUMNS = [
     ("lubrication_points", "freq_optimized_at", "VARCHAR(20)"),
     ("monitoring_points",  "freq_optimized_at", "VARCHAR(20)"),
     ("inspection_routes",  "freq_optimized_at", "VARCHAR(20)"),
+    # Estado operativo del equipo (overhaul/parada larga). Suspende en
+    # cascada DERIVADA los preventivos del equipo (lubricacion, ronda
+    # electrica, etc.) sin tocar el is_active de cada punto.
+    ("equipments", "in_service", "BOOLEAN NOT NULL DEFAULT TRUE"),
+    ("equipments", "out_of_service_since", "VARCHAR(20)"),
+    ("equipments", "out_of_service_reason", "VARCHAR(200)"),
     # Ronda electrica movil: tension de linea entre fases (V R-S, S-T, T-R)
     ("motor_electrical_tests", "voltage_rs", "FLOAT"),
     ("motor_electrical_tests", "voltage_st", "FLOAT"),

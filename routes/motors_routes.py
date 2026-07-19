@@ -87,29 +87,36 @@ def register_motors_routes(app, db, logger, RotativeAsset, MotorElectricalTest,
 
             rows = []
             summary = {'vencido': 0, 'proximo': 0, 'al_dia': 0, 'pendiente': 0, 'en_taller': 0,
-                       'm_vencido': 0, 'm_proximo': 0, 'm_aldia': 0, 'm_pendiente': 0}
+                       'm_vencido': 0, 'm_proximo': 0, 'm_aldia': 0, 'm_pendiente': 0,
+                       'suspendido': 0}
             for m in motors:
                 next_due, mstatus = _megado_schedule(m)
                 next_meas, measure_status = _measure_schedule(m)
                 meg = last_by.get((m.id, 'MEGADO'))
                 cur = last_by.get((m.id, 'CORRIENTE'))
                 tem = last_by.get((m.id, 'TEMPERATURA'))
-                if mstatus == 'ROJO':
-                    summary['vencido'] += 1
-                elif mstatus == 'AMARILLO':
-                    summary['proximo'] += 1
-                elif mstatus == 'VERDE':
-                    summary['al_dia'] += 1
+                # Suspension derivada: equipo fuera de servicio (overhaul).
+                # El motor se lista (marcado) pero no cuenta en el summary.
+                eq_in_service = m.equipment.in_service if m.equipment else True
+                if not eq_in_service:
+                    summary['suspendido'] += 1
                 else:
-                    summary['pendiente'] += 1
-                if measure_status == 'ROJO':
-                    summary['m_vencido'] += 1
-                elif measure_status == 'AMARILLO':
-                    summary['m_proximo'] += 1
-                elif measure_status == 'VERDE':
-                    summary['m_aldia'] += 1
-                else:
-                    summary['m_pendiente'] += 1
+                    if mstatus == 'ROJO':
+                        summary['vencido'] += 1
+                    elif mstatus == 'AMARILLO':
+                        summary['proximo'] += 1
+                    elif mstatus == 'VERDE':
+                        summary['al_dia'] += 1
+                    else:
+                        summary['pendiente'] += 1
+                    if measure_status == 'ROJO':
+                        summary['m_vencido'] += 1
+                    elif measure_status == 'AMARILLO':
+                        summary['m_proximo'] += 1
+                    elif measure_status == 'VERDE':
+                        summary['m_aldia'] += 1
+                    else:
+                        summary['m_pendiente'] += 1
                 if (m.status or '') in ('En Taller', 'Taller'):
                     summary['en_taller'] += 1
                 nom, nom_est = _nominal_current(m)
@@ -119,6 +126,7 @@ def register_motors_routes(app, db, logger, RotativeAsset, MotorElectricalTest,
                 rows.append({
                     'id': m.id, 'code': m.code, 'name': m.name, 'category': m.category,
                     'status': m.status,
+                    'equipment_in_service': eq_in_service,
                     'area_name': m.area.name if m.area else None,
                     'line_name': m.line.name if m.line else None,
                     'equipment_tag': m.equipment.tag if m.equipment else None,

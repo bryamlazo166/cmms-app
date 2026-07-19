@@ -255,7 +255,9 @@ async function loadLubs() {
         const r = await fetch('/api/lubrication/points');
         const d = await r.json();
         if (!r.ok) { $('lubList').innerHTML = `<div class="empty">${esc(d.error || 'Sin acceso a lubricación')}</div>`; return; }
-        LUBS = d || [];
+        // Equipos fuera de servicio (overhaul): sus puntos no son trabajo
+        // pendiente real — no se muestran en campo.
+        LUBS = (d || []).filter(p => p.equipment_in_service !== false);
         renderLubList();
         setBadge('badgeLub', LUBS.filter(p => p.semaphore_status === 'ROJO' || p.semaphore_status === 'VENCIDO').length);
     } catch (e) { $('lubList').innerHTML = '<div class="empty">Error de red.</div>'; }
@@ -381,7 +383,8 @@ async function loadMots() {
         const r = await fetch('/api/motors');
         const d = await r.json();
         if (!r.ok) { $('motList').innerHTML = `<div class="empty">${esc(d.error || 'Sin acceso a motores')}</div>`; return; }
-        MOTS = d.rows || [];
+        // Motores de equipos fuera de servicio (overhaul): fuera de la ronda.
+        MOTS = (d.rows || []).filter(m => m.equipment_in_service !== false);
         renderMotList();
         setBadge('badgeMot', MOTS.filter(m =>
             m.megado_status === 'ROJO' || m.measure_status === 'ROJO').length);

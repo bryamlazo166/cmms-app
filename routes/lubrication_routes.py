@@ -619,6 +619,11 @@ def register_lubrication_routes(
             if scope != 'history' and not show_inactive:
                 points_query = points_query.filter_by(is_active=True)
             points = [p for p in points_query.all() if _point_matches_filters(p, args)]
+            # Pendientes: excluir puntos suspendidos por equipo fuera de
+            # servicio (overhaul) — no son trabajo pendiente real.
+            if scope != 'history':
+                points = [p for p in points
+                          if (p.equipment.in_service if p.equipment else True)]
 
             def taxonomy_cols(p):
                 return {
@@ -837,6 +842,7 @@ def register_lubrication_routes(
                 'red': 0,
                 'pending': 0,
                 'due_now': 0,
+                'suspended': 0,
                 'compliance_percent': 100.0
             }
             today = dt.date.today()
@@ -850,8 +856,14 @@ def register_lubrication_routes(
                 )
                 due_date = _parse_date_flexible(next_due)
 
-                # KPIs only count active points
-                if p.is_active:
+                # Suspension derivada: el equipo esta fuera de servicio
+                # (overhaul) — el punto NO cuenta en el % de cumplimiento.
+                eq_in_service = p.equipment.in_service if p.equipment else True
+
+                # KPIs only count active points (y con equipo en servicio)
+                if p.is_active and not eq_in_service:
+                    kpi['suspended'] += 1
+                elif p.is_active:
                     active_count += 1
                     if semaphore == 'VERDE':
                         kpi['green'] += 1
@@ -870,6 +882,7 @@ def register_lubrication_routes(
                     'code': p.code,
                     'name': p.name,
                     'is_active': p.is_active,
+                    'equipment_in_service': eq_in_service,
                     'equipment_id': p.equipment_id,
                     'equipment_name': p.equipment.name if p.equipment else None,
                     'equipment_tag': p.equipment.tag if p.equipment else None,
