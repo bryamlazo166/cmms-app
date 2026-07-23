@@ -1310,6 +1310,9 @@ def _create_default_admin():
 _ENSURE_COLUMNS = [
     ("work_orders", "caused_downtime", "BOOLEAN DEFAULT false"),
     ("work_orders", "downtime_hours", "FLOAT"),
+    # Tipo de paro: true=planificado, false=averia, NULL=derivar del tipo
+    # de mantenimiento / parada vinculada (ver WorkOrder.downtime_planned).
+    ("work_orders", "downtime_planned", "BOOLEAN"),
     ("work_orders", "source_type", "VARCHAR(20)"),
     ("work_orders", "source_id", "INTEGER"),
     ("maintenance_notices", "source_type", "VARCHAR(20)"),

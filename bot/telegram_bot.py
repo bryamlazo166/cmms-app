@@ -298,6 +298,7 @@ _NOTICE_EDITABLE = {'description', 'criticality', 'priority', 'maintenance_type'
 _OT_EDITABLE = {'description', 'failure_mode', 'maintenance_type', 'technician_id',
                 'scheduled_date', 'estimated_duration', 'tech_count',
                 'execution_comments', 'caused_downtime', 'downtime_hours',
+                'downtime_planned',
                 'report_required', 'report_due_date', 'report_url', 'status',
                 'real_start_date', 'real_end_date',
                 'equipment_id', 'system_id', 'component_id', 'line_id', 'area_id'}

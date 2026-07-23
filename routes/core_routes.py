@@ -542,7 +542,7 @@ def register_core_routes(app, db, logger, app_build_tag,
             groups = defaultdict(lambda: {
                 'failures': 0, 'total_repair_h': 0, 'downtime_h': 0,
                 'preventive': 0, 'corrective': 0, 'ots': [],
-                'downtime_events': 0,
+                'downtime_events': 0, 'planned_down_h': 0,
             })
 
             for ot in ots_in_window:
@@ -567,14 +567,19 @@ def register_core_routes(app, db, logger, app_build_tag,
                 mtype = (ot.maintenance_type or '').lower()
                 is_corrective = 'correct' in mtype
 
-                # En modo INHERENTE: solo correctivos en averias cuentan como
-                # falla y aportan downtime. Los preventivos se contabilizan
-                # para ratio P/C pero no afectan disponibilidad inherente.
+                # En modo INHERENTE: solo averias (paro NO planificado) cuentan
+                # como falla y aportan downtime. Manda el campo explicito
+                # downtime_planned de la OT; si es NULL se deriva: correctivo
+                # sin parada vinculada (o con parada por averia) = averia.
                 shutdown_id = getattr(ot, 'shutdown_id', None)
-                qualifies_inherent = (
-                    is_corrective and
-                    (not shutdown_id or shutdown_id in unplanned_shutdown_ids)
-                )
+                dp = getattr(ot, 'downtime_planned', None)
+                if dp is not None:
+                    qualifies_inherent = not dp
+                else:
+                    qualifies_inherent = (
+                        is_corrective and
+                        (not shutdown_id or shutdown_id in unplanned_shutdown_ids)
+                    )
 
                 if is_corrective:
                     g['corrective'] += 1
@@ -592,19 +597,25 @@ def register_core_routes(app, db, logger, app_build_tag,
                         repair_h = round((re - rs).total_seconds() / 3600, 2)
                 g['total_repair_h'] += (repair_h or 0)
 
-                # Downtime — en modo inherente solo cuentan correctivos en averias.
+                # Downtime — en modo inherente solo cuentan las averias; el
+                # paro planificado se acumula aparte para descontarlo de la
+                # base de tiempo (T - Pp) de la disponibilidad inherente.
                 count_downtime = (mode == 'operativa') or qualifies_inherent
                 dh = getattr(ot, 'downtime_hours', None)
-                if dh and count_downtime:
-                    g['downtime_h'] += dh
-                    g['downtime_events'] += 1
-                elif getattr(ot, 'caused_downtime', False) and repair_h and count_downtime:
-                    g['downtime_h'] += repair_h
-                    g['downtime_events'] += 1
-                elif is_corrective and repair_h and count_downtime:
+                eff_dh = 0
+                if dh:
+                    eff_dh = dh
+                elif getattr(ot, 'caused_downtime', False) and repair_h:
+                    eff_dh = repair_h
+                elif is_corrective and repair_h:
                     # Default: corrective OTs count as downtime
-                    g['downtime_h'] += repair_h
-                    g['downtime_events'] += 1
+                    eff_dh = repair_h
+                if eff_dh:
+                    if count_downtime:
+                        g['downtime_h'] += eff_dh
+                        g['downtime_events'] += 1
+                    elif not qualifies_inherent:
+                        g['planned_down_h'] += eff_dh
 
                 g['ots'].append({
                     'code': ot.code,
@@ -620,17 +631,22 @@ def register_core_routes(app, db, logger, app_build_tag,
             # ── Calculate KPIs per group ──────────────────────────────────
             result = []
             totals = {'failures': 0, 'repair_h': 0, 'downtime_h': 0,
-                       'preventive': 0, 'corrective': 0}
+                       'preventive': 0, 'corrective': 0, 'planned_down_h': 0}
 
             for key, g in groups.items():
                 n_fail = g['failures']
                 t_repair = g['total_repair_h']
                 t_down = g['downtime_h']
-                t_up = max(calendar_hours - t_down, 0)
+                # Base de tiempo: operativa usa las horas calendario completas;
+                # inherente descuenta el paro planificado (ISO 14224).
+                base_h = calendar_hours
+                if mode == 'inherente':
+                    base_h = max(calendar_hours - g['planned_down_h'], 0)
+                t_up = max(base_h - t_down, 0)
 
                 mtbf = round(t_up / n_fail, 1) if n_fail > 0 else None
                 mttr = round(t_repair / n_fail, 1) if n_fail > 0 else None
-                availability = round((t_up / calendar_hours) * 100, 1) if calendar_hours > 0 else 100
+                availability = round((t_up / base_h) * 100, 1) if base_h > 0 else 100
                 # Reliability R(t) = e^(-t/MTBF) for mission time = frequency (e.g. 168h = 1 week)
                 reliability = None
                 if mtbf and mtbf > 0:
@@ -665,6 +681,7 @@ def register_core_routes(app, db, logger, app_build_tag,
                 totals['downtime_h'] += t_down
                 totals['preventive'] += g['preventive']
                 totals['corrective'] += g['corrective']
+                totals['planned_down_h'] += g['planned_down_h']
 
             result.sort(key=lambda x: x['availability'] if x['availability'] is not None else 999)
 
@@ -672,7 +689,11 @@ def register_core_routes(app, db, logger, app_build_tag,
             tf = totals['failures']
             tr = totals['repair_h']
             td = totals['downtime_h']
-            tu = max(calendar_hours - td, 0)
+            # En inherente la base global tambien descuenta el paro planificado
+            base_glob = calendar_hours
+            if mode == 'inherente':
+                base_glob = max(calendar_hours - totals['planned_down_h'], 0)
+            tu = max(base_glob - td, 0)
 
             global_kpis = {
                 'calendar_hours': calendar_hours,
@@ -683,7 +704,7 @@ def register_core_routes(app, db, logger, app_build_tag,
                 'total_corrective': totals['corrective'],
                 'global_mtbf': round(tu / tf, 1) if tf > 0 else None,
                 'global_mttr': round(tr / tf, 1) if tf > 0 else None,
-                'global_availability': round((tu / calendar_hours) * 100, 1) if calendar_hours > 0 else 100,
+                'global_availability': round((tu / base_glob) * 100, 1) if base_glob > 0 else 100,
                 'global_downtime_h': round(td, 1),
                 'ratio_preventive': round((totals['preventive'] / (totals['preventive'] + totals['corrective'])) * 100, 1) if (totals['preventive'] + totals['corrective']) > 0 else 0,
             }

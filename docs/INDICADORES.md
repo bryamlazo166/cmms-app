@@ -14,9 +14,10 @@ de Indicadores (drill-down por Área → Línea → Equipo).
 
 | Indicador | Fórmula | Unidad | Donde vive |
 |---|---|---|---|
-| MTBF | `uptime / n_fallas` | horas | [routes/indicators_routes.py:51](routes/indicators_routes.py#L51) |
-| MTTR | `downtime_total / n_fallas` | horas | [routes/indicators_routes.py:52](routes/indicators_routes.py#L52) |
-| Disponibilidad | `(uptime / total_horas) × 100` | % | [routes/indicators_routes.py:53](routes/indicators_routes.py#L53) |
+| MTBF | `uptime / n_fallas` | horas | [routes/indicators_routes.py](routes/indicators_routes.py) (`_calc_indicators`) |
+| MTTR | `downtime_total / n_fallas` | horas | [routes/indicators_routes.py](routes/indicators_routes.py) (`_calc_indicators`) |
+| Disp. Operativa | `(T − Pp − Pn) / T × 100` | % | [routes/indicators_routes.py](routes/indicators_routes.py) (`_calc_indicators`) |
+| Disp. Inherente | `(T − Pp − Pn) / (T − Pp) × 100` | % | [routes/indicators_routes.py](routes/indicators_routes.py) (`_calc_indicators`) |
 | Confiabilidad R(t) | `e^(−t/MTBF) × 100` | % | [routes/indicators_routes.py:55-58](routes/indicators_routes.py#L55-L58) |
 | Disp. ponderada (área) | `Σ(disp_eq × cap_eq) / Σ(cap_eq)` | % | [routes/indicators_routes.py:159-177](routes/indicators_routes.py#L159-L177) |
 | Disp. en serie (área) | `∏(disp_eq_i)` | % | [routes/indicators_routes.py:139-153](routes/indicators_routes.py#L139-L153) |
@@ -79,10 +80,35 @@ MTTR = 24 / 3 = 8 h
 
 **Definición**: porcentaje del tiempo que el equipo estuvo operativo.
 
+Todo el downtime registrado se clasifica en **paro planificado (Pp)** o
+**paro no planificado / avería (Pn)** y con eso se calculan SIEMPRE las dos
+disponibilidades (`T` = horas del periodo = días × 24):
+
 ```
-Disponibilidad = (uptime / total_horas) × 100
-uptime = total_horas - Σ downtime_hours
+Disponibilidad OPERATIVA  = (T − Pp − Pn) / T        × 100
+Disponibilidad INHERENTE  = (T − Pp − Pn) / (T − Pp) × 100
 ```
+
+- **Operativa**: lo que producción realmente tuvo disponible. La castiga
+  TODO paro (correctivos, preventivos con parada, paradas programadas).
+- **Inherente** (ISO 14224): salud del activo. Solo la castigan las
+  averías; el tiempo de mantenimiento planificado se excluye de la base
+  de tiempo. Siempre se cumple `inherente ≥ operativa`, y la brecha entre
+  ambas es el costo del mantenimiento planificado.
+
+**Clasificación del paro** (`WorkOrder.downtime_planned`):
+1. Si la OT tiene el campo explícito `downtime_planned` (se marca en el
+   modal de cierre como "Tipo de paro") → manda ese valor.
+2. Si es NULL y la OT está vinculada a una parada (`shutdown_id`) → manda
+   `Shutdown.is_planned` de la parada consolidada.
+3. Si es NULL y no hay parada → se deriva del tipo de mantenimiento:
+   correctivo = avería; preventivo/predictivo/mejora = planificado.
+
+> **Regla de registro**: las horas de paro se registran SIEMPRE que el
+> equipo dejó de producir, aunque el trabajo haya sido programado. Que un
+> paro sea planificado no lo hace invisible — lo hace clasificable. Un
+> correctivo programado se registra con sus horas y tipo de paro
+> "Planificado": baja la operativa pero no la inherente.
 
 - En el módulo de Indicadores se calcula a tres niveles:
   1. **Equipo**: fórmula directa de arriba.
@@ -287,6 +313,7 @@ Estados posibles de `WeeklyPlanItem.status`:
 |---|---|
 | `caused_downtime` | OT que detuvo el equipo (true/false). Solo estos suman al MTBF/MTTR/Disponibilidad. |
 | `downtime_hours` | Horas que el equipo estuvo detenido por esta OT. Si NULL pero caused_downtime=true, usa `real_duration`. |
+| `downtime_planned` | Tipo de paro: true = planificado (solo baja la Disp. Operativa), false = avería (baja ambas). NULL = se deriva del tipo de mantenimiento / parada vinculada. |
 | `scheduled_date` | Fecha planificada (define la ventana del cumplimiento). |
 | `real_start_date` / `real_end_date` | Cuándo se ejecutó realmente. |
 | `real_duration` | Horas-hombre reales (no necesariamente downtime). |
@@ -306,11 +333,12 @@ Estados posibles de `WeeklyPlanItem.status`:
 3. **Identifica fallas**: OTs con `caused_downtime = true` y
    `downtime_hours > 0`.
 4. **Suma**: `downtime_total = Σ downtime_hours`.
-5. **Calcula**:
-   - `total_horas = días × 24` (a nivel equipo, sin filtros de jornada)
-   - `uptime = total_horas − downtime_total`
+5. **Calcula** (separando `Pp` = paro planificado, `Pn` = averías):
+   - `total_horas (T) = días × 24` (a nivel equipo, sin filtros de jornada)
+   - `uptime = T − Pp − Pn`
    - `MTBF = uptime / n_fallas`
-   - `Disp = uptime / total_horas × 100`
+   - `Disp Operativa = uptime / T × 100`
+   - `Disp Inherente = uptime / (T − Pp) × 100`
 6. **Compara** contra el dashboard. Si difieren > 1%, revisa que estés
    excluyendo OTs sin `caused_downtime` y respetando el filtro
    `include_in_kpi`.

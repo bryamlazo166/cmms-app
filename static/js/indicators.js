@@ -124,8 +124,18 @@ function renderBreadcrumb() {
 }
 
 function renderKpiStrip(ind) {
+    // Mostrar SIEMPRE las dos disponibilidades: la del modo activo en grande
+    // y la otra como referencia debajo (la brecha entre ambas = costo del
+    // mantenimiento planificado).
+    const isInh = getIndMode() === 'inherente';
+    let sub = '';
+    if (isInh && ind.availability_operativa != null) {
+        sub = `Operativa: ${ind.availability_operativa}%`;
+    } else if (!isInh && ind.availability_inherente != null) {
+        sub = `Inherente: ${ind.availability_inherente}%`;
+    }
     document.getElementById('kpiStrip').innerHTML = `
-        <div class="kpi-item avail"><div class="label">${availLabel()}</div><div class="value">${ind.availability}<span class="unit">%</span></div></div>
+        <div class="kpi-item avail"><div class="label">${availLabel()}</div><div class="value">${ind.availability}<span class="unit">%</span></div>${sub ? `<div class="sub">${sub}</div>` : ''}</div>
         <div class="kpi-item mtbf"><div class="label">MTBF</div><div class="value">${ind.mtbf}<span class="unit">h</span></div></div>
         <div class="kpi-item mttr"><div class="label">MTTR</div><div class="value">${ind.mttr}<span class="unit">h</span></div></div>
         <div class="kpi-item rel"><div class="label">Confiabilidad</div><div class="value">${ind.reliability}<span class="unit">%</span></div></div>
@@ -160,14 +170,20 @@ function renderAreasChart(data) {
     const totalOts = areas.reduce((s, a) => s + (a.total_ots || 0), 0);
     const totalDown = areas.reduce((s, a) => s + (a.downtime_hours || 0), 0);
     const totalFail = areas.reduce((s, a) => s + (a.failure_count || 0), 0);
-    const avgAvail = areas.length ? (areas.reduce((s, a) => s + a.availability, 0) / areas.length) : 100;
+    const avgKey = k => areas.length ? round2(areas.reduce((s, a) => s + (a[k] != null ? a[k] : 100), 0) / areas.length) : 100;
     const globalMtbf = totalFail > 0 ? round2((data.period.hours * areas.length - totalDown) / totalFail) : data.period.hours;
     const globalMttr = totalFail > 0 ? round2(totalDown / totalFail) : 0;
-    renderKpiStrip({ availability: round2(avgAvail), mtbf: globalMtbf, mttr: globalMttr, reliability: round2(Math.exp(-data.period.hours / Math.max(globalMtbf, 1)) * 100) });
+    renderKpiStrip({
+        availability: avgKey('availability'),
+        availability_operativa: avgKey('availability_operativa'),
+        availability_inherente: avgKey('availability_inherente'),
+        mtbf: globalMtbf, mttr: globalMttr,
+        reliability: round2(Math.exp(-data.period.hours / Math.max(globalMtbf, 1)) * 100),
+    });
 
     const modeNote = getIndMode() === 'inherente'
-        ? '🔬 Modo INHERENTE (ISO 14224): solo correctivos sobre averias cuentan como falla — KPI de salud del activo.'
-        : '⚙️ Modo OPERATIVA: cuenta TODO downtime (planificado + averias) — KPI de utilizacion.';
+        ? '🔬 INHERENTE (ISO 14224): (T − paro planificado − averías) / (T − paro planificado). Solo las averías la castigan; el mantenimiento planificado sale de la base — salud del activo.'
+        : '⚙️ OPERATIVA: (T − paro planificado − averías) / T. Descuenta TODO el paro sobre las horas calendario — lo que producción realmente tuvo disponible.';
     document.getElementById('chartTitle').textContent = `Indicadores por Área — ${start} a ${end}`;
     document.getElementById('chartMethod').textContent = modeNote + ' Click en una barra para ver detalle. Cocción/Secado: ponderado por capacidad. Molino: cálculo en serie.';
 
@@ -228,9 +244,11 @@ function renderEquipmentsChart(data) {
     // KPIs del área
     const totalDown = equips.reduce((s, e) => s + (e.downtime_hours || 0), 0);
     const totalFail = equips.reduce((s, e) => s + (e.failure_count || 0), 0);
-    const avgAvail = equips.length ? (equips.reduce((s, e) => s + e.availability, 0) / equips.length) : 100;
+    const avgEq = k => equips.length ? round2(equips.reduce((s, e) => s + (e[k] != null ? e[k] : 100), 0) / equips.length) : 100;
     renderKpiStrip({
-        availability: round2(avgAvail),
+        availability: avgEq('availability'),
+        availability_operativa: avgEq('availability_operativa'),
+        availability_inherente: avgEq('availability_inherente'),
         mtbf: totalFail > 0 ? round2((data.period.hours * equips.length - totalDown) / totalFail) : data.period.hours,
         mttr: totalFail > 0 ? round2(totalDown / totalFail) : 0,
         reliability: round2(Math.exp(-data.period.hours / Math.max(data.period.hours, 1)) * 100),
@@ -309,7 +327,13 @@ function renderEquipmentsChart(data) {
 function renderFailures(data) {
     document.getElementById('chartPanel').querySelector('.chart-box').style.display = 'none';
     document.getElementById('chartTitle').textContent = `${data.equipment_tag} — ${data.equipment_name}`;
-    document.getElementById('chartMethod').textContent = data.capacity ? `Capacidad: ${data.capacity.toLocaleString()} TM` : '';
+    const methodParts = [];
+    if (data.capacity) methodParts.push(`Capacidad: ${data.capacity.toLocaleString()} TM`);
+    if (data.downtime_planned_hours != null) {
+        methodParts.push(`Paro planificado: ${data.downtime_planned_hours}h · Paro por averías: ${data.downtime_unplanned_hours}h`);
+        methodParts.push(`Disp. Operativa: ${data.availability_operativa}% · Disp. Inherente: ${data.availability_inherente}%`);
+    }
+    document.getElementById('chartMethod').textContent = methodParts.join('  |  ');
 
     renderKpiStrip(data);
 
@@ -329,11 +353,18 @@ function renderFailures(data) {
         <div class="failure-row head"><div>OT</div><div>Descripción</div><div>Tipo</div><div>Downtime</div><div>Estado</div></div>
         ${allOts.map(ot => {
             const dh = ot.downtime_hours_calc || 0;
-            const color = dh > 0 ? '#FF453A' : '#30D158';
+            // Clasificacion del paro: campo explicito o derivada del tipo
+            const planned = ot.downtime_planned != null
+                ? !!ot.downtime_planned
+                : !/correct/i.test(ot.maintenance_type || '');
+            const tipoParo = dh > 0
+                ? `<br><span style="font-size:.72em;font-weight:700;color:${planned ? '#FF9F0A' : '#FF453A'};">${planned ? 'paro planificado' : 'avería'}</span>`
+                : '';
+            const color = dh > 0 ? (planned ? '#FF9F0A' : '#FF453A') : '#30D158';
             return `<div class="failure-row">
                 <div style="font-weight:700;color:#5ac8fa;">${ot.code || 'OT-' + ot.id}</div>
                 <div style="color:#d5e2f5;">${ot.description || '-'}</div>
-                <div style="color:#9ab0cb;">${ot.maintenance_type || '-'}</div>
+                <div style="color:#9ab0cb;">${ot.maintenance_type || '-'}${tipoParo}</div>
                 <div style="color:${color};font-weight:700;">${dh > 0 ? dh + 'h' : '-'}</div>
                 <div style="color:#30D158;">${ot.status || '-'}</div>
             </div>`;

@@ -53,6 +53,17 @@ def register_indicators_routes(app, db, logger, WorkOrder, Area, Line, Equipment
             return {}
         return {s.id: s for s in Shutdown.query.filter(Shutdown.id.in_(sh_ids)).all()}
 
+    def _ot_downtime_planned(ot):
+        """True si el paro de la OT se considera PLANIFICADO.
+        Prioridad: campo explicito downtime_planned de la OT; si es NULL se
+        deriva del tipo de mantenimiento (correctivo → no planificado; el
+        resto — preventivo, predictivo, mejora — → planificado)."""
+        dp = ot.get('downtime_planned')
+        if dp is not None:
+            return bool(dp)
+        mt = (ot.get('maintenance_type') or '').strip().lower()
+        return mt not in ('correctivo', 'correctiva', 'corrective')
+
     def _calc_indicators(ots, total_hours, shutdown_map=None,
                          mode='operativa', unplanned_shutdown_ids=None):
         """Calcula MTBF, MTTR, Disponibilidad, Confiabilidad para un conjunto de OTs.
@@ -63,26 +74,23 @@ def register_indicators_routes(app, db, logger, WorkOrder, Area, Line, Equipment
         Esto evita inflar artificialmente el MTTR/Indisponibilidad cuando se
         aprovecha una parada para hacer múltiples mejorías.
 
-        mode: 'operativa' (default) cuenta TODO downtime (planificado + averias).
-              'inherente' cuenta solo correctivos y paradas NO planificadas
-              (averias puras) — KPI de salud del activo según ISO 14224.
+        Todo el downtime se clasifica en PLANIFICADO (Pp) o NO PLANIFICADO (Pn)
+        segun WorkOrder.downtime_planned / Shutdown.is_planned, y con eso se
+        calculan SIEMPRE ambas disponibilidades (T = horas del periodo):
+            operativa = (T - Pp - Pn) / T          → lo que produccion tuvo
+            inherente = (T - Pp - Pn) / (T - Pp)   → salud del activo
+                        (ISO 14224: el mtto planificado sale de la base)
+
+        mode elige que juego de KPIs (MTBF/MTTR/fallas/availability) se expone
+        en las claves principales: 'operativa' usa todo el downtime;
+        'inherente' solo las averias.
         """
         shutdown_map = shutdown_map or {}
         unplanned_shutdown_ids = unplanned_shutdown_ids or set()
         is_inherent = (str(mode).lower() == 'inherente')
 
-        def _qualifies_inherent(ot):
-            """OT cuenta como falla inherente si es correctiva Y
-            (no esta vinculada a parada O esta vinculada a parada NO planificada)."""
-            mt = (ot.get('maintenance_type') or '').strip().lower()
-            if mt not in ('correctivo', 'correctiva', 'corrective'):
-                return False
-            sid = ot.get('shutdown_id')
-            if not sid:
-                return True
-            return sid in unplanned_shutdown_ids
-
-        # Paso 1: extraer todas las OTs con downtime > 0 (lista cruda para detalle)
+        # Paso 1: extraer todas las OTs con downtime > 0 (lista cruda para
+        # detalle), clasificando cada una como paro planificado o averia.
         failures_raw = []
         for ot in ots:
             dh = 0
@@ -91,9 +99,6 @@ def register_indicators_routes(app, db, logger, WorkOrder, Area, Line, Equipment
             elif ot.get('real_duration') and ot.get('caused_downtime'):
                 dh = float(ot['real_duration'])
             if dh <= 0:
-                continue
-            # Filtro de modo inherente: solo correctivos en averias.
-            if is_inherent and not _qualifies_inherent(ot):
                 continue
             failures_raw.append({
                 'id': ot.get('id'),
@@ -107,6 +112,7 @@ def register_indicators_routes(app, db, logger, WorkOrder, Area, Line, Equipment
                 'equipment_tag': ot.get('equipment_tag', ''),
                 'shutdown_id': ot.get('shutdown_id'),
                 'equipment_id': ot.get('equipment_id'),
+                'downtime_planned': _ot_downtime_planned(ot),
             })
 
         # Paso 2: consolidar OTs que pertenecen a la misma parada (mismo equipo).
@@ -128,33 +134,61 @@ def register_indicators_routes(app, db, logger, WorkOrder, Area, Line, Equipment
             # Preferir duración real de la parada; si no se conoce, usar el MAX
             # del downtime registrado en las OTs (NO la suma, asumimos paralelismo)
             dh = sh_dur if sh_dur > 0 else max(f['downtime_hours'] for f in group)
+            # Clasificacion del grupo: manda la bandera de la parada; si no
+            # esta cargada, cae al set de paradas no planificadas.
+            if sh is not None:
+                grp_planned = bool(getattr(sh, 'is_planned', True))
+            else:
+                grp_planned = sh_id not in unplanned_shutdown_ids
             consolidated.append({
                 'id': group[0]['id'],
                 'code': (sh.code if sh and sh.code else f'PP-{sh_id}'),
                 'description': (sh.name if sh else f'Parada {sh_id}') + f' — {len(group)} OT(s) consolidada(s)',
                 'downtime_hours': round(dh, 2),
-                'maintenance_type': 'Parada Programada',
+                'maintenance_type': 'Parada Programada' if grp_planned else 'Parada por Avería',
                 'status': 'Cerrada',
                 'scheduled_date': group[0].get('scheduled_date'),
                 'equipment_name': group[0].get('equipment_name', ''),
                 'equipment_tag': group[0].get('equipment_tag', ''),
                 'shutdown_id': sh_id,
                 'equipment_id': eq_id,
+                'downtime_planned': grp_planned,
                 'consolidated_count': len(group),
                 'consolidated_ot_ids': [f['id'] for f in group],
                 'consolidated_raw_total': round(sum(f['downtime_hours'] for f in group), 2),
             })
 
-        n_failures = len(consolidated)
-        total_downtime = sum(f['downtime_hours'] for f in consolidated)
-        uptime = max(0, total_hours - total_downtime)
+        # Paso 3: separar paro planificado (Pp) y no planificado (Pn) y
+        # calcular AMBAS disponibilidades sobre el mismo uptime real.
+        down_planned = sum(f['downtime_hours'] for f in consolidated if f['downtime_planned'])
+        down_unplanned = sum(f['downtime_hours'] for f in consolidated if not f['downtime_planned'])
+        uptime = max(0, total_hours - down_planned - down_unplanned)
+        inherent_base = max(0.0, total_hours - down_planned)
 
-        mtbf = round(uptime / n_failures, 2) if n_failures > 0 else round(total_hours, 2)
+        avail_op = round((uptime / total_hours) * 100, 2) if total_hours > 0 else 100
+        avail_inh = round((uptime / inherent_base) * 100, 2) if inherent_base > 0 else 100.0
+
+        # KPIs del modo elegido: en inherente solo las averias son "fallas" y
+        # la base temporal excluye el mantenimiento planificado.
+        if is_inherent:
+            mode_failures = [f for f in consolidated if not f['downtime_planned']]
+            mode_raw = [f for f in failures_raw if not f['downtime_planned']]
+            base_hours = inherent_base
+            availability = avail_inh
+        else:
+            mode_failures = consolidated
+            mode_raw = failures_raw
+            base_hours = total_hours
+            availability = avail_op
+
+        n_failures = len(mode_failures)
+        total_downtime = sum(f['downtime_hours'] for f in mode_failures)
+
+        mtbf = round(uptime / n_failures, 2) if n_failures > 0 else round(base_hours, 2)
         mttr = round(total_downtime / n_failures, 2) if n_failures > 0 else 0
-        availability = round((uptime / total_hours) * 100, 2) if total_hours > 0 else 100
-        # Confiabilidad R(t) = e^(-t/MTBF) para t = periodo analizado
-        if mtbf > 0 and total_hours > 0:
-            reliability = round(math.exp(-total_hours / mtbf) * 100, 2)
+        # Confiabilidad R(t) = e^(-t/MTBF) para t = horas base del modo
+        if mtbf > 0 and base_hours > 0:
+            reliability = round(math.exp(-base_hours / mtbf) * 100, 2)
         else:
             reliability = round(math.exp(0) * 100, 2) if n_failures == 0 else 0
 
@@ -162,13 +196,18 @@ def register_indicators_routes(app, db, logger, WorkOrder, Area, Line, Equipment
             'mtbf': mtbf,
             'mttr': mttr,
             'availability': availability,
+            'availability_operativa': avail_op,
+            'availability_inherente': avail_inh,
             'reliability': reliability,
             'total_hours': total_hours,
+            'base_hours': round(base_hours, 2),
             'downtime_hours': round(total_downtime, 2),
+            'downtime_planned_hours': round(down_planned, 2),
+            'downtime_unplanned_hours': round(down_unplanned, 2),
             'failure_count': n_failures,
             'total_ots': len(ots),
-            'failures': sorted(consolidated, key=lambda f: f['downtime_hours'], reverse=True),
-            'failures_detail': sorted(failures_raw, key=lambda f: f['downtime_hours'], reverse=True),
+            'failures': sorted(mode_failures, key=lambda f: f['downtime_hours'], reverse=True),
+            'failures_detail': sorted(mode_raw, key=lambda f: f['downtime_hours'], reverse=True),
             'consolidated_groups': len(groups),
         }
 
@@ -197,7 +236,9 @@ def register_indicators_routes(app, db, logger, WorkOrder, Area, Line, Equipment
             window_days = max(1, (end - start).days + 1)
             total_hours = window_days * 24
             mode = _read_mode()
-            unplanned_ids = _load_unplanned_shutdown_ids() if mode == 'inherente' else set()
+            # Siempre se cargan: la clasificacion planificado/averia se
+            # necesita en ambos modos para calcular las dos disponibilidades.
+            unplanned_ids = _load_unplanned_shutdown_ids()
 
             # Solo areas/equipos marcados como include_in_kpi=True. Esto excluye
             # cosas como "BAJA / FUERA DE SERVICIO", "UTILITIES", "RMP" o
@@ -262,20 +303,23 @@ def register_indicators_routes(app, db, logger, WorkOrder, Area, Line, Equipment
                 area_name = area.name.upper()
                 is_series = area_name in SERIES_AREAS
 
+                # Las tres claves de disponibilidad se agregan en paralelo para
+                # que la vista muestre siempre operativa e inherente juntas.
+                AVAIL_KEYS = ('availability', 'availability_operativa', 'availability_inherente')
+
                 if is_series:
                     # Serie: calcular por equipo individual y multiplicar disponibilidades
                     area_equips = [e for e in equips if e.line_id and line_map.get(e.line_id) and line_map[e.line_id].area_id == area.id]
                     if area_equips:
-                        equip_avails = []
+                        series_avail = {k: 1.0 for k in AVAIL_KEYS}
                         for eq in area_equips:
                             eq_ots = [o for o in area_ots if o.get('equipment_id') == eq.id]
                             ind = _calc_indicators(eq_ots, total_hours, shutdown_map, mode=mode, unplanned_shutdown_ids=unplanned_ids)
-                            equip_avails.append(ind['availability'] / 100)
-                        series_avail = 1.0
-                        for a in equip_avails:
-                            series_avail *= a
+                            for k in AVAIL_KEYS:
+                                series_avail[k] *= ind[k] / 100
                         area_indicators = _calc_indicators(area_ots, total_hours, shutdown_map, mode=mode, unplanned_shutdown_ids=unplanned_ids)
-                        area_indicators['availability'] = round(series_avail * 100, 2)
+                        for k in AVAIL_KEYS:
+                            area_indicators[k] = round(series_avail[k] * 100, 2)
                         area_indicators['calc_method'] = 'serie'
                     else:
                         area_indicators = _calc_indicators(area_ots, total_hours, shutdown_map, mode=mode, unplanned_shutdown_ids=unplanned_ids)
@@ -286,7 +330,7 @@ def register_indicators_routes(app, db, logger, WorkOrder, Area, Line, Equipment
                     has_capacity = any(_eq_capacity(e) > 0 for e in area_equips)
 
                     if has_capacity and area_equips:
-                        weighted_sum = 0
+                        weighted_sum = {k: 0.0 for k in AVAIL_KEYS}
                         total_cap = 0
                         for eq in area_equips:
                             cap = _eq_capacity(eq)
@@ -294,11 +338,13 @@ def register_indicators_routes(app, db, logger, WorkOrder, Area, Line, Equipment
                                 continue
                             eq_ots = [o for o in area_ots if o.get('equipment_id') == eq.id]
                             ind = _calc_indicators(eq_ots, total_hours, shutdown_map, mode=mode, unplanned_shutdown_ids=unplanned_ids)
-                            weighted_sum += ind['availability'] * cap
+                            for k in AVAIL_KEYS:
+                                weighted_sum[k] += ind[k] * cap
                             total_cap += cap
                         area_indicators = _calc_indicators(area_ots, total_hours, shutdown_map, mode=mode, unplanned_shutdown_ids=unplanned_ids)
                         if total_cap > 0:
-                            area_indicators['availability'] = round(weighted_sum / total_cap, 2)
+                            for k in AVAIL_KEYS:
+                                area_indicators[k] = round(weighted_sum[k] / total_cap, 2)
                         area_indicators['calc_method'] = 'ponderado'
                         area_indicators['total_capacity'] = total_cap
                     else:
@@ -330,7 +376,7 @@ def register_indicators_routes(app, db, logger, WorkOrder, Area, Line, Equipment
             window_days = max(1, (end - start).days + 1)
             total_hours = window_days * 24
             mode = _read_mode()
-            unplanned_ids = _load_unplanned_shutdown_ids() if mode == 'inherente' else set()
+            unplanned_ids = _load_unplanned_shutdown_ids()
 
             area = Area.query.get_or_404(area_id)
             lines = Line.query.filter_by(area_id=area_id).all()
@@ -394,7 +440,7 @@ def register_indicators_routes(app, db, logger, WorkOrder, Area, Line, Equipment
             window_days = max(1, (end - start).days + 1)
             total_hours = window_days * 24
             mode = _read_mode()
-            unplanned_ids = _load_unplanned_shutdown_ids() if mode == 'inherente' else set()
+            unplanned_ids = _load_unplanned_shutdown_ids()
 
             eq = Equipment.query.get_or_404(equipment_id)
             all_ots = WorkOrder.query.filter(

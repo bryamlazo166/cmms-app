@@ -333,7 +333,8 @@ REGLA CRITICA #X PARA replicate_specs (NO IGNORAR — caso real de bug):
 
 7. EDITAR OT (modificar campos de una OT existente):
 {"action": "edit_ot", "data": {"ot_code": "OT-0034", "fields": {"description": "...", "technician_id": "CARLOS LUQUE", "estimated_duration": 4, "tech_count": 2, "scheduled_date": "2026-04-10", "execution_comments": "...", "caused_downtime": true, "downtime_hours": 1.5, "equipment_tag": "H2", "system_name": "SISTEMA DE ACCIONAMIENTO", "component_name": "MOTOR ELECTRICO"}}}
-Campos editables permitidos: description, failure_mode, maintenance_type, technician_id, scheduled_date, estimated_duration, tech_count, execution_comments, caused_downtime, downtime_hours, report_required, report_due_date, status.
+Campos editables permitidos: description, failure_mode, maintenance_type, technician_id, scheduled_date, estimated_duration, tech_count, execution_comments, caused_downtime, downtime_hours, downtime_planned, report_required, report_due_date, status.
+  - downtime_planned (true/false): tipo de paro. true = paro planificado/programado (solo baja disponibilidad operativa), false = averia imprevista (baja tambien la inherente). Ej: "el paro de la OT-0034 fue programado" → {"downtime_planned": true}.
 Campos de TAXONOMIA (para cambiar equipo/sistema/componente): equipment_tag, equipment_name, system_name, component_name.
   - equipment_tag: tag del equipo destino (ej: "D8", "H2", "SEC2-TH3"). Resuelve automaticamente line_id y area_id.
   - system_name: nombre del sistema dentro del equipo (ej: "SISTEMA DE ACCIONAMIENTO", "SISTEMA ELECTRICO").

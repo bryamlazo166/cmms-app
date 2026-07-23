@@ -1326,7 +1326,7 @@ def register_work_orders_routes(
                 return jsonify({"error": "Este endpoint solo edita OTs cerradas. Use el flujo normal de edición."}), 400
 
             editable = ('real_start_date', 'real_end_date', 'real_duration',
-                        'caused_downtime', 'downtime_hours')
+                        'caused_downtime', 'downtime_hours', 'downtime_planned')
 
             prev = {f: getattr(wo, f) for f in editable}
 
@@ -1337,6 +1337,9 @@ def register_work_orders_routes(
                         v = None
                     if f == 'caused_downtime':
                         v = bool(v)
+                    elif f == 'downtime_planned':
+                        # Tri-estado: None = sin clasificar (se deriva del tipo)
+                        v = None if v is None else bool(v)
                     elif f in ('real_duration', 'downtime_hours') and v is not None:
                         try:
                             v = float(v)
@@ -1362,6 +1365,7 @@ def register_work_orders_routes(
                 'real_duration': 'Duración (h)',
                 'caused_downtime': 'Causó parada',
                 'downtime_hours': 'Horas de paro',
+                'downtime_planned': 'Paro planificado',
             }
             for f in editable:
                 old_v = prev[f]

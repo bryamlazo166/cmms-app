@@ -38,6 +38,7 @@
         .kpi-item .label{font-size:.72rem;color:#9ab0cb;text-transform:uppercase;letter-spacing:.5px;}
         .kpi-item .value{font-size:2rem;font-weight:700;margin-top:6px;}
         .kpi-item .unit{font-size:.9rem;color:#9ab0cb;}
+        .kpi-item .sub{font-size:.74rem;color:#9ab0cb;margin-top:4px;}
         .kpi-item.avail .value{color:#30D158;}.kpi-item.mtbf .value{color:#BF5AF2;}
         .kpi-item.mttr .value{color:#FF9F0A;}.kpi-item.rel .value{color:#5ac8fa;}
         .failures-panel{background:#181d24;border:1px solid #2f4257;border-radius:14px;padding:18px;margin-bottom:16px;}
@@ -65,7 +66,7 @@
                 <div class="sub">MTBF · MTTR · Disponibilidad (ponderada) · Confiabilidad — Drill-down: Área → Equipo → Fallas</div>
             </div>
             <div class="tools">
-                <select id="indMode" onchange="loadIndicators()" title="Operativa: cuenta TODO downtime (planificado + averias) — vista de utilizacion. Inherente (ISO 14224): solo correctivos en averias — vista de salud del activo.">
+                <select id="indMode" onchange="loadIndicators()" title="Operativa: descuenta TODO el paro (planificado + averias) sobre las horas calendario — lo que produccion tuvo disponible. Inherente (ISO 14224): solo averias, y el paro planificado se excluye de la base de tiempo — salud del activo. La brecha entre ambas = costo del mantenimiento planificado.">
                     <option value="operativa" selected>Disponibilidad Operativa</option>
                     <option value="inherente">Disponibilidad Inherente (ISO 14224)</option>
                 </select>

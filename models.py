@@ -575,6 +575,13 @@ class WorkOrder(db.Model):
     # Downtime tracking — for availability KPIs
     caused_downtime: Mapped[bool] = mapped_column(Boolean, default=False)
     downtime_hours: Mapped[float | None] = mapped_column(Float, nullable=True)
+    # Clasificacion del paro (separa disponibilidad operativa vs inherente):
+    #   True  = paro planificado (trabajo programado con anticipacion)
+    #   False = paro no planificado (averia / falla imprevista)
+    #   NULL  = sin clasificar → se deriva: correctivo = no planificado,
+    #           resto (preventivo/predictivo/mejora) = planificado; si la OT
+    #           esta vinculada a una parada, manda Shutdown.is_planned.
+    downtime_planned: Mapped[bool | None] = mapped_column(Boolean, nullable=True)
 
     # Link to preventive source (lubrication/inspection/monitoring point)
     source_type: Mapped[str | None] = mapped_column(String(20), nullable=True)

@@ -104,6 +104,8 @@ document.addEventListener('DOMContentLoaded', () => {
         downtimeSelect.addEventListener('change', function() {
             document.getElementById('downtimeHoursGroup').style.display =
                 this.value === '1' ? '' : 'none';
+            const plannedGroup = document.getElementById('downtimePlannedGroup');
+            if (plannedGroup) plannedGroup.style.display = this.value === '1' ? '' : 'none';
             // Al marcar "Si", sugerir horas = diferencia inicio/fin real.
             suggestDowntimeHours();
             checkDowntimeVsDuration();
@@ -2148,6 +2150,16 @@ async function openCloseModal() {
     if (causedSel) causedSel.value = '0';
     const dtGroup = document.getElementById('downtimeHoursGroup');
     if (dtGroup) dtGroup.style.display = 'none';
+    // Tipo de paro: default segun tipo de mantenimiento (correctivo = averia,
+    // preventivo/predictivo/mejora = planificado). El usuario puede cambiarlo,
+    // p.ej. un correctivo PROGRAMADO se marca como planificado.
+    const plannedGroup = document.getElementById('downtimePlannedGroup');
+    if (plannedGroup) plannedGroup.style.display = 'none';
+    const plannedSel = document.getElementById('closeDowntimePlanned');
+    if (plannedSel) {
+        const mt = (activeExecutionOT.maintenance_type || '').toLowerCase();
+        plannedSel.value = mt.includes('correct') ? '0' : '1';
+    }
     // Pre-llenar horas de parada con la duración calendario como sugerencia
     // (se recalcula al marcar "Si" o al cambiar inicio/fin via suggestDowntimeHours).
     try {
@@ -2317,6 +2329,8 @@ async function handleCloseOTSubmit(e) {
     const downtimeHours = causedDowntime
         ? parseFloat(document.getElementById('closeDowntimeHours').value || diffHrs.toFixed(2))
         : 0;
+    const plannedSel = document.getElementById('closeDowntimePlanned');
+    const downtimePlanned = (causedDowntime && plannedSel) ? plannedSel.value === '1' : null;
 
     const data = {
         status: 'Cerrada',
@@ -2326,6 +2340,7 @@ async function handleCloseOTSubmit(e) {
         real_duration: parseFloat(diffHrs.toFixed(2)),
         caused_downtime: causedDowntime,
         downtime_hours: downtimeHours || null,
+        downtime_planned: downtimePlanned,
     };
 
     await fetch(`/api/work-orders/${id}`, {
@@ -2395,6 +2410,17 @@ function openEditClosedHoursModal() {
     document.getElementById('editRealEnd').value = ot.real_end_date || '';
     document.getElementById('editCausedDowntime').value = ot.caused_downtime ? '1' : '0';
     document.getElementById('editDowntimeHours').value = ot.downtime_hours != null ? ot.downtime_hours : '';
+    // Tipo de paro: valor guardado; si nunca se clasifico, derivar del tipo
+    // de mantenimiento (correctivo = averia, resto = planificado).
+    const editPlannedSel = document.getElementById('editDowntimePlanned');
+    if (editPlannedSel) {
+        if (ot.downtime_planned != null) {
+            editPlannedSel.value = ot.downtime_planned ? '1' : '0';
+        } else {
+            const mt = (ot.maintenance_type || '').toLowerCase();
+            editPlannedSel.value = mt.includes('correct') ? '0' : '1';
+        }
+    }
     document.getElementById('editHoursReason').value = '';
     document.getElementById('editClosedHoursModal').showModal();
 }
@@ -2410,11 +2436,13 @@ async function submitEditClosedHours() {
     }
     const causedDowntime = document.getElementById('editCausedDowntime').value === '1';
     const dtHoursRaw = document.getElementById('editDowntimeHours').value;
+    const editPlannedSel = document.getElementById('editDowntimePlanned');
     const payload = {
         real_start_date: document.getElementById('editRealStart').value || null,
         real_end_date: document.getElementById('editRealEnd').value || null,
         caused_downtime: causedDowntime,
         downtime_hours: causedDowntime ? (dtHoursRaw === '' ? null : parseFloat(dtHoursRaw)) : null,
+        downtime_planned: (causedDowntime && editPlannedSel) ? editPlannedSel.value === '1' : null,
         reason: reason,
     };
     try {
