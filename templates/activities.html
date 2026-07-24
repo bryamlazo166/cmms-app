@@ -95,6 +95,27 @@
         .modal-actions{display:flex;gap:8px;justify-content:flex-end;margin-top:16px}
 
         .empty{text-align:center;color:rgba(255,255,255,.30);padding:40px 20px;font-size:.9rem}
+
+        /* Recordatorios */
+        .rem-panel{background:var(--bg-primary,#1C1C1E);border:1px solid rgba(255,159,10,.18);border-radius:14px;padding:14px 16px;margin-bottom:16px}
+        .rem-head{display:flex;align-items:center;gap:8px;margin-bottom:10px}
+        .rem-head h3{margin:0;font-size:.95rem;color:rgba(255,255,255,.85)}
+        .rem-head i{color:#FF9F0A}
+        .rem-count{background:rgba(255,159,10,.16);color:#FFB340;padding:2px 8px;border-radius:999px;font-size:.72rem;font-weight:700}
+        .rem-add{display:flex;gap:6px;flex-wrap:wrap;margin-bottom:6px}
+        .rem-add input{height:32px;background:rgba(255,255,255,.06);border:1px solid rgba(255,255,255,.10);border-radius:8px;color:rgba(255,255,255,.80);padding:0 10px;font-size:.82rem}
+        .rem-add input::placeholder{color:rgba(255,255,255,.25)}
+        .rem-item{display:flex;align-items:center;gap:10px;padding:7px 2px;border-bottom:1px solid rgba(255,255,255,.05)}
+        .rem-item:last-child{border-bottom:none}
+        .rem-check{width:24px;height:24px;border-radius:50%;border:1.5px solid rgba(255,255,255,.25);background:transparent;color:transparent;cursor:pointer;display:flex;align-items:center;justify-content:center;font-size:.62rem;flex-shrink:0;transition:all 150ms}
+        .rem-check:hover{border-color:#30D158;color:#30D158;background:rgba(48,209,88,.12)}
+        .rem-title{flex:1;min-width:0;font-size:.86rem;color:rgba(255,255,255,.85)}
+        .rem-date{font-size:.74rem;color:rgba(255,255,255,.40);display:inline-flex;align-items:center;gap:4px;flex-shrink:0}
+        .rem-date.due{color:#FFB340;font-weight:600}
+        .rem-date.overdue{color:#FF6B61;font-weight:700}
+        .rem-act{width:26px;height:26px;border:none;border-radius:6px;cursor:pointer;font-size:.72rem;display:flex;align-items:center;justify-content:center;flex-shrink:0;background:transparent;color:rgba(255,255,255,.30)}
+        .rem-act:hover{background:rgba(255,255,255,.10);color:rgba(255,255,255,.70)}
+        .rem-act.del:hover{background:rgba(255,69,58,.18);color:#FF6B61}
     </style>
 </head>
 <body>
@@ -105,7 +126,7 @@
 <section class="home-section">
 <div class="wrap">
     <h2><i class="fas fa-tasks"></i>Seguimiento de Actividades</h2>
-    <p class="subtitle">Control de actividades pendientes, reuniones, compras criticas, fabricaciones y proyectos con hitos de seguimiento.</p>
+    <p class="subtitle">Control de actividades pendientes, reuniones, compras criticas, fabricaciones y proyectos con hitos de seguimiento. Incluye recordatorios rapidos para pendientes personales.</p>
 
     <div class="toolbar">
         <button class="btn btn-primary" data-perm="seguimiento.create" onclick="openCreateModal()"><i class="fas fa-plus"></i> Nueva Actividad</button>
@@ -124,8 +145,20 @@
             <option value="REUNION">Reunion</option>
             <option value="PROYECTO">Proyecto</option>
             <option value="PARADA">Parada</option>
+            <option value="RECORDATORIO">Recordatorio</option>
             <option value="OTRO">Otro</option>
         </select>
+    </div>
+
+    <!-- Recordatorios rapidos -->
+    <div class="rem-panel" id="remPanel">
+        <div class="rem-head"><i class="fas fa-bell"></i><h3>Recordatorios</h3><span class="rem-count" id="remCount">0</span></div>
+        <div class="rem-add" data-perm="seguimiento.create">
+            <input type="text" id="remText" placeholder="Nuevo recordatorio... (Enter para agregar)" style="flex:1;min-width:180px" onkeydown="if(event.key==='Enter')addReminder()">
+            <input type="date" id="remDate" title="Fecha limite (opcional)" style="width:140px">
+            <button class="btn btn-sm btn-primary" onclick="addReminder()" style="height:32px"><i class="fas fa-plus"></i> Agregar</button>
+        </div>
+        <div id="remList"></div>
     </div>
 
     <div class="act-list" id="actList">
@@ -158,6 +191,7 @@
                     <option value="REUNION">Reunion</option>
                     <option value="PROYECTO">Proyecto</option>
                     <option value="PARADA">Parada programada</option>
+                    <option value="RECORDATORIO">Recordatorio</option>
                     <option value="OTRO">Otro</option>
                 </select>
             </div>

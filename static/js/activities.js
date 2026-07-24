@@ -11,7 +11,8 @@ async function jget(url, opts) {
 
 const TYPE_ICONS = {
     FABRICACION: 'fa-cogs', COMPRA: 'fa-shopping-cart', REUNION: 'fa-handshake',
-    PROYECTO: 'fa-project-diagram', PARADA: 'fa-power-off', OTRO: 'fa-clipboard'
+    PROYECTO: 'fa-project-diagram', PARADA: 'fa-power-off', RECORDATORIO: 'fa-bell',
+    OTRO: 'fa-clipboard'
 };
 const PRIO_CLASS = { ALTA: 'badge-alta', MEDIA: 'badge-media', BAJA: 'badge-baja' };
 
@@ -24,7 +25,6 @@ function progressColor(p) {
 // ── Render Activities ─────────────────────────────────────────────────────────
 
 function renderActivities(items) {
-    actState.activities = items;
     const list = q('actList');
     if (!items.length) {
         list.innerHTML = '<div class="empty">Sin actividades registradas.</div>';
@@ -71,6 +71,78 @@ function renderActivities(items) {
             </div>
         </div>`;
     }).join('');
+}
+
+// ── Recordatorios ─────────────────────────────────────────────────────────────
+
+function renderReminders(items) {
+    const panel = q('remPanel');
+    const typeFilter = q('filterType').value;
+    const statusFilter = q('filterStatus').value;
+    // Con un filtro de otro tipo o de estados cerrados, el panel no aplica
+    if ((typeFilter && typeFilter !== 'RECORDATORIO') ||
+        statusFilter === 'COMPLETADA' || statusFilter === 'CANCELADA') {
+        panel.style.display = 'none';
+        return;
+    }
+    panel.style.display = '';
+    q('remCount').textContent = items.length;
+
+    const list = q('remList');
+    if (!items.length) {
+        list.innerHTML = '<div style="color:rgba(255,255,255,.30);font-size:.82rem;padding:6px 2px">Sin recordatorios pendientes.</div>';
+        return;
+    }
+    const today = new Date().toISOString().slice(0, 10);
+    items.sort((a, b) => (a.target_date || '9999') < (b.target_date || '9999') ? -1 : 1);
+    list.innerHTML = items.map(r => {
+        let dateHtml = '';
+        if (r.target_date) {
+            const cls = r.target_date < today ? 'rem-date overdue' : (r.target_date === today ? 'rem-date due' : 'rem-date');
+            const label = r.target_date < today ? `Vencido: ${r.target_date}` : (r.target_date === today ? 'Vence hoy' : r.target_date);
+            dateHtml = `<span class="${cls}"><i class="fas fa-calendar"></i> ${label}</span>`;
+        }
+        return `<div class="rem-item">
+            <button class="rem-check" title="Marcar como hecho" onclick="completeReminder(${r.id})"><i class="fas fa-check"></i></button>
+            <span class="rem-title">${r.title}</span>
+            ${dateHtml}
+            <button class="rem-act" title="Editar" onclick="openEditModal(${r.id})"><i class="fas fa-pen"></i></button>
+            <button class="rem-act del" title="Eliminar" onclick="deleteReminder(${r.id})"><i class="fas fa-times"></i></button>
+        </div>`;
+    }).join('');
+}
+
+async function addReminder() {
+    const txt = q('remText').value.trim();
+    if (!txt) return;
+    await jget('/api/activities', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+            title: txt,
+            activity_type: 'RECORDATORIO',
+            priority: 'MEDIA',
+            target_date: q('remDate').value || null,
+        })
+    });
+    q('remText').value = '';
+    q('remDate').value = '';
+    await loadActivities(true);
+}
+
+async function completeReminder(id) {
+    await jget(`/api/activities/${id}`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ status: 'COMPLETADA' })
+    });
+    await loadActivities(true);
+}
+
+async function deleteReminder(id) {
+    if (!confirm('Eliminar este recordatorio?')) return;
+    await jget(`/api/activities/${id}`, { method: 'DELETE' });
+    await loadActivities(true);
 }
 
 // ── Toggle expand / collapse ──────────────────────────────────────────────────
@@ -192,6 +264,7 @@ async function loadActivities(keepExpand) {
     if (typeFilter) url += `&type=${typeFilter}`;
 
     const allItems = await jget(url);
+    actState.activities = allItems;
 
     // Split into active and closed
     let active, closed;
@@ -208,6 +281,11 @@ async function loadActivities(keepExpand) {
         });
         closed = allItems.filter(a => ['COMPLETADA', 'CANCELADA'].includes(a.status));
     }
+
+    // Recordatorios activos van a su propio panel tipo checklist
+    const reminders = active.filter(a => a.activity_type === 'RECORDATORIO');
+    active = active.filter(a => a.activity_type !== 'RECORDATORIO');
+    renderReminders(reminders);
 
     const expandedId = keepExpand ? document.querySelector('.act-card.expanded')?.id?.replace('act-', '') : null;
     renderActivities(active);
