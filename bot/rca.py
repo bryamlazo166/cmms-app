@@ -277,6 +277,16 @@ def _qty_int(v):
         return None
 
 
+def _safe_rollback(session):
+    """Resetea la transaccion tras un SELECT fallido: sin esto, en Postgres
+    todos los lookups siguientes mueren con 'current transaction is aborted'
+    (25P02) y el RCA pierde repuestos/herramientas/specs por un solo error."""
+    try:
+        session.rollback()
+    except Exception:
+        pass
+
+
 def _collect_hard_spares(session, text, ctx, limit=12):
     """Repuestos con CÓDIGO y CANTIDAD REALES de la BD: historial + catálogo.
 
@@ -310,6 +320,7 @@ def _collect_hard_spares(session, text, ctx, limit=12):
                 _add(r[0], r[1], 'historial', qty=_qty_int(r[2]))
         except Exception as e:
             logger.debug(f"historial repuestos lookup: {e}")
+            _safe_rollback(session)
 
     # 2. BOM del activo rotativo vinculado (conectado a almacén, con cantidad)
     if ctx.get('rotative_asset_id'):
@@ -318,12 +329,13 @@ def _collect_hard_spares(session, text, ctx, limit=12):
                 "SELECT COALESCE(w.name, b.free_text) AS name, w.code, b.quantity "
                 "FROM rotative_asset_bom b "
                 "LEFT JOIN warehouse_items w ON b.warehouse_item_id = w.id "
-                "WHERE b.rotative_asset_id = :ra ORDER BY b.id LIMIT 10"
+                "WHERE b.asset_id = :ra ORDER BY b.id LIMIT 10"
             ), {"ra": ctx['rotative_asset_id']}).fetchall()
             for r in rows:
                 _add(r[0], r[1], 'BOM', qty=_qty_int(r[2]))
         except Exception as e:
             logger.debug(f"BOM rotativo lookup: {e}")
+            _safe_rollback(session)
 
     # 3. Catálogo de repuestos del componente (sin cantidad de uso)
     if ctx.get('component_id'):
@@ -335,6 +347,7 @@ def _collect_hard_spares(session, text, ctx, limit=12):
                 _add(r[0], r[1], 'catálogo')
         except Exception as e:
             logger.debug(f"spare_parts lookup: {e}")
+            _safe_rollback(session)
 
     return spares[:limit]
 
@@ -366,6 +379,7 @@ def _collect_hard_tools(session, text, ctx, limit=10):
                               "qty": _qty_int(r[2])})
     except Exception as e:
         logger.debug(f"historial herramientas lookup: {e}")
+        _safe_rollback(session)
     return tools
 
 
@@ -433,6 +447,7 @@ def _collect_specs(session, text, ctx, limit=18):
                 specs.append(f"[equipo] {r[0]}: {r[1]}{unit}")
     except Exception as e:
         logger.debug(f"_collect_specs lookup: {e}")
+        _safe_rollback(session)
     return specs
 
 

@@ -1065,6 +1065,7 @@ window.convertToOT = async (noticeId) => {
             equipment_id: notice.equipment_id,
             system_id: notice.system_id,
             component_id: notice.component_id,
+            rotative_asset_id: notice.rotative_asset_id || null,
             description: notice.description,
             maintenance_type: notice.maintenance_type || 'Correctivo'
         };

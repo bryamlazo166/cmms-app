@@ -936,6 +936,10 @@ def register_work_orders_routes(
                         if notice.source_type and notice.source_id and not wo.source_type:
                             wo.source_type = notice.source_type
                             wo.source_id = notice.source_id
+                        # Heredar el activo rotativo del aviso si el cliente
+                        # no lo mando (algunos flujos de conversion lo omitian)
+                        if notice.rotative_asset_id and not wo.rotative_asset_id:
+                            wo.rotative_asset_id = notice.rotative_asset_id
 
                 db.session.commit()
                 return jsonify(wo.to_dict()), 201
