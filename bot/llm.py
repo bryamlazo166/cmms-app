@@ -13,6 +13,7 @@ import requests
 from datetime import date, timedelta
 
 from bot.context import _load_cmms_guide
+from utils.deepseek import DEEPSEEK_MODEL, DEEPSEEK_THINKING
 
 logger = logging.getLogger(__name__)
 
@@ -420,10 +421,11 @@ DATOS ACTUALES:
     messages.append({'role': 'user', 'content': question})
 
     payload = {
-        'model': 'deepseek-chat',
+        'model': DEEPSEEK_MODEL,
         'messages': messages,
         'max_tokens': 2000, 'temperature': 0.2,
         'response_format': {'type': 'json_object'},
+        'thinking': DEEPSEEK_THINKING,
     }
 
     from bot.metrics import track_deepseek, Stopwatch
@@ -431,15 +433,15 @@ DATOS ACTUALES:
         with Stopwatch() as sw:
             r = requests.post(_DEEPSEEK_URL, headers=headers, json=payload, timeout=60)
         if r.status_code != 200:
-            track_deepseek(app, chat_id, 'deepseek-chat', None, sw.elapsed_ms,
+            track_deepseek(app, chat_id, DEEPSEEK_MODEL, None, sw.elapsed_ms,
                            status='error', error_msg=f"HTTP {r.status_code}")
             return f"Error DeepSeek: {r.status_code} {r.text[:200]}"
         body = r.json()
-        track_deepseek(app, chat_id, 'deepseek-chat',
+        track_deepseek(app, chat_id, DEEPSEEK_MODEL,
                        body.get('usage') or {}, sw.elapsed_ms, status='success')
         return body['choices'][0]['message']['content']
     except Exception as e:
-        track_deepseek(app, chat_id, 'deepseek-chat', None, 0,
+        track_deepseek(app, chat_id, DEEPSEEK_MODEL, None, 0,
                        status='error', error_msg=str(e)[:200])
         return f"Error consultando IA: {e}"
 

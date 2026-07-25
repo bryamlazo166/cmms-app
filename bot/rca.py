@@ -32,6 +32,8 @@ from datetime import date, timedelta
 
 import requests
 
+from utils.deepseek import DEEPSEEK_MODEL, DEEPSEEK_THINKING
+
 logger = logging.getLogger(__name__)
 
 DEEPSEEK_URL = 'https://api.deepseek.com/chat/completions'
@@ -529,13 +531,14 @@ def _call_llm(ctx, cases, spares, tools, rec_action, specs=None):
             'Authorization': f'Bearer {api_key}',
             'Content-Type': 'application/json',
         }, json={
-            'model': 'deepseek-chat',
+            'model': DEEPSEEK_MODEL,
             'messages': [
                 {'role': 'system', 'content': _RCA_PROMPT},
                 {'role': 'user', 'content': '\n'.join(lines)},
             ],
             'max_tokens': 900, 'temperature': 0.2,
             'response_format': {'type': 'json_object'},
+            'thinking': DEEPSEEK_THINKING,
         }, timeout=90)
         if r.status_code != 200:
             logger.error(f"RCA DeepSeek HTTP {r.status_code}: {r.text[:200]}")
@@ -656,7 +659,7 @@ def format_whatsapp_message(payload):
     return '\n'.join(lines).strip()
 
 
-def _save_rca(app, ctx, payload, model='deepseek-chat', status='ok', error=None):
+def _save_rca(app, ctx, payload, model=DEEPSEEK_MODEL, status='ok', error=None):
     """Guarda/actualiza el RCA en notice_rca (upsert por notice_id)."""
     from sqlalchemy import text
     from database import db as _db

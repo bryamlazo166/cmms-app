@@ -35,6 +35,8 @@ from datetime import date, timedelta
 
 import requests
 
+from utils.deepseek import DEEPSEEK_MODEL, DEEPSEEK_THINKING
+
 logger = logging.getLogger(__name__)
 
 DEEPSEEK_URL = 'https://api.deepseek.com/chat/completions'
@@ -260,13 +262,14 @@ def _call_deepseek_extraction(app, user, message):
             'Authorization': f'Bearer {api_key}',
             'Content-Type': 'application/json',
         }, json={
-            'model': 'deepseek-chat',
+            'model': DEEPSEEK_MODEL,
             'messages': [
                 {'role': 'system', 'content': prompt},
                 {'role': 'user', 'content': message},
             ],
             'max_tokens': 900, 'temperature': 0.2,
             'response_format': {'type': 'json_object'},
+            'thinking': DEEPSEEK_THINKING,
         }, timeout=60)
         if r.status_code != 200:
             logger.error(f"DeepSeek extraccion HTTP {r.status_code}: {r.text[:200]}")

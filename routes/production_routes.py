@@ -18,6 +18,8 @@ import requests
 from flask import jsonify, request, render_template, send_file
 from flask_login import login_required
 
+from utils.deepseek import DEEPSEEK_MODEL, DEEPSEEK_THINKING
+
 
 SACK_KG = 50  # 1 saco de harina procesada = 50 kg
 DEEPSEEK_API_KEY = os.getenv('DEEPSEEK_API_KEY')
@@ -473,7 +475,8 @@ def register_production_routes(app, db, logger, ProductionGoal, WorkOrder, Area,
                 'Content-Type': 'application/json',
             }
             payload = {
-                'model': 'deepseek-chat',
+                'model': DEEPSEEK_MODEL,
+                'thinking': DEEPSEEK_THINKING,
                 'messages': [
                     {
                         'role': 'system',

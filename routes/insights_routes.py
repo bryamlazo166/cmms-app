@@ -14,6 +14,8 @@ import requests
 from flask import jsonify, request, render_template
 from sqlalchemy import func, text
 
+from utils.deepseek import DEEPSEEK_MODEL, DEEPSEEK_THINKING
+
 
 DEEPSEEK_API_KEY = os.getenv('DEEPSEEK_API_KEY')
 DEEPSEEK_URL = 'https://api.deepseek.com/chat/completions'
@@ -419,7 +421,8 @@ def register_insights_routes(
                 'Content-Type': 'application/json',
             }
             payload = {
-                'model': 'deepseek-chat',
+                'model': DEEPSEEK_MODEL,
+                'thinking': DEEPSEEK_THINKING,
                 'messages': [
                     {
                         'role': 'system',

@@ -13,6 +13,8 @@ from collections import defaultdict
 
 from flask import jsonify, render_template, request
 
+from utils.deepseek import DEEPSEEK_MODEL, DEEPSEEK_THINKING
+
 
 def register_diagnostico_routes(app, db, logger):
     from models import (
@@ -949,12 +951,13 @@ def register_diagnostico_routes(app, db, logger):
                     r = _rq.post(url, headers={
                         'Authorization': f'Bearer {key}', 'Content-Type': 'application/json',
                     }, json={
-                        'model': 'deepseek-chat',
+                        'model': DEEPSEEK_MODEL,
                         'messages': [
                             {'role': 'system', 'content': system_prompt},
                             {'role': 'user', 'content': prompt_usuario},
                         ],
                         'max_tokens': 3000, 'temperature': 0.3,
+                        'thinking': DEEPSEEK_THINKING,
                     }, timeout=360)
                     if r.status_code != 200:
                         _narrativa_jobs[job_id] = {
