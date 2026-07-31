@@ -621,6 +621,9 @@ for _role_perms in _DEFAULT_PERMS.values():
 
 _perms_cache = {}
 _perms_cache_ts = 0
+# True cuando la ultima carga de permisos cayo a los defaults porque la BD
+# fallo. Sirve para responder "reintenta" en vez de "no tienes permiso".
+_perms_degraded = False
 
 _PERM_ACTIONS = ('view', 'create', 'edit', 'delete', 'export', 'import',
                  'close', 'approve', 'edit_ot', 'adjust_hours')
@@ -680,11 +683,20 @@ def _load_role_perms(role):
                 }
             else:
                 result[mod_key] = default_perm
-    except Exception:
-        # Si la BD no esta disponible o aun no migrada, usar defaults legados
+    except Exception as e:
+        # Si la BD no esta disponible o aun no migrada, usar defaults legados.
+        # Se marca como degradado y NO se cachea: los defaults son mas
+        # restrictivos que lo configurado en la matriz (p.ej. supervisor no
+        # edita 'ordenes'), asi que cachearlos 60 s convertiria una caida
+        # momentanea de la BD en "no tienes permiso" para trabajo real.
+        global _perms_degraded
+        logger.warning(f"No pude leer role_permissions ({e}); uso defaults temporalmente")
+        _perms_degraded = True
         for mod_key in _MODULE_ROUTES:
             result[mod_key] = _expand_legacy_perm(defaults.get(mod_key, {}))
+        return result
 
+    _perms_degraded = False
     _perms_cache[role] = result
     _perms_cache_ts = now
     return result
@@ -770,6 +782,12 @@ def require_login():
             if route_type == 'api':
                 action = _action_for_request(request.method, request.path)
                 if action != 'view' and not p.get(action, False):
+                    if _perms_degraded:
+                        # Los permisos no se pudieron leer: negar por defecto
+                        # es correcto, pero decir "no tienes permiso" no lo es.
+                        return jsonify({"error": "No pude verificar tus permisos porque la "
+                                                 "base de datos no respondio. Intenta de nuevo "
+                                                 "en un momento."}), 503
                     msgs = {
                         'create':  "No tienes permiso para crear en este modulo.",
                         'edit':    "No tienes permiso para modificar en este modulo.",

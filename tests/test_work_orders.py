@@ -68,6 +68,48 @@ def test_close_ot_updates_notice(auth_admin):
     assert r4.json['status'] == 'Cerrado'
 
 
+def test_supervisor_puede_cerrar_ot(auth_supervisor, app):
+    """Un supervisor con ordenes.edit/close cierra una OT que abrio el admin.
+
+    Es la configuracion real de planta (la matriz de permisos le da esos flags
+    al rol supervisor). Si esto empieza a devolver 403, el cierre queda roto
+    aunque la interfaz siga mostrando el boton.
+    """
+    with app.app_context():
+        from database import db
+        from models import WorkOrder, RolePermission
+        import app as appmod
+
+        perm = RolePermission.query.filter_by(role='supervisor', module='ordenes').first()
+        if not perm:
+            perm = RolePermission(role='supervisor', module='ordenes')
+            db.session.add(perm)
+        perm.can_view = perm.can_edit = perm.can_create = perm.can_close = True
+
+        wo = WorkOrder(code='OT-SUP-TEST', description='OT abierta por admin',
+                       status='Abierta')
+        db.session.add(wo)
+        db.session.commit()
+        ot_id = wo.id
+        appmod._perms_cache.clear()
+
+    r2 = auth_supervisor.put(f'/api/work-orders/{ot_id}', data=json.dumps({
+        'status': 'Cerrada',
+        'execution_comments': 'Cambio de rodamiento',
+        'real_start_date': '2026-07-30T08:00',
+        'real_end_date': '2026-07-30T11:00',
+        'real_duration': 3.0,
+    }), content_type='application/json')
+    assert r2.status_code == 200, r2.get_json()
+    assert r2.json['status'] == 'Cerrada'
+
+    # Repetir el cierre ya no se permite fuera de admin (flujo auditado)
+    r3 = auth_supervisor.put(f'/api/work-orders/{ot_id}', data=json.dumps({
+        'status': 'Cerrada', 'real_duration': 9.0,
+    }), content_type='application/json')
+    assert r3.status_code == 403
+
+
 def test_ot_log_entries(auth_admin):
     """Test OT activity log (bitacora)."""
     # Create OT

@@ -1508,7 +1508,10 @@ async function updateOTStatusKanban(id, status) {
             renderKanban();   // Reloads kanban
             loadWorkOrders(); // Refresh table too
         } else {
-            alert("Error al actualizar estado");
+            // Explica la causa (sesion vencida, permiso, error del servidor)
+            // en vez del generico "Error al actualizar estado".
+            await ensureSaved(res, `pasar la OT a ${status}`);
+            renderKanban(); // devolver la tarjeta a su columna real
         }
     } catch (e) {
         console.error(e);
@@ -2010,6 +2013,27 @@ function getLocalISOString() {
     return `${parts.year}-${parts.month}-${parts.day}T${parts.hour}:${parts.minute}`;
 }
 
+// Verifica que una escritura haya quedado guardada. Sin esto un 401 (sesion
+// vencida en una pestaña que lleva horas abierta) o un 403 (permiso) pasaban
+// desapercibidos: la interfaz confirmaba "Orden Cerrada" y en la base de datos
+// no cambiaba nada. Devuelve true solo si el servidor acepto el cambio.
+async function ensureSaved(res, accion) {
+    if (res && res.ok) return true;
+    if (res && res.status === 401) {
+        alert(`Tu sesion vencio, por eso no se pudo ${accion}.\n\n` +
+              'Vuelve a iniciar sesion e intenta otra vez.');
+        location.href = '/login?next=/ordenes';
+        return false;
+    }
+    let detalle = '';
+    try {
+        const body = await res.json();
+        detalle = body.error || '';
+    } catch (e) { /* la respuesta no trae JSON */ }
+    alert(`No se pudo ${accion}.\n\n${detalle || 'Error ' + (res ? res.status : 'de red')}`);
+    return false;
+}
+
 function startJob() {
     // Abre el modal con el input precargado a la hora actual del sistema,
     // pero editable (por si la OT en realidad arranco hace 10 min, o anoche).
@@ -2035,7 +2059,7 @@ async function confirmStartJob() {
     }
     const today = startValue.slice(0, 10);
 
-    await fetch(`/api/work-orders/${activeExecutionOT.id}`, {
+    const startRes = await fetch(`/api/work-orders/${activeExecutionOT.id}`, {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -2043,6 +2067,9 @@ async function confirmStartJob() {
             real_start_date: startValue
         })
     });
+    // Si el inicio no se guardo, dejar el modal abierto: seguir adelante daria
+    // por iniciada una OT que en la base sigue Abierta.
+    if (!await ensureSaved(startRes, 'iniciar el trabajo')) return;
 
     if (activeExecutionOT.notice_id) {
         await fetch(`/api/notices/${activeExecutionOT.notice_id}`, {
@@ -2343,11 +2370,14 @@ async function handleCloseOTSubmit(e) {
         downtime_planned: downtimePlanned,
     };
 
-    await fetch(`/api/work-orders/${id}`, {
+    const closeRes = await fetch(`/api/work-orders/${id}`, {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(data)
     });
+    // El modal queda abierto si el cierre no se guardo: asi el trabajo
+    // realizado que ya escribio el usuario no se pierde y puede reintentar.
+    if (!await ensureSaved(closeRes, 'cerrar la orden')) return;
 
     // Guardar horas reales por técnico
     for (const p of _closePersonnelList) {
