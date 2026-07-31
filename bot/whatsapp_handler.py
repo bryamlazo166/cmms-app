@@ -90,6 +90,12 @@ def _ensure_wa_users_table(app):
             return True
         except Exception as e:
             logger.warning(f"No se pudo crear bot_whatsapp_users: {e}")
+            try:
+                from database import db as _db
+                with app.app_context():
+                    _db.session.rollback()
+            except Exception:
+                pass
             return False
 
 
@@ -97,9 +103,101 @@ def _ensure_wa_users_table(app):
 _wa_users_cache = {"ts": 0.0, "map": {}}
 _WA_CACHE_TTL = 60
 
+_WA_USER_COLS = ("SELECT phone_number, nombre, rol, areas_visibles, "
+                 "grupo_destino, grupo_nombre, puede_ver_todo "
+                 "FROM bot_whatsapp_users WHERE activo = TRUE")
+
 
 def _digits(s):
     return ''.join(ch for ch in (s or '') if ch.isdigit())
+
+
+def _row_to_user(r):
+    return {"phone": r[0], "nombre": r[1], "rol": r[2],
+            "areas_visibles": r[3], "grupo_destino": r[4],
+            "grupo_nombre": r[5], "puede_ver_todo": bool(r[6])}
+
+
+def _refresh_wa_users_cache(app):
+    """Recarga la cache desde la BD. Devuelve True si la consulta funciono.
+
+    El SELECT va primero: en produccion la tabla ya existe y el CREATE TABLE
+    previo era un punto de fallo extra (con el pooler de Supabase una conexion
+    puede llegar en modo read-only y tumbar el DDL). Solo si el SELECT falla se
+    intenta crear la tabla y se reintenta una vez.
+    """
+    from sqlalchemy import text
+    from database import db as _db
+
+    def _select():
+        with app.app_context():
+            try:
+                rows = _db.session.execute(text(_WA_USER_COLS)).fetchall()
+            except Exception:
+                _db.session.rollback()
+                raise
+        _wa_users_cache["map"] = {_digits(r[0]): _row_to_user(r) for r in rows}
+        _wa_users_cache["ts"] = time.time()
+
+    try:
+        _select()
+        return True
+    except Exception as e:
+        logger.warning(f"get_wa_user: SELECT fallo ({e}); intento crear tabla y reintento")
+
+    if not _ensure_wa_users_table(app):
+        return False
+    try:
+        _select()
+        return True
+    except Exception as e:
+        logger.error(f"get_wa_user: cache refresh fallo definitivamente: {e}")
+        return False
+
+
+def _query_wa_user(app, key):
+    """Consulta puntual de un numero. Devuelve la fila o None; propaga el error de BD."""
+    from sqlalchemy import text
+    from database import db as _db
+    with app.app_context():
+        try:
+            return _db.session.execute(text(
+                _WA_USER_COLS + " AND phone_number = :p"), {"p": key}).fetchone()
+        except Exception:
+            _db.session.rollback()
+            raise
+
+
+def lookup_wa_user(app, phone):
+    """Busca el numero autorizado. Devuelve (usuario|None, hubo_error_de_bd).
+
+    Distinguir ambos casos importa: un fallo de BD NO debe presentarse al
+    usuario como "no estas registrado" (mensaje falso que manda al tecnico a
+    pedirle un alta al administrador que ya tiene).
+    """
+    key = _digits(phone)
+
+    if time.time() - _wa_users_cache["ts"] > _WA_CACHE_TTL:
+        _refresh_wa_users_cache(app)
+
+    user = _wa_users_cache["map"].get(key)
+    if user or not key:
+        return user, False
+
+    # Segunda oportunidad: consulta puntual. Cubre el alta reciente que otro
+    # proceso hizo (cada worker tiene su propia cache) y confirma si el "no
+    # registrado" es real o la BD esta caida.
+    try:
+        row = _query_wa_user(app, key)
+    except Exception as e:
+        logger.error(f"lookup_wa_user: consulta directa fallo: {e}")
+        return None, True
+
+    if row:
+        user = _row_to_user(row)
+        _wa_users_cache["map"][key] = user
+        return user, False
+    return None, False
 
 
 def get_wa_user(app, phone):
@@ -108,30 +206,7 @@ def get_wa_user(app, phone):
     `phone` llega como digitos ('51987654321'). Refresca cache cada 60 s para
     reflejar altas/bajas sin reiniciar.
     """
-    now = time.time()
-    if now - _wa_users_cache["ts"] > _WA_CACHE_TTL:
-        if _ensure_wa_users_table(app):
-            try:
-                from sqlalchemy import text
-                from database import db as _db
-                with app.app_context():
-                    rows = _db.session.execute(text(
-                        "SELECT phone_number, nombre, rol, areas_visibles, "
-                        "grupo_destino, grupo_nombre, puede_ver_todo "
-                        "FROM bot_whatsapp_users WHERE activo = TRUE"
-                    )).fetchall()
-                    _wa_users_cache["map"] = {
-                        _digits(r[0]): {
-                            "phone": r[0], "nombre": r[1], "rol": r[2],
-                            "areas_visibles": r[3], "grupo_destino": r[4],
-                            "grupo_nombre": r[5],
-                            "puede_ver_todo": bool(r[6]),
-                        } for r in rows
-                    }
-                    _wa_users_cache["ts"] = now
-            except Exception as e:
-                logger.warning(f"get_wa_user cache refresh fallo: {e}")
-    return _wa_users_cache["map"].get(_digits(phone))
+    return lookup_wa_user(app, phone)[0]
 
 
 def invalidate_wa_users_cache():
@@ -494,8 +569,16 @@ def handle_incoming(app, payload):
     media = payload.get('media')  # {type, mimetype, base64} | None
     push_name = (payload.get('push_name') or '').strip()
 
-    user = get_wa_user(app, phone)
+    user, db_error = lookup_wa_user(app, phone)
     if not user:
+        if db_error:
+            logger.error(f"WhatsApp: no pude verificar el registro de {phone} (BD no disponible)")
+            return {"replies": [
+                "⚠️ Ahora mismo no puedo verificar tu registro: la base del CMMS "
+                "no responde.\n"
+                "No es que te falte permiso — vuelve a enviarme tu mensaje en un "
+                "par de minutos."
+            ]}
         logger.warning(f"WhatsApp no autorizado: {phone} ({push_name})")
         return {"replies": [
             "🔒 Este numero no esta registrado en el CMMS.\n"

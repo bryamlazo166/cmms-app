@@ -130,6 +130,29 @@ def test_webhook_numero_no_registrado(client, monkeypatch):
     assert '51000000000' in data['replies'][0]
 
 
+def test_webhook_bd_caida_no_dice_no_registrado(client, monkeypatch):
+    """Si la BD no responde, el bot avisa de un problema temporal.
+
+    Antes cualquier fallo de consulta se traducia en "no estas registrado", que
+    manda al tecnico a pedir un alta que ya tiene.
+    """
+    monkeypatch.setenv('WHATSAPP_GATEWAY_TOKEN', TOKEN)
+    from bot import whatsapp_handler as wh
+    wh.invalidate_wa_users_cache()
+
+    def _boom(*a, **k):
+        raise RuntimeError('connection closed')
+
+    monkeypatch.setattr(wh, '_refresh_wa_users_cache', lambda app_: False)
+    monkeypatch.setattr(wh, '_query_wa_user', _boom)
+    r = client.post(URL, json=_payload(phone=PHONE),
+                    headers={'X-Gateway-Token': TOKEN})
+    assert r.status_code == 200
+    body = r.get_json()['replies'][0].lower()
+    assert 'no esta registrado' not in body
+    assert 'verificar' in body
+
+
 # ── Conversacion ──────────────────────────────────────────────────────────
 
 def test_saludo(client, wa_env):
