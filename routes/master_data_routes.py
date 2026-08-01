@@ -238,6 +238,147 @@ def register_master_data_routes(
             return update_entry(Equipment, id, request.json)
         return delete_entry(Equipment, id)
 
+    # Tablas que guardan area_id/line_id copiados del equipo. Cuando un equipo
+    # se muda fisicamente hay que reescribirlas o los reportes por area quedan
+    # apuntando al area vieja. rotative_asset_history NO se toca: es el
+    # historial de donde estuvo el activo y debe conservar la ubicacion real
+    # de cada evento.
+    _EQUIPMENT_LOCATION_TABLES = [
+        ('maintenance_notices', 'avisos'),
+        ('work_orders', 'ordenes de trabajo'),
+        ('requirements', 'requerimientos'),
+        ('lubrication_points', 'puntos de lubricacion'),
+        ('monitoring_points', 'puntos de monitoreo'),
+        ('inspection_routes', 'rondas de inspeccion'),
+        ('rotative_assets', 'activos rotativos'),
+    ]
+
+    @app.route('/api/equipments/<int:id>/move', methods=['GET', 'POST'])
+    def move_equipment(id):
+        """Mueve UN equipo a otra linea (y por lo tanto a otra area) sin tocar
+        el resto de la linea de origen.
+
+        GET  -> devuelve cuantos registros se van a reubicar (para confirmar).
+        POST -> ejecuta la mudanza. Body: {"target_line_id": int, "comment": str}
+
+        Se arrastra todo lo que cuelga del equipo: sistemas, componentes,
+        activos rotativos con sus repuestos e historial, puntos de lubricacion,
+        inspecciones, monitoreo, avisos, ordenes de trabajo y requerimientos.
+        Nada se borra ni se recrea, asi que el historial y el cumplimiento de
+        preventivos quedan intactos.
+        """
+        from sqlalchemy import text as _text
+
+        eq = Equipment.query.get(id)
+        if not eq:
+            return jsonify({"error": "Equipo no encontrado."}), 404
+
+        origen_line = Line.query.get(eq.line_id) if eq.line_id else None
+        origen_area = Area.query.get(origen_line.area_id) if origen_line else None
+
+        def _impacto():
+            datos = {}
+            for tabla, etiqueta in _EQUIPMENT_LOCATION_TABLES:
+                try:
+                    n = db.session.execute(_text(
+                        f"SELECT COUNT(*) FROM {tabla} WHERE equipment_id = :eq"
+                    ), {"eq": id}).scalar()
+                    datos[etiqueta] = int(n or 0)
+                except Exception:
+                    datos[etiqueta] = 0
+            return datos
+
+        if request.method == 'GET':
+            return jsonify({
+                "equipment": {"id": eq.id, "tag": eq.tag, "name": eq.name},
+                "current": {
+                    "area_id": origen_area.id if origen_area else None,
+                    "area_name": origen_area.name if origen_area else None,
+                    "line_id": origen_line.id if origen_line else None,
+                    "line_name": origen_line.name if origen_line else None,
+                },
+                "impact": _impacto(),
+            })
+
+        denied = _require_perm('activos_config', 'edit')
+        if denied:
+            return denied
+
+        data = request.json or {}
+        target_line_id = data.get('target_line_id')
+        if not target_line_id:
+            return jsonify({"error": "Falta la linea destino (target_line_id)."}), 400
+        if target_line_id == eq.line_id:
+            return jsonify({"error": "El equipo ya esta en esa linea."}), 400
+
+        destino_line = Line.query.get(target_line_id)
+        if not destino_line:
+            return jsonify({"error": f"La linea destino {target_line_id} no existe."}), 404
+        destino_area = Area.query.get(destino_line.area_id)
+        if not destino_area:
+            return jsonify({"error": "La linea destino no tiene area asignada."}), 400
+
+        try:
+            impacto = _impacto()
+            eq.line_id = destino_line.id
+
+            actualizados = {}
+            for tabla, etiqueta in _EQUIPMENT_LOCATION_TABLES:
+                try:
+                    res = db.session.execute(_text(
+                        f"UPDATE {tabla} SET area_id = :ar, line_id = :ln "
+                        f"WHERE equipment_id = :eq"
+                    ), {"ar": destino_area.id, "ln": destino_line.id, "eq": id})
+                    actualizados[etiqueta] = (
+                        res.rowcount if res.rowcount is not None else impacto.get(etiqueta, 0))
+                except Exception as ex:
+                    actualizados[etiqueta] = f"omitido ({ex.__class__.__name__})"
+
+            # Traza en el historial de cada activo rotativo del equipo, para
+            # que al abrir el activo se vea cuando y desde donde se mudo.
+            try:
+                from datetime import date as _date
+                from models import RotativeAsset, RotativeAssetHistory
+                comentario = (data.get('comment') or '').strip()
+                detalle = (
+                    f"Equipo {eq.tag or ''} {eq.name} reubicado: "
+                    f"{origen_area.name if origen_area else '?'} / "
+                    f"{origen_line.name if origen_line else '?'} -> "
+                    f"{destino_area.name} / {destino_line.name}"
+                )
+                if comentario:
+                    detalle += f". {comentario}"
+                for act in RotativeAsset.query.filter_by(equipment_id=id).all():
+                    db.session.add(RotativeAssetHistory(
+                        asset_id=act.id,
+                        event_type='ACTUALIZACION',
+                        event_date=_date.today().isoformat(),
+                        comments=detalle,
+                        area_id=destino_area.id,
+                        line_id=destino_line.id,
+                        equipment_id=id,
+                        system_id=act.system_id,
+                        component_id=act.component_id,
+                    ))
+            except Exception:
+                pass  # el historial es informativo, no bloquea la mudanza
+
+            db.session.commit()
+            return jsonify({
+                "ok": True,
+                "message": (
+                    f"'{eq.name}' movido a {destino_area.name} / {destino_line.name}."),
+                "from": {
+                    "area_name": origen_area.name if origen_area else None,
+                    "line_name": origen_line.name if origen_line else None,
+                },
+                "to": {"area_name": destino_area.name, "line_name": destino_line.name},
+                "rows_updated": actualizados,
+            })
+        except Exception as e:
+            db.session.rollback()
+            return jsonify({"error": str(e)}), 500
+
     @app.route('/api/equipments/bulk-responsibility', methods=['POST'])
     def bulk_set_equipment_responsibility():
         """Asigna responsable y proveedor a multiples equipos a la vez.

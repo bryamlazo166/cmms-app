@@ -294,7 +294,22 @@ function renderList(elementId, items, onClick, entityType) {
                 e.stopPropagation();
                 toggleEquipmentService(item);
             };
+
+            // Mudanza fisica del equipo a otra linea/area, arrastrando todo lo
+            // que cuelga de el (activos, lubricaciones, avisos, OTs...).
+            const moveBtn = document.createElement('button');
+            moveBtn.innerHTML = '🚚';
+            moveBtn.title = 'Mover este equipo a otra linea o area (se lleva sus activos, lubricaciones, inspecciones, avisos y OTs)';
+            moveBtn.style.background = 'transparent';
+            moveBtn.style.border = 'none';
+            moveBtn.style.cursor = 'pointer';
+            moveBtn.onclick = (e) => {
+                e.stopPropagation();
+                openMoveEquipmentModal(item);
+            };
+
             div.appendChild(span);
+            div.appendChild(moveBtn);
             div.appendChild(svcBtn);
         } else {
             div.appendChild(span);
@@ -1283,3 +1298,116 @@ async function confirmMergeLine(sourceId) {
     }
 }
 window.confirmMergeLine = confirmMergeLine;
+
+
+// ── Mover un equipo a otra linea / area ──────────────────────────────────────
+//
+// A diferencia de fusionar lineas (que mueve TODA la linea y la borra), esto
+// mueve un solo equipo. El equipo se lleva sus activos rotativos, puntos de
+// lubricacion, inspecciones, monitoreo, avisos, OTs y requerimientos. No se
+// borra ni se recrea nada, asi que el historial y el cumplimiento se conservan.
+
+async function openMoveEquipmentModal(equipo) {
+    const [preview, allLines, allAreas] = await Promise.all([
+        fetch(`/api/equipments/${equipo.id}/move`).then(r => r.json()),
+        fetch('/api/lines').then(r => r.json()),
+        fetch('/api/areas').then(r => r.json()),
+    ]);
+
+    const areaName = {};
+    (allAreas || []).forEach(a => { areaName[a.id] = a.name; });
+
+    const opciones = (allLines || [])
+        .filter(l => l.id !== equipo.line_id)
+        .sort((a, b) => `${areaName[a.area_id] || ''} ${a.name}`
+            .localeCompare(`${areaName[b.area_id] || ''} ${b.name}`))
+        .map(l => `<option value="${l.id}">${areaName[l.area_id] || '?'} › ${l.name}</option>`)
+        .join('');
+
+    if (!opciones) { alert('No hay otra linea a la que mover este equipo.'); return; }
+
+    const impacto = preview.impact || {};
+    const impactoHtml = Object.entries(impacto)
+        .filter(([, n]) => n > 0)
+        .map(([etiqueta, n]) => `&nbsp;&nbsp;• ${n} ${etiqueta}`)
+        .join('<br>') || '<em style="color:#888">(este equipo todavia no tiene registros asociados)</em>';
+
+    const actual = preview.current || {};
+
+    const modal = document.createElement('div');
+    modal.id = 'moveEquipModalOverlay';
+    modal.style.cssText = 'position:fixed;inset:0;z-index:10000;background:rgba(0,0,0,.78);backdrop-filter:blur(6px);display:flex;align-items:center;justify-content:center;';
+    modal.innerHTML = `
+        <div style="width:min(560px,96vw);background:#1c1f25;border:1px solid #2f4257;border-radius:12px;padding:20px;color:#d5e2f5;box-shadow:0 12px 40px rgba(0,0,0,.5);">
+            <h3 style="margin:0 0 12px;color:#5AC8FA;font-size:1.1rem;"><i class="fas fa-truck"></i> Mover equipo de sitio</h3>
+            <div style="background:#0a1a2e;border:1px solid #1f3656;border-radius:8px;padding:10px 14px;margin-bottom:14px;font-size:.88rem;">
+                <div style="color:#5AC8FA;font-weight:600;">${equipo.tag ? '[' + equipo.tag + '] ' : ''}${equipo.name}</div>
+                <div style="color:#7da3cf;font-size:.82rem;margin-top:6px;">
+                    Ubicacion actual: ${actual.area_name || '?'} › ${actual.line_name || '?'}
+                </div>
+                <div style="color:#7da3cf;font-size:.78rem;margin-top:10px;">Se mudan con el equipo:</div>
+                <div style="color:#a8d8ff;font-size:.82rem;margin-top:4px;max-height:150px;overflow:auto;">${impactoHtml}</div>
+            </div>
+            <div style="margin-bottom:12px;">
+                <label style="display:block;color:#7da3cf;font-size:.82rem;margin-bottom:6px;">Nueva ubicacion (area › linea):</label>
+                <select id="moveTargetSelect" style="width:100%;padding:8px 10px;background:#0a1a2e;border:1px solid #2f4257;color:#d5e2f5;border-radius:6px;">
+                    <option value="">-- Seleccionar --</option>
+                    ${opciones}
+                </select>
+            </div>
+            <div style="margin-bottom:14px;">
+                <label style="display:block;color:#7da3cf;font-size:.82rem;margin-bottom:6px;">Motivo (queda en el historial de los activos):</label>
+                <input id="moveComment" type="text" placeholder="Ej: reubicacion del enfriador al area de molino"
+                    style="width:100%;padding:8px 10px;background:#0a1a2e;border:1px solid #2f4257;color:#d5e2f5;border-radius:6px;">
+            </div>
+            <div style="background:rgba(90,200,250,.10);border:1px solid #5AC8FA55;border-radius:6px;padding:8px 12px;margin-bottom:14px;color:#a8d8ff;font-size:.80rem;">
+                <i class="fas fa-info-circle"></i> No se borra ni se recrea nada: el historial, las fechas
+                de lubricacion y el cumplimiento de preventivos se conservan. Si te equivocas de destino,
+                vuelve a mover el equipo a su linea original.
+            </div>
+            <div style="display:flex;justify-content:flex-end;gap:8px;">
+                <button onclick="closeMoveEquipmentModal()" style="padding:8px 14px;background:#2a2d35;border:1px solid #4a5361;color:#d6d8de;border-radius:6px;cursor:pointer;">Cancelar</button>
+                <button onclick="confirmMoveEquipment(${equipo.id})" style="padding:8px 14px;background:linear-gradient(145deg,#1d4e6b,#2a6f96);border:1px solid #3a8ab8;color:#fff;border-radius:6px;cursor:pointer;font-weight:600;"><i class="fas fa-truck"></i> Mover equipo</button>
+            </div>
+        </div>
+    `;
+    document.body.appendChild(modal);
+}
+window.openMoveEquipmentModal = openMoveEquipmentModal;
+
+function closeMoveEquipmentModal() {
+    const m = document.getElementById('moveEquipModalOverlay');
+    if (m) m.remove();
+}
+window.closeMoveEquipmentModal = closeMoveEquipmentModal;
+
+async function confirmMoveEquipment(equipmentId) {
+    const sel = document.getElementById('moveTargetSelect');
+    const targetId = sel && sel.value;
+    if (!targetId) { alert('Selecciona la linea destino.'); return; }
+    const comment = (document.getElementById('moveComment').value || '').trim();
+
+    try {
+        const r = await fetch(`/api/equipments/${equipmentId}/move`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ target_line_id: parseInt(targetId, 10), comment }),
+        });
+        const d = await r.json();
+        if (!r.ok) { alert('Error: ' + (d.error || r.statusText)); return; }
+        let msg = `✅ ${d.message}`;
+        if (d.rows_updated) {
+            msg += '\n\nRegistros reubicados:';
+            for (const [etiqueta, n] of Object.entries(d.rows_updated)) {
+                msg += `\n  • ${etiqueta}: ${n}`;
+            }
+        }
+        alert(msg);
+        closeMoveEquipmentModal();
+        if (state.selectedLineId) loadEquipments(state.selectedLineId);
+        if (typeof loadGlobalTree === 'function') loadGlobalTree();
+    } catch (e) {
+        alert('Error: ' + e.message);
+    }
+}
+window.confirmMoveEquipment = confirmMoveEquipment;

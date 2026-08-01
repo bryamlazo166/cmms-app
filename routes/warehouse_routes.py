@@ -691,3 +691,343 @@ def register_warehouse_routes(
                 logger.exception('warehouse_equipment_coverage error')
                 return jsonify({"error": str(e)}), 500
 
+        @app.route('/api/warehouse/export-bom', methods=['GET'])
+        @login_required
+        @limit_export
+        def export_bom_excel():
+            """Lista maestra de repuestos necesarios por equipo, en Excel.
+
+            Cruza las tres fuentes donde hoy viven los repuestos:
+              - BOM de activos rotativos vinculado a almacen
+              - BOM de activos rotativos SIN vincular (texto libre)
+              - Repuestos de la taxonomia (equipo > sistema > componente)
+              - Fichas tecnicas (specs) de activos rotativos: campos como
+                "Rodamiento lado acople" son repuestos escritos como dato
+            y le agrega el consumo real del kardex para contrastar lo que
+            se planifica contra lo que de verdad se saca de almacen.
+
+            Query params (todos opcionales):
+              area_id       filtra a un area
+              equipment_id  filtra a un equipo
+              months        ventana de consumo del kardex (default 12)
+            """
+            try:
+                from datetime import date as _date, timedelta as _timedelta
+
+                from models import (Area, Line, System, Component, SparePart,
+                                    RotativeAssetSpec)
+
+                f_area = request.args.get('area_id', type=int)
+                f_equip = request.args.get('equipment_id', type=int)
+                months = request.args.get('months', default=12, type=int) or 12
+                months = max(1, min(months, 60))
+
+                areas_map = {a.id: a for a in Area.query.all()}
+                lines_map = {ln.id: ln for ln in Line.query.all()}
+                equip_map = {e.id: e for e in Equipment.query.all()}
+                items_map = {i.id: i for i in WarehouseItem.query.all()}
+
+                def _ubicacion(equipment_id, fallback_area_id=None, fallback_line_id=None):
+                    """(area_id, area_nombre, linea_nombre, equipo_tag, equipo_nombre)."""
+                    eq = equip_map.get(equipment_id) if equipment_id else None
+                    if eq:
+                        ln = lines_map.get(eq.line_id)
+                        ar = areas_map.get(ln.area_id) if ln else None
+                        return (ar.id if ar else None,
+                                ar.name if ar else '-',
+                                ln.name if ln else '-',
+                                eq.tag or '', eq.name or '')
+                    ln = lines_map.get(fallback_line_id) if fallback_line_id else None
+                    ar = areas_map.get(fallback_area_id) if fallback_area_id else (
+                        areas_map.get(ln.area_id) if ln else None)
+                    return (ar.id if ar else None,
+                            ar.name if ar else '(sin area)',
+                            ln.name if ln else '(sin linea)',
+                            '', '(sin equipo asignado)')
+
+                # ── Activos rotativos que entran en el reporte ────────────
+                assets = [a for a in RotativeAsset.query.all() if a.is_active]
+                assets_ok = {}
+                for a in assets:
+                    ubic = _ubicacion(a.equipment_id, a.area_id, a.line_id)
+                    if f_equip and a.equipment_id != f_equip:
+                        continue
+                    if f_area and ubic[0] != f_area:
+                        continue
+                    assets_ok[a.id] = (a, ubic)
+
+                # ── Hoja 2: detalle por equipo ────────────────────────────
+                detalle = []
+                consolidado = {}   # item_id -> acumulado
+                por_catalogar = []
+                bom_por_activo = {}  # asset_id -> [texto de cada repuesto]
+
+                for bom in RotativeAssetBOM.query.all():
+                    par = assets_ok.get(bom.asset_id)
+                    if not par:
+                        continue
+                    asset, (ar_id, ar_name, ln_name, eq_tag, eq_name) = par
+                    item = items_map.get(bom.warehouse_item_id) if bom.warehouse_item_id else None
+                    qty = float(bom.quantity or 0)
+                    nombre = item.name if item else (bom.free_text or '(sin descripcion)')
+
+                    bom_por_activo.setdefault(bom.asset_id, []).append(nombre.lower())
+
+                    detalle.append({
+                        'Area': ar_name,
+                        'Linea': ln_name,
+                        'Tag equipo': eq_tag,
+                        'Equipo': eq_name,
+                        'Codigo activo': asset.code,
+                        'Activo rotativo': asset.name,
+                        'Tipo de activo': asset.category or '',
+                        'Especialidad': bom.category or '',
+                        'Codigo almacen': item.code if item else '',
+                        'Repuesto': nombre,
+                        'Unidad': (item.unit if item else '') or '',
+                        'Cantidad necesaria': qty,
+                        'Stock actual': float(item.stock or 0) if item else None,
+                        'Estado': 'Vinculado a almacen' if item else 'SIN CODIGO DE ALMACEN',
+                        'Notas': bom.notes or '',
+                    })
+
+                    if item:
+                        acc = consolidado.setdefault(item.id, {
+                            'qty': 0.0, 'equipos': {}, 'activos': 0})
+                        acc['qty'] += qty
+                        acc['activos'] += 1
+                        clave = f"{eq_tag} {eq_name}".strip() if eq_name else ar_name
+                        acc['equipos'][clave] = acc['equipos'].get(clave, 0.0) + qty
+                    else:
+                        por_catalogar.append({
+                            'Origen': 'Lista del activo rotativo',
+                            'Area': ar_name,
+                            'Linea': ln_name,
+                            'Equipo': f"{eq_tag} {eq_name}".strip(),
+                            'Activo / Componente': f"{asset.code} {asset.name}",
+                            'Repuesto': nombre,
+                            'Codigo propuesto': '',
+                            'Marca': '',
+                            'Cantidad': qty,
+                            'Que hacer': 'Crear el repuesto en almacen y vincularlo al activo',
+                        })
+
+                # ── Repuestos de la taxonomia (equipo > sistema > componente)
+                # No estan conectados a almacen: se listan para catalogarlos.
+                items_por_nombre = {}
+                items_por_codigo = {}
+                for i in items_map.values():
+                    items_por_nombre.setdefault((i.name or '').strip().lower(), i)
+                    for c in ((i.code or ''), (i.manufacturer_code or '')):
+                        if c:
+                            items_por_codigo.setdefault(c.strip().lower(), i)
+
+                try:
+                    sistemas = {s.id: s for s in System.query.all()}
+                    componentes = {c.id: c for c in Component.query.all()}
+                    for sp in SparePart.query.all():
+                        comp = componentes.get(sp.component_id)
+                        sis = sistemas.get(comp.system_id) if comp else None
+                        eq_id = sis.equipment_id if sis else None
+                        ar_id, ar_name, ln_name, eq_tag, eq_name = _ubicacion(eq_id)
+                        if f_equip and eq_id != f_equip:
+                            continue
+                        if f_area and ar_id != f_area:
+                            continue
+                        ya = (items_por_codigo.get((sp.code or '').strip().lower())
+                              or items_por_nombre.get((sp.name or '').strip().lower()))
+                        por_catalogar.append({
+                            'Origen': 'Taxonomia (componente)',
+                            'Area': ar_name,
+                            'Linea': ln_name,
+                            'Equipo': f"{eq_tag} {eq_name}".strip(),
+                            'Activo / Componente': (
+                                f"{sis.name if sis else ''} / {comp.name if comp else ''}".strip(' /')),
+                            'Repuesto': sp.name,
+                            'Codigo propuesto': sp.code or '',
+                            'Marca': sp.brand or '',
+                            'Cantidad': float(sp.quantity or 0),
+                            'Que hacer': (f'Ya existe en almacen como {ya.code} — solo falta vincularlo'
+                                          if ya else 'Crear el item en almacen'),
+                        })
+                except Exception:
+                    logger.exception('export_bom: taxonomia omitida')
+
+                # ── Hoja 4: repuestos escondidos en las fichas tecnicas ───
+                CLAVES_REPUESTO = (
+                    'rodamiento', 'reten', 'retén', 'sello', 'faja', 'correa',
+                    'cadena', 'pinon', 'piñon', 'piñón', 'acople', 'filtro',
+                    'empaque', 'kit', 'buje', 'chaveta', 'acoplamiento',
+                    'acoplamiento', 'catalina', 'eslabon', 'eslabón', 'lubricante',
+                )
+                specs_rows = []
+                try:
+                    for sp in RotativeAssetSpec.query.all():
+                        if not getattr(sp, 'is_active', True):
+                            continue
+                        clave = (sp.key_name or '').lower()
+                        if not any(k in clave for k in CLAVES_REPUESTO):
+                            continue
+                        par = assets_ok.get(sp.asset_id)
+                        if not par:
+                            continue
+                        asset, (ar_id, ar_name, ln_name, eq_tag, eq_name) = par
+                        valor = (sp.value_text or '').strip()
+                        if not valor:
+                            continue
+                        en_bom = any(valor.lower() in txt
+                                     for txt in bom_por_activo.get(sp.asset_id, []))
+                        specs_rows.append({
+                            'Area': ar_name,
+                            'Linea': ln_name,
+                            'Equipo': f"{eq_tag} {eq_name}".strip(),
+                            'Codigo activo': asset.code,
+                            'Activo rotativo': asset.name,
+                            'Campo de la ficha': sp.key_name,
+                            'Valor (repuesto)': valor,
+                            'Unidad': sp.unit or '',
+                            'Ya esta en la lista del activo': 'Si' if en_bom else 'NO — falta agregarlo',
+                        })
+                except Exception:
+                    logger.exception('export_bom: specs omitidas')
+
+                # ── Hoja 5: consumo real del kardex ───────────────────────
+                corte = (_date.today() - _timedelta(days=months * 30)).isoformat()
+                consumo = {}   # item_id -> {'qty': x, 'salidas': n, 'ultima': str, 'ots': set}
+                for m in WarehouseMovement.query.all():
+                    if (m.movement_type or '').upper() != 'OUT':
+                        continue
+                    fecha = (m.date or '')[:10]
+                    if fecha < corte:
+                        continue
+                    c = consumo.setdefault(m.item_id, {
+                        'qty': 0.0, 'salidas': 0, 'ultima': '', 'ots': set()})
+                    c['qty'] += abs(float(m.quantity or 0))
+                    c['salidas'] += 1
+                    if fecha > c['ultima']:
+                        c['ultima'] = fecha
+                    if m.reference_id:
+                        c['ots'].add(m.reference_id)
+
+                # ── Hoja 1: consolidado por repuesto ──────────────────────
+                consol_rows = []
+                for item_id, acc in consolidado.items():
+                    item = items_map.get(item_id)
+                    if not item:
+                        continue
+                    stock = float(item.stock or 0)
+                    req = round(acc['qty'], 2)
+                    faltante = round(max(0.0, req - stock), 2)
+                    costo = float(item.average_cost or item.unit_cost or 0)
+                    equipos_txt = ', '.join(
+                        f"{k} (x{round(v, 2):g})"
+                        for k, v in sorted(acc['equipos'].items(), key=lambda kv: -kv[1]))
+                    c = consumo.get(item_id, {})
+                    consol_rows.append({
+                        'Codigo': item.code,
+                        'Repuesto': item.name,
+                        'Familia': item.family or '',
+                        'Marca': item.brand or '',
+                        'Unidad': item.unit or '',
+                        'Criticidad': item.criticality or '',
+                        'Clase ABC': item.abc_class or '',
+                        'Stock actual': stock,
+                        'Cantidad necesaria (todos los equipos)': req,
+                        'Faltante': faltante,
+                        'Cobertura %': round(stock / req * 100, 1) if req > 0 else None,
+                        'Stock minimo': float(item.min_stock or 0),
+                        'Punto de reposicion': float(item.rop or 0),
+                        'Costo unitario': costo or None,
+                        'Costo de cubrir el faltante': round(faltante * costo, 2) if costo else None,
+                        f'Consumo ultimos {months} meses': round(c.get('qty', 0), 2),
+                        'Cantidad de equipos': len(acc['equipos']),
+                        'Equipos que lo usan': equipos_txt,
+                    })
+                consol_rows.sort(key=lambda r: (-r['Faltante'], r['Repuesto'] or ''))
+
+                kardex_rows = []
+                for item_id, c in consumo.items():
+                    item = items_map.get(item_id)
+                    if not item:
+                        continue
+                    stock = float(item.stock or 0)
+                    mensual = c['qty'] / months if months else 0
+                    lead = int(item.lead_time or 0)
+                    sugerido = (mensual * (lead / 30.0)) + float(item.safety_stock or 0)
+                    kardex_rows.append({
+                        'Codigo': item.code,
+                        'Repuesto': item.name,
+                        'Familia': item.family or '',
+                        f'Salidas ultimos {months} meses': round(c['qty'], 2),
+                        'Numero de salidas': c['salidas'],
+                        'Consumo mensual promedio': round(mensual, 2),
+                        'Stock actual': stock,
+                        'Meses de cobertura del stock': round(stock / mensual, 1) if mensual > 0 else None,
+                        'Cantidad necesaria (equipos)': round(consolidado.get(item_id, {}).get('qty', 0), 2),
+                        'Stock minimo actual': float(item.min_stock or 0),
+                        'Dias de reposicion del proveedor': lead,
+                        'Stock minimo sugerido': round(sugerido, 2) if sugerido > 0 else None,
+                        'Ultima salida': c['ultima'],
+                        'Ordenes de trabajo que lo consumieron': len(c['ots']),
+                    })
+                kardex_rows.sort(key=lambda r: -r[f'Salidas ultimos {months} meses'])
+
+                detalle.sort(key=lambda r: (r['Area'], r['Linea'], r['Tag equipo'],
+                                            r['Activo rotativo'], r['Repuesto']))
+                por_catalogar.sort(key=lambda r: (r['Area'], r['Linea'], r['Equipo'], r['Repuesto']))
+
+                hojas = [
+                    ('Consolidado', consol_rows,
+                     ['Codigo', 'Repuesto', 'Familia', 'Marca', 'Unidad', 'Criticidad',
+                      'Clase ABC', 'Stock actual', 'Cantidad necesaria (todos los equipos)',
+                      'Faltante', 'Cobertura %', 'Stock minimo', 'Punto de reposicion',
+                      'Costo unitario', 'Costo de cubrir el faltante',
+                      f'Consumo ultimos {months} meses', 'Cantidad de equipos',
+                      'Equipos que lo usan']),
+                    ('Detalle por equipo', detalle,
+                     ['Area', 'Linea', 'Tag equipo', 'Equipo', 'Codigo activo',
+                      'Activo rotativo', 'Tipo de activo', 'Especialidad',
+                      'Codigo almacen', 'Repuesto', 'Unidad', 'Cantidad necesaria',
+                      'Stock actual', 'Estado', 'Notas']),
+                    ('Por catalogar', por_catalogar,
+                     ['Origen', 'Area', 'Linea', 'Equipo', 'Activo / Componente',
+                      'Repuesto', 'Codigo propuesto', 'Marca', 'Cantidad', 'Que hacer']),
+                    ('Repuestos en fichas tecnicas', specs_rows,
+                     ['Area', 'Linea', 'Equipo', 'Codigo activo', 'Activo rotativo',
+                      'Campo de la ficha', 'Valor (repuesto)', 'Unidad',
+                      'Ya esta en la lista del activo']),
+                    ('Consumo de almacen', kardex_rows,
+                     ['Codigo', 'Repuesto', 'Familia', f'Salidas ultimos {months} meses',
+                      'Numero de salidas', 'Consumo mensual promedio', 'Stock actual',
+                      'Meses de cobertura del stock', 'Cantidad necesaria (equipos)',
+                      'Stock minimo actual', 'Dias de reposicion del proveedor',
+                      'Stock minimo sugerido', 'Ultima salida',
+                      'Ordenes de trabajo que lo consumieron']),
+                ]
+
+                output = BytesIO()
+                with pd.ExcelWriter(output, engine='openpyxl') as writer:
+                    for nombre_hoja, filas, columnas in hojas:
+                        df = pd.DataFrame(filas, columns=columnas)
+                        df.to_excel(writer, index=False, sheet_name=nombre_hoja[:31])
+                        ws = writer.sheets[nombre_hoja[:31]]
+                        ws.freeze_panes = 'A2'
+                        for idx, col in enumerate(columnas, start=1):
+                            largo = max([len(str(col))] + [
+                                len(str(f.get(col, ''))) for f in filas[:400]])
+                            ws.column_dimensions[
+                                ws.cell(row=1, column=idx).column_letter
+                            ].width = min(max(largo + 2, 10), 55)
+
+                output.seek(0)
+                sufijo = _date.today().isoformat()
+                return send_file(
+                    output,
+                    download_name=f"Repuestos_por_Equipo_{sufijo}.xlsx",
+                    as_attachment=True,
+                    mimetype='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+                )
+            except Exception as e:
+                logger.exception('export_bom_excel error')
+                return jsonify({"error": str(e)}), 500
+

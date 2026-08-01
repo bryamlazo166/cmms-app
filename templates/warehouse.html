@@ -228,6 +228,18 @@
                             <input type="checkbox" id="filterBomUncovered" onchange="renderBomTable()">
                             <i class="fas fa-exclamation-triangle"></i> Solo sin cobertura
                         </label>
+                        <select id="bomExportArea"
+                            style="padding: 8px; background: #333; color: white; border: 1px solid #555; border-radius: 5px;">
+                            <option value="">Toda la planta</option>
+                            <!-- Cargado por JS -->
+                        </select>
+                        <a href="/api/warehouse/export-bom" id="bomExportLink" target="_blank"
+                            style="text-decoration:none;" data-perm="almacen.export">
+                            <button class="btn-secondary"
+                                style="background:#30D158; color:white; border:none; padding: 8px 15px;">
+                                <i class="fas fa-file-excel"></i> Descargar lista de repuestos
+                            </button>
+                        </a>
                         <div style="flex:1;"></div>
                         <div id="bomKpis" style="color:#9ab0cb; font-size:.9rem;">-</div>
                     </div>
@@ -499,8 +511,34 @@
 
                 // ── BOM POR EQUIPO ────────────────────────────────────────
                 let bomRows = [];
+                let bomAreasCargadas = false;
+
+                // El selector de area solo cambia el alcance de la descarga:
+                // la tabla de pantalla sigue mostrando toda la planta.
+                async function loadBomAreas() {
+                    if (bomAreasCargadas) return;
+                    bomAreasCargadas = true;
+                    const sel = document.getElementById('bomExportArea');
+                    try {
+                        const areas = await fetch('/api/areas').then(r => r.json());
+                        (areas || []).sort((a, b) => (a.name || '').localeCompare(b.name || ''))
+                            .forEach(a => {
+                                const o = document.createElement('option');
+                                o.value = a.id;
+                                o.textContent = a.name;
+                                sel.appendChild(o);
+                            });
+                    } catch (_) { /* si falla, queda "Toda la planta" */ }
+                    sel.onchange = () => {
+                        const link = document.getElementById('bomExportLink');
+                        link.href = sel.value
+                            ? `/api/warehouse/export-bom?area_id=${sel.value}`
+                            : '/api/warehouse/export-bom';
+                    };
+                }
 
                 async function loadBomData() {
+                    loadBomAreas();
                     const tbody = document.querySelector('#bomTable tbody');
                     tbody.innerHTML = '<tr><td colspan="8" style="text-align:center; color:#aaa;">Cargando…</td></tr>';
                     try {
