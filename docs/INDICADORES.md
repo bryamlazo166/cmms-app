@@ -343,15 +343,21 @@ TM no producidas   = horas de parada × TM/h del equipo detenido × rendimiento 
 
 Ejemplo real: digestor #1 = 8 000 kg × 75 % × 4 llenadas = **24 TM/día = 1 TM/h**.
 
-Tres reglas que sostienen el número:
+Cuatro reglas que sostienen el número:
 
-1. **Cada equipo aporta su propia capacidad.** Si para un digestor de nueve se
+1. **Solo restan toneladas los equipos donde se transforma el producto**
+   (`is_production_unit`): los digestores, los 2 secadores y los 2 molinos.
+   Los transportadores, ciclones, percoladores, fajas y vahos son auxiliares:
+   si paran no se deja de producir harina por sí mismos, y contarlos valoraba
+   varias veces el mismo flujo. Sus paradas siguen en los indicadores de
+   mantenimiento y se informan aparte en la lámina de producción.
+2. **Cada equipo aporta su propia capacidad.** Si para un digestor de nueve se
    pierde lo de ese digestor, no el rendimiento de toda la planta. Valorar la
    parada de un equipo con la cifra del área era lo que hacía que un mes
    reportara más toneladas perdidas de las que la planta produce.
-2. **Las paradas que cruzan meses se reparten** entre los días que cubren, en
+3. **Las paradas que cruzan meses se reparten** entre los días que cubren, en
    vez de cargarse enteras al mes en que se cerró la OT.
-3. **Techo físico**: la pérdida de un periodo nunca supera la capacidad
+4. **Techo físico**: la pérdida de un periodo nunca supera la capacidad
    instalada de esos días.
 
 La **disponibilidad de planta** del diagnóstico usa la misma cuenta:

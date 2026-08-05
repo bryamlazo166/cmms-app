@@ -1294,6 +1294,9 @@ _ENSURE_INDEXES_SQL = [
     "ALTER TABLE equipments ADD COLUMN IF NOT EXISTS capacity_tm    DOUBLE PRECISION",
     # Capacidad real de proceso: TM/dia y, para equipos por lotes (digestores),
     # capacidad de la llenada en kg + % de llenado + llenadas por dia.
+    # Equipos que transforman producto (digestores, secadores, molinos): su
+    # parada cuesta toneladas. El resto es auxiliar y no resta produccion.
+    "ALTER TABLE equipments ADD COLUMN IF NOT EXISTS is_production_unit BOOLEAN NOT NULL DEFAULT FALSE",
     "ALTER TABLE equipments ADD COLUMN IF NOT EXISTS capacity_tm_day   DOUBLE PRECISION",
     "ALTER TABLE equipments ADD COLUMN IF NOT EXISTS batch_capacity_kg DOUBLE PRECISION",
     "ALTER TABLE equipments ADD COLUMN IF NOT EXISTS fill_pct          DOUBLE PRECISION",

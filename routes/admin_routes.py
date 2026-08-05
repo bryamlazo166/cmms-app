@@ -412,15 +412,18 @@ def register_admin_routes(app, db, logger):
             from models import Equipment, Line
             from utils.kpi_helpers import (
                 eq_batch_kg, eq_batch_regime, eq_capacity_tm_day, eq_is_batch,
-                plant_capacity_tm_day, plant_yield_factor, DAYS_PER_MONTH,
+                eq_produces, plant_capacity_tm_day, plant_yield_factor,
+                suggest_production_units, DAYS_PER_MONTH,
             )
             equipos = Equipment.query.all()
             lines = {l.id: l for l in Line.query.all()}
             planta = plant_capacity_tm_day(equipos)
             rend = plant_yield_factor(equipos)
+            sugeridos = suggest_production_units(equipos)
 
-            batch, sin_capacidad = [], []
+            batch, otros_productivos, sin_capacidad, sin_marcar = [], [], [], []
             for e in sorted(equipos, key=lambda x: (x.tag or '')):
+                ln = lines.get(e.line_id)
                 if eq_is_batch(e):
                     fill, lotes = eq_batch_regime(e)
                     batch.append({
@@ -432,10 +435,25 @@ def register_admin_routes(app, db, logger):
                         'include_in_kpi': bool(e.include_in_kpi),
                         'motivo': e.out_of_service_reason,
                     })
-                elif e.include_in_kpi and eq_capacity_tm_day(e) <= 0:
-                    ln = lines.get(e.line_id)
-                    sin_capacidad.append({'id': e.id, 'tag': e.tag, 'name': e.name,
-                                          'linea': ln.name if ln else None})
+                    continue
+                if not e.include_in_kpi:
+                    continue
+                if eq_produces(e):
+                    cap = eq_capacity_tm_day(e)
+                    otros_productivos.append({
+                        'id': e.id, 'tag': e.tag, 'name': e.name,
+                        'linea': ln.name if ln else None,
+                        'tm_dia': round(cap, 2),
+                        'in_service': bool(e.in_service),
+                    })
+                    if cap <= 0:
+                        sin_capacidad.append({'id': e.id, 'tag': e.tag,
+                                              'name': e.name,
+                                              'linea': ln.name if ln else None})
+                elif e.id in sugeridos:
+                    # Parece un secador o un molino pero no esta marcado
+                    sin_marcar.append({'id': e.id, 'tag': e.tag, 'name': e.name,
+                                       'linea': ln.name if ln else None})
 
             return jsonify({
                 'planta_tm_dia': round(planta, 2),
@@ -447,7 +465,13 @@ def register_admin_routes(app, db, logger):
                 'batch': batch,
                 'operativos': len([b for b in batch if b['in_service']]),
                 'fuera_servicio': [b for b in batch if not b['in_service']],
+                'otros_productivos': otros_productivos,
+                'productivos_total': len([b for b in batch if b['in_service']])
+                                     + len(otros_productivos),
                 'sin_capacidad': sin_capacidad,
+                'sin_marcar': sin_marcar,
+                'auxiliares': len([e for e in equipos
+                                   if e.include_in_kpi and not eq_produces(e)]),
             })
         except Exception as e:
             logger.exception('kpi_scope_capacidad error')
@@ -456,13 +480,13 @@ def register_admin_routes(app, db, logger):
     @app.route('/api/admin/kpi-scope/sugerir-capacidades', methods=['POST'])
     @login_required
     def kpi_scope_sugerir_capacidades():
-        """Rellena la capacidad de los equipos que aun no la tienen.
+        """Marca los equipos productivos y rellena su capacidad.
 
         - Digestores: kg de la llenada segun la tabla de planta, 75% de
-          llenado y 4 llenadas al dia.
-        - Resto: hereda la capacidad del digestor de su linea (un
-          transportador que alimenta al digestor #1 vale lo que el digestor
-          #1) o se reparte la planta entre sus equipos gemelos del area.
+          llenado y 4 llenadas al dia. Siempre cuentan como productivos.
+        - Secadores y molinos: se marcan como productivos y reciben media
+          capacidad de planta cada uno (son 2 de cada, en paralelo).
+        - Todo lo demas queda AUXILIAR: su parada no resta toneladas.
 
         Body opcional: {"overwrite": true} para recalcular tambien lo ya
         capturado a mano. Sin eso, solo llena lo vacio.
@@ -473,14 +497,14 @@ def register_admin_routes(app, db, logger):
             from models import Equipment, Line
             from utils.kpi_helpers import (
                 BATCH_CAPACITY_KG, DEFAULT_BATCHES_PER_DAY, DEFAULT_FILL_PCT,
-                eq_is_batch, suggest_capacities,
+                eq_is_batch, suggest_capacities, suggest_production_units,
             )
             data = request.get_json(silent=True) or {}
             overwrite = bool(data.get('overwrite'))
 
             equipos = Equipment.query.all()
             lines = Line.query.all()
-            cambios = {'batch': [], 'capacidad': []}
+            cambios = {'batch': [], 'capacidad': [], 'productivos': []}
 
             # 1) Equipos por lotes: sembrar kg/llenada y regimen
             for e in equipos:
@@ -504,7 +528,17 @@ def register_admin_routes(app, db, logger):
 
             db.session.flush()  # para que la capacidad de planta ya vea los batch
 
-            # 2) Resto de equipos: capacidad sugerida
+            # 2) Marcar secadores y molinos como productivos
+            equipos = Equipment.query.all()
+            eq_by_id = {e.id: e for e in equipos}
+            for eid in suggest_production_units(equipos):
+                e = eq_by_id.get(eid)
+                if e and not e.is_production_unit:
+                    e.is_production_unit = True
+                    cambios['productivos'].append({'tag': e.tag, 'name': e.name})
+            db.session.flush()
+
+            # 3) Capacidad de los productivos que no son de lotes
             equipos = Equipment.query.all()
             sug = suggest_capacities(equipos, lines)
             eq_by_id = {e.id: e for e in equipos}
@@ -521,6 +555,7 @@ def register_admin_routes(app, db, logger):
             db.session.commit()
             return jsonify({'ok': True, 'overwrite': overwrite,
                             'batch_actualizados': len(cambios['batch']),
+                            'productivos_marcados': len(cambios['productivos']),
                             'capacidad_actualizados': len(cambios['capacidad']),
                             **cambios})
         except Exception as e:

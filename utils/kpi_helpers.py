@@ -59,14 +59,37 @@ def eq_batch_regime(eq):
             float(batches) if batches is not None and batches > 0 else DEFAULT_BATCHES_PER_DAY)
 
 
+def eq_is_batch(eq):
+    return eq_batch_kg(eq) > 0
+
+
+def eq_produces(eq):
+    """True si la parada de este equipo cuesta toneladas de producto.
+
+    En esta planta transforman producto los digestores (por lotes), los
+    secadores y los molinos. Los transportadores, ciclones, percoladores,
+    fajas y vahos son auxiliares: mueven o acondicionan, no producen harina,
+    y contarlos multiplicaba las toneladas perdidas de un mismo flujo.
+    """
+    if eq_is_batch(eq):
+        return True
+    return bool(getattr(eq, 'is_production_unit', False))
+
+
 def eq_capacity_tm_day(eq):
     """TM de materia prima que el equipo procesa en un dia completo.
+
+    Solo tienen capacidad los equipos productivos: un auxiliar devuelve 0
+    aunque tenga un valor guardado (asi no resta toneladas ni pondera la
+    disponibilidad, pero el dato queda por si se le marca como productivo).
 
     Orden de prioridad:
       1. Equipo por lotes  -> kg de la llenada x % llenado x llenadas/dia
       2. capacity_tm_day   -> capturado a mano en Alcance de Indicadores
       3. capacity_tm       -> legacy en TM/mes, se reparte entre los dias
     """
+    if not eq_produces(eq):
+        return 0.0
     kg = eq_batch_kg(eq)
     if kg > 0:
         fill, batches = eq_batch_regime(eq)
@@ -78,10 +101,6 @@ def eq_capacity_tm_day(eq):
     if m is not None and m > 0:
         return float(m) / DAYS_PER_MONTH
     return 0.0
-
-
-def eq_is_batch(eq):
-    return eq_batch_kg(eq) > 0
 
 
 def eq_input_tph(eq):
@@ -163,20 +182,42 @@ def plant_yield_factor(equipments):
     return _ponderado(True) or _ponderado(False) or 1.0
 
 
+# Equipos que transforman producto ademas de los digestores: definen una
+# etapa del proceso y si paran, esa etapa deja de producir.
+DEFAULT_PRODUCTION_NAMES = {'SECADOR', 'MOLINO'}
+
+
+def suggest_production_units(equipments):
+    """IDs de los equipos que deberian marcarse como productivos.
+
+    Los digestores ya lo son por trabajar por lotes; aqui se detectan los
+    secadores y los molinos por su nombre. Todo lo demas queda auxiliar.
+    """
+    return {eq.id for eq in equipments
+            if not eq_is_batch(eq)
+            and getattr(eq, 'include_in_kpi', True)
+            and _normalize_name(eq.name) in DEFAULT_PRODUCTION_NAMES}
+
+
 def suggest_capacities(equipments, lines):
-    """Sugiere la capacidad TM/dia de los equipos que no trabajan por lotes.
+    """Sugiere la capacidad TM/dia de los equipos productivos que no son de
+    lotes: en esta planta, los secadores y los molinos.
 
     Reglas, en orden:
-      1. Si en su LINEA hay equipos por lotes, hereda esa capacidad (el
-         transportador que alimenta al digestor #1 vale lo que el digestor #1).
-      2. Si no, se reparte la capacidad de planta entre sus equipos gemelos
-         del area (2 molinos -> mitad de planta cada uno; equipo unico en
-         serie -> planta completa: si para, para todo).
+      1. Si en su LINEA hay equipos por lotes, hereda esa capacidad.
+      2. Si no, reparte la capacidad de planta entre sus equipos gemelos del
+         area: secado y molienda estan en serie con la coccion, asi que cada
+         uno de los 2 molinos vale media planta, igual que cada secador.
 
+    Los auxiliares no reciben capacidad: su parada no resta toneladas.
     Devuelve {equipment_id: tm_dia_sugerida}. No escribe en la BD.
     """
     plant = plant_capacity_tm_day(equipments)
     line_area = {l.id: l.area_id for l in lines}
+
+    def productivo(eq):
+        return (eq_produces(eq) and not eq_is_batch(eq)
+                and getattr(eq, 'include_in_kpi', True))
 
     batch_por_linea = {}
     for eq in equipments:
@@ -187,14 +228,13 @@ def suggest_capacities(equipments, lines):
     # Gemelos por area: (area_id, nombre normalizado) -> cuantos son
     gemelos = {}
     for eq in equipments:
-        if eq_is_batch(eq) or not getattr(eq, 'include_in_kpi', True):
-            continue
-        key = (line_area.get(eq.line_id), _normalize_name(eq.name))
-        gemelos[key] = gemelos.get(key, 0) + 1
+        if productivo(eq):
+            key = (line_area.get(eq.line_id), _normalize_name(eq.name))
+            gemelos[key] = gemelos.get(key, 0) + 1
 
     out = {}
     for eq in equipments:
-        if eq_is_batch(eq) or not getattr(eq, 'include_in_kpi', True):
+        if not productivo(eq):
             continue
         heredada = batch_por_linea.get(eq.line_id, 0.0)
         if heredada > 0:

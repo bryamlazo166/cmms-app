@@ -150,7 +150,8 @@ def test_diagnostico_produccion_y_evolucion(auth_admin, app):
         line = Line(name='LINEA PROD TEST', area_id=area.id)
         db.session.add(line); db.session.flush()
         eq = Equipment(name='EQUIPO PROD TEST', tag='EQ-PROD', line_id=line.id,
-                       capacity_tm_day=24.0)  # 24 TM/dia = 1 TM/h
+                       capacity_tm_day=24.0,        # 24 TM/dia = 1 TM/h
+                       is_production_unit=True)     # transforma producto
         db.session.add(eq); db.session.flush()
         mes = dt.date.today().strftime('%Y-%m')
         # Meta de produccion: solo se usa como referencia en la lamina

@@ -67,11 +67,15 @@
                     <code>TM/día = kg por llenada × % de llenado × llenadas por día ÷ 1000</code>.
                     Ejemplo: 8 000 kg × 75 % × 4 llenadas = <strong>24 TM/día</strong>.<br>
                     Cuando un equipo para, las toneladas que se dejan de producir salen de <em>su</em> capacidad,
-                    nunca del rendimiento de toda la planta. Un digestor fuera de servicio no suma capacidad.
+                    nunca del rendimiento de toda la planta. Un digestor fuera de servicio no suma capacidad.<br>
+                    <strong>Solo restan toneladas los equipos donde se transforma el producto</strong>: los digestores,
+                    los secadores y los molinos. Los transportadores, ciclones, percoladores y fajas son auxiliares —
+                    si paran no se deja de producir harina por sí mismos, así que no se cuentan dos veces sobre el mismo flujo.
                 </div>
                 <div class="cap-grid" id="capGrid"></div>
                 <div id="capWarn"></div>
                 <div class="twrap"><table id="capTable"></table></div>
+                <div id="capOtros"></div>
                 <div style="margin-top:12px;display:flex;gap:10px;flex-wrap:wrap;">
                     <button class="btn primary" onclick="sugerirCapacidades(false)">
                         <i class="fas fa-wand-magic-sparkles"></i> Completar capacidades vacías
@@ -141,21 +145,41 @@
                 const n = x => (x == null ? '—' : Number(x).toLocaleString('es-PE'));
                 document.getElementById('capGrid').innerHTML =
                     card('Materia prima por día', n(c.planta_tm_dia) + ' TM',
-                         `${c.operativos} equipos por lotes operativos · ${n(c.planta_tm_hora)} TM/h`, '#5ac8fa') +
+                         `${c.operativos} digestores operativos · ${n(c.planta_tm_hora)} TM/h`, '#5ac8fa') +
                     card('Harina por día', n(c.harina_tm_dia) + ' TM',
                          `rendimiento ${c.rendimiento_pct}%`, '#30D158') +
                     card('Harina por mes', n(c.harina_tm_mes) + ' TM',
                          'capacidad instalada (30,4 días)') +
-                    card('Materia prima por mes', n(c.planta_tm_mes) + ' TM', 'antes del rendimiento');
+                    card('Equipos que producen', c.productivos_total,
+                         `${c.auxiliares} auxiliares no restan toneladas`, '#FF9F0A');
+
+                // Secadores y molinos: producen, pero no trabajan por lotes
+                const op = c.otros_productivos || [];
+                document.getElementById('capOtros').innerHTML = !op.length ? '' :
+                    `<h4 style="color:#9ab0cb;font-size:.78rem;text-transform:uppercase;letter-spacing:.05em;margin:14px 0 6px;">
+                        Otros equipos que transforman producto</h4>
+                     <div class="twrap"><table><thead><tr class="subhead">
+                        <th>Equipo</th><th>Tag</th><th>Línea</th><th class="num">TM/día</th><th>Estado</th>
+                     </tr></thead><tbody>` +
+                    op.map(d => `<tr class="${d.in_service ? '' : 'excluded'}">
+                        <td>${escapeHtml(d.name)}</td><td class="tagcell"><code>${escapeHtml(d.tag || '')}</code></td>
+                        <td style="color:#9ab0cb">${escapeHtml(d.linea || '—')}</td>
+                        <td class="num derived">${n(d.tm_dia)}</td>
+                        <td>${d.in_service ? '<span class="pill in">OPERATIVO</span>' : '<span class="pill out">FUERA DE SERVICIO</span>'}</td>
+                     </tr>`).join('') + '</tbody></table></div>';
 
                 const avisos = [];
                 if ((c.fuera_servicio || []).length) {
                     avisos.push(`<i class="fas fa-circle-pause"></i> <strong>Fuera de servicio (no suman capacidad):</strong> ` +
                         c.fuera_servicio.map(d => `${d.tag} — ${n(d.tm_dia)} TM/día${d.motivo ? ` (${escapeHtml(d.motivo)})` : ''}`).join(' · '));
                 }
+                if ((c.sin_marcar || []).length) {
+                    avisos.push(`<i class="fas fa-triangle-exclamation"></i> <strong>${c.sin_marcar.length} equipos parecen transformar producto pero no están marcados:</strong> ` +
+                        c.sin_marcar.map(x => escapeHtml(x.tag || x.name)).join(', ') +
+                        `. Sus paradas no restan toneladas.`);
+                }
                 if ((c.sin_capacidad || []).length) {
-                    avisos.push(`<i class="fas fa-triangle-exclamation"></i> <strong>${c.sin_capacidad.length} equipos sin capacidad definida:</strong> ` +
-                        `sus paradas no suman toneladas perdidas. ` +
+                    avisos.push(`<i class="fas fa-triangle-exclamation"></i> <strong>${c.sin_capacidad.length} equipos productivos sin capacidad definida:</strong> ` +
                         c.sin_capacidad.slice(0, 12).map(x => escapeHtml(x.tag || x.name)).join(', ') +
                         (c.sin_capacidad.length > 12 ? `… y ${c.sin_capacidad.length - 12} más` : '') +
                         `. Usa el botón "Completar capacidades vacías".`);
@@ -216,6 +240,7 @@
                 <thead><tr>
                     <th></th><th>Nombre</th><th>Tag</th>
                     <th class="center">Incluir en KPIs</th>
+                    <th class="center">Produce<br>harina</th>
                     <th class="num">kg por<br>llenada</th>
                     <th class="num">% de<br>llenado</th>
                     <th class="num">Llenadas<br>por día</th>
@@ -234,7 +259,7 @@
                     <td class="center">
                         <label><input type="checkbox" ${inK ? 'checked' : ''} onchange="toggleArea(${a.id}, this.checked)" style="transform:scale(1.4);accent-color:#30D158;"></label>
                     </td>
-                    <td class="num" colspan="7">—</td>
+                    <td class="num" colspan="8">—</td>
                     <td><span class="pill ${inK ? 'in' : 'out'}">${inK ? 'EN' : 'EXCLUIDA'}</span></td>
                 </tr>`;
                 const eqs = equipsByArea[a.id] || [];
@@ -242,6 +267,7 @@
                     const eIn = e.include_in_kpi !== false;
                     const yieldPct = e.yield_factor == null ? '' : Math.round(e.yield_factor * 100);
                     const esBatch = (e.batch_capacity_kg || 0) > 0;
+                    const produce = esBatch || e.is_production_unit === true;
                     const tmDia = capacidadDia(e);
                     const fueraServicio = e.in_service === false;
                     html += `<tr class="${eIn && inK && !fueraServicio ? '' : 'excluded'}">
@@ -251,6 +277,11 @@
                         <td class="tagcell"><code>${escapeHtml(e.tag || '')}</code></td>
                         <td class="center">
                             <label><input type="checkbox" ${eIn ? 'checked' : ''} onchange="toggleEquip(${e.id}, this.checked)" style="transform:scale(1.3);accent-color:#30D158;"></label>
+                        </td>
+                        <td class="center">
+                            ${esBatch
+                                ? `<span class="pill in" title="Trabaja por lotes: siempre cuenta como productivo.">POR LOTES</span>`
+                                : `<label><input type="checkbox" ${produce ? 'checked' : ''} onchange="setProduce(${e.id}, this.checked)" title="Marca solo los equipos donde se transforma el producto (secadores, molinos). Los auxiliares —transportadores, ciclones, fajas— no restan toneladas cuando paran." style="transform:scale(1.3);accent-color:#FF9F0A;"></label>`}
                         </td>
                         <td class="num">
                             <input type="number" min="0" step="500" value="${e.batch_capacity_kg == null ? '' : e.batch_capacity_kg}" placeholder="—" title="Capacidad de una llenada, en kilos. Solo para equipos que trabajan por lotes (digestores)." onchange="setField(${e.id}, 'batch_capacity_kg', this.value, true)" style="width:85px;">
@@ -263,7 +294,9 @@
                         </td>
                         <td class="num">${esBatch
                             ? `<span class="derived" title="Calculado: ${e.batch_capacity_kg} kg × ${e.fill_pct || 75}% × ${e.batches_per_day || 4} llenadas">${tmDia.toFixed(1)}</span>`
-                            : `<input type="number" min="0" step="1" value="${e.capacity_tm_day == null ? '' : e.capacity_tm_day}" placeholder="—" title="Toneladas de materia prima que este equipo procesa en un día completo." onchange="setField(${e.id}, 'capacity_tm_day', this.value, true)" style="width:80px;">`}
+                            : (produce
+                                ? `<input type="number" min="0" step="1" value="${e.capacity_tm_day == null ? '' : e.capacity_tm_day}" placeholder="—" title="Toneladas de materia prima que este equipo procesa en un día completo." onchange="setField(${e.id}, 'capacity_tm_day', this.value, true)" style="width:80px;">`
+                                : `<span style="color:#5a7aa0;font-size:.76rem" title="Equipo auxiliar: mueve o acondiciona, no transforma. Su parada no resta toneladas.">auxiliar</span>`)}
                         </td>
                         <td class="num">
                             <input type="number" min="0" max="100" step="1" value="${yieldPct}" placeholder="100" title="Porcentaje de la materia prima que se convierte en harina." onchange="setYield(${e.id}, this.value)" style="width:70px;">
@@ -328,8 +361,23 @@
                 if (e) e.yield_factor = factor;
             } catch (e) { alert('Error: ' + e.message); }
         }
+        // Marca si el equipo transforma producto. Solo estos restan toneladas
+        // cuando paran: digestores, secadores y molinos.
+        async function setProduce(id, val) {
+            try {
+                await jget(`/api/equipments/${id}`, {
+                    method: 'PUT', headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ is_production_unit: val })
+                });
+                const e = _equips.find(x => x.id === id);
+                if (e) e.is_production_unit = val;
+                render();
+                loadCapacidad();
+            } catch (e) { alert('Error: ' + e.message); }
+        }
         window.toggleArea = toggleArea; window.toggleEquip = toggleEquip;
         window.setField = setField; window.setYield = setYield;
+        window.setProduce = setProduce;
         async function applyDefaults() {
             if (!confirm('Esto excluira BAJA/FUERA DE SERVICIO, UTILITIES, RMP y HIDROLAVADORA #4 (Coccion). Continuar?')) return;
             try {

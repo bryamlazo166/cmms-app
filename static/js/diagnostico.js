@@ -212,16 +212,31 @@ function renderPortada() {
     const pr = DIAG.produccion || {};
     const avisos = [];
     if (pr.disponible && pr.utilizacion_pct != null) {
-        avisos.push(`<i class="fas fa-circle-info"></i> La planta puede procesar ` +
-            `<b>${nf(pr.capacidad.harina_tm_dia)} TM/día</b> de harina con ` +
-            `${pr.capacidad.operativos} digestores operativos. La producción registrada ` +
-            `(${nf(pr.produccion_real_tons, 0)} TM/mes) es el <b>${pr.utilizacion_pct}%</b> de esa capacidad: ` +
-            `las toneladas perdidas están valoradas a capacidad instalada.`);
+        if (pr.utilizacion_pct > 100) {
+            avisos.push(`<i class="fas fa-triangle-exclamation"></i> <b>La capacidad configurada ` +
+                `(${nf(pr.capacidad.harina_tm_dia)} TM/día = ${nf(pr.capacidad.harina_tm_dia * 30.4, 0)} TM/mes) ` +
+                `es menor que la producción registrada (${nf(pr.produccion_real_tons, 0)} TM/mes)</b>. ` +
+                `Revisa en Alcance de Indicadores el % de llenado, las llenadas por día o el rendimiento: ` +
+                `si la capacidad queda corta, las toneladas perdidas salen infladas.`);
+        } else {
+            avisos.push(`<i class="fas fa-circle-info"></i> La planta puede procesar ` +
+                `<b>${nf(pr.capacidad.harina_tm_dia)} TM/día</b> de harina con ` +
+                `${pr.capacidad.operativos} digestores operativos. La producción registrada ` +
+                `(${nf(pr.produccion_real_tons, 0)} TM/mes) es el <b>${pr.utilizacion_pct}%</b> de esa capacidad: ` +
+                `las toneladas perdidas están valoradas a capacidad instalada.`);
+        }
+    }
+    if (pr.disponible && (pr.auxiliares || {}).ots) {
+        avisos.push(`<i class="fas fa-gears"></i> Solo restan toneladas los equipos donde se ` +
+            `transforma el producto (digestores, secadores y molinos). Las ` +
+            `<b>${pr.auxiliares.ots} OTs con ${nf(pr.auxiliares.horas)} h de parada</b> de los ` +
+            `${pr.auxiliares.equipos_distintos} equipos auxiliares — transportadores, ciclones, ` +
+            `percoladores, fajas — están en los indicadores de mantenimiento pero no en estas toneladas.`);
     }
     if (pr.disponible && (pr.sin_capacidad || {}).ots) {
         avisos.push(`<i class="fas fa-triangle-exclamation"></i> <b>${pr.sin_capacidad.ots} OTs ` +
             `con ${nf(pr.sin_capacidad.horas)} h de parada no suman toneladas</b> porque su equipo ` +
-            `no tiene capacidad configurada${pr.sin_capacidad.equipos.length ? ' (' + pr.sin_capacidad.equipos.join(', ') + ')' : ' o la OT no tiene equipo asignado'}. ` +
+            `produce pero no tiene capacidad configurada${pr.sin_capacidad.equipos.length ? ' (' + pr.sin_capacidad.equipos.join(', ') + ')' : ' o la OT no tiene equipo asignado'}. ` +
             `Complétala en Alcance de Indicadores.`);
     }
     if (pr.disponible && (pr.paradas_largas || []).length) {
@@ -282,9 +297,14 @@ function renderProduccion() {
 
     // Avisos de la lamina (mismos que la portada, en corto)
     const av = [];
+    if ((pr.auxiliares || {}).ots) {
+        av.push(`${pr.auxiliares.ots} OTs con ${nf(pr.auxiliares.horas)} h de parada en ` +
+            `${pr.auxiliares.equipos_distintos} equipos auxiliares (transportadores, ciclones, fajas): ` +
+            `no restan toneladas porque no es donde se produce la harina.`);
+    }
     if ((pr.sin_capacidad || {}).ots) {
         av.push(`${pr.sin_capacidad.ots} OTs con ${nf(pr.sin_capacidad.horas)} h de parada no suman toneladas: ` +
-            `su equipo no tiene capacidad configurada en Alcance de Indicadores.`);
+            `su equipo produce pero no tiene capacidad configurada en Alcance de Indicadores.`);
     }
     if ((pr.paradas_largas || []).length) {
         av.push(`Paradas de mas de 3 dias a verificar: ` +
@@ -358,11 +378,18 @@ function renderProduccion() {
         `<tr style="border-top:2px solid #344964"><td colspan="4" style="text-align:right"><b>Capacidad de planta (materia prima)</b></td>` +
         `<td class="num" style="color:#30D158;font-weight:700">${nf(cap.planta_tm_dia)}</td>` +
         `<td class="num" style="color:#30D158;font-weight:700">${nf(cap.planta_tm_hora, 3)}</td>` +
-        `<td>${cap.operativos} equipos operativos</td></tr>` +
+        `<td>${cap.operativos} digestores operativos</td></tr>` +
         `<tr><td colspan="4" style="text-align:right"><b>Con rendimiento ${cap.rendimiento_pct}% → harina</b></td>` +
         `<td class="num" style="color:#FF9F0A;font-weight:700">${nf(cap.harina_tm_dia)}</td>` +
         `<td class="num">${nf(cap.harina_tm_dia / 24, 3)}</td>` +
-        `<td>${nf(pr.capacidad_periodo_tons, 0)} TM en el periodo</td></tr>`;
+        `<td>${nf(pr.capacidad_periodo_tons, 0)} TM en el periodo</td></tr>` +
+        // Secadores y molinos: transforman producto igual que los digestores
+        ((cap.productivos || []).filter(p => !p.por_lotes).map(p =>
+            `<tr style="opacity:.9"><td><b>${p.tag}</b> ${p.nombre} <span style="color:#5a7aa0;font-size:.74rem">(${p.area || '-'})</span></td>` +
+            `<td class="num" colspan="3" style="color:#5a7aa0;font-size:.76rem">no trabaja por lotes</td>` +
+            `<td class="num" style="color:#5AC8FA;font-weight:700">${nf(p.tm_dia, 2)}</td>` +
+            `<td class="num">${nf(p.tm_hora, 3)}</td>` +
+            `<td>${p.en_servicio ? '<span style="color:#30D158">Operativo</span>' : '<span style="color:#FF453A">Fuera de servicio</span>'}</td></tr>`).join(''));
 
     // Perdida por area
     const areas = pr.por_area || [];

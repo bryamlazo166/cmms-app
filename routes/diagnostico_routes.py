@@ -194,7 +194,8 @@ def register_diagnostico_routes(app, db, logger):
     def _contexto_capacidad():
         from utils.kpi_helpers import (
             eq_batch_kg, eq_batch_regime, eq_capacity_tm_day, eq_input_tph,
-            eq_is_batch, eq_jornada, plant_capacity_tm_day, plant_yield_factor,
+            eq_is_batch, eq_jornada, eq_produces,
+            plant_capacity_tm_day, plant_yield_factor,
         )
         from models import Area as _Area
 
@@ -215,10 +216,13 @@ def register_diagnostico_routes(app, db, logger):
         planta_dia = plant_capacity_tm_day(equipos)
         rendimiento = plant_yield_factor(equipos)
 
-        tph, cap_dia = {}, {}
+        tph, cap_dia, produce = {}, {}, {}
         for e in equipos:
             cap_dia[e.id] = eq_capacity_tm_day(e) if en_alcance(e) else 0.0
             tph[e.id] = eq_input_tph(e) if en_alcance(e) else 0.0
+            # Auxiliar: mueve o acondiciona, no transforma. Su parada no
+            # resta toneladas, pero se reporta aparte para no esconderla.
+            produce[e.id] = eq_produces(e) and en_alcance(e)
 
         digestores = []
         for e in sorted([x for x in equipos if eq_is_batch(x)],
@@ -245,7 +249,17 @@ def register_diagnostico_routes(app, db, logger):
             'rendimiento': rendimiento,
             'tph': tph,
             'cap_dia': cap_dia,
+            'produce': produce,
             'digestores': digestores,
+            'productivos': sorted(
+                [{'tag': e.tag, 'nombre': e.name,
+                  'area': (ctx_a.name if (ctx_a := area_de(e)) else None),
+                  'tm_dia': round(cap_dia[e.id], 2),
+                  'tm_hora': round(tph[e.id], 3),
+                  'por_lotes': eq_is_batch(e),
+                  'en_servicio': bool(getattr(e, 'in_service', True))}
+                 for e in equipos if produce.get(e.id) and cap_dia[e.id] > 0],
+                key=lambda x: (x['area'] or '', x['tag'] or '')),
         }
 
     def _tons_de_ot(ctx, ot, horas):
@@ -287,6 +301,7 @@ def register_diagnostico_routes(app, db, logger):
 
         por_equipo = {}
         sin_cap = {'ots': 0, 'horas': 0.0, 'equipos': set()}
+        auxiliares = {'ots': 0, 'horas': 0.0, 'equipos': set()}
         for o in closed:
             # Se recorren TODAS las cerradas, no solo las del periodo: una
             # parada que empezo antes tambien resta produccion a estos dias.
@@ -294,7 +309,15 @@ def register_diagnostico_routes(app, db, logger):
             if h <= 0:
                 continue
             eid = o.equipment_id
+            if eid and not ctx['produce'].get(eid, False):
+                # Auxiliar: paro, pero no es donde se produce la harina
+                auxiliares['ots'] += 1
+                auxiliares['horas'] += h
+                auxiliares['equipos'].add(eid)
+                continue
             if not eid or ctx['tph'].get(eid, 0.0) <= 0:
+                # Productivo sin capacidad configurada (o OT sin equipo):
+                # esto SI es un hueco que hay que llenar
                 sin_cap['ots'] += 1
                 sin_cap['horas'] += h
                 if eid:
@@ -325,7 +348,8 @@ def register_diagnostico_routes(app, db, logger):
 
         res = {'por_equipo': por_equipo, 'tm_mp': total_mp, 'dias': dias,
                'horas_periodo': horas_periodo, 'capacidad_mp': techo,
-               'techo_aplicado': techo_aplicado, 'sin_capacidad': sin_cap}
+               'techo_aplicado': techo_aplicado, 'sin_capacidad': sin_cap,
+               'auxiliares': auxiliares}
         cache[clave] = res
         return res
 
@@ -403,12 +427,17 @@ def register_diagnostico_routes(app, db, logger):
             prod_real = max(prod_real, float(g.monthly_avg_yield_tons or 0))
             periodo_meta = g.goal_period
 
+        def _nombres(ids, tope=12):
+            out = []
+            for eid in list(ids)[:tope]:
+                e = eq_map.get(eid)
+                if e:
+                    out.append(f"[{e.tag}] {e.name}" if e.tag else e.name)
+            return out
+
         sin_cap = sel['sin_capacidad']
-        sin_cap_equipos = []
-        for eid in list(sin_cap['equipos'])[:12]:
-            e = eq_map.get(eid)
-            if e:
-                sin_cap_equipos.append(f"[{e.tag}] {e.name}" if e.tag else e.name)
+        sin_cap_equipos = _nombres(sin_cap['equipos'])
+        aux = sel['auxiliares']
 
         # Paradas anormalmente largas: casi siempre son horas mal capturadas
         # (se registro el tiempo transcurrido, no el que la planta estuvo
@@ -483,10 +512,19 @@ def register_diagnostico_routes(app, db, logger):
                 'digestores': ctx['digestores'],
                 'operativos': len([d for d in ctx['digestores'] if d['en_servicio']]),
                 'fuera_servicio': [d for d in ctx['digestores'] if not d['en_servicio']],
+                # Todo lo que produce: digestores + secadores + molinos
+                'productivos': ctx['productivos'],
             },
             'sin_capacidad': {
                 'ots': sin_cap['ots'], 'horas': round(sin_cap['horas'], 1),
                 'equipos': sin_cap_equipos,
+            },
+            # Paradas de equipos que no producen harina (transportadores,
+            # ciclones, percoladores, vahos...): se informan, no restan TM.
+            'auxiliares': {
+                'ots': aux['ots'], 'horas': round(aux['horas'], 1),
+                'equipos_distintos': len(aux['equipos']),
+                'equipos': _nombres(aux['equipos'], 8),
             },
             'paradas_largas': sospechosas[:6],
             'sack_kg': SACK_KG,

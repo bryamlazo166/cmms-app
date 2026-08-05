@@ -11,8 +11,9 @@ import json
 
 from utils.kpi_helpers import (
     DEFAULT_BATCHES_PER_DAY, DEFAULT_FILL_PCT,
-    eq_capacity_tm_day, eq_input_tph, eq_is_batch,
+    eq_capacity_tm_day, eq_input_tph, eq_is_batch, eq_produces,
     plant_capacity_tm_day, plant_yield_factor, suggest_capacities,
+    suggest_production_units,
 )
 
 
@@ -28,6 +29,7 @@ class _Eq:
         self.batches_per_day = kw.get('batches_per_day')
         self.capacity_tm_day = kw.get('capacity_tm_day')
         self.capacity_tm = kw.get('capacity_tm')
+        self.is_production_unit = kw.get('is_production_unit', False)
         self.shift_hours_per_day = kw.get('shift_hours_per_day', 24.0)
         self.work_days_per_week = kw.get('work_days_per_week', 7)
         self.yield_factor = kw.get('yield_factor', 1.0)
@@ -98,21 +100,49 @@ def test_parada_de_un_digestor_no_vale_toda_la_planta():
     assert perdida_mp < plant_capacity_tm_day(eqs)
 
 
-def test_sugerencia_hereda_capacidad_de_la_linea():
-    """El transportador que alimenta al digestor #1 vale lo que el digestor
-    #1; los equipos gemelos de un area se reparten la planta."""
+def test_solo_los_equipos_que_transforman_restan_toneladas():
+    """Los unicos que producen harina son los digestores, los secadores y los
+    molinos. Un transportador que para no deja de producir por si mismo: si
+    contara, se valoraria dos veces el mismo flujo."""
+    th = _Eq(id=101, tag='TH1', name='TH1', line_id=1, capacity_tm_day=24)
+    mol = _Eq(id=102, tag='MOL1', name='MOLINO', line_id=20,
+              capacity_tm_day=94.8, is_production_unit=True)
+    d1 = _Eq(id=1, tag='D1', batch_capacity_kg=8000, fill_pct=75, batches_per_day=4)
+
+    # El transportador tiene capacidad guardada pero NO cuenta
+    assert not eq_produces(th)
+    assert eq_capacity_tm_day(th) == 0.0
+    assert eq_input_tph(th) == 0.0
+    # El molino si, y el digestor lo es por trabajar por lotes
+    assert eq_produces(mol) and eq_capacity_tm_day(mol) == 94.8
+    assert eq_produces(d1) and eq_capacity_tm_day(d1) == 24.0
+    # Los auxiliares tampoco suman a la capacidad de planta
+    assert plant_capacity_tm_day([d1, th]) == 24.0
+
+
+def test_sugerencia_marca_secadores_y_molinos():
+    """La sugerencia detecta que transforman producto y les da media planta
+    (son 2 de cada, en paralelo). El resto queda auxiliar."""
     eqs = _digestores()
-    lines = [_Line(i, 1) for i in range(1, 10)] + [_Line(20, 4), _Line(21, 4)]
-    # TH1 vive en la misma linea que el D1 (line_id=1)
+    lines = [_Line(i, 1) for i in range(1, 10)] + [_Line(20, 4), _Line(21, 4),
+                                                   [_Line(22, 6), _Line(23, 6)][0], _Line(23, 6)]
     th1 = _Eq(id=101, tag='TH1', name='TH1', line_id=1)
-    # Dos molinos en paralelo, cada uno en su linea del area MOLINO
     mol1 = _Eq(id=102, tag='MOL1', name='MOLINO', line_id=20)
     mol2 = _Eq(id=103, tag='MOL2', name='MOLINO', line_id=21)
-    eqs += [th1, mol1, mol2]
+    sec1 = _Eq(id=104, tag='SEC1', name='SECADOR', line_id=22)
+    sec2 = _Eq(id=105, tag='SEC2', name='SECADOR', line_id=23)
+    eqs += [th1, mol1, mol2, sec1, sec2]
+
+    marcados = suggest_production_units(eqs)
+    assert marcados == {102, 103, 104, 105}     # molinos y secadores, no el TH
+    for e in eqs:
+        if e.id in marcados:
+            e.is_production_unit = True
 
     sug = suggest_capacities(eqs, lines)
-    assert sug[101] == 24.0                     # hereda del digestor #1
-    assert sug[102] == sug[103] == 118.5        # mitad de planta cada molino
+    assert 101 not in sug                        # el auxiliar no recibe capacidad
+    assert sug[102] == sug[103] == 118.5         # media planta cada molino
+    assert sug[104] == sug[105] == 118.5         # media planta cada secador
 
 
 def test_diagnostico_no_puede_perder_mas_que_la_capacidad(auth_admin, app):

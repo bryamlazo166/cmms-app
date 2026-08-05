@@ -226,6 +226,14 @@ class Equipment(db.Model):
     # batch). Se conserva para no romper datos historicos.
     capacity_tm: Mapped[float | None] = mapped_column(Float, nullable=True)
     # ── Capacidad real de proceso ────────────────────────────────────────
+    # Si True, el equipo TRANSFORMA producto y su parada cuesta toneladas:
+    # en esta planta son los digestores, los secadores y los molinos. El
+    # resto (transportadores, ciclones, percoladores, fajas, vahos) es
+    # auxiliar: si para, no se deja de producir harina por si mismo, asi que
+    # NO resta toneladas aunque tenga capacidad registrada.
+    # Los equipos por lotes (batch_capacity_kg) siempre cuentan como
+    # productivos, no hace falta marcarlos.
+    is_production_unit: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
     # Toneladas de materia prima que el equipo procesa en un dia completo.
     # Es la base del calculo de "TM no producidas": TM/h = capacity_tm_day /
     # shift_hours_per_day. Para los equipos que trabajan por lotes (los
@@ -281,6 +289,7 @@ class Equipment(db.Model):
         return {"id": self.id, "name": self.name, "tag": self.tag, "description": self.description,
                 "criticality": self.criticality, "line_id": self.line_id,
                 "include_in_kpi": self.include_in_kpi, "capacity_tm": self.capacity_tm,
+                "is_production_unit": self.is_production_unit,
                 "capacity_tm_day": self.capacity_tm_day,
                 "batch_capacity_kg": self.batch_capacity_kg,
                 "fill_pct": self.fill_pct,
