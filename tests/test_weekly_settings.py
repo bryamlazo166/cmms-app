@@ -136,7 +136,11 @@ def test_diagnostico_data(auth_admin):
 
 
 def test_diagnostico_produccion_y_evolucion(auth_admin, app):
-    """Impacto en produccion (TM/sacos 50kg) y evolucion mensual por alcance."""
+    """Impacto en produccion (TM/sacos 50kg) y evolucion mensual por alcance.
+
+    Las TM no producidas salen de la capacidad REAL del equipo que paro, no
+    del rendimiento del area: si para un equipo de 9, se pierde lo de ese
+    equipo. Aqui el equipo procesa 24 TM/dia = 1 TM/h."""
     import datetime as dt
     with app.app_context():
         from database import db
@@ -145,10 +149,11 @@ def test_diagnostico_produccion_y_evolucion(auth_admin, app):
         db.session.add(area); db.session.flush()
         line = Line(name='LINEA PROD TEST', area_id=area.id)
         db.session.add(line); db.session.flush()
-        eq = Equipment(name='EQUIPO PROD TEST', tag='EQ-PROD', line_id=line.id)
+        eq = Equipment(name='EQUIPO PROD TEST', tag='EQ-PROD', line_id=line.id,
+                       capacity_tm_day=24.0)  # 24 TM/dia = 1 TM/h
         db.session.add(eq); db.session.flush()
         mes = dt.date.today().strftime('%Y-%m')
-        # Meta: 720 TM/mes en 720h -> 1 TM/h
+        # Meta de produccion: solo se usa como referencia en la lamina
         db.session.add(ProductionGoal(goal_period=mes, area_id=area.id,
                                       monthly_avg_yield_tons=720.0,
                                       monthly_target_tons=720.0,
@@ -188,11 +193,16 @@ def test_diagnostico_produccion_y_evolucion(auth_admin, app):
     r4 = auth_admin.get(f'/api/diagnostico/evolucion?month={mes}')
     assert r4.json['alcance'] == 'Planta completa'
 
-    # Metas y rendimientos por area (lamina de produccion)
-    metas = prod['metas']
-    m = next(x for x in metas if x['area'] == 'AREA PROD TEST')
-    assert m['meta_tons'] == 720.0 and m['tons_por_hora'] == 1.0
+    # Perdida por area (lamina de produccion)
+    m = next(x for x in prod['por_area'] if x['area'] == 'AREA PROD TEST')
     assert m['tons_lost'] >= 10.0 and m['sacks_lost'] >= 200
+    assert m['horas_paro'] >= 10.0 and m['ots'] >= 1
+    # La meta mensual sigue siendo la referencia, sin triplicarse por area
+    assert prod['meta_mes_tons'] == 720.0
+    # La capacidad del periodo es el techo: la perdida nunca puede superarla
+    assert prod['tons_lost_mes'] <= prod['capacidad_periodo_tons']
+    # Y se explica de donde sale cada TM/h
+    assert prod['capacidad']['planta_tm_dia'] == 24.0
 
     # Top equipos trae equipment_id para el drill-down
     top = prod['top_equipos'][0]

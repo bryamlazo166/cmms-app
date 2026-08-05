@@ -1,28 +1,80 @@
 // Diagnostico Mensual de Gestion — datos en vivo + narrativa IA + drill-down + modo presentacion
 let DIAG = null;
+let PERIODOS = null;   // atajos de periodo que calcula el servidor
 const CHARTS = {};
 let REL = { level: 'areas', areaId: null, areaName: '', equipId: null, equipName: '' };
 
-document.addEventListener('DOMContentLoaded', () => {
-    document.getElementById('diagMonth').value = new Date().toISOString().slice(0, 7);
+document.addEventListener('DOMContentLoaded', async () => {
+    await cargarPeriodos();
     loadDiagnostico();
     window.addEventListener('resize', () => Object.values(CHARTS).forEach(c => c && c.resize()));
     document.addEventListener('keydown', onPresentKeys);
 });
 
-async function loadDiagnostico() {
-    const month = document.getElementById('diagMonth').value;
+// ── Periodo analizado ────────────────────────────────────────────────────
+// Por defecto se abre en el ultimo mes CON DATOS: el mes en curso suele
+// tener dos dias cargados y no sirve para presentar a gerencia.
+async function cargarPeriodos() {
     try {
-        const res = await fetch(`/api/diagnostico/data?month=${month}`);
+        PERIODOS = await (await fetch('/api/diagnostico/periodos')).json();
+        const sel = el('diagPreset');
+        if (PERIODOS.ultimo_con_datos_label) {
+            sel.options[0].textContent = `Último mes cerrado con datos (${PERIODOS.ultimo_con_datos_label})`;
+        }
+        sel.options[1].textContent = `Mes anterior (${PERIODOS.ultimo_mes_label})`;
+        sel.options[2].textContent = `Mes en curso (${PERIODOS.mes_actual_label})`;
+        el('diagMonth').value = PERIODOS.ultimo_con_datos || PERIODOS.mes_actual;
+        el('diagDesde').value = PERIODOS.ultimos_30.desde;
+        el('diagHasta').value = PERIODOS.ultimos_30.hasta;
+    } catch (e) { console.error('periodos:', e); }
+}
+
+function onPresetChange() {
+    const v = el('diagPreset').value;
+    el('diagMonth').style.display = (v === 'mes') ? '' : 'none';
+    el('rangoBox').style.display = (v === 'rango') ? 'inline-flex' : 'none';
+    if (v !== 'rango') loadDiagnostico();
+}
+window.onPresetChange = onPresetChange;
+
+// Devuelve el query string del periodo elegido
+function periodoQuery() {
+    const v = el('diagPreset').value;
+    const P = PERIODOS || {};
+    const rango = (r) => new URLSearchParams({ desde: r.desde, hasta: r.hasta }).toString();
+    switch (v) {
+        case 'ultimo_datos': return `month=${P.ultimo_con_datos || el('diagMonth').value}`;
+        case 'ultimo_mes': return `month=${P.ultimo_mes}`;
+        case 'mes_actual': return `month=${P.mes_actual}`;
+        case 'mes': return `month=${el('diagMonth').value}`;
+        case 'ultimos_30': return rango(P.ultimos_30);
+        case 'ultimos_90': return rango(P.ultimos_90);
+        case 'anio_actual': return rango(P.anio_actual);
+        case 'rango': {
+            const d = el('diagDesde').value, h = el('diagHasta').value;
+            if (!d || !h) { alert('Elige la fecha de inicio y la de fin.'); return null; }
+            if (d > h) { alert('La fecha de inicio no puede ser posterior a la de fin.'); return null; }
+            return rango({ desde: d, hasta: h });
+        }
+        default: return `month=${el('diagMonth').value}`;
+    }
+}
+
+async function loadDiagnostico() {
+    const q = periodoQuery();
+    if (q === null) return;
+    try {
+        const res = await fetch(`/api/diagnostico/data?${q}`);
         DIAG = await res.json();
         if (DIAG.error) { alert('Error: ' + DIAG.error); return; }
         const m = DIAG.meta;
         document.getElementById('genAt').textContent = `generado ${m.generated_at}`;
         document.getElementById('s1Title').textContent =
-            `Resumen de ${m.label}` + (m.en_curso ? ` (en curso — dia ${m.dia_hoy})` : '');
+            `Resumen de ${m.label}` + (m.en_curso ? ' (periodo en curso)' : '');
         document.getElementById('s1Method').textContent = m.en_curso
-            ? `Mes en curso: KPIs parciales al dia ${m.dia_hoy} de ${DIAG.kpis_mes.dias_mes}, comparados con ${m.prev_label} completo. Benchmarks SMRP: cumplimiento >90%, proactivo >75%.`
-            : `Indicadores de ${m.label} vs. ${m.prev_label}. Benchmarks SMRP: cumplimiento >90%, proactivo >75%.`;
+            ? `Periodo en curso: KPIs parciales con ${m.dias} de ${m.dias_nominales} dias transcurridos, comparados con ${m.prev_label}. Benchmarks SMRP: cumplimiento >90%, proactivo >75%.`
+            : `Indicadores de ${m.label} (${m.dias} dias) vs. ${m.prev_label}. Benchmarks SMRP: cumplimiento >90%, proactivo >75%.`;
+        renderPortada();
         renderKpis();
         renderProduccion();
         renderSemanas();
@@ -64,12 +116,14 @@ function deltaTxt(cur, prev, unit, invert) {
     return `<span style="color:${color}">${arrow} ${Math.abs(d)}${unit || ''}</span> vs mes ant.`;
 }
 function monthWindow() {
-    const m = DIAG.meta.month;
-    const k = DIAG.kpis_mes;
-    const end = k.en_curso
-        ? new Date().toISOString().slice(0, 10)
-        : `${m}-${String(k.dias_mes).padStart(2, '0')}`;
-    return { start: `${m}-01`, end };
+    // Ventana real del periodo analizado (mes completo o rango libre)
+    const m = DIAG.meta;
+    const hoy = (PERIODOS && PERIODOS.hoy) || new Date().toISOString().slice(0, 10);
+    return { start: m.desde, end: m.hasta > hoy ? hoy : m.hasta };
+}
+function nf(x, d) {
+    if (x == null) return '—';
+    return Number(x).toLocaleString('es-PE', { maximumFractionDigits: d == null ? 1 : d });
 }
 function closeDetail(id) { const p = el(id); if (p) p.classList.remove('open'); }
 function openDetail(id) { const p = el(id); if (p) p.classList.add('open'); }
@@ -124,6 +178,64 @@ async function showOtsPanel(panel, title, params) {
 // Serie del grafico -> filtro tipo del backend
 const TIPO_SERIE = { 'Correctivas': 'correctivo', 'Proactivas': 'proactivo', 'Mejoras': 'mejora', '% Proactivo': 'proactivo' };
 
+// ── S0: Portada — el veredicto del periodo ───────────────────────────────
+function renderPortada() {
+    const po = DIAG.portada;
+    if (!po) return;
+    el('portPeriodo').textContent =
+        `Diagnóstico de gestión · ${po.periodo}` + (po.en_curso ? ' · periodo en curso' : '');
+    el('portTitular').textContent = po.titular;
+    el('portSub').textContent = po.subtitulo;
+    const v = el('portVeredicto');
+    v.textContent = po.veredicto;
+    v.className = `veredicto ${po.color}`;
+
+    el('portCifras').innerHTML = (po.cifras || []).map(c => {
+        let dl = '';
+        if (c.delta && c.delta.valor) {
+            const col = c.delta.mejor ? '#30D158' : '#FF453A';
+            const flecha = c.delta.valor > 0 ? '▲' : '▼';
+            dl = `<div class="dl" style="color:${col}">${flecha} ${Math.abs(c.delta.valor)}${c.delta.unidad} vs periodo anterior</div>`;
+        }
+        return `<div class="port-cifra ${c.estado || 'neutro'}">
+            <div class="l">${c.label}</div>
+            <div class="v">${c.valor == null ? '—' : nf(c.valor)}<small>${c.valor == null ? '' : c.unidad}</small></div>
+            <div class="p">${c.pie || ''}</div>${dl}</div>`;
+    }).join('');
+
+    el('portHechos').innerHTML = (po.hechos || []).map(h => `<li>${h}</li>`).join('')
+        || '<li style="color:#9ab0cb">Sin hallazgos relevantes en el periodo.</li>';
+    el('portAcciones').innerHTML = (po.acciones || []).map(a => `<li>${a}</li>`).join('')
+        || '<li style="color:#9ab0cb">Sin acciones críticas pendientes.</li>';
+
+    // Avisos que afectan la lectura de las cifras: no se ocultan
+    const pr = DIAG.produccion || {};
+    const avisos = [];
+    if (pr.disponible && pr.utilizacion_pct != null) {
+        avisos.push(`<i class="fas fa-circle-info"></i> La planta puede procesar ` +
+            `<b>${nf(pr.capacidad.harina_tm_dia)} TM/día</b> de harina con ` +
+            `${pr.capacidad.operativos} digestores operativos. La producción registrada ` +
+            `(${nf(pr.produccion_real_tons, 0)} TM/mes) es el <b>${pr.utilizacion_pct}%</b> de esa capacidad: ` +
+            `las toneladas perdidas están valoradas a capacidad instalada.`);
+    }
+    if (pr.disponible && (pr.sin_capacidad || {}).ots) {
+        avisos.push(`<i class="fas fa-triangle-exclamation"></i> <b>${pr.sin_capacidad.ots} OTs ` +
+            `con ${nf(pr.sin_capacidad.horas)} h de parada no suman toneladas</b> porque su equipo ` +
+            `no tiene capacidad configurada${pr.sin_capacidad.equipos.length ? ' (' + pr.sin_capacidad.equipos.join(', ') + ')' : ' o la OT no tiene equipo asignado'}. ` +
+            `Complétala en Alcance de Indicadores.`);
+    }
+    if (pr.disponible && (pr.paradas_largas || []).length) {
+        avisos.push(`<i class="fas fa-stopwatch"></i> <b>Verificar paradas largas:</b> ` +
+            pr.paradas_largas.map(x => `${x.code} ${x.equipo} ${x.dias} días (${x.desde} → ${x.hasta})`).join(' · ') +
+            `. Si se registró el tiempo transcurrido en vez del tiempo detenido, las toneladas salen infladas.`);
+    }
+    if (pr.techo_aplicado) {
+        avisos.push(`<i class="fas fa-scale-balanced"></i> Las horas de parada registradas superaban ` +
+            `la capacidad instalada del periodo: la pérdida se limitó al máximo físico posible.`);
+    }
+    el('portAvisos').innerHTML = avisos.map(a => `<div class="port-aviso">${a}</div>`).join('');
+}
+
 // ── S1: KPIs ─────────────────────────────────────────────────────────────
 function renderKpis() {
     const k = DIAG.kpis_mes, p = DIAG.kpis_prev;
@@ -140,10 +252,10 @@ function renderKpis() {
 
     const dispCls = k.disponibilidad_pct >= 95 ? 'v-good' : (k.disponibilidad_pct >= 90 ? 'v-warn' : 'v-crit');
     el('kpiStrip2').innerHTML =
-        kpiCard('MTBF (h)', k.mtbf_h ?? '-', '', deltaTxt(k.mtbf_h, p.mtbf_h, 'h'), 'goToSlide(7)') +
-        kpiCard('MTTR (h)', k.mttr_h ?? '-', '', deltaTxt(k.mttr_h, p.mttr_h, 'h', true), 'goToSlide(7)') +
-        kpiCard('Disponibilidad', (k.disponibilidad_pct ?? '-') + '%', dispCls, deltaTxt(k.disponibilidad_pct, p.disponibilidad_pct, ' pts'), 'goToSlide(7)') +
-        kpiCard('Confiabilidad R(7d)', k.confiabilidad_pct != null ? k.confiabilidad_pct + '%' : '-', '', deltaTxt(k.confiabilidad_pct, p.confiabilidad_pct, ' pts'), 'goToSlide(7)');
+        kpiCard('MTBF (h)', k.mtbf_h ?? '-', '', deltaTxt(k.mtbf_h, p.mtbf_h, 'h'), 'goToSlide(8)') +
+        kpiCard('MTTR (h)', k.mttr_h ?? '-', '', deltaTxt(k.mttr_h, p.mttr_h, 'h', true), 'goToSlide(8)') +
+        kpiCard('Disponibilidad', (k.disponibilidad_pct ?? '-') + '%', dispCls, deltaTxt(k.disponibilidad_pct, p.disponibilidad_pct, ' pts'), 'goToSlide(8)') +
+        kpiCard('Confiabilidad R(7d)', k.confiabilidad_pct != null ? k.confiabilidad_pct + '%' : '-', '', deltaTxt(k.confiabilidad_pct, p.confiabilidad_pct, ' pts'), 'goToSlide(8)');
 }
 
 // ── S2: Impacto en Produccion (TM y sacos de harina no producidos) ───────
@@ -152,18 +264,36 @@ function renderProduccion() {
     const slide = el('prodSlide');
     if (!pr.disponible) {
         if (slide) slide.querySelector('.kpi-strip').innerHTML =
-            kpiCard('Sin metas de produccion', '-', '', 'Registra metas en Produccion vs Mtto para calcular el impacto');
+            kpiCard('Sin capacidad configurada', '-', '',
+                pr.motivo || 'Registra la capacidad de los equipos en Alcance de Indicadores');
         return;
     }
     el('prodTitle').textContent = `Impacto del mantenimiento en la produccion — ${DIAG.meta.label}`;
     const deltaTons = deltaTxt(pr.tons_lost_mes, pr.tons_lost_prev, ' TM', true);
-    const pctCls = pr.pct_de_meta == null ? '' :
-        (pr.pct_de_meta <= 2 ? 'v-good' : (pr.pct_de_meta <= 5 ? 'v-warn' : 'v-crit'));
+    const pctCls = pr.pct_de_capacidad == null ? '' :
+        (pr.pct_de_capacidad <= 2 ? 'v-good' : (pr.pct_de_capacidad <= 5 ? 'v-warn' : 'v-crit'));
     el('prodStripKpis').innerHTML =
-        kpiCard('TM no producidas (mes)', pr.tons_lost_mes, pr.tons_lost_mes > pr.tons_lost_prev ? 'v-crit' : 'v-good', deltaTons) +
-        kpiCard('Sacos de 50 kg (mes)', pr.sacks_lost_mes.toLocaleString(), '', 'harina que no llego a ensacarse') +
-        kpiCard('% de la meta mensual', pr.pct_de_meta != null ? pr.pct_de_meta + '%' : '-', pctCls, `meta: ${pr.meta_mes_tons} TM`) +
-        kpiCard('TM perdidas 12 meses', pr.tons_lost_12m, '', `${pr.sacks_lost_12m.toLocaleString()} sacos acumulados`);
+        kpiCard('TM de harina no producidas', nf(pr.tons_lost_mes), pr.tons_lost_mes > pr.tons_lost_prev ? 'v-crit' : 'v-good', deltaTons) +
+        kpiCard('Sacos de 50 kg', pr.sacks_lost_mes.toLocaleString('es-PE'), '', 'harina que no llego a ensacarse') +
+        kpiCard('Materia prima sin procesar', nf(pr.tons_mp_lost_mes) + ' TM', '', `en ${nf(pr.horas_paro)} h de parada`) +
+        kpiCard('% de la capacidad del periodo', pr.pct_de_capacidad != null ? pr.pct_de_capacidad + '%' : '-', pctCls,
+            `capacidad: ${nf(pr.capacidad_periodo_tons, 0)} TM en ${pr.dias} dias`) +
+        kpiCard('TM perdidas 12 meses', nf(pr.tons_lost_12m), '', `${pr.sacks_lost_12m.toLocaleString('es-PE')} sacos acumulados`);
+
+    // Avisos de la lamina (mismos que la portada, en corto)
+    const av = [];
+    if ((pr.sin_capacidad || {}).ots) {
+        av.push(`${pr.sin_capacidad.ots} OTs con ${nf(pr.sin_capacidad.horas)} h de parada no suman toneladas: ` +
+            `su equipo no tiene capacidad configurada en Alcance de Indicadores.`);
+    }
+    if ((pr.paradas_largas || []).length) {
+        av.push(`Paradas de mas de 3 dias a verificar: ` +
+            pr.paradas_largas.map(x => `${x.code} ${x.equipo} (${x.dias} d)`).join(' · '));
+    }
+    el('prodAvisos').innerHTML = av.length
+        ? `<div style="background:rgba(255,159,10,.09);border:1px solid rgba(255,159,10,.34);border-radius:8px;padding:9px 13px;color:#FF9F0A;font-size:.82rem;margin:4px 0 12px;">`
+          + av.map(a => `<div>${a}</div>`).join('') + `</div>`
+        : '';
 
     const s = pr.serie || [];
     chart('prodSerieChart').setOption({
@@ -210,32 +340,58 @@ function renderProduccion() {
             params);
     });
 
-    // Metas y rendimientos vigentes por area (de donde sale cada TM/h)
-    const metas = pr.metas || [];
+    // Capacidad instalada: de donde sale cada TM/h del calculo
+    const cap = pr.capacidad || {};
+    const dig = cap.digestores || [];
+    el('prodCapTable').innerHTML =
+        `<tr><th>Equipo</th><th class="num">kg por llenada</th><th class="num">% llenado</th>` +
+        `<th class="num">Llenadas/dia</th><th class="num">TM/dia</th><th class="num">TM/h</th><th>Estado</th></tr>` +
+        (dig.length ? dig.map(d =>
+            `<tr style="${d.en_servicio ? '' : 'opacity:.55'}"><td><b>${d.tag}</b> ${d.nombre}</td>` +
+            `<td class="num">${d.kg_llenada.toLocaleString('es-PE')}</td>` +
+            `<td class="num">${d.fill_pct}%</td><td class="num">${d.llenadas_dia}</td>` +
+            `<td class="num" style="color:#5AC8FA;font-weight:700">${nf(d.tm_dia, 2)}</td>` +
+            `<td class="num">${nf(d.tm_hora, 3)}</td>` +
+            `<td>${d.en_servicio ? '<span style="color:#30D158">Operativo</span>'
+                : `<span style="color:#FF453A">Fuera de servicio</span> <span style="color:#5a7aa0;font-size:.74rem">${d.motivo || ''}</span>`}</td></tr>`).join('')
+            : '') +
+        `<tr style="border-top:2px solid #344964"><td colspan="4" style="text-align:right"><b>Capacidad de planta (materia prima)</b></td>` +
+        `<td class="num" style="color:#30D158;font-weight:700">${nf(cap.planta_tm_dia)}</td>` +
+        `<td class="num" style="color:#30D158;font-weight:700">${nf(cap.planta_tm_hora, 3)}</td>` +
+        `<td>${cap.operativos} equipos operativos</td></tr>` +
+        `<tr><td colspan="4" style="text-align:right"><b>Con rendimiento ${cap.rendimiento_pct}% → harina</b></td>` +
+        `<td class="num" style="color:#FF9F0A;font-weight:700">${nf(cap.harina_tm_dia)}</td>` +
+        `<td class="num">${nf(cap.harina_tm_dia / 24, 3)}</td>` +
+        `<td>${nf(pr.capacidad_periodo_tons, 0)} TM en el periodo</td></tr>`;
+
+    // Perdida por area
+    const areas = pr.por_area || [];
     el('prodMetasTable').innerHTML =
-        `<tr><th>Area</th><th class="num">Meta (TM/mes)</th><th class="num">Rendimiento prom. (TM/mes)</th><th class="num">Horas oper.</th><th class="num">TM/h</th><th class="num">TM perdidas</th><th class="num">Sacos (50kg)</th><th class="num">% de su meta</th></tr>` +
-        (metas.length ? metas.map(m =>
-            `<tr><td><b>${m.area}</b> <span style="color:#5a7aa0;font-size:.72rem">(meta ${m.periodo_meta})</span></td>` +
-            `<td class="num">${m.meta_tons.toLocaleString()}</td>` +
-            `<td class="num">${m.rendimiento_tons.toLocaleString()}</td>` +
-            `<td class="num">${m.horas_mes}</td><td class="num">${m.tons_por_hora}</td>` +
-            `<td class="num" style="color:${m.tons_lost > 0 ? '#FF453A' : '#30D158'};font-weight:700">${m.tons_lost}</td>` +
-            `<td class="num">${m.sacks_lost.toLocaleString()}</td>` +
-            `<td class="num">${m.pct_de_su_meta != null ? m.pct_de_su_meta + '%' : '-'}</td></tr>`).join('')
-        : `<tr><td colspan="8" style="color:#9ab0cb">Sin metas de produccion registradas.</td></tr>`);
+        `<tr><th>Area</th><th class="num">Equipos que pararon</th><th class="num">OTs con paro</th>` +
+        `<th class="num">Horas de parada</th><th class="num">Materia prima (TM)</th>` +
+        `<th class="num">TM no producidas</th><th class="num">Sacos (50kg)</th>` +
+        `<th class="num">% de la capacidad</th><th class="num">% del total perdido</th></tr>` +
+        (areas.length ? areas.map(a =>
+            `<tr><td><b>${a.area}</b></td>` +
+            `<td class="num">${a.equipos}</td>` +
+            `<td class="num">${a.ots}</td><td class="num">${nf(a.horas_paro)}</td>` +
+            `<td class="num">${nf(a.tons_mp_lost)}</td>` +
+            `<td class="num" style="color:${a.tons_lost > 0 ? '#FF453A' : '#30D158'};font-weight:700">${nf(a.tons_lost)}</td>` +
+            `<td class="num">${a.sacks_lost.toLocaleString('es-PE')}</td>` +
+            `<td class="num">${a.pct_de_capacidad != null ? a.pct_de_capacidad + '%' : '-'}</td>` +
+            `<td class="num">${pr.tons_lost_mes ? Math.round(a.tons_lost / pr.tons_lost_mes * 100) + '%' : '-'}</td></tr>`).join('')
+        : `<tr><td colspan="9" style="color:#9ab0cb">Sin paradas con impacto en el periodo.</td></tr>`);
 }
 
 // ── S3: Indicadores por semana del mes ───────────────────────────────────
 function weekRange(x) {
-    // rango "01-07" del mes seleccionado -> fechas exactas para el filtro
-    const [d1, d2] = x.rango.split('-');
-    const m = DIAG.meta.month;
-    return { desde: `${m}-${d1}`, hasta: `${m}-${d2}` };
+    // El backend ya entrega las fechas exactas de cada bloque semanal
+    return { desde: x.desde, hasta: x.hasta };
 }
 
 function renderSemanas() {
     const s = DIAG.semanas || [];
-    el('semTitle').textContent = `Indicadores por semana — ${DIAG.meta.label}`;
+    el('semTitle').textContent = `Indicadores semana a semana — ${DIAG.meta.label}`;
     const labels = s.map(x => `${x.semana} (${x.rango})`);
 
     const cMix = chart('semMixChart');
@@ -322,8 +478,9 @@ function renderSemanas() {
         fila('MTBF (h)', x => x.mtbf_h) +
         fila('MTTR (h)', x => x.mttr_h) +
         fila('Disponibilidad', x => x.disponibilidad_pct, v => v + '%') +
-        fila('Downtime (h)', x => x.downtime_h) +
-        (s.some(x => x.futura) ? `<tr><td colspan="${s.length + 1}" style="color:#5a7aa0;font-size:.72rem">* semana futura del mes en curso</td></tr>` : '');
+        fila('Horas de parada', x => x.downtime_h) +
+        fila('TM no producidas', x => x.tons_lost) +
+        (s.some(x => x.futura) ? `<tr><td colspan="${s.length + 1}" style="color:#5a7aa0;font-size:.72rem">* bloque aun no transcurrido</td></tr>` : '');
 }
 
 // ── S3: Cuadro consolidado 12 meses ──────────────────────────────────────
@@ -785,10 +942,11 @@ window.generarNarrativa = generarNarrativa;
 
 // ── Informe HTML descargable (plantilla ejecutiva, se abre sin conexion) ─
 function descargarInforme() {
-    const month = document.getElementById('diagMonth').value;
-    const q = new URLSearchParams({ month, download: '1' });
-    if (NARR_JOB) q.set('narrativa_job', NARR_JOB);  // incluye la narrativa ya generada
-    window.location.href = `/api/diagnostico/informe?${q}`;
+    const q = periodoQuery();
+    if (q === null) return;
+    let url = `/api/diagnostico/informe?${q}&download=1`;
+    if (NARR_JOB) url += `&narrativa_job=${NARR_JOB}`;  // incluye la narrativa ya generada
+    window.location.href = url;
 }
 window.descargarInforme = descargarInforme;
 

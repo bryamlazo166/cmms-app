@@ -4,7 +4,6 @@ import math
 from flask import jsonify, request
 
 from utils.kpi_helpers import (
-    EQUIPMENT_CAPACITY,
     SERIES_AREAS,
     eq_capacity as _eq_capacity,
 )
@@ -476,7 +475,7 @@ def register_indicators_routes(app, db, logger, WorkOrder, Area, Line, Equipment
             ind['equipment_id'] = eq.id
             ind['equipment_name'] = eq.name
             ind['equipment_tag'] = eq.tag
-            ind['capacity'] = EQUIPMENT_CAPACITY.get(eq.tag, 0)
+            ind['capacity'] = _eq_capacity(eq)
             ind['mode'] = mode
             ind['all_ots'] = sorted(ots_data, key=lambda o: o.get('downtime_hours_calc', 0), reverse=True)
 

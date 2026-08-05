@@ -35,6 +35,20 @@
         input[type="number"]{width:90px;background:rgba(255,255,255,.06);border:1px solid rgba(255,255,255,.12);color:#fff;padding:4px 6px;border-radius:6px;text-align:right;}
         .area-row{background:rgba(90,200,250,.05);}
         .area-row td{font-weight:600;color:#5ac8fa;}
+        /* Resumen de capacidad instalada */
+        .cap-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(170px,1fr));gap:12px;margin-bottom:12px;}
+        .cap-card{background:#1b212b;border:1px solid #344964;border-radius:10px;padding:12px 14px;}
+        .cap-card .lbl{font-size:.7rem;color:#9ab0cb;text-transform:uppercase;letter-spacing:.5px;}
+        .cap-card .val{font-size:1.5rem;font-weight:700;color:#d6e0f0;margin-top:4px;font-variant-numeric:tabular-nums;}
+        .cap-card .pie{font-size:.72rem;color:#5a7aa0;margin-top:2px;}
+        .formula{background:#11161d;border-left:3px solid #FF9F0A;border-radius:6px;padding:8px 12px;
+                 color:#c8d4e4;font-size:.8rem;margin:8px 0 12px;line-height:1.6;}
+        .formula code{color:#FF9F0A;}
+        .warnbox{background:rgba(255,159,10,.1);border:1px solid rgba(255,159,10,.35);color:#FF9F0A;
+                 padding:9px 13px;border-radius:8px;font-size:.82rem;margin-bottom:12px;}
+        td.derived{color:#30D158;font-weight:600;}
+        .tagcell code{color:#5ac8fa;}
+        .subhead th{background:#141a22;}
     </style>
 </head>
 <body>
@@ -43,7 +57,29 @@
         <div class="wrap">
             <div class="header">
                 <h1><i class="fas fa-filter"></i> Alcance de Indicadores y Producción</h1>
-                <p>Marca qué áreas y equipos entran en los cálculos de MTBF/MTTR/Disponibilidad y Producción vs Mantenimiento. Las areas/equipos desmarcados no aparecen en /indicadores ni /produccion.</p>
+                <p>Marca qué áreas y equipos entran en los cálculos de MTBF/MTTR/Disponibilidad y define la <strong>capacidad real de proceso</strong> de cada equipo: es la base con la que se valoran las toneladas que no se producen cuando algo para.</p>
+            </div>
+
+            <div class="panel">
+                <h3><i class="fas fa-gauge-high"></i> Capacidad instalada de la planta</h3>
+                <div class="formula">
+                    Cada digestor trabaja por lotes:
+                    <code>TM/día = kg por llenada × % de llenado × llenadas por día ÷ 1000</code>.
+                    Ejemplo: 8 000 kg × 75 % × 4 llenadas = <strong>24 TM/día</strong>.<br>
+                    Cuando un equipo para, las toneladas que se dejan de producir salen de <em>su</em> capacidad,
+                    nunca del rendimiento de toda la planta. Un digestor fuera de servicio no suma capacidad.
+                </div>
+                <div class="cap-grid" id="capGrid"></div>
+                <div id="capWarn"></div>
+                <div class="twrap"><table id="capTable"></table></div>
+                <div style="margin-top:12px;display:flex;gap:10px;flex-wrap:wrap;">
+                    <button class="btn primary" onclick="sugerirCapacidades(false)">
+                        <i class="fas fa-wand-magic-sparkles"></i> Completar capacidades vacías
+                    </button>
+                    <button class="btn warning" onclick="sugerirCapacidades(true)">
+                        <i class="fas fa-rotate"></i> Recalcular todas (sobrescribe)
+                    </button>
+                </div>
             </div>
 
             <div class="info">
@@ -73,6 +109,15 @@
             return String(s == null ? '' : s).replace(/[&<>"']/g,
                 c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
         }
+        // TM/dia que procesa el equipo: por lotes se calcula, si no es el valor capturado
+        function capacidadDia(e) {
+            if ((e.batch_capacity_kg || 0) > 0) {
+                const fill = e.fill_pct || 75, lotes = e.batches_per_day || 4;
+                return e.batch_capacity_kg * (fill / 100) * lotes / 1000;
+            }
+            return e.capacity_tm_day || 0;
+        }
+
         async function load() {
             const nat = { numeric: true, sensitivity: 'base' };
             [_areas, _equips, _lines] = await Promise.all([
@@ -81,7 +126,81 @@
             _areas.sort((a, b) => (a.name || '').localeCompare(b.name || '', 'es', nat));
             _equips.sort((a, b) => (a.tag || a.name || '').localeCompare(b.tag || b.name || '', 'es', nat));
             render();
+            loadCapacidad();
         }
+
+        // ── Resumen de capacidad instalada ─────────────────────────────
+        function card(lbl, val, pie, color) {
+            return `<div class="cap-card"><div class="lbl">${lbl}</div>` +
+                   `<div class="val" ${color ? `style="color:${color}"` : ''}>${val}</div>` +
+                   `<div class="pie">${pie || ''}</div></div>`;
+        }
+        async function loadCapacidad() {
+            try {
+                const c = await jget('/api/admin/kpi-scope/capacidad');
+                const n = x => (x == null ? '—' : Number(x).toLocaleString('es-PE'));
+                document.getElementById('capGrid').innerHTML =
+                    card('Materia prima por día', n(c.planta_tm_dia) + ' TM',
+                         `${c.operativos} equipos por lotes operativos · ${n(c.planta_tm_hora)} TM/h`, '#5ac8fa') +
+                    card('Harina por día', n(c.harina_tm_dia) + ' TM',
+                         `rendimiento ${c.rendimiento_pct}%`, '#30D158') +
+                    card('Harina por mes', n(c.harina_tm_mes) + ' TM',
+                         'capacidad instalada (30,4 días)') +
+                    card('Materia prima por mes', n(c.planta_tm_mes) + ' TM', 'antes del rendimiento');
+
+                const avisos = [];
+                if ((c.fuera_servicio || []).length) {
+                    avisos.push(`<i class="fas fa-circle-pause"></i> <strong>Fuera de servicio (no suman capacidad):</strong> ` +
+                        c.fuera_servicio.map(d => `${d.tag} — ${n(d.tm_dia)} TM/día${d.motivo ? ` (${escapeHtml(d.motivo)})` : ''}`).join(' · '));
+                }
+                if ((c.sin_capacidad || []).length) {
+                    avisos.push(`<i class="fas fa-triangle-exclamation"></i> <strong>${c.sin_capacidad.length} equipos sin capacidad definida:</strong> ` +
+                        `sus paradas no suman toneladas perdidas. ` +
+                        c.sin_capacidad.slice(0, 12).map(x => escapeHtml(x.tag || x.name)).join(', ') +
+                        (c.sin_capacidad.length > 12 ? `… y ${c.sin_capacidad.length - 12} más` : '') +
+                        `. Usa el botón "Completar capacidades vacías".`);
+                }
+                document.getElementById('capWarn').innerHTML =
+                    avisos.map(a => `<div class="warnbox">${a}</div>`).join('');
+
+                const b = c.batch || [];
+                document.getElementById('capTable').innerHTML = !b.length ? '' :
+                    `<thead><tr class="subhead"><th>Equipo</th><th>Tag</th>
+                        <th class="num">kg por llenada</th><th class="num">% llenado</th>
+                        <th class="num">Llenadas/día</th><th class="num">TM/día</th><th>Estado</th></tr></thead><tbody>` +
+                    b.map(d => `<tr class="${d.in_service ? '' : 'excluded'}">
+                        <td>${escapeHtml(d.name)}</td><td class="tagcell"><code>${escapeHtml(d.tag)}</code></td>
+                        <td class="num">${n(d.kg_llenada)}</td><td class="num">${d.fill_pct}%</td>
+                        <td class="num">${d.llenadas_dia}</td>
+                        <td class="num derived">${n(d.tm_dia)}</td>
+                        <td>${d.in_service
+                            ? '<span class="pill in">OPERATIVO</span>'
+                            : `<span class="pill out">FUERA DE SERVICIO</span> <span style="color:#9ab0cb;font-size:.76rem">${escapeHtml(d.motivo || '')}</span>`}</td>
+                    </tr>`).join('') +
+                    `<tr><td colspan="5" style="text-align:right;font-weight:600;color:#9ab0cb">TOTAL OPERATIVO</td>
+                     <td class="num derived">${n(c.planta_tm_dia)}</td><td></td></tr></tbody>`;
+            } catch (e) {
+                document.getElementById('capWarn').innerHTML =
+                    `<div class="warnbox">No se pudo cargar la capacidad: ${escapeHtml(e.message)}</div>`;
+            }
+        }
+
+        async function sugerirCapacidades(overwrite) {
+            const msg = overwrite
+                ? 'Recalcula TODAS las capacidades, incluidas las que hayas escrito a mano. ¿Continuar?'
+                : 'Completa solo los equipos que aún no tienen capacidad. ¿Continuar?';
+            if (!confirm(msg)) return;
+            try {
+                const d = await jget('/api/admin/kpi-scope/sugerir-capacidades', {
+                    method: 'POST', headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ overwrite: !!overwrite })
+                });
+                alert(`Listo.\nEquipos por lotes actualizados: ${d.batch_actualizados}\n` +
+                      `Capacidades TM/día asignadas: ${d.capacidad_actualizados}`);
+                await load();
+            } catch (e) { alert('Error: ' + e.message); }
+        }
+        window.sugerirCapacidades = sugerirCapacidades;
         function render() {
             const lineToArea = {};
             _lines.forEach(l => { lineToArea[l.id] = l.area_id; });
@@ -97,8 +216,11 @@
                 <thead><tr>
                     <th></th><th>Nombre</th><th>Tag</th>
                     <th class="center">Incluir en KPIs</th>
-                    <th class="num">Cap TM<br><span style="font-weight:400;font-size:.68rem;color:#9ab0cb;">(input)</span></th>
-                    <th class="num">Yield %<br><span style="font-weight:400;font-size:.68rem;color:#9ab0cb;">(out/in)</span></th>
+                    <th class="num">kg por<br>llenada</th>
+                    <th class="num">% de<br>llenado</th>
+                    <th class="num">Llenadas<br>por día</th>
+                    <th class="num">TM por día<br><span style="font-weight:400;font-size:.68rem;color:#9ab0cb;">(materia prima)</span></th>
+                    <th class="num">Rendimiento %<br><span style="font-weight:400;font-size:.68rem;color:#9ab0cb;">(harina / m. prima)</span></th>
                     <th class="num">Hrs/día</th>
                     <th class="num">Días/sem</th>
                     <th></th>
@@ -112,34 +234,45 @@
                     <td class="center">
                         <label><input type="checkbox" ${inK ? 'checked' : ''} onchange="toggleArea(${a.id}, this.checked)" style="transform:scale(1.4);accent-color:#30D158;"></label>
                     </td>
-                    <td class="num">—</td>
-                    <td class="num">—</td>
-                    <td class="num">—</td>
-                    <td class="num">—</td>
+                    <td class="num" colspan="7">—</td>
                     <td><span class="pill ${inK ? 'in' : 'out'}">${inK ? 'EN' : 'EXCLUIDA'}</span></td>
                 </tr>`;
                 const eqs = equipsByArea[a.id] || [];
                 for (const e of eqs) {
                     const eIn = e.include_in_kpi !== false;
                     const yieldPct = e.yield_factor == null ? '' : Math.round(e.yield_factor * 100);
-                    html += `<tr class="${eIn && inK ? '' : 'excluded'}">
+                    const esBatch = (e.batch_capacity_kg || 0) > 0;
+                    const tmDia = capacidadDia(e);
+                    const fueraServicio = e.in_service === false;
+                    html += `<tr class="${eIn && inK && !fueraServicio ? '' : 'excluded'}">
                         <td></td>
-                        <td style="padding-left:30px;">${escapeHtml(e.name)}</td>
-                        <td><code>${escapeHtml(e.tag || '')}</code></td>
+                        <td style="padding-left:30px;">${escapeHtml(e.name)}${fueraServicio
+                            ? ` <span class="pill out" title="${escapeHtml(e.out_of_service_reason || '')}">FUERA DE SERVICIO</span>` : ''}</td>
+                        <td class="tagcell"><code>${escapeHtml(e.tag || '')}</code></td>
                         <td class="center">
                             <label><input type="checkbox" ${eIn ? 'checked' : ''} onchange="toggleEquip(${e.id}, this.checked)" style="transform:scale(1.3);accent-color:#30D158;"></label>
                         </td>
                         <td class="num">
-                            <input type="number" min="0" step="100" value="${e.capacity_tm == null ? '' : e.capacity_tm}" placeholder="—" onchange="setField(${e.id}, 'capacity_tm', this.value, true)">
+                            <input type="number" min="0" step="500" value="${e.batch_capacity_kg == null ? '' : e.batch_capacity_kg}" placeholder="—" title="Capacidad de una llenada, en kilos. Solo para equipos que trabajan por lotes (digestores)." onchange="setField(${e.id}, 'batch_capacity_kg', this.value, true)" style="width:85px;">
                         </td>
                         <td class="num">
-                            <input type="number" min="0" max="100" step="1" value="${yieldPct}" placeholder="100" onchange="setYield(${e.id}, this.value)" style="width:70px;">
+                            <input type="number" min="1" max="100" step="1" value="${e.fill_pct == null ? '' : e.fill_pct}" placeholder="${esBatch ? 75 : '—'}" title="Hasta qué porcentaje se llena realmente." onchange="setField(${e.id}, 'fill_pct', this.value, true)" style="width:60px;">
                         </td>
                         <td class="num">
-                            <input type="number" min="1" max="24" step="0.5" value="${e.shift_hours_per_day == null ? 24 : e.shift_hours_per_day}" onchange="setField(${e.id}, 'shift_hours_per_day', this.value, true)" style="width:70px;">
+                            <input type="number" min="0" max="24" step="1" value="${e.batches_per_day == null ? '' : e.batches_per_day}" placeholder="${esBatch ? 4 : '—'}" title="Cuántas llenadas se hacen en 24 horas." onchange="setField(${e.id}, 'batches_per_day', this.value, true)" style="width:60px;">
+                        </td>
+                        <td class="num">${esBatch
+                            ? `<span class="derived" title="Calculado: ${e.batch_capacity_kg} kg × ${e.fill_pct || 75}% × ${e.batches_per_day || 4} llenadas">${tmDia.toFixed(1)}</span>`
+                            : `<input type="number" min="0" step="1" value="${e.capacity_tm_day == null ? '' : e.capacity_tm_day}" placeholder="—" title="Toneladas de materia prima que este equipo procesa en un día completo." onchange="setField(${e.id}, 'capacity_tm_day', this.value, true)" style="width:80px;">`}
                         </td>
                         <td class="num">
-                            <input type="number" min="1" max="7" step="1" value="${e.work_days_per_week == null ? 7 : e.work_days_per_week}" onchange="setField(${e.id}, 'work_days_per_week', this.value, true)" style="width:60px;">
+                            <input type="number" min="0" max="100" step="1" value="${yieldPct}" placeholder="100" title="Porcentaje de la materia prima que se convierte en harina." onchange="setYield(${e.id}, this.value)" style="width:70px;">
+                        </td>
+                        <td class="num">
+                            <input type="number" min="1" max="24" step="0.5" value="${e.shift_hours_per_day == null ? 24 : e.shift_hours_per_day}" onchange="setField(${e.id}, 'shift_hours_per_day', this.value, true)" style="width:65px;">
+                        </td>
+                        <td class="num">
+                            <input type="number" min="1" max="7" step="1" value="${e.work_days_per_week == null ? 7 : e.work_days_per_week}" onchange="setField(${e.id}, 'work_days_per_week', this.value, true)" style="width:55px;">
                         </td>
                         <td><span class="pill ${eIn ? 'in' : 'out'}">${eIn ? 'EN' : 'EXCLUIDO'}</span></td>
                     </tr>`;

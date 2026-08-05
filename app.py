@@ -1292,6 +1292,12 @@ _ENSURE_INDEXES_SQL = [
     "ALTER TABLE areas      ADD COLUMN IF NOT EXISTS include_in_kpi BOOLEAN NOT NULL DEFAULT TRUE",
     "ALTER TABLE equipments ADD COLUMN IF NOT EXISTS include_in_kpi BOOLEAN NOT NULL DEFAULT TRUE",
     "ALTER TABLE equipments ADD COLUMN IF NOT EXISTS capacity_tm    DOUBLE PRECISION",
+    # Capacidad real de proceso: TM/dia y, para equipos por lotes (digestores),
+    # capacidad de la llenada en kg + % de llenado + llenadas por dia.
+    "ALTER TABLE equipments ADD COLUMN IF NOT EXISTS capacity_tm_day   DOUBLE PRECISION",
+    "ALTER TABLE equipments ADD COLUMN IF NOT EXISTS batch_capacity_kg DOUBLE PRECISION",
+    "ALTER TABLE equipments ADD COLUMN IF NOT EXISTS fill_pct          DOUBLE PRECISION",
+    "ALTER TABLE equipments ADD COLUMN IF NOT EXISTS batches_per_day   DOUBLE PRECISION",
     # Jornada operativa por equipo (para calculo de produccion teorica)
     "ALTER TABLE equipments ADD COLUMN IF NOT EXISTS shift_hours_per_day DOUBLE PRECISION NOT NULL DEFAULT 24.0",
     "ALTER TABLE equipments ADD COLUMN IF NOT EXISTS work_days_per_week  INTEGER NOT NULL DEFAULT 7",

@@ -400,6 +400,134 @@ def register_admin_routes(app, db, logger):
             logger.exception('apply_kpi_default_exclusions error')
             return jsonify({"error": str(e)}), 500
 
+    # ── CAPACIDAD REAL DE PLANTA (base de las TM no producidas) ──────────
+
+    @app.route('/api/admin/kpi-scope/capacidad', methods=['GET'])
+    @login_required
+    def kpi_scope_capacidad():
+        """Resumen de la capacidad instalada: cuanto puede procesar la planta
+        al dia y de donde sale. Es el denominador de todo el impacto en
+        produccion, asi que se muestra explicito en pantalla."""
+        try:
+            from models import Equipment, Line
+            from utils.kpi_helpers import (
+                eq_batch_kg, eq_batch_regime, eq_capacity_tm_day, eq_is_batch,
+                plant_capacity_tm_day, plant_yield_factor, DAYS_PER_MONTH,
+            )
+            equipos = Equipment.query.all()
+            lines = {l.id: l for l in Line.query.all()}
+            planta = plant_capacity_tm_day(equipos)
+            rend = plant_yield_factor(equipos)
+
+            batch, sin_capacidad = [], []
+            for e in sorted(equipos, key=lambda x: (x.tag or '')):
+                if eq_is_batch(e):
+                    fill, lotes = eq_batch_regime(e)
+                    batch.append({
+                        'id': e.id, 'tag': e.tag, 'name': e.name,
+                        'kg_llenada': round(eq_batch_kg(e)),
+                        'fill_pct': fill, 'llenadas_dia': lotes,
+                        'tm_dia': round(eq_capacity_tm_day(e), 2),
+                        'in_service': bool(e.in_service),
+                        'include_in_kpi': bool(e.include_in_kpi),
+                        'motivo': e.out_of_service_reason,
+                    })
+                elif e.include_in_kpi and eq_capacity_tm_day(e) <= 0:
+                    ln = lines.get(e.line_id)
+                    sin_capacidad.append({'id': e.id, 'tag': e.tag, 'name': e.name,
+                                          'linea': ln.name if ln else None})
+
+            return jsonify({
+                'planta_tm_dia': round(planta, 2),
+                'planta_tm_hora': round(planta / 24.0, 3),
+                'planta_tm_mes': round(planta * DAYS_PER_MONTH, 1),
+                'rendimiento_pct': round(rend * 100, 1),
+                'harina_tm_dia': round(planta * rend, 2),
+                'harina_tm_mes': round(planta * rend * DAYS_PER_MONTH, 1),
+                'batch': batch,
+                'operativos': len([b for b in batch if b['in_service']]),
+                'fuera_servicio': [b for b in batch if not b['in_service']],
+                'sin_capacidad': sin_capacidad,
+            })
+        except Exception as e:
+            logger.exception('kpi_scope_capacidad error')
+            return jsonify({"error": str(e)}), 500
+
+    @app.route('/api/admin/kpi-scope/sugerir-capacidades', methods=['POST'])
+    @login_required
+    def kpi_scope_sugerir_capacidades():
+        """Rellena la capacidad de los equipos que aun no la tienen.
+
+        - Digestores: kg de la llenada segun la tabla de planta, 75% de
+          llenado y 4 llenadas al dia.
+        - Resto: hereda la capacidad del digestor de su linea (un
+          transportador que alimenta al digestor #1 vale lo que el digestor
+          #1) o se reparte la planta entre sus equipos gemelos del area.
+
+        Body opcional: {"overwrite": true} para recalcular tambien lo ya
+        capturado a mano. Sin eso, solo llena lo vacio.
+        """
+        if not _is_admin():
+            return jsonify({"error": "Solo admin"}), 403
+        try:
+            from models import Equipment, Line
+            from utils.kpi_helpers import (
+                BATCH_CAPACITY_KG, DEFAULT_BATCHES_PER_DAY, DEFAULT_FILL_PCT,
+                eq_is_batch, suggest_capacities,
+            )
+            data = request.get_json(silent=True) or {}
+            overwrite = bool(data.get('overwrite'))
+
+            equipos = Equipment.query.all()
+            lines = Line.query.all()
+            cambios = {'batch': [], 'capacidad': []}
+
+            # 1) Equipos por lotes: sembrar kg/llenada y regimen
+            for e in equipos:
+                kg_tabla = BATCH_CAPACITY_KG.get(e.tag or '')
+                if not kg_tabla:
+                    continue
+                toco = False
+                if overwrite or not e.batch_capacity_kg:
+                    e.batch_capacity_kg = float(kg_tabla); toco = True
+                if overwrite or not e.fill_pct:
+                    e.fill_pct = DEFAULT_FILL_PCT; toco = True
+                if overwrite or not e.batches_per_day:
+                    e.batches_per_day = DEFAULT_BATCHES_PER_DAY; toco = True
+                if toco:
+                    cambios['batch'].append({
+                        'tag': e.tag, 'kg_llenada': e.batch_capacity_kg,
+                        'fill_pct': e.fill_pct, 'llenadas_dia': e.batches_per_day,
+                        'tm_dia': round(e.batch_capacity_kg * (e.fill_pct / 100.0)
+                                        * e.batches_per_day / 1000.0, 2),
+                    })
+
+            db.session.flush()  # para que la capacidad de planta ya vea los batch
+
+            # 2) Resto de equipos: capacidad sugerida
+            equipos = Equipment.query.all()
+            sug = suggest_capacities(equipos, lines)
+            eq_by_id = {e.id: e for e in equipos}
+            for eid, cap in sug.items():
+                e = eq_by_id.get(eid)
+                if not e or eq_is_batch(e) or cap <= 0:
+                    continue
+                if not overwrite and e.capacity_tm_day:
+                    continue
+                e.capacity_tm_day = cap
+                cambios['capacidad'].append({'tag': e.tag, 'name': e.name,
+                                             'tm_dia': cap})
+
+            db.session.commit()
+            return jsonify({'ok': True, 'overwrite': overwrite,
+                            'batch_actualizados': len(cambios['batch']),
+                            'capacidad_actualizados': len(cambios['capacidad']),
+                            **cambios})
+        except Exception as e:
+            db.session.rollback()
+            logger.exception('kpi_scope_sugerir_capacidades error')
+            return jsonify({"error": str(e)}), 500
+
     # ── BOT USAGE / TELEMETRIA DEL BOT TELEGRAM ──────────────────────────────
     @app.route('/api/admin/bot-usage', methods=['GET'])
     @login_required

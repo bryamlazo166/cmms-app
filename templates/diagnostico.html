@@ -65,6 +65,47 @@
         .narrativa{white-space:pre-wrap;color:#d5e2f5;font-size:.92rem;line-height:1.65;background:#141a22;border:1px solid #2f4257;border-radius:10px;padding:16px 18px;}
         .narrativa:empty{display:none;}
 
+        /* ── PORTADA: la primera lamina tiene que ser contundente ─────── */
+        .slide.portada{background:linear-gradient(150deg,#1a2230 0%,#12161f 60%);border-color:#3a5372;}
+        .port-head{display:flex;justify-content:space-between;align-items:flex-start;gap:20px;flex-wrap:wrap;}
+        .port-periodo{color:#5AC8FA;font-size:.8rem;text-transform:uppercase;letter-spacing:.14em;font-weight:600;}
+        .port-titular{margin:6px 0 0;color:#fff;font-size:1.9rem;line-height:1.22;font-weight:700;max-width:900px;}
+        .port-sub{color:#9ab0cb;font-size:.92rem;margin-top:8px;}
+        .veredicto{padding:10px 20px;border-radius:999px;font-weight:800;letter-spacing:.1em;
+            font-size:.95rem;white-space:nowrap;border:2px solid;}
+        .veredicto.malo{color:#FF453A;border-color:#FF453A;background:rgba(255,69,58,.12);}
+        .veredicto.regular{color:#FF9F0A;border-color:#FF9F0A;background:rgba(255,159,10,.12);}
+        .veredicto.bueno{color:#30D158;border-color:#30D158;background:rgba(48,209,88,.12);}
+        .veredicto.neutro{color:#9ab0cb;border-color:#4a5361;background:rgba(255,255,255,.04);}
+
+        .port-cifras{display:grid;grid-template-columns:repeat(auto-fit,minmax(210px,1fr));gap:14px;margin:22px 0 20px;}
+        .port-cifra{background:#131922;border:1px solid #2f4257;border-radius:14px;padding:16px 18px;
+            border-left-width:5px;}
+        .port-cifra.malo{border-left-color:#FF453A;}
+        .port-cifra.regular{border-left-color:#FF9F0A;}
+        .port-cifra.bueno{border-left-color:#30D158;}
+        .port-cifra.neutro{border-left-color:#4a5361;}
+        .port-cifra .l{color:#9ab0cb;font-size:.74rem;text-transform:uppercase;letter-spacing:.06em;line-height:1.3;}
+        .port-cifra .v{font-size:2.3rem;font-weight:800;color:#fff;margin:6px 0 2px;
+            font-variant-numeric:tabular-nums;line-height:1;}
+        .port-cifra .v small{font-size:1rem;font-weight:600;color:#9ab0cb;margin-left:3px;}
+        .port-cifra .p{color:#5a7aa0;font-size:.76rem;}
+        .port-cifra .dl{font-size:.78rem;margin-top:5px;font-weight:600;}
+
+        .port-cols{display:grid;grid-template-columns:1fr 1fr;gap:26px;margin-top:6px;}
+        .port-cols h3{color:#5AC8FA;font-size:.88rem;text-transform:uppercase;letter-spacing:.08em;
+            margin:0 0 10px;padding-bottom:7px;border-bottom:1px solid #2f4257;}
+        .port-list{margin:0;padding-left:20px;color:#d5e2f5;font-size:.93rem;line-height:1.6;}
+        .port-list li{margin-bottom:9px;}
+        .port-list.acciones li{color:#e8f0fb;}
+        .port-aviso{margin-top:16px;background:rgba(255,159,10,.09);border:1px solid rgba(255,159,10,.34);
+            border-radius:10px;padding:10px 14px;color:#FF9F0A;font-size:.83rem;line-height:1.55;}
+        body.presenting .port-titular{font-size:2.9rem;}
+        body.presenting .port-cifra .v{font-size:3.2rem;}
+        body.presenting .port-list{font-size:1.12rem;}
+        body.presenting .veredicto{font-size:1.3rem;padding:14px 28px;}
+        @media(max-width:900px){.port-cols{grid-template-columns:1fr;}.port-titular{font-size:1.4rem;}}
+
         /* ── MODO PRESENTACION ─────────────────────────────────────────── */
         body.presenting .sidebar,body.presenting .header,body.presenting .no-present{display:none!important;}
         body.presenting .home-section{margin-left:0!important;}
@@ -110,13 +151,52 @@
                 <div class="sub">Informe ejecutivo con datos en vivo · mes en curso + resto del mes + mes siguiente · <span id="genAt">-</span></div>
             </div>
             <div class="tools">
-                <input type="month" id="diagMonth" title="Mes a presentar">
+                <select id="diagPreset" title="Periodo a analizar" onchange="onPresetChange()">
+                    <option value="ultimo_datos">Último mes cerrado con datos</option>
+                    <option value="ultimo_mes">Mes anterior completo</option>
+                    <option value="mes_actual">Mes en curso</option>
+                    <option value="mes">Elegir un mes…</option>
+                    <option value="ultimos_30">Últimos 30 días</option>
+                    <option value="ultimos_90">Últimos 90 días</option>
+                    <option value="anio_actual">Lo que va del año</option>
+                    <option value="rango">Rango de fechas…</option>
+                </select>
+                <input type="month" id="diagMonth" title="Mes a presentar" style="display:none;">
+                <span id="rangoBox" style="display:none;gap:6px;align-items:center;">
+                    <input type="date" id="diagDesde" title="Desde">
+                    <span style="color:#9ab0cb;">→</span>
+                    <input type="date" id="diagHasta" title="Hasta">
+                </span>
                 <button class="btn primary" onclick="loadDiagnostico()"><i class="fas fa-sync"></i> Actualizar</button>
                 <button class="btn ai" onclick="generarNarrativa()" title="Genera el analisis ejecutivo con IA (DeepSeek) usando los datos cargados"><i class="fas fa-wand-magic-sparkles"></i> Narrativa IA</button>
                 <button class="btn present" onclick="togglePresent()" title="Pantalla completa, avanza con las flechas del teclado"><i class="fas fa-display"></i> Presentar</button>
                 <button class="btn back" onclick="descargarInforme()" title="Descarga el documento 'Diagnostico de Gestion de Mantenimiento' del periodo elegido: HTML autocontenido que se abre sin conexion (si ya generaste la Narrativa IA, va incluida)"><i class="fas fa-file-arrow-down"></i> Informe</button>
                 <button class="btn back" onclick="window.print()"><i class="fas fa-file-pdf"></i> PDF</button>
             </div>
+        </div>
+
+        <!-- S0: Portada — el veredicto del periodo -->
+        <div class="slide portada" data-slide id="portadaSlide">
+            <div class="port-head">
+                <div>
+                    <div class="port-periodo" id="portPeriodo">—</div>
+                    <h1 class="port-titular" id="portTitular">—</h1>
+                    <div class="port-sub" id="portSub"></div>
+                </div>
+                <div class="veredicto" id="portVeredicto">—</div>
+            </div>
+            <div class="port-cifras" id="portCifras"></div>
+            <div class="port-cols">
+                <div>
+                    <h3><i class="fas fa-magnifying-glass"></i> Qué explica estas cifras</h3>
+                    <ul class="port-list" id="portHechos"></ul>
+                </div>
+                <div>
+                    <h3><i class="fas fa-list-check"></i> Dónde actuar primero</h3>
+                    <ol class="port-list acciones" id="portAcciones"></ol>
+                </div>
+            </div>
+            <div id="portAvisos"></div>
         </div>
 
         <!-- S1: Resumen ejecutivo -->
@@ -132,13 +212,16 @@
         <!-- S2: Impacto en Produccion -->
         <div class="slide" data-slide id="prodSlide">
             <h2><i class="fas fa-industry"></i> <span id="prodTitle">Impacto del mantenimiento en la produccion</span></h2>
-            <div class="method">Harina que se dejo de producir por horas de parada de mantenimiento — misma metodologia del modulo Produccion vs Mtto (TM/h segun rendimiento y horas operativas de la meta de cada area). 1 saco = 50 kg. <span class="hint">Clic en un equipo del grafico para ver las OTs que causaron esa perdida.</span></div>
+            <div class="method">Harina que se dejo de producir por las horas de parada. Cada equipo aporta <b>su</b> capacidad real: los digestores por sus llenadas (kg x % de llenado x llenadas al dia), el resto por sus TM/dia. 1 saco = 50 kg. <span class="hint">Clic en un equipo del grafico para ver las OTs que causaron esa perdida.</span></div>
             <div class="kpi-strip" id="prodStripKpis"></div>
+            <div id="prodAvisos"></div>
             <div style="display:grid;grid-template-columns:1.2fr 1fr;gap:14px;">
                 <div class="chart-box" id="prodSerieChart" style="height:320px;"></div>
                 <div class="chart-box" id="prodEquiposChart" style="height:320px;"></div>
             </div>
-            <h3 style="color:#FF9F0A;font-size:.95rem;margin:14px 0 6px;">Metas y rendimientos vigentes por area</h3>
+            <h3 style="color:#FF9F0A;font-size:.95rem;margin:14px 0 6px;">De donde sale el calculo: capacidad instalada</h3>
+            <div class="twrap"><table class="diag" id="prodCapTable"></table></div>
+            <h3 style="color:#FF9F0A;font-size:.95rem;margin:14px 0 6px;">Perdida por area</h3>
             <div class="twrap"><table class="diag" id="prodMetasTable"></table></div>
             <div class="detail-panel" id="prodDetail">
                 <div class="dp-head"><b id="prodDetailTitle">-</b><button class="dp-close" onclick="closeDetail('prodDetail')"><i class="fas fa-xmark"></i> cerrar</button></div>

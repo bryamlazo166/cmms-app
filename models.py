@@ -222,9 +222,22 @@ class Equipment(db.Model):
     # dados de baja, etc.).
     include_in_kpi: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
     # Capacidad nominal en TM/mes — usada para ponderar disponibilidad.
-    # Si esta NULL, el calculo cae al diccionario hardcoded EQUIPMENT_CAPACITY
-    # (legacy). Llenar este campo permite quitar la dependencia del codigo.
+    # LEGACY: hoy la fuente de verdad es capacity_tm_day (o los campos de
+    # batch). Se conserva para no romper datos historicos.
     capacity_tm: Mapped[float | None] = mapped_column(Float, nullable=True)
+    # ── Capacidad real de proceso ────────────────────────────────────────
+    # Toneladas de materia prima que el equipo procesa en un dia completo.
+    # Es la base del calculo de "TM no producidas": TM/h = capacity_tm_day /
+    # shift_hours_per_day. Para los equipos que trabajan por lotes (los
+    # digestores) NO se llena a mano: se deriva de los tres campos de batch.
+    capacity_tm_day: Mapped[float | None] = mapped_column(Float, nullable=True)
+    # Equipos batch (digestores): capacidad de una llenada en kg, % al que se
+    # llena realmente y cuantas llenadas se hacen al dia.
+    #   TM/dia = batch_capacity_kg x (fill_pct/100) x batches_per_day / 1000
+    # Ej: digestor #1 = 8000 kg x 75% x 4 llenadas = 24 TM/dia.
+    batch_capacity_kg: Mapped[float | None] = mapped_column(Float, nullable=True)
+    fill_pct: Mapped[float | None] = mapped_column(Float, nullable=True)
+    batches_per_day: Mapped[float | None] = mapped_column(Float, nullable=True)
     # Jornada operativa: horas por dia y dias por semana en que el equipo
     # esta DISPONIBLE para operar. Default 24/7. Algunos equipos auxiliares
     # solo operan 16h/dia o 6 dias/semana.
@@ -268,6 +281,10 @@ class Equipment(db.Model):
         return {"id": self.id, "name": self.name, "tag": self.tag, "description": self.description,
                 "criticality": self.criticality, "line_id": self.line_id,
                 "include_in_kpi": self.include_in_kpi, "capacity_tm": self.capacity_tm,
+                "capacity_tm_day": self.capacity_tm_day,
+                "batch_capacity_kg": self.batch_capacity_kg,
+                "fill_pct": self.fill_pct,
+                "batches_per_day": self.batches_per_day,
                 "shift_hours_per_day": self.shift_hours_per_day,
                 "work_days_per_week": self.work_days_per_week,
                 "yield_factor": self.yield_factor,

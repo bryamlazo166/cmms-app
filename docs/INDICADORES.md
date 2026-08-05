@@ -319,9 +319,51 @@ Estados posibles de `WeeklyPlanItem.status`:
 | `real_duration` | Horas-hombre reales (no necesariamente downtime). |
 | `Equipment.include_in_kpi` | Si false, el equipo NO aporta al MTBF/MTTR/Disp. del área. |
 | `Area.include_in_kpi` | Si false, el área no aparece en el dashboard de indicadores. |
-| `Equipment.capacity_tm` | Capacidad nominal mensual en toneladas métricas. |
+| `Equipment.batch_capacity_kg` | Kilos de una llenada. Solo equipos por lotes (digestores). |
+| `Equipment.fill_pct` | Hasta qué % se llena realmente (planta: 75%). |
+| `Equipment.batches_per_day` | Llenadas en 24 h (planta: 4, ciclo de 6 h). |
+| `Equipment.capacity_tm_day` | TM de materia prima que procesa al día. En equipos por lotes se deriva de los tres campos anteriores. |
+| `Equipment.capacity_tm` | LEGACY: capacidad mensual. Hoy se deriva de `capacity_tm_day`. |
 | `Equipment.yield_factor` | Rendimiento MP → producto (0..1). |
+| `Equipment.in_service` | Si false (overhaul, parada larga) el equipo NO suma capacidad de planta. |
 | `SERIES_AREAS` | Set de áreas cuya disponibilidad se calcula multiplicando equipos en serie. |
+
+---
+
+## 11 bis. Capacidad de planta y toneladas no producidas
+
+Se configura en **Alcance de Indicadores** (`/configuracion-kpi`).
+
+```
+TM/día del equipo  = kg por llenada × % de llenado × llenadas por día ÷ 1000
+TM/h  del equipo   = TM/día ÷ horas operativas del día
+Capacidad de planta = Σ TM/día de los equipos por lotes EN SERVICIO
+TM no producidas   = horas de parada × TM/h del equipo detenido × rendimiento de planta
+```
+
+Ejemplo real: digestor #1 = 8 000 kg × 75 % × 4 llenadas = **24 TM/día = 1 TM/h**.
+
+Tres reglas que sostienen el número:
+
+1. **Cada equipo aporta su propia capacidad.** Si para un digestor de nueve se
+   pierde lo de ese digestor, no el rendimiento de toda la planta. Valorar la
+   parada de un equipo con la cifra del área era lo que hacía que un mes
+   reportara más toneladas perdidas de las que la planta produce.
+2. **Las paradas que cruzan meses se reparten** entre los días que cubren, en
+   vez de cargarse enteras al mes en que se cerró la OT.
+3. **Techo físico**: la pérdida de un periodo nunca supera la capacidad
+   instalada de esos días.
+
+La **disponibilidad de planta** del diagnóstico usa la misma cuenta:
+`1 − (TM no procesadas ÷ TM que se podían procesar)`. Es ponderada por
+capacidad porque los digestores trabajan en paralelo; restar la suma bruta de
+sus horas de parada, como si estuvieran en serie, daba disponibilidades de 0 %
+con la planta operando.
+
+Los equipos sin capacidad configurada no suman toneladas: el diagnóstico avisa
+cuántas OTs y horas quedaron fuera, y el botón *Completar capacidades vacías*
+las rellena heredando la capacidad de la línea o repartiendo la planta entre
+equipos gemelos.
 
 ---
 

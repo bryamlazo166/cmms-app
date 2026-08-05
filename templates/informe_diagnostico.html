@@ -46,6 +46,25 @@
     .narrativa{white-space:pre-wrap;background:#f8fafc;border:1px solid #d7dee8;border-radius:10px;
         padding:14px 18px;font-size:.88rem;line-height:1.65;}
     .cols2{display:grid;grid-template-columns:1fr 1fr;gap:16px;}
+    /* Portada: el veredicto del periodo, lo primero que se lee */
+    section.portada{border:2px solid #10243c;}
+    .port-head{display:flex;justify-content:space-between;align-items:flex-start;gap:18px;
+        flex-wrap:wrap;margin-bottom:14px;}
+    .port-titular{font-size:1.35rem;font-weight:800;color:#10243c;line-height:1.28;max-width:720px;}
+    .port-sub{color:#5f7288;font-size:.86rem;margin-top:5px;}
+    .veredicto{padding:8px 18px;border-radius:999px;font-weight:800;letter-spacing:.08em;
+        font-size:.85rem;white-space:nowrap;border:2px solid;}
+    .veredicto.malo{color:#c0392b;border-color:#c0392b;background:#fdecea;}
+    .veredicto.regular{color:#b7791f;border-color:#b7791f;background:#fdf5e6;}
+    .veredicto.bueno{color:#1e8e3e;border-color:#1e8e3e;background:#eaf7ee;}
+    .veredicto.neutro{color:#5f7288;border-color:#c9d6e5;background:#f5f7fa;}
+    .kpi.bord-malo{border-left:4px solid #c0392b;}
+    .kpi.bord-regular{border-left:4px solid #b7791f;}
+    .kpi.bord-bueno{border-left:4px solid #1e8e3e;}
+    .kpi.bord-neutro{border-left:4px solid #c9d6e5;}
+    .kpi .v small{font-size:.8rem;font-weight:600;color:#5f7288;}
+    .port-list{margin:0;padding-left:18px;font-size:.86rem;line-height:1.6;color:#25384f;}
+    .port-list li{margin-bottom:7px;}
     footer.doc{color:#5f7288;font-size:.74rem;padding:8px 6px 20px;line-height:1.6;}
     @media(max-width:800px){.cols2{grid-template-columns:1fr;}}
     @media print{
@@ -72,35 +91,69 @@
     <h1>DIAGNOSTICO DE GESTION DE MANTENIMIENTO</h1>
     <div class="sub">
         Periodo: <b style="color:#fff">{{ d.meta.label }}</b>
-        {% if d.meta.en_curso %}<span class="badge">MES EN CURSO — parcial al dia {{ d.meta.dia_hoy }} de {{ d.kpis_mes.dias_mes }}</span>{% endif %}
+        ({{ d.meta.desde }} a {{ d.meta.hasta }}, {{ d.meta.dias }} dias)
+        {% if d.meta.en_curso %}<span class="badge">PERIODO EN CURSO — parcial, {{ d.meta.dias }} de {{ d.meta.dias_nominales }} dias</span>{% endif %}
         &nbsp;·&nbsp; Comparado con {{ d.meta.prev_label }} &nbsp;·&nbsp; Generado el {{ d.meta.generated_at }}
     </div>
 </header>
 
+{% set po = d.portada %}
+{% if po %}
+<!-- VEREDICTO DEL PERIODO -->
+<section class="portada">
+    <div class="port-head">
+        <div>
+            <div class="port-titular">{{ po.titular }}</div>
+            <div class="port-sub">{{ po.subtitulo }}</div>
+        </div>
+        <div class="veredicto {{ po.color }}">{{ po.veredicto }}</div>
+    </div>
+    <div class="kpis">
+        {% for c in po.cifras %}
+        <div class="kpi bord-{{ c.estado }}">
+            <div class="l">{{ c.label }}</div>
+            <div class="v">{{ '-' if c.valor is none else c.valor }}{% if c.valor is not none %}<small> {{ c.unidad }}</small>{% endif %}</div>
+            <div class="d">{{ c.pie }}</div>
+        </div>
+        {% endfor %}
+    </div>
+    <div class="cols2">
+        <div>
+            <h3>Que explica estas cifras</h3>
+            <ul class="port-list">{% for h in po.hechos %}<li>{{ h }}</li>{% endfor %}</ul>
+        </div>
+        <div>
+            <h3>Donde actuar primero</h3>
+            <ol class="port-list">{% for a in po.acciones %}<li>{{ a }}</li>{% endfor %}</ol>
+        </div>
+    </div>
+</section>
+{% endif %}
+
 <!-- 1. RESUMEN EJECUTIVO -->
 <section>
-    <h2>1. Resumen ejecutivo del mes</h2>
+    <h2>1. Resumen ejecutivo del periodo</h2>
     <div class="method">Benchmarks SMRP: cumplimiento de programa &gt;90% · trabajo proactivo &gt;75% · backlog 2-4 semanas-cuadrilla.</div>
     {% set k = d.kpis_mes %}{% set p = d.kpis_prev %}
     <div class="kpis">
-        <div class="kpi"><div class="l">OTs cerradas</div><div class="v">{{ k.closed_total }}</div><div class="d">mes anterior: {{ p.closed_total }}</div></div>
+        <div class="kpi"><div class="l">OTs cerradas</div><div class="v">{{ k.closed_total }}</div><div class="d">anterior: {{ p.closed_total }}</div></div>
         <div class="kpi"><div class="l">% Proactivo (meta &gt;75%)</div>
             <div class="v {{ 'good' if k.proactive_pct >= 75 else ('warn' if k.proactive_pct >= 50 else 'crit') }}">{{ f(k.proactive_pct, '%') }}</div>
-            <div class="d">mes anterior: {{ f(p.proactive_pct, '%') }}</div></div>
-        <div class="kpi"><div class="l">Correctivas</div><div class="v {{ 'crit' if k.correctivas > k.proactivas else '' }}">{{ k.correctivas }}</div><div class="d">mes anterior: {{ p.correctivas }}</div></div>
+            <div class="d">anterior: {{ f(p.proactive_pct, '%') }}</div></div>
+        <div class="kpi"><div class="l">Correctivas</div><div class="v {{ 'crit' if k.correctivas > k.proactivas else '' }}">{{ k.correctivas }}</div><div class="d">anterior: {{ p.correctivas }}</div></div>
         <div class="kpi"><div class="l">Cumplimiento programa</div>
             <div class="v {{ '' if k.cumplimiento_pct is none else ('good' if k.cumplimiento_pct >= 90 else ('warn' if k.cumplimiento_pct >= 70 else 'crit')) }}">{{ f(k.cumplimiento_pct, '%') }}</div>
             <div class="d">{{ k.programadas }} programadas</div></div>
-        <div class="kpi"><div class="l">Downtime (h)</div><div class="v {{ 'crit' if k.downtime_h > (p.downtime_h or 0) else 'good' }}">{{ k.downtime_h }}</div><div class="d">mes anterior: {{ p.downtime_h }}</div></div>
+        <div class="kpi"><div class="l">Downtime (h)</div><div class="v {{ 'crit' if k.downtime_h > (p.downtime_h or 0) else 'good' }}">{{ k.downtime_h }}</div><div class="d">anterior: {{ p.downtime_h }}</div></div>
         <div class="kpi"><div class="l">Respuesta aviso→cierre</div><div class="v">{{ f(k.respuesta_dias, ' d') }}</div><div class="d">&nbsp;</div></div>
     </div>
     <div class="kpis">
-        <div class="kpi"><div class="l">MTBF (h)</div><div class="v">{{ f(k.mtbf_h) }}</div><div class="d">mes anterior: {{ f(p.mtbf_h) }}</div></div>
-        <div class="kpi"><div class="l">MTTR (h)</div><div class="v">{{ f(k.mttr_h) }}</div><div class="d">mes anterior: {{ f(p.mttr_h) }}</div></div>
+        <div class="kpi"><div class="l">MTBF (h)</div><div class="v">{{ f(k.mtbf_h) }}</div><div class="d">anterior: {{ f(p.mtbf_h) }}</div></div>
+        <div class="kpi"><div class="l">MTTR (h)</div><div class="v">{{ f(k.mttr_h) }}</div><div class="d">anterior: {{ f(p.mttr_h) }}</div></div>
         <div class="kpi"><div class="l">Disponibilidad</div>
             <div class="v {{ 'good' if k.disponibilidad_pct >= 95 else ('warn' if k.disponibilidad_pct >= 90 else 'crit') }}">{{ f(k.disponibilidad_pct, '%') }}</div>
-            <div class="d">mes anterior: {{ f(p.disponibilidad_pct, '%') }}</div></div>
-        <div class="kpi"><div class="l">Confiabilidad R(7d)</div><div class="v">{{ f(k.confiabilidad_pct, '%') }}</div><div class="d">mes anterior: {{ f(p.confiabilidad_pct, '%') }}</div></div>
+            <div class="d">anterior: {{ f(p.disponibilidad_pct, '%') }}</div></div>
+        <div class="kpi"><div class="l">Confiabilidad R(7d)</div><div class="v">{{ f(k.confiabilidad_pct, '%') }}</div><div class="d">anterior: {{ f(p.confiabilidad_pct, '%') }}</div></div>
     </div>
 </section>
 
@@ -117,26 +170,60 @@
 <!-- IMPACTO EN PRODUCCION -->
 <section>
     <h2>Impacto del mantenimiento en la produccion</h2>
-    <div class="method">Harina que se dejo de producir por horas de parada de mantenimiento. TM/h = rendimiento mensual ÷ horas operativas de la meta de cada area (misma metodologia del modulo Produccion vs Mtto). 1 saco = {{ pr.sack_kg }} kg.</div>
+    <div class="method">Harina que se dejo de producir por las horas de parada. Cada equipo aporta <b>su</b> capacidad real:
+        los digestores por sus llenadas (kg por llenada × % de llenado × llenadas al dia), el resto por sus TM/dia
+        registradas en Alcance de Indicadores. 1 saco = {{ pr.sack_kg }} kg.</div>
     <div class="kpis">
-        <div class="kpi"><div class="l">TM no producidas (mes)</div><div class="v {{ 'crit' if pr.tons_lost_mes > pr.tons_lost_prev else 'good' }}">{{ pr.tons_lost_mes }}</div><div class="d">mes anterior: {{ pr.tons_lost_prev }} TM</div></div>
-        <div class="kpi"><div class="l">Sacos de {{ pr.sack_kg }} kg (mes)</div><div class="v">{{ '{:,}'.format(pr.sacks_lost_mes) }}</div><div class="d">harina que no llego a ensacarse</div></div>
-        <div class="kpi"><div class="l">% de la meta mensual</div>
-            <div class="v {{ '' if pr.pct_de_meta is none else ('good' if pr.pct_de_meta <= 2 else ('warn' if pr.pct_de_meta <= 5 else 'crit')) }}">{{ f(pr.pct_de_meta, '%') }}</div>
-            <div class="d">meta: {{ pr.meta_mes_tons }} TM</div></div>
+        <div class="kpi"><div class="l">TM de harina no producidas</div><div class="v {{ 'crit' if pr.tons_lost_mes > pr.tons_lost_prev else 'good' }}">{{ pr.tons_lost_mes }}</div><div class="d">periodo anterior: {{ pr.tons_lost_prev }} TM</div></div>
+        <div class="kpi"><div class="l">Sacos de {{ pr.sack_kg }} kg</div><div class="v">{{ '{:,}'.format(pr.sacks_lost_mes) }}</div><div class="d">harina que no llego a ensacarse</div></div>
+        <div class="kpi"><div class="l">Materia prima sin procesar</div><div class="v">{{ pr.tons_mp_lost_mes }}</div><div class="d">TM, en {{ pr.horas_paro }} h de parada</div></div>
+        <div class="kpi"><div class="l">% de la capacidad del periodo</div>
+            <div class="v {{ '' if pr.pct_de_capacidad is none else ('good' if pr.pct_de_capacidad <= 2 else ('warn' if pr.pct_de_capacidad <= 5 else 'crit')) }}">{{ f(pr.pct_de_capacidad, '%') }}</div>
+            <div class="d">capacidad: {{ pr.capacidad_periodo_tons }} TM en {{ pr.dias }} dias</div></div>
         <div class="kpi"><div class="l">Acumulado 12 meses</div><div class="v">{{ pr.tons_lost_12m }} TM</div><div class="d">{{ '{:,}'.format(pr.sacks_lost_12m) }} sacos</div></div>
     </div>
 
-    <h3>Metas y rendimientos vigentes por area</h3>
+    {% if pr.sin_capacidad.ots or pr.paradas_largas %}
+    <div class="method" style="border-left:3px solid #d18b00;padding-left:10px;">
+        {% if pr.sin_capacidad.ots %}<div><b>Aviso:</b> {{ pr.sin_capacidad.ots }} OTs con {{ pr.sin_capacidad.horas }} h de parada
+        no suman toneladas porque su equipo no tiene capacidad configurada{% if pr.sin_capacidad.equipos %} ({{ pr.sin_capacidad.equipos|join(', ') }}){% endif %}.</div>{% endif %}
+        {% if pr.paradas_largas %}<div><b>Paradas de mas de 3 dias a verificar:</b>
+        {% for x in pr.paradas_largas %}{{ x.code }} {{ x.equipo }} — {{ x.dias }} dias ({{ x.desde }} a {{ x.hasta }}){% if not loop.last %} · {% endif %}{% endfor %}.</div>{% endif %}
+    </div>
+    {% endif %}
+
+    <h3>De donde sale el calculo: capacidad instalada</h3>
     <div class="twrap"><table>
-        <tr><th>Area</th><th class="num">Meta (TM/mes)</th><th class="num">Rendimiento prom. (TM/mes)</th><th class="num">Horas oper.</th><th class="num">TM/h</th><th class="num">TM perdidas</th><th class="num">Sacos</th><th class="num">% de su meta</th></tr>
-        {% for m in pr.metas %}
-        <tr><td><b>{{ m.area }}</b> <span style="color:#8296ab;font-size:.72rem">(meta {{ m.periodo_meta }})</span></td>
-            <td class="num">{{ m.meta_tons }}</td><td class="num">{{ m.rendimiento_tons }}</td>
-            <td class="num">{{ m.horas_mes|int }}</td><td class="num">{{ m.tons_por_hora }}</td>
+        <tr><th>Equipo</th><th class="num">kg por llenada</th><th class="num">% llenado</th>
+            <th class="num">Llenadas/dia</th><th class="num">TM/dia</th><th class="num">TM/h</th><th>Estado</th></tr>
+        {% for dg in pr.capacidad.digestores %}
+        <tr><td><b>{{ dg.tag }}</b> {{ dg.nombre }}</td>
+            <td class="num">{{ '{:,}'.format(dg.kg_llenada) }}</td><td class="num">{{ dg.fill_pct }}%</td>
+            <td class="num">{{ dg.llenadas_dia }}</td><td class="num"><b>{{ dg.tm_dia }}</b></td>
+            <td class="num">{{ dg.tm_hora }}</td>
+            <td>{% if dg.en_servicio %}Operativo{% else %}<span class="crit">Fuera de servicio</span> {{ dg.motivo or '' }}{% endif %}</td></tr>
+        {% endfor %}
+        <tr><td colspan="4" class="num"><b>Capacidad de planta (materia prima)</b></td>
+            <td class="num"><b>{{ pr.capacidad.planta_tm_dia }}</b></td>
+            <td class="num"><b>{{ pr.capacidad.planta_tm_hora }}</b></td>
+            <td>{{ pr.capacidad.operativos }} equipos operativos</td></tr>
+        <tr><td colspan="4" class="num"><b>Con rendimiento {{ pr.capacidad.rendimiento_pct }}% → harina</b></td>
+            <td class="num"><b>{{ pr.capacidad.harina_tm_dia }}</b></td><td class="num">—</td>
+            <td>{{ pr.capacidad_periodo_tons }} TM en el periodo</td></tr>
+    </table></div>
+
+    <h3>Perdida por area</h3>
+    <div class="twrap"><table>
+        <tr><th>Area</th><th class="num">Equipos que pararon</th><th class="num">OTs con paro</th>
+            <th class="num">Horas de parada</th><th class="num">Materia prima (TM)</th>
+            <th class="num">TM no producidas</th><th class="num">Sacos</th><th class="num">% de la capacidad</th></tr>
+        {% for m in pr.por_area %}
+        <tr><td><b>{{ m.area }}</b></td>
+            <td class="num">{{ m.equipos }}</td><td class="num">{{ m.ots }}</td>
+            <td class="num">{{ m.horas_paro }}</td><td class="num">{{ m.tons_mp_lost }}</td>
             <td class="num {{ 'crit' if m.tons_lost > 0 else 'good' }}"><b>{{ m.tons_lost }}</b></td>
             <td class="num">{{ '{:,}'.format(m.sacks_lost) }}</td>
-            <td class="num">{{ f(m.pct_de_su_meta, '%') }}</td></tr>
+            <td class="num">{{ f(m.pct_de_capacidad, '%') }}</td></tr>
         {% endfor %}
     </table></div>
 
@@ -171,7 +258,7 @@
 
 <!-- INDICADORES POR SEMANA -->
 <section>
-    <h2>Indicadores por semana — {{ d.meta.label }}</h2>
+    <h2>Indicadores semana a semana — {{ d.meta.label }}</h2>
     <div class="method">Sem 1 = dias 1-7, Sem 2 = 8-14, ... {% if d.meta.en_curso %}Las semanas futuras del mes en curso aparecen con "—".{% endif %}</div>
     <div class="twrap"><table>
         <tr><th>Indicador</th>{% for s in d.semanas %}<th class="num">{{ s.semana }}<br>({{ s.rango }}){% if s.futura %} *{% endif %}</th>{% endfor %}</tr>
@@ -211,7 +298,7 @@
 <section>
     <h2>Pareto de fallas (80/20)</h2>
     <div class="cols2">
-        {% for titulo, par in [('Mes: ' ~ d.meta.label, d.pareto_mes), ('Ultimos 6 meses', d.pareto_6m)] %}
+        {% for titulo, par in [('Periodo: ' ~ d.meta.label, d.pareto_mes), ('Ultimos 6 meses', d.pareto_6m)] %}
         <div>
             <h3>{{ titulo }} — {{ par.total }} fallas</h3>
             {% if par['items'] %}
@@ -311,11 +398,16 @@
 </section>
 
 <footer class="doc">
-    <b>Metodologia.</b> Planta tratada como sistema en serie: uptime = horas del periodo − downtime consolidado;
-    MTBF = uptime ÷ n° de fallas; MTTR = promedio de duracion real de correctivas; Disponibilidad = uptime ÷ horas del periodo;
-    Confiabilidad semanal R(168h) = e^(−168/MTBF). El mes en curso usa solo los dias transcurridos.
-    Impacto en produccion: TM/h = rendimiento mensual ÷ horas operativas de la meta vigente de cada area;
-    TM no producidas = horas de parada × TM/h; 1 saco = {{ d.produccion.sack_kg if d.produccion.disponible else 50 }} kg.
+    <b>Metodologia.</b>
+    <u>Capacidad.</u> Cada equipo por lotes aporta kg por llenada × % de llenado × llenadas al dia; el resto de
+    equipos, sus TM/dia registradas. Los equipos fuera de servicio no suman capacidad.
+    <u>Toneladas no producidas</u> = horas de parada × capacidad del equipo detenido × rendimiento de planta.
+    Las paradas que cruzan meses se reparten entre los dias que cubren, y el total del periodo no puede superar
+    la capacidad instalada de esos dias. 1 saco = {{ d.produccion.sack_kg if d.produccion.disponible else 50 }} kg.
+    <u>Disponibilidad</u> = 1 − (TM no procesadas ÷ TM que se podian procesar): ponderada por capacidad, porque los
+    digestores trabajan en paralelo y sumar sus paradas como si fueran en serie daba disponibilidades irreales.
+    MTBF = uptime equivalente ÷ n° de fallas; MTTR = promedio de duracion real de correctivas;
+    Confiabilidad semanal R(168h) = e^(−168/MTBF). Un periodo en curso usa solo los dias transcurridos.
     Benchmarks SMRP: cumplimiento &gt;90%, proactivo &gt;75%, backlog 2-4 semanas-cuadrilla.
     <br>Documento generado automaticamente por el CMMS el {{ d.meta.generated_at }} — mismo formato en cada periodo.
 </footer>

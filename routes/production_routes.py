@@ -60,7 +60,9 @@ def register_production_routes(app, db, logger, ProductionGoal, WorkOrder, Area,
         return dt.date.today().strftime('%Y-%m')
 
     def _ot_in_window(ot, start, end):
-        d = ot.scheduled_date or ot.real_end_date or ot.real_start_date
+        # La parada ocurre cuando se ejecuta el trabajo, no cuando se
+        # programo: se prioriza la fecha real de cierre.
+        d = ot.real_end_date or ot.real_start_date or ot.scheduled_date
         if not d:
             return False
         try:
@@ -126,6 +128,21 @@ def register_production_routes(app, db, logger, ProductionGoal, WorkOrder, Area,
 
         all_ots = WorkOrder.query.filter(WorkOrder.status == 'Cerrada').all()
 
+        # TM/h de producto final de cada equipo, segun su capacidad real.
+        # La conversion a harina usa el rendimiento de PLANTA: la capacidad de
+        # todos los equipos esta expresada en materia prima equivalente, asi
+        # que una parada de molino no puede rendir mas harina por tonelada que
+        # una de digestor.
+        from utils.kpi_helpers import eq_input_tph, plant_yield_factor
+        _plant_yield = plant_yield_factor(equips)
+        _tph_cache = {}
+
+        def _eq_output_tph(eq_id):
+            if eq_id not in _tph_cache:
+                eq = equip_map.get(eq_id)
+                _tph_cache[eq_id] = (eq_input_tph(eq) * _plant_yield) if eq else 0.0
+            return _tph_cache[eq_id]
+
         area_results = []
         total_tons_lost = 0.0
         total_sacks_lost = 0.0
@@ -177,8 +194,15 @@ def register_production_routes(app, db, logger, ProductionGoal, WorkOrder, Area,
             uptime = max(0, analyzed_hours - total_downtime)
             availability = round((uptime / analyzed_hours) * 100, 2) if analyzed_hours > 0 else 100.0
 
-            # Toneladas perdidas
-            tons_lost = round(total_downtime * tons_per_hour, 2)
+            # Toneladas perdidas: cada equipo aporta SU capacidad real (los
+            # digestores por sus llenadas), no el rendimiento del area entera.
+            # Antes se multiplicaba todo el downtime del area por el TM/h de
+            # la planta, y la parada de un solo equipo se valoraba como si se
+            # hubiera detenido el area completa.
+            tons_lost = 0.0
+            for ev in downtime_events:
+                tons_lost += ev['hours'] * _eq_output_tph(ev['ot'].equipment_id)
+            tons_lost = round(tons_lost, 2)
             sacks_lost = round((tons_lost * 1000) / SACK_KG, 0)
 
             # Disponibilidad requerida
@@ -218,7 +242,7 @@ def register_production_routes(app, db, logger, ProductionGoal, WorkOrder, Area,
                 # Excluir equipos marcados como fuera de KPI (ej: hidrolavadora 4)
                 if eq and not getattr(eq, 'include_in_kpi', True):
                     continue
-                tons = ev['hours'] * tons_per_hour
+                tons = ev['hours'] * _eq_output_tph(eq_id)
                 if eq_id not in equipment_impact:
                     equipment_impact[eq_id] = {
                         'equipment_id': eq_id,
@@ -644,7 +668,8 @@ def register_production_routes(app, db, logger, ProductionGoal, WorkOrder, Area,
         """
         from utils.kpi_helpers import (
             calendar_hours_for_equipment, planned_downtime_for_equipment,
-            eq_capacity, eq_yield_factor, eq_jornada,
+            eq_capacity, eq_capacity_tm_day, eq_input_tph,
+            eq_yield_factor, eq_jornada,
         )
         from models import Shutdown
         cap_tm = eq_capacity(eq)
@@ -674,9 +699,11 @@ def register_production_routes(app, db, logger, ProductionGoal, WorkOrder, Area,
         availability = round((uptime_real / usable_hours) * 100, 2) if usable_hours > 0 else 100.0
 
         # TM input (materia prima) vs output (producto final, aplicando yield).
+        # El ritmo sale de la capacidad REAL del equipo (llenadas/dia para los
+        # digestores, TM/dia capturadas para el resto), no de un TM/mes plano.
         yield_factor = eq_yield_factor(eq)
         shift_h, work_days = eq_jornada(eq)
-        input_tph = (cap_tm / 720.0) if cap_tm > 0 else 0.0
+        input_tph = eq_input_tph(eq)
         output_tph = input_tph * yield_factor
 
         input_tons_theoretical = round(usable_hours * input_tph, 2)
@@ -698,7 +725,8 @@ def register_production_routes(app, db, logger, ProductionGoal, WorkOrder, Area,
             'line_name': ln.name if ln else None,
             'area_id': area.id if area else None,
             'area_name': area.name if area else None,
-            'capacity_tm': cap_tm,
+            'capacity_tm': round(cap_tm, 1),
+            'capacity_tm_day': round(eq_capacity_tm_day(eq), 2),
             'yield_factor': yield_factor,
             'shift_hours_per_day': shift_h,
             'work_days_per_week': work_days,
