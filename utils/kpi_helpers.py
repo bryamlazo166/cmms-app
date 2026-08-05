@@ -76,6 +76,30 @@ def eq_produces(eq):
     return bool(getattr(eq, 'is_production_unit', False))
 
 
+def eq_capacity_basis(eq):
+    """En que esta medida la capacidad del equipo.
+
+      'MP'       -> toneladas de materia prima que entran. Son los digestores:
+                    ellos GENERAN la harina, asi que hay que aplicarles el
+                    rendimiento para saber cuanta harina sale.
+      'PRODUCTO' -> toneladas de harina que pasan por el equipo. Son los
+                    secadores y los molinos: no generan nada, PROCESAN la
+                    harina que ya salio de los digestores, asi que su
+                    capacidad ya esta en harina y no se vuelve a multiplicar
+                    por el rendimiento.
+    """
+    return 'MP' if eq_is_batch(eq) else 'PRODUCTO'
+
+
+def eq_stage(eq):
+    """Etapa del proceso a la que pertenece el equipo productivo.
+
+    Las etapas van en SERIE (coccion -> secado -> molienda), asi que la
+    planta produce lo que permita la mas limitada de las tres.
+    """
+    return 'COCCION' if eq_is_batch(eq) else _normalize_name(eq.name)
+
+
 def eq_capacity_tm_day(eq):
     """TM de materia prima que el equipo procesa en un dia completo.
 
@@ -104,7 +128,7 @@ def eq_capacity_tm_day(eq):
 
 
 def eq_input_tph(eq):
-    """TM/h de materia prima del equipo (capacidad diaria / jornada)."""
+    """TM/h que pasan por el equipo, en la unidad de su capacidad."""
     cap_day = eq_capacity_tm_day(eq)
     if cap_day <= 0:
         return 0.0
@@ -112,9 +136,28 @@ def eq_input_tph(eq):
     return cap_day / shift_h if shift_h > 0 else 0.0
 
 
-def eq_output_tph(eq):
-    """TM/h de producto final (materia prima x rendimiento del equipo)."""
-    return eq_input_tph(eq) * eq_yield_factor(eq)
+def eq_harina_tm_day(eq, plant_yield=None):
+    """TM de HARINA al dia que deja de salir si este equipo para.
+
+    Un digestor genera: sus TM de materia prima se convierten en harina con
+    el rendimiento. Un secador o un molino ya trabaja sobre harina, asi que
+    su capacidad se toma tal cual.
+    """
+    cap = eq_capacity_tm_day(eq)
+    if cap <= 0:
+        return 0.0
+    if eq_capacity_basis(eq) == 'MP':
+        return cap * (eq_yield_factor(eq) if plant_yield is None else plant_yield)
+    return cap
+
+
+def eq_output_tph(eq, plant_yield=None):
+    """TM/h de harina que se dejan de producir mientras el equipo esta parado."""
+    dia = eq_harina_tm_day(eq, plant_yield)
+    if dia <= 0:
+        return 0.0
+    shift_h, _ = eq_jornada(eq)
+    return dia / shift_h if shift_h > 0 else 0.0
 
 
 def eq_capacity(eq):
@@ -155,6 +198,43 @@ def plant_capacity_tm_day(equipments):
             total += cap
         mayor = max(mayor, cap)
     return total if total > 0 else mayor
+
+
+def plant_stages(equipments):
+    """Capacidad de harina de cada etapa: {etapa: {tm_dia, equipos, ...}}.
+
+    Solo suman los equipos EN SERVICIO: si el molino #1 esta desactivado, la
+    molienda queda a la mitad y la planta entera con el, porque las etapas
+    van en serie.
+    """
+    rend = plant_yield_factor(equipments)
+    etapas = {}
+    for eq in equipments:
+        if not eq_produces(eq) or not getattr(eq, 'include_in_kpi', True):
+            continue
+        st = etapas.setdefault(eq_stage(eq), {
+            'etapa': eq_stage(eq), 'tm_dia': 0.0, 'equipos': 0,
+            'operativos': 0, 'fuera_servicio': [],
+            'base': eq_capacity_basis(eq),
+        })
+        st['equipos'] += 1
+        if getattr(eq, 'in_service', True):
+            st['operativos'] += 1
+            st['tm_dia'] += eq_harina_tm_day(eq, rend)
+        else:
+            st['fuera_servicio'].append(getattr(eq, 'tag', None) or eq.name)
+    return etapas
+
+
+def plant_harina_tm_day(equipments):
+    """TM de harina al dia que puede sacar la planta.
+
+    Es la etapa mas limitada: coccion, secado y molienda estan en serie, asi
+    que la planta no produce mas de lo que permita la mas corta de las tres.
+    """
+    etapas = plant_stages(equipments)
+    caps = [s['tm_dia'] for s in etapas.values() if s['tm_dia'] > 0]
+    return min(caps) if caps else 0.0
 
 
 def plant_yield_factor(equipments):
@@ -199,49 +279,42 @@ def suggest_production_units(equipments):
             and _normalize_name(eq.name) in DEFAULT_PRODUCTION_NAMES}
 
 
-def suggest_capacities(equipments, lines):
-    """Sugiere la capacidad TM/dia de los equipos productivos que no son de
-    lotes: en esta planta, los secadores y los molinos.
+def suggest_capacities(equipments, lines=None):
+    """Sugiere la capacidad de los equipos productivos que no son de lotes:
+    en esta planta, los secadores y los molinos.
 
-    Reglas, en orden:
-      1. Si en su LINEA hay equipos por lotes, hereda esa capacidad.
-      2. Si no, reparte la capacidad de planta entre sus equipos gemelos del
-         area: secado y molienda estan en serie con la coccion, asi que cada
-         uno de los 2 molinos vale media planta, igual que cada secador.
+    Su capacidad va en TM de HARINA (procesan lo que generaron los
+    digestores), y se reparte la harina que sale de coccion entre los equipos
+    de la etapa: con 2 molinos, cada uno se lleva la mitad. Asi, si uno falla
+    y solo trabaja el otro, se pierde la mitad de la molienda — que es lo que
+    pasa en planta.
 
     Los auxiliares no reciben capacidad: su parada no resta toneladas.
     Devuelve {equipment_id: tm_dia_sugerida}. No escribe en la BD.
     """
-    plant = plant_capacity_tm_day(equipments)
-    line_area = {l.id: l.area_id for l in lines}
+    rend = plant_yield_factor(equipments)
+    # Harina que entrega la coccion: es lo que las etapas siguientes deben
+    # ser capaces de procesar.
+    harina_coccion = sum(eq_harina_tm_day(eq, rend) for eq in equipments
+                         if eq_is_batch(eq) and getattr(eq, 'in_service', True)
+                         and getattr(eq, 'include_in_kpi', True))
 
     def productivo(eq):
         return (eq_produces(eq) and not eq_is_batch(eq)
                 and getattr(eq, 'include_in_kpi', True))
 
-    batch_por_linea = {}
-    for eq in equipments:
-        if eq_is_batch(eq) and getattr(eq, 'in_service', True):
-            batch_por_linea[eq.line_id] = (batch_por_linea.get(eq.line_id, 0.0)
-                                           + eq_capacity_tm_day(eq))
-
-    # Gemelos por area: (area_id, nombre normalizado) -> cuantos son
-    gemelos = {}
+    # Equipos de cada etapa (los 2 molinos, los 2 secadores...)
+    por_etapa = {}
     for eq in equipments:
         if productivo(eq):
-            key = (line_area.get(eq.line_id), _normalize_name(eq.name))
-            gemelos[key] = gemelos.get(key, 0) + 1
+            por_etapa[eq_stage(eq)] = por_etapa.get(eq_stage(eq), 0) + 1
 
     out = {}
     for eq in equipments:
         if not productivo(eq):
             continue
-        heredada = batch_por_linea.get(eq.line_id, 0.0)
-        if heredada > 0:
-            out[eq.id] = round(heredada, 3)
-            continue
-        n = gemelos.get((line_area.get(eq.line_id), _normalize_name(eq.name)), 1)
-        out[eq.id] = round(plant / max(n, 1), 3) if plant > 0 else 0.0
+        n = por_etapa.get(eq_stage(eq), 1)
+        out[eq.id] = round(harina_coccion / max(n, 1), 3) if harina_coccion > 0 else 0.0
     return out
 
 

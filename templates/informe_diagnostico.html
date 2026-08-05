@@ -170,13 +170,27 @@
 <!-- IMPACTO EN PRODUCCION -->
 <section>
     <h2>Impacto del mantenimiento en la produccion</h2>
-    <div class="method">Harina que se dejo de producir por las horas de parada. Cada equipo aporta <b>su</b> capacidad real:
-        los digestores por sus llenadas (kg por llenada × % de llenado × llenadas al dia), el resto por sus TM/dia
-        registradas en Alcance de Indicadores. 1 saco = {{ pr.sack_kg }} kg.</div>
+    <div class="method">Harina que se dejo de producir por las horas de parada. Los <b>digestores generan</b> la harina
+        (kg por llenada × % de llenado × llenadas al dia × rendimiento); los <b>secadores la secan</b> y los
+        <b>molinos la muelen</b>: procesan lo que ya salio de coccion, asi que su capacidad ya esta en harina.
+        Las tres etapas van en serie, la planta saca lo que permita la mas corta. 1 saco = {{ pr.sack_kg }} kg.</div>
+
+    <h3>Las tres etapas del proceso</h3>
+    <div class="twrap"><table>
+        <tr><th>Etapa</th><th>Rol</th><th class="num">Equipos operativos</th>
+            <th class="num">TM de harina por dia</th><th>Estado</th></tr>
+        {% for e in pr.capacidad.etapas %}
+        <tr><td><b>{{ e.etapa }}</b></td><td>{{ e.rol }}</td>
+            <td class="num">{{ e.operativos }} de {{ e.equipos }}</td>
+            <td class="num"><b>{{ e.tm_dia }}</b></td>
+            <td>{% if e.cuello_botella %}<b>Marca el ritmo de la planta</b>{% else %}Con holgura{% endif %}
+                {% if e.fuera_servicio %}<span class="crit">— fuera: {{ e.fuera_servicio|join(', ') }}</span>{% endif %}</td></tr>
+        {% endfor %}
+    </table></div>
     <div class="kpis">
         <div class="kpi"><div class="l">TM de harina no producidas</div><div class="v {{ 'crit' if pr.tons_lost_mes > pr.tons_lost_prev else 'good' }}">{{ pr.tons_lost_mes }}</div><div class="d">periodo anterior: {{ pr.tons_lost_prev }} TM</div></div>
         <div class="kpi"><div class="l">Sacos de {{ pr.sack_kg }} kg</div><div class="v">{{ '{:,}'.format(pr.sacks_lost_mes) }}</div><div class="d">harina que no llego a ensacarse</div></div>
-        <div class="kpi"><div class="l">Materia prima sin procesar</div><div class="v">{{ pr.tons_mp_lost_mes }}</div><div class="d">TM, en {{ pr.horas_paro }} h de parada</div></div>
+        <div class="kpi"><div class="l">Materia prima sin cocinar</div><div class="v">{{ pr.tons_mp_lost_mes }}</div><div class="d">TM, por los digestores parados</div></div>
         <div class="kpi"><div class="l">% de la capacidad del periodo</div>
             <div class="v {{ '' if pr.pct_de_capacidad is none else ('good' if pr.pct_de_capacidad <= 2 else ('warn' if pr.pct_de_capacidad <= 5 else 'crit')) }}">{{ f(pr.pct_de_capacidad, '%') }}</div>
             <div class="d">capacidad: {{ pr.capacidad_periodo_tons }} TM en {{ pr.dias }} dias</div></div>
@@ -203,13 +217,24 @@
             <td class="num">{{ dg.tm_hora }}</td>
             <td>{% if dg.en_servicio %}Operativo{% else %}<span class="crit">Fuera de servicio</span> {{ dg.motivo or '' }}{% endif %}</td></tr>
         {% endfor %}
-        <tr><td colspan="4" class="num"><b>Capacidad de planta (materia prima)</b></td>
+        <tr><td colspan="4" class="num"><b>Materia prima que entra a coccion</b></td>
             <td class="num"><b>{{ pr.capacidad.planta_tm_dia }}</b></td>
             <td class="num"><b>{{ pr.capacidad.planta_tm_hora }}</b></td>
-            <td>{{ pr.capacidad.operativos }} equipos operativos</td></tr>
-        <tr><td colspan="4" class="num"><b>Con rendimiento {{ pr.capacidad.rendimiento_pct }}% → harina</b></td>
-            <td class="num"><b>{{ pr.capacidad.harina_tm_dia }}</b></td><td class="num">—</td>
+            <td>{{ pr.capacidad.operativos }} digestores operativos</td></tr>
+        <tr><td colspan="4" class="num"><b>Con rendimiento {{ pr.capacidad.rendimiento_pct }}% → harina generada</b></td>
+            <td class="num"><b>{{ pr.capacidad.harina_tm_dia }}</b></td>
+            <td class="num">{{ pr.capacidad.harina_tm_hora }}</td>
             <td>{{ pr.capacidad_periodo_tons }} TM en el periodo</td></tr>
+        {% for p in pr.capacidad.productivos if not p.por_lotes %}
+        {% if loop.first %}
+        <tr><td colspan="7" class="method"><b>Equipos que PROCESAN esa harina</b> — su capacidad ya esta en
+            harina, no se le vuelve a aplicar el rendimiento</td></tr>
+        {% endif %}
+        <tr><td><b>{{ p.tag }}</b> {{ p.nombre }} <span style="color:#8296ab;font-size:.72rem">({{ p.etapa }})</span></td>
+            <td class="num" colspan="3" style="color:#8296ab">procesa harina, no trabaja por lotes</td>
+            <td class="num"><b>{{ p.harina_tm_dia }}</b></td><td class="num">{{ p.tm_hora }}</td>
+            <td>{% if p.en_servicio %}Operativo{% else %}<span class="crit">Fuera de servicio</span>{% endif %}</td></tr>
+        {% endfor %}
     </table></div>
 
     <h3>Perdida por area</h3>

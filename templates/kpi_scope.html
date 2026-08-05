@@ -68,12 +68,17 @@
                     Ejemplo: 8 000 kg × 75 % × 4 llenadas = <strong>24 TM/día</strong>.<br>
                     Cuando un equipo para, las toneladas que se dejan de producir salen de <em>su</em> capacidad,
                     nunca del rendimiento de toda la planta. Un digestor fuera de servicio no suma capacidad.<br>
-                    <strong>Solo restan toneladas los equipos donde se transforma el producto</strong>: los digestores,
-                    los secadores y los molinos. Los transportadores, ciclones, percoladores y fajas son auxiliares —
-                    si paran no se deja de producir harina por sí mismos, así que no se cuentan dos veces sobre el mismo flujo.
+                    <strong>Los digestores GENERAN la harina</strong> (materia prima × rendimiento);
+                    <strong>los secadores la secan y los molinos la muelen</strong>: procesan lo que ya salió, así que
+                    su capacidad se registra directamente en TM de harina y no se le vuelve a aplicar el rendimiento.
+                    Las tres etapas van en serie: si el molino #1 se desactiva y solo trabaja el #2, la molienda queda
+                    a la mitad y la planta con ella.<br>
+                    Los transportadores, ciclones, percoladores y fajas son auxiliares — si paran no se deja de producir
+                    harina por sí mismos, así que no restan toneladas.
                 </div>
                 <div class="cap-grid" id="capGrid"></div>
                 <div id="capWarn"></div>
+                <div id="capEtapas"></div>
                 <div class="twrap"><table id="capTable"></table></div>
                 <div id="capOtros"></div>
                 <div style="margin-top:12px;display:flex;gap:10px;flex-wrap:wrap;">
@@ -153,18 +158,36 @@
                     card('Equipos que producen', c.productivos_total,
                          `${c.auxiliares} auxiliares no restan toneladas`, '#FF9F0A');
 
-                // Secadores y molinos: producen, pero no trabajan por lotes
+                // Las tres etapas en serie
+                const et = c.etapas || [];
+                document.getElementById('capEtapas').innerHTML = !et.length ? '' :
+                    `<h4 style="color:#9ab0cb;font-size:.78rem;text-transform:uppercase;letter-spacing:.05em;margin:14px 0 6px;">
+                        Las tres etapas van en serie — la planta saca lo que permite la más corta</h4>
+                     <div class="twrap"><table><thead><tr class="subhead">
+                        <th>Etapa</th><th>Rol</th><th class="center">Operativos</th>
+                        <th class="num">TM de harina/día</th><th>Estado</th>
+                     </tr></thead><tbody>` +
+                    et.map(e => `<tr>
+                        <td><b style="color:#5ac8fa">${escapeHtml(e.etapa)}</b></td>
+                        <td style="color:#9ab0cb">${escapeHtml(e.rol)}</td>
+                        <td class="center">${e.operativos} de ${e.equipos}</td>
+                        <td class="num derived">${n(e.tm_dia)}</td>
+                        <td>${e.cuello_botella ? '<span class="pill" style="background:rgba(255,159,10,.18);color:#FF9F0A">MARCA EL RITMO</span>' : '<span style="color:#9ab0cb">con holgura</span>'}
+                            ${e.fuera_servicio.length ? ` <span style="color:#ff9690;font-size:.76rem">fuera: ${e.fuera_servicio.map(escapeHtml).join(', ')}</span>` : ''}</td>
+                     </tr>`).join('') + '</tbody></table></div>';
+
+                // Secadores y molinos: procesan la harina que ya salió
                 const op = c.otros_productivos || [];
                 document.getElementById('capOtros').innerHTML = !op.length ? '' :
                     `<h4 style="color:#9ab0cb;font-size:.78rem;text-transform:uppercase;letter-spacing:.05em;margin:14px 0 6px;">
-                        Otros equipos que transforman producto</h4>
+                        Equipos que procesan la harina — su capacidad ya está en harina</h4>
                      <div class="twrap"><table><thead><tr class="subhead">
-                        <th>Equipo</th><th>Tag</th><th>Línea</th><th class="num">TM/día</th><th>Estado</th>
+                        <th>Equipo</th><th>Tag</th><th>Etapa</th><th class="num">TM de harina/día</th><th>Estado</th>
                      </tr></thead><tbody>` +
                     op.map(d => `<tr class="${d.in_service ? '' : 'excluded'}">
                         <td>${escapeHtml(d.name)}</td><td class="tagcell"><code>${escapeHtml(d.tag || '')}</code></td>
-                        <td style="color:#9ab0cb">${escapeHtml(d.linea || '—')}</td>
-                        <td class="num derived">${n(d.tm_dia)}</td>
+                        <td style="color:#9ab0cb">${escapeHtml(d.etapa || '—')}</td>
+                        <td class="num derived">${n(d.harina_tm_dia)}</td>
                         <td>${d.in_service ? '<span class="pill in">OPERATIVO</span>' : '<span class="pill out">FUERA DE SERVICIO</span>'}</td>
                      </tr>`).join('') + '</tbody></table></div>';
 

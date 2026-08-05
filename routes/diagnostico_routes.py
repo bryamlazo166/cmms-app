@@ -193,9 +193,10 @@ def register_diagnostico_routes(app, db, logger):
 
     def _contexto_capacidad():
         from utils.kpi_helpers import (
-            eq_batch_kg, eq_batch_regime, eq_capacity_tm_day, eq_input_tph,
-            eq_is_batch, eq_jornada, eq_produces,
-            plant_capacity_tm_day, plant_yield_factor,
+            eq_batch_kg, eq_batch_regime, eq_capacity_basis, eq_capacity_tm_day,
+            eq_harina_tm_day, eq_is_batch, eq_jornada, eq_output_tph,
+            eq_produces, eq_stage, plant_capacity_tm_day, plant_harina_tm_day,
+            plant_stages, plant_yield_factor,
         )
         from models import Area as _Area
 
@@ -213,16 +214,27 @@ def register_diagnostico_routes(app, db, logger):
             a = area_de(eq)
             return bool(a) and getattr(a, 'include_in_kpi', True)
 
+        # Materia prima que entra a coccion y harina que puede salir de la
+        # planta. La harina la marca la etapa mas limitada (coccion, secado o
+        # molienda), porque van en serie.
         planta_dia = plant_capacity_tm_day(equipos)
         rendimiento = plant_yield_factor(equipos)
+        harina_dia = plant_harina_tm_day(equipos)
+        etapas = plant_stages(equipos)
 
-        tph, cap_dia, produce = {}, {}, {}
+        # tph = TM de HARINA por hora que se dejan de producir si el equipo
+        # para. Los digestores generan (se les aplica el rendimiento); los
+        # secadores y molinos procesan harina (su capacidad ya esta en harina).
+        tph, cap_dia, harina_eq, produce, base = {}, {}, {}, {}, {}
         for e in equipos:
-            cap_dia[e.id] = eq_capacity_tm_day(e) if en_alcance(e) else 0.0
-            tph[e.id] = eq_input_tph(e) if en_alcance(e) else 0.0
+            dentro = en_alcance(e)
+            cap_dia[e.id] = eq_capacity_tm_day(e) if dentro else 0.0
+            harina_eq[e.id] = eq_harina_tm_day(e, rendimiento) if dentro else 0.0
+            tph[e.id] = eq_output_tph(e, rendimiento) if dentro else 0.0
+            base[e.id] = eq_capacity_basis(e)
             # Auxiliar: mueve o acondiciona, no transforma. Su parada no
             # resta toneladas, pero se reporta aparte para no esconderla.
-            produce[e.id] = eq_produces(e) and en_alcance(e)
+            produce[e.id] = eq_produces(e) and dentro
 
         digestores = []
         for e in sorted([x for x in equipos if eq_is_batch(x)],
@@ -241,29 +253,48 @@ def register_diagnostico_routes(app, db, logger):
                 'en_alcance': en_alcance(e),
             })
 
+        ORDEN_ETAPA = {'COCCION': 0, 'SECADOR': 1, 'MOLINO': 2}
+        etapas_out = sorted(
+            [{'etapa': s['etapa'],
+              'rol': ('genera la harina' if s['base'] == 'MP'
+                      else ('la seca' if s['etapa'] == 'SECADOR' else 'la muele')),
+              'tm_dia': round(s['tm_dia'], 2),
+              'equipos': s['equipos'], 'operativos': s['operativos'],
+              'fuera_servicio': s['fuera_servicio'],
+              'cuello_botella': abs(s['tm_dia'] - harina_dia) < 0.01}
+             for s in etapas.values()],
+            key=lambda x: ORDEN_ETAPA.get(x['etapa'], 9))
+
         return {
             'equipos': equipos,
             'area_de': area_de,
             'en_alcance': en_alcance,
-            'planta_dia': planta_dia,
+            'planta_dia': planta_dia,       # TM/dia de materia prima a coccion
+            'harina_dia': harina_dia,       # TM/dia de harina que sale
             'rendimiento': rendimiento,
-            'tph': tph,
+            'tph': tph,                     # TM/h de HARINA por equipo
             'cap_dia': cap_dia,
+            'harina_eq': harina_eq,
+            'base': base,
             'produce': produce,
             'digestores': digestores,
+            'etapas': etapas_out,
             'productivos': sorted(
                 [{'tag': e.tag, 'nombre': e.name,
                   'area': (ctx_a.name if (ctx_a := area_de(e)) else None),
+                  'etapa': eq_stage(e),
+                  'base': base[e.id],
                   'tm_dia': round(cap_dia[e.id], 2),
+                  'harina_tm_dia': round(harina_eq[e.id], 2),
                   'tm_hora': round(tph[e.id], 3),
                   'por_lotes': eq_is_batch(e),
                   'en_servicio': bool(getattr(e, 'in_service', True))}
                  for e in equipos if produce.get(e.id) and cap_dia[e.id] > 0],
-                key=lambda x: (x['area'] or '', x['tag'] or '')),
+                key=lambda x: (ORDEN_ETAPA.get(x['etapa'], 9), x['tag'] or '')),
         }
 
     def _tons_de_ot(ctx, ot, horas):
-        """TM de materia prima que ese equipo no proceso durante la parada."""
+        """TM de HARINA que no se produjeron durante la parada del equipo."""
         if horas <= 0 or not ot.equipment_id:
             return 0.0
         return horas * ctx['tph'].get(ot.equipment_id, 0.0)
@@ -285,9 +316,9 @@ def register_diagnostico_routes(app, db, logger):
         return resolver, eq_map
 
     def _tons_periodo(ctx, closed, ini, fin):
-        """TM de materia prima no procesadas entre [ini, fin], equipo por
-        equipo. Devuelve tambien lo que quedo fuera del calculo para poder
-        avisarlo en pantalla en vez de esconderlo.
+        """TM de HARINA no producidas entre [ini, fin], equipo por equipo.
+        Devuelve tambien lo que quedo fuera del calculo para poder avisarlo
+        en pantalla en vez de esconderlo.
 
         El resultado se cachea por periodo: el mismo rango lo piden los KPIs,
         la lamina de produccion y la tendencia de 12 meses."""
@@ -327,27 +358,34 @@ def register_diagnostico_routes(app, db, logger):
             b['horas'] += h
             b['ots'] += 1
 
-        total_mp = 0.0
+        total_harina = total_mp = 0.0
         for eid, b in por_equipo.items():
             # Un equipo no puede dejar de procesar mas horas que las que tuvo
             # el periodo (protege de downtimes mal capturados).
             b['horas_computadas'] = min(b['horas'], horas_periodo) if horas_periodo else 0.0
-            b['tm_mp'] = b['horas_computadas'] * ctx['tph'][eid]
+            b['tm_harina'] = b['horas_computadas'] * ctx['tph'][eid]
+            # Materia prima: solo tiene sentido en coccion, que es donde entra
+            b['tm_mp'] = (b['horas_computadas'] * ctx['cap_dia'][eid] / 24.0
+                          if ctx['base'].get(eid) == 'MP' else 0.0)
+            total_harina += b['tm_harina']
             total_mp += b['tm_mp']
 
-        # Techo de realidad: la planta no puede dejar de procesar mas de lo
-        # que su capacidad instalada permitia en esos dias.
-        techo = ctx['planta_dia'] * dias
+        # Techo de realidad: la planta no puede dejar de producir mas harina
+        # de la que su capacidad instalada permitia en esos dias.
+        techo = ctx['harina_dia'] * dias
         techo_aplicado = False
-        if techo > 0 and total_mp > techo:
-            factor = techo / total_mp
+        if techo > 0 and total_harina > techo:
+            factor = techo / total_harina
             for b in por_equipo.values():
+                b['tm_harina'] *= factor
                 b['tm_mp'] *= factor
-            total_mp = techo
+            total_mp *= factor
+            total_harina = techo
             techo_aplicado = True
 
-        res = {'por_equipo': por_equipo, 'tm_mp': total_mp, 'dias': dias,
-               'horas_periodo': horas_periodo, 'capacidad_mp': techo,
+        res = {'por_equipo': por_equipo, 'tm_harina': total_harina,
+               'tm_mp': total_mp, 'dias': dias,
+               'horas_periodo': horas_periodo, 'capacidad_harina': techo,
                'techo_aplicado': techo_aplicado, 'sin_capacidad': sin_cap,
                'auxiliares': auxiliares}
         cache[clave] = res
@@ -357,16 +395,13 @@ def register_diagnostico_routes(app, db, logger):
         """Lamina de impacto en produccion del periodo analizado."""
         from models import Area as _Area
         ctx = ctx or _contexto_capacidad()
-        if ctx['planta_dia'] <= 0:
+        if ctx['harina_dia'] <= 0:
             return {'disponible': False,
-                    'motivo': 'Ningun equipo tiene capacidad configurada. '
-                              'Registrala en Alcance de Indicadores.'}
+                    'motivo': 'Ningun equipo productivo tiene capacidad '
+                              'configurada. Registrala en Alcance de Indicadores.'}
 
         rend = ctx['rendimiento']
         area_names = {a.id: a.name for a in _Area.query.all()}
-
-        def harina(mp):
-            return mp * rend
 
         sel = _tons_periodo(ctx, closed, per['ini'], per['fin'])
         prev = _tons_periodo(ctx, closed, per['prev_ini'], per['prev_fin'])
@@ -376,7 +411,7 @@ def register_diagnostico_routes(app, db, logger):
             y, m = int(ym[:4]), int(ym[5:7])
             r = _tons_periodo(ctx, closed, dt.date(y, m, 1),
                               dt.date(y, m, calendar.monthrange(y, m)[1]))
-            t = harina(r['tm_mp'])
+            t = r['tm_harina']
             serie.append({'month': ym, 'tons_lost': round(t, 1),
                           'tons_mp_lost': round(r['tm_mp'], 1),
                           'sacks_lost': int(t * 1000 / SACK_KG)})
@@ -387,8 +422,9 @@ def register_diagnostico_routes(app, db, logger):
             eq = eq_map.get(eid)
             a = ctx['area_de'](eq) if eq else None
             aid = a.id if a else None
-            pa = por_area.setdefault(aid, {'tm_mp': 0.0, 'horas': 0.0,
-                                           'ots': 0, 'equipos': 0})
+            pa = por_area.setdefault(aid, {'tm_harina': 0.0, 'tm_mp': 0.0,
+                                           'horas': 0.0, 'ots': 0, 'equipos': 0})
+            pa['tm_harina'] += b['tm_harina']
             pa['tm_mp'] += b['tm_mp']
             pa['horas'] += b['horas_computadas']
             pa['ots'] += b['ots']
@@ -399,16 +435,17 @@ def register_diagnostico_routes(app, db, logger):
                 'equipment_id': eid,
                 'horas_paro': round(b['horas_computadas'], 1),
                 'ots': b['ots'],
-                'tm_hora': round(ctx['tph'][eid] * rend, 3),
-                'tons_lost': round(harina(b['tm_mp']), 1),
+                'rol': ('genera' if ctx['base'].get(eid) == 'MP' else 'procesa'),
+                'tm_hora': round(ctx['tph'][eid], 3),
+                'tons_lost': round(b['tm_harina'], 1),
                 'tons_mp_lost': round(b['tm_mp'], 1),
-                'sacks_lost': int(harina(b['tm_mp']) * 1000 / SACK_KG),
+                'sacks_lost': int(b['tm_harina'] * 1000 / SACK_KG),
             })
         top.sort(key=lambda x: -x['tons_lost'])
 
-        tons_sel = harina(sel['tm_mp'])
-        tons_prev = harina(prev['tm_mp'])
-        cap_harina_periodo = harina(sel['capacidad_mp'])
+        tons_sel = sel['tm_harina']
+        tons_prev = prev['tm_harina']
+        cap_harina_periodo = sel['capacidad_harina']
 
         # Referencia de produccion: meta y produccion real del mes. Las metas
         # se registran por area pero son la MISMA cifra de planta repetida,
@@ -473,7 +510,7 @@ def register_diagnostico_routes(app, db, logger):
                                     for b in sel['por_equipo'].values()), 1),
             # Referencias para dimensionar el numero
             'capacidad_periodo_tons': round(cap_harina_periodo, 1),
-            'capacidad_periodo_mp': round(sel['capacidad_mp'], 1),
+            'capacidad_periodo_mp': round(ctx['planta_dia'] * sel['dias'], 1),
             'pct_de_capacidad': (round(tons_sel / cap_harina_periodo * 100, 2)
                                  if cap_harina_periodo else None),
             # La meta es mensual: solo tiene sentido compararla cuando el
@@ -483,8 +520,8 @@ def register_diagnostico_routes(app, db, logger):
             'periodo_meta': periodo_meta,
             'pct_de_meta': (round(tons_sel / meta_planta * 100, 2)
                             if meta_planta and per['modo'] == 'mes' else None),
-            'utilizacion_pct': (round(prod_real / harina(ctx['planta_dia'] * 30.4375) * 100, 1)
-                                if prod_real and ctx['planta_dia'] else None),
+            'utilizacion_pct': (round(prod_real / (ctx['harina_dia'] * 30.4375) * 100, 1)
+                                if prod_real and ctx['harina_dia'] else None),
             'techo_aplicado': sel['techo_aplicado'],
             # Historico
             'tons_lost_12m': round(sum(s['tons_lost'] for s in serie), 1),
@@ -495,11 +532,11 @@ def register_diagnostico_routes(app, db, logger):
                 {'area': area_names.get(aid, 'Sin area'),
                  'horas_paro': round(v['horas'], 1), 'ots': v['ots'],
                  'equipos': v['equipos'],
-                 'tons_lost': round(harina(v['tm_mp']), 1),
+                 'tons_lost': round(v['tm_harina'], 1),
                  'tons_mp_lost': round(v['tm_mp'], 1),
-                 'sacks_lost': int(harina(v['tm_mp']) * 1000 / SACK_KG),
+                 'sacks_lost': int(v['tm_harina'] * 1000 / SACK_KG),
                  # Cuanto de la capacidad de PLANTA se llevo esta area
-                 'pct_de_capacidad': (round(harina(v['tm_mp']) / cap_harina_periodo * 100, 2)
+                 'pct_de_capacidad': (round(v['tm_harina'] / cap_harina_periodo * 100, 2)
                                       if cap_harina_periodo else None)}
                 for aid, v in por_area.items()], key=lambda x: -x['tons_lost']),
             'top_equipos': top[:8],
@@ -508,10 +545,13 @@ def register_diagnostico_routes(app, db, logger):
                 'planta_tm_dia': round(ctx['planta_dia'], 1),
                 'planta_tm_hora': round(ctx['planta_dia'] / 24.0, 3),
                 'rendimiento_pct': round(rend * 100, 1),
-                'harina_tm_dia': round(ctx['planta_dia'] * rend, 1),
+                'harina_tm_dia': round(ctx['harina_dia'], 1),
+                'harina_tm_hora': round(ctx['harina_dia'] / 24.0, 3),
                 'digestores': ctx['digestores'],
                 'operativos': len([d for d in ctx['digestores'] if d['en_servicio']]),
                 'fuera_servicio': [d for d in ctx['digestores'] if not d['en_servicio']],
+                # Las tres etapas en serie y cual es el cuello de botella
+                'etapas': ctx['etapas'],
                 # Todo lo que produce: digestores + secadores + molinos
                 'productivos': ctx['productivos'],
             },
@@ -723,9 +763,9 @@ def register_diagnostico_routes(app, db, logger):
                 n_fallas = len(corr)
 
                 imp = _tons_periodo(ctx_cap, closed, ini, fin)
-                cap_mp = imp['capacidad_mp']
+                cap_mp = imp['capacidad_harina']
                 if cap_mp > 0 and dias_efectivos:
-                    perdida_pct = min(imp['tm_mp'] / cap_mp, 1.0)
+                    perdida_pct = min(imp['tm_harina'] / cap_mp, 1.0)
                     disp = round((1 - perdida_pct) * 100, 2)
                     uptime = horas_m * (1 - perdida_pct)
                 else:
@@ -880,15 +920,15 @@ def register_diagnostico_routes(app, db, logger):
                 dias_ef = max(0, (min(d_fin, hoy) - d_ini).days + 1)
                 horas_w = dias_ef * 24
                 imp_w = _tons_periodo(ctx_cap, closed, d_ini, d_fin)
-                if imp_w['capacidad_mp'] > 0 and horas_w:
-                    perd_w = min(imp_w['tm_mp'] / imp_w['capacidad_mp'], 1.0)
+                if imp_w['capacidad_harina'] > 0 and horas_w:
+                    perd_w = min(imp_w['tm_harina'] / imp_w['capacidad_harina'], 1.0)
                     disp_w = round((1 - perd_w) * 100, 2)
                     uptime_w = horas_w * (1 - perd_w)
                 else:
                     uptime_w = max(horas_w - dt_w, 0)
                     disp_w = round(uptime_w / horas_w * 100, 2) if horas_w else None
                 mtbf_w = round(uptime_w / len(corr_w), 1) if corr_w and horas_w else None
-                tons_w = imp_w['tm_mp'] * ctx_cap['rendimiento']
+                tons_w = imp_w['tm_harina']
 
                 prog_w = [o for o in ots if o.scheduled_date
                           and ini <= str(o.scheduled_date)[:10] <= fin]
@@ -1225,10 +1265,11 @@ def register_diagnostico_routes(app, db, logger):
             # serie, y sumar digestor + su transportador contaria dos veces la
             # misma tonelada. Asi la disponibilidad de cada area es la parte
             # de la planta que esa area dejo de producir.
+            # Todo en TM de HARINA: es la unica unidad comun a las tres etapas
             if equipment_id:
-                cap_alcance_dia = ctx['cap_dia'].get(equipment_id, 0.0)
+                cap_alcance_dia = ctx['harina_eq'].get(equipment_id, 0.0)
             else:
-                cap_alcance_dia = ctx['planta_dia']
+                cap_alcance_dia = ctx['harina_dia']
 
             serie = []
             for ym in _months_back(month, n):
@@ -1242,17 +1283,16 @@ def register_diagnostico_routes(app, db, logger):
                 n_f = len(corr)
 
                 # TM de harina no producidas: capacidad real del equipo parado
-                tons_mp = 0.0
+                tons = 0.0
                 for o in mes:
                     dtx = _downtime(o)
                     if dtx > 0:
-                        tons_mp += _tons_de_ot(ctx, o, dtx)
-                tons = tons_mp * ctx['rendimiento']
+                        tons += _tons_de_ot(ctx, o, dtx)
 
                 # Disponibilidad ponderada por capacidad del alcance
                 cap_periodo = cap_alcance_dia * dias_ef
                 if cap_periodo > 0:
-                    perd = min(tons_mp / cap_periodo, 1.0)
+                    perd = min(tons / cap_periodo, 1.0)
                     disp = round((1 - perd) * 100, 2)
                     uptime = horas * (1 - perd)
                 else:
@@ -1381,8 +1421,7 @@ def register_diagnostico_routes(app, db, logger):
                     'ejecucion': (o.execution_comments or '')[:130],
                 }
                 if con_tons:
-                    tons = (_tons_de_ot(ctx, o, dt_h) * ctx['rendimiento']
-                            if dt_h > 0 else 0.0)
+                    tons = _tons_de_ot(ctx, o, dt_h) if dt_h > 0 else 0.0
                     row['tons_lost'] = round(tons, 1)
                     row['sacks_lost'] = int(tons * 1000 / SACK_KG)
                 rows.append(row)

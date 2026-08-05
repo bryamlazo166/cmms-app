@@ -128,19 +128,18 @@ def register_production_routes(app, db, logger, ProductionGoal, WorkOrder, Area,
 
         all_ots = WorkOrder.query.filter(WorkOrder.status == 'Cerrada').all()
 
-        # TM/h de producto final de cada equipo, segun su capacidad real.
-        # La conversion a harina usa el rendimiento de PLANTA: la capacidad de
-        # todos los equipos esta expresada en materia prima equivalente, asi
-        # que una parada de molino no puede rendir mas harina por tonelada que
-        # una de digestor.
-        from utils.kpi_helpers import eq_input_tph, plant_yield_factor
+        # TM/h de harina que se dejan de producir por cada equipo parado.
+        # Los digestores GENERAN (se les aplica el rendimiento de planta); los
+        # secadores y molinos PROCESAN la harina que ya salio, asi que su
+        # capacidad ya esta en harina. Los auxiliares devuelven 0.
+        from utils.kpi_helpers import eq_output_tph, plant_yield_factor
         _plant_yield = plant_yield_factor(equips)
         _tph_cache = {}
 
         def _eq_output_tph(eq_id):
             if eq_id not in _tph_cache:
                 eq = equip_map.get(eq_id)
-                _tph_cache[eq_id] = (eq_input_tph(eq) * _plant_yield) if eq else 0.0
+                _tph_cache[eq_id] = eq_output_tph(eq, _plant_yield) if eq else 0.0
             return _tph_cache[eq_id]
 
         area_results = []
@@ -662,14 +661,15 @@ def register_production_routes(app, db, logger, ProductionGoal, WorkOrder, Area,
     # Comparado con el endpoint global /api/production/metrics, este desglosa
     # cada equipo individualmente sin requerir una Goal por area.
 
-    def _compute_eq_production(eq, start, end, area, all_ots, line_map):
+    def _compute_eq_production(eq, start, end, area, all_ots, line_map,
+                               plant_yield=None):
         """Devuelve dict con metricas de un equipo (capacidad, jornada,
         downtime, TM input/output). Usa helpers compartidos de utils.kpi_helpers.
         """
         from utils.kpi_helpers import (
             calendar_hours_for_equipment, planned_downtime_for_equipment,
-            eq_capacity, eq_capacity_tm_day, eq_input_tph,
-            eq_yield_factor, eq_jornada,
+            eq_capacity, eq_capacity_basis, eq_capacity_tm_day, eq_input_tph,
+            eq_output_tph, eq_yield_factor, eq_jornada,
         )
         from models import Shutdown
         cap_tm = eq_capacity(eq)
@@ -698,13 +698,15 @@ def register_production_routes(app, db, logger, ProductionGoal, WorkOrder, Area,
         # Disponibilidad respecto a las horas USABLES (calendario - planificadas)
         availability = round((uptime_real / usable_hours) * 100, 2) if usable_hours > 0 else 100.0
 
-        # TM input (materia prima) vs output (producto final, aplicando yield).
-        # El ritmo sale de la capacidad REAL del equipo (llenadas/dia para los
-        # digestores, TM/dia capturadas para el resto), no de un TM/mes plano.
+        # TM input (lo que entra al equipo) vs output (harina que sale).
+        # El ritmo sale de la capacidad REAL del equipo: llenadas/dia en los
+        # digestores, TM/dia capturadas en secadores y molinos. Un digestor
+        # genera harina (input en materia prima, output aplicando rendimiento);
+        # un secador o molino ya trabaja sobre harina, asi que input = output.
         yield_factor = eq_yield_factor(eq)
         shift_h, work_days = eq_jornada(eq)
         input_tph = eq_input_tph(eq)
-        output_tph = input_tph * yield_factor
+        output_tph = eq_output_tph(eq, plant_yield)
 
         input_tons_theoretical = round(usable_hours * input_tph, 2)
         input_tons_realized = round(uptime_real * input_tph, 2)
@@ -727,6 +729,7 @@ def register_production_routes(app, db, logger, ProductionGoal, WorkOrder, Area,
             'area_name': area.name if area else None,
             'capacity_tm': round(cap_tm, 1),
             'capacity_tm_day': round(eq_capacity_tm_day(eq), 2),
+            'capacity_basis': eq_capacity_basis(eq),
             'yield_factor': yield_factor,
             'shift_hours_per_day': shift_h,
             'work_days_per_week': work_days,
@@ -775,10 +778,14 @@ def register_production_routes(app, db, logger, ProductionGoal, WorkOrder, Area,
 
             all_ots = WorkOrder.query.filter(WorkOrder.status == 'Cerrada').all()
 
+            from utils.kpi_helpers import plant_yield_factor
+            plant_yield = plant_yield_factor(Equipment.query.all())
+
             equipos = []
             for eq in equips:
                 area = area_map.get(line_to_area.get(eq.line_id))
-                metrics = _compute_eq_production(eq, start, effective_end, area, all_ots, line_map)
+                metrics = _compute_eq_production(eq, start, effective_end, area,
+                                                 all_ots, line_map, plant_yield)
                 equipos.append(metrics)
 
             # Roll-up por area (con input vs output)

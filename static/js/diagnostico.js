@@ -290,7 +290,7 @@ function renderProduccion() {
     el('prodStripKpis').innerHTML =
         kpiCard('TM de harina no producidas', nf(pr.tons_lost_mes), pr.tons_lost_mes > pr.tons_lost_prev ? 'v-crit' : 'v-good', deltaTons) +
         kpiCard('Sacos de 50 kg', pr.sacks_lost_mes.toLocaleString('es-PE'), '', 'harina que no llego a ensacarse') +
-        kpiCard('Materia prima sin procesar', nf(pr.tons_mp_lost_mes) + ' TM', '', `en ${nf(pr.horas_paro)} h de parada`) +
+        kpiCard('Materia prima sin cocinar', nf(pr.tons_mp_lost_mes) + ' TM', '', `por los digestores parados · ${nf(pr.horas_paro)} h en total`) +
         kpiCard('% de la capacidad del periodo', pr.pct_de_capacidad != null ? pr.pct_de_capacidad + '%' : '-', pctCls,
             `capacidad: ${nf(pr.capacidad_periodo_tons, 0)} TM en ${pr.dias} dias`) +
         kpiCard('TM perdidas 12 meses', nf(pr.tons_lost_12m), '', `${pr.sacks_lost_12m.toLocaleString('es-PE')} sacos acumulados`);
@@ -360,8 +360,21 @@ function renderProduccion() {
             params);
     });
 
-    // Capacidad instalada: de donde sale cada TM/h del calculo
+    // Las tres etapas en serie: la planta saca lo que permita la mas corta
     const cap = pr.capacidad || {};
+    const et = cap.etapas || [];
+    el('prodEtapas').innerHTML = !et.length ? '' :
+        `<div class="etapas">` + et.map((e, i) =>
+            `<div class="etapa ${e.cuello_botella ? 'cuello' : ''}">
+                <div class="et-nom">${e.etapa}</div>
+                <div class="et-rol">${e.rol}</div>
+                <div class="et-val">${nf(e.tm_dia)}<small> TM/día</small></div>
+                <div class="et-pie">${e.operativos} de ${e.equipos} operativos` +
+                (e.fuera_servicio.length ? ` · fuera: ${e.fuera_servicio.join(', ')}` : '') +
+                `</div>${e.cuello_botella ? '<div class="et-tag">marca el ritmo</div>' : ''}
+            </div>` + (i < et.length - 1 ? '<div class="et-flecha">→</div>' : '')
+        ).join('') + `</div>`;
+
     const dig = cap.digestores || [];
     el('prodCapTable').innerHTML =
         `<tr><th>Equipo</th><th class="num">kg por llenada</th><th class="num">% llenado</th>` +
@@ -375,19 +388,21 @@ function renderProduccion() {
             `<td>${d.en_servicio ? '<span style="color:#30D158">Operativo</span>'
                 : `<span style="color:#FF453A">Fuera de servicio</span> <span style="color:#5a7aa0;font-size:.74rem">${d.motivo || ''}</span>`}</td></tr>`).join('')
             : '') +
-        `<tr style="border-top:2px solid #344964"><td colspan="4" style="text-align:right"><b>Capacidad de planta (materia prima)</b></td>` +
+        `<tr style="border-top:2px solid #344964"><td colspan="4" style="text-align:right"><b>Materia prima que entra a coccion</b></td>` +
         `<td class="num" style="color:#30D158;font-weight:700">${nf(cap.planta_tm_dia)}</td>` +
         `<td class="num" style="color:#30D158;font-weight:700">${nf(cap.planta_tm_hora, 3)}</td>` +
         `<td>${cap.operativos} digestores operativos</td></tr>` +
-        `<tr><td colspan="4" style="text-align:right"><b>Con rendimiento ${cap.rendimiento_pct}% → harina</b></td>` +
+        `<tr><td colspan="4" style="text-align:right"><b>Con rendimiento ${cap.rendimiento_pct}% → harina generada</b></td>` +
         `<td class="num" style="color:#FF9F0A;font-weight:700">${nf(cap.harina_tm_dia)}</td>` +
-        `<td class="num">${nf(cap.harina_tm_dia / 24, 3)}</td>` +
+        `<td class="num">${nf(cap.harina_tm_hora, 3)}</td>` +
         `<td>${nf(pr.capacidad_periodo_tons, 0)} TM en el periodo</td></tr>` +
-        // Secadores y molinos: transforman producto igual que los digestores
+        // Secadores y molinos: procesan la harina que ya salio de coccion
+        `<tr><td colspan="7" style="padding-top:12px;color:#9ab0cb;font-size:.78rem">` +
+        `<b>Equipos que PROCESAN esa harina</b> — su capacidad ya esta en harina, no se le vuelve a aplicar el rendimiento</td></tr>` +
         ((cap.productivos || []).filter(p => !p.por_lotes).map(p =>
-            `<tr style="opacity:.9"><td><b>${p.tag}</b> ${p.nombre} <span style="color:#5a7aa0;font-size:.74rem">(${p.area || '-'})</span></td>` +
-            `<td class="num" colspan="3" style="color:#5a7aa0;font-size:.76rem">no trabaja por lotes</td>` +
-            `<td class="num" style="color:#5AC8FA;font-weight:700">${nf(p.tm_dia, 2)}</td>` +
+            `<tr style="opacity:.9"><td><b>${p.tag}</b> ${p.nombre} <span style="color:#5a7aa0;font-size:.74rem">(${p.etapa})</span></td>` +
+            `<td class="num" colspan="3" style="color:#5a7aa0;font-size:.76rem">procesa harina, no trabaja por lotes</td>` +
+            `<td class="num" style="color:#5AC8FA;font-weight:700">${nf(p.harina_tm_dia, 2)}</td>` +
             `<td class="num">${nf(p.tm_hora, 3)}</td>` +
             `<td>${p.en_servicio ? '<span style="color:#30D158">Operativo</span>' : '<span style="color:#FF453A">Fuera de servicio</span>'}</td></tr>`).join(''));
 

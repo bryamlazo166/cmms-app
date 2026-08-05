@@ -322,7 +322,8 @@ Estados posibles de `WeeklyPlanItem.status`:
 | `Equipment.batch_capacity_kg` | Kilos de una llenada. Solo equipos por lotes (digestores). |
 | `Equipment.fill_pct` | Hasta qué % se llena realmente (planta: 75%). |
 | `Equipment.batches_per_day` | Llenadas en 24 h (planta: 4, ciclo de 6 h). |
-| `Equipment.capacity_tm_day` | TM de materia prima que procesa al día. En equipos por lotes se deriva de los tres campos anteriores. |
+| `Equipment.capacity_tm_day` | Capacidad diaria. En digestores se deriva de los campos de lote (materia prima); en secadores y molinos se captura en TM de harina. |
+| `Equipment.is_production_unit` | Si True, la parada del equipo cuesta toneladas. Los equipos por lotes lo son siempre. |
 | `Equipment.capacity_tm` | LEGACY: capacidad mensual. Hoy se deriva de `capacity_tm_day`. |
 | `Equipment.yield_factor` | Rendimiento MP → producto (0..1). |
 | `Equipment.in_service` | Si false (overhaul, parada larga) el equipo NO suma capacidad de planta. |
@@ -334,16 +335,36 @@ Estados posibles de `WeeklyPlanItem.status`:
 
 Se configura en **Alcance de Indicadores** (`/configuracion-kpi`).
 
+El proceso tiene **tres etapas en serie**, y cada una mide su capacidad en la
+unidad que le corresponde:
+
+| Etapa | Equipos | Qué hace | Capacidad medida en |
+|---|---|---|---|
+| Cocción | 9 digestores | **Genera** la harina | TM de materia prima (`MP`) |
+| Secado | 2 secadores | La seca | TM de harina (`PRODUCTO`) |
+| Molienda | 2 molinos | La muele | TM de harina (`PRODUCTO`) |
+
 ```
-TM/día del equipo  = kg por llenada × % de llenado × llenadas por día ÷ 1000
-TM/h  del equipo   = TM/día ÷ horas operativas del día
-Capacidad de planta = Σ TM/día de los equipos por lotes EN SERVICIO
-TM no producidas   = horas de parada × TM/h del equipo detenido × rendimiento de planta
+Digestor:  TM/día MP  = kg por llenada × % de llenado × llenadas por día ÷ 1000
+           TM/día de harina = TM/día MP × rendimiento
+Secador / molino:
+           TM/día de harina = capacity_tm_day  (ya está en harina: procesan lo
+                              que salió de cocción, NO se les vuelve a aplicar
+                              el rendimiento)
+
+Capacidad de cada etapa = Σ de sus equipos EN SERVICIO
+Capacidad de planta     = la etapa MÁS LIMITADA (van en serie)
+TM no producidas        = horas de parada × TM/h de harina del equipo detenido
 ```
 
-Ejemplo real: digestor #1 = 8 000 kg × 75 % × 4 llenadas = **24 TM/día = 1 TM/h**.
+Ejemplo real: digestor #1 = 8 000 kg × 75 % × 4 llenadas = **24 TM/día de
+materia prima**; con 50 % de rendimiento son 12 TM/día de harina.
 
-Cuatro reglas que sostienen el número:
+Que la planta sea la etapa más corta importa: si el molino #1 se desactiva y
+solo trabaja el #2, la molienda queda a la mitad y la planta con ella, aunque
+cocción y secado sigan completos.
+
+Cinco reglas que sostienen el número:
 
 1. **Solo restan toneladas los equipos donde se transforma el producto**
    (`is_production_unit`): los digestores, los 2 secadores y los 2 molinos.
@@ -351,13 +372,16 @@ Cuatro reglas que sostienen el número:
    si paran no se deja de producir harina por sí mismos, y contarlos valoraba
    varias veces el mismo flujo. Sus paradas siguen en los indicadores de
    mantenimiento y se informan aparte en la lámina de producción.
-2. **Cada equipo aporta su propia capacidad.** Si para un digestor de nueve se
+2. **Generar no es procesar.** El rendimiento se aplica una sola vez, en
+   cocción. A un secador o un molino no se le vuelve a aplicar: su capacidad
+   ya está expresada en harina (`eq_capacity_basis`).
+3. **Cada equipo aporta su propia capacidad.** Si para un digestor de nueve se
    pierde lo de ese digestor, no el rendimiento de toda la planta. Valorar la
    parada de un equipo con la cifra del área era lo que hacía que un mes
    reportara más toneladas perdidas de las que la planta produce.
-3. **Las paradas que cruzan meses se reparten** entre los días que cubren, en
+4. **Las paradas que cruzan meses se reparten** entre los días que cubren, en
    vez de cargarse enteras al mes en que se cerró la OT.
-4. **Techo físico**: la pérdida de un periodo nunca supera la capacidad
+5. **Techo físico**: la pérdida de un periodo nunca supera la capacidad
    instalada de esos días.
 
 La **disponibilidad de planta** del diagnóstico usa la misma cuenta:

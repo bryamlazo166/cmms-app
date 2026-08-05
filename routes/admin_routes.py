@@ -411,15 +411,29 @@ def register_admin_routes(app, db, logger):
         try:
             from models import Equipment, Line
             from utils.kpi_helpers import (
-                eq_batch_kg, eq_batch_regime, eq_capacity_tm_day, eq_is_batch,
-                eq_produces, plant_capacity_tm_day, plant_yield_factor,
-                suggest_production_units, DAYS_PER_MONTH,
+                eq_batch_kg, eq_batch_regime, eq_capacity_basis,
+                eq_capacity_tm_day, eq_harina_tm_day, eq_is_batch, eq_produces,
+                eq_stage, plant_capacity_tm_day, plant_harina_tm_day,
+                plant_stages, plant_yield_factor, suggest_production_units,
+                DAYS_PER_MONTH,
             )
             equipos = Equipment.query.all()
             lines = {l.id: l for l in Line.query.all()}
             planta = plant_capacity_tm_day(equipos)
             rend = plant_yield_factor(equipos)
+            harina = plant_harina_tm_day(equipos)
             sugeridos = suggest_production_units(equipos)
+            ORDEN = {'COCCION': 0, 'SECADOR': 1, 'MOLINO': 2}
+            etapas = sorted(
+                [{'etapa': s['etapa'],
+                  'rol': ('genera la harina' if s['base'] == 'MP'
+                          else ('la seca' if s['etapa'] == 'SECADOR' else 'la muele')),
+                  'tm_dia': round(s['tm_dia'], 2), 'equipos': s['equipos'],
+                  'operativos': s['operativos'],
+                  'fuera_servicio': s['fuera_servicio'],
+                  'cuello_botella': abs(s['tm_dia'] - harina) < 0.01}
+                 for s in plant_stages(equipos).values()],
+                key=lambda x: ORDEN.get(x['etapa'], 9))
 
             batch, otros_productivos, sin_capacidad, sin_marcar = [], [], [], []
             for e in sorted(equipos, key=lambda x: (x.tag or '')):
@@ -443,7 +457,10 @@ def register_admin_routes(app, db, logger):
                     otros_productivos.append({
                         'id': e.id, 'tag': e.tag, 'name': e.name,
                         'linea': ln.name if ln else None,
+                        'etapa': eq_stage(e),
+                        'base': eq_capacity_basis(e),
                         'tm_dia': round(cap, 2),
+                        'harina_tm_dia': round(eq_harina_tm_day(e, rend), 2),
                         'in_service': bool(e.in_service),
                     })
                     if cap <= 0:
@@ -460,8 +477,9 @@ def register_admin_routes(app, db, logger):
                 'planta_tm_hora': round(planta / 24.0, 3),
                 'planta_tm_mes': round(planta * DAYS_PER_MONTH, 1),
                 'rendimiento_pct': round(rend * 100, 1),
-                'harina_tm_dia': round(planta * rend, 2),
-                'harina_tm_mes': round(planta * rend * DAYS_PER_MONTH, 1),
+                'harina_tm_dia': round(harina, 2),
+                'harina_tm_mes': round(harina * DAYS_PER_MONTH, 1),
+                'etapas': etapas,
                 'batch': batch,
                 'operativos': len([b for b in batch if b['in_service']]),
                 'fuera_servicio': [b for b in batch if not b['in_service']],

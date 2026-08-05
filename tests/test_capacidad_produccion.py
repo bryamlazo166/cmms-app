@@ -11,8 +11,9 @@ import json
 
 from utils.kpi_helpers import (
     DEFAULT_BATCHES_PER_DAY, DEFAULT_FILL_PCT,
-    eq_capacity_tm_day, eq_input_tph, eq_is_batch, eq_produces,
-    plant_capacity_tm_day, plant_yield_factor, suggest_capacities,
+    eq_capacity_basis, eq_capacity_tm_day, eq_harina_tm_day, eq_input_tph,
+    eq_is_batch, eq_produces, plant_capacity_tm_day, plant_harina_tm_day,
+    plant_stages, plant_yield_factor, suggest_capacities,
     suggest_production_units,
 )
 
@@ -141,8 +142,76 @@ def test_sugerencia_marca_secadores_y_molinos():
 
     sug = suggest_capacities(eqs, lines)
     assert 101 not in sug                        # el auxiliar no recibe capacidad
-    assert sug[102] == sug[103] == 118.5         # media planta cada molino
-    assert sug[104] == sug[105] == 118.5         # media planta cada secador
+    # La capacidad de secadores y molinos va en HARINA, porque procesan lo que
+    # salio de coccion: 237 TM/dia de materia prima x 70% = 165.9, mitad c/u.
+    assert sug[102] == sug[103] == 82.95         # media molienda cada molino
+    assert sug[104] == sug[105] == 82.95         # medio secado cada secador
+
+
+def _planta_completa():
+    """Los digestores generan la harina; 2 secadores la secan y 2 molinos la
+    muelen. Cada etapa puede con toda la harina de coccion."""
+    eqs = _digestores()
+    harina_coccion = sum(e.batch_capacity_kg * 0.75 * 4 / 1000 * 0.7
+                         for e in eqs if e.tag != 'D4')          # 165.9
+    sec = [_Eq(id=30 + i, tag=f'SEC{i}', name='SECADOR', line_id=30 + i,
+               capacity_tm_day=harina_coccion / 2, is_production_unit=True)
+           for i in (1, 2)]
+    mol = [_Eq(id=40 + i, tag=f'MOL{i}', name='MOLINO', line_id=40 + i,
+               capacity_tm_day=harina_coccion / 2, is_production_unit=True)
+           for i in (1, 2)]
+    return eqs + sec + mol, harina_coccion
+
+
+def test_los_que_procesan_no_vuelven_a_aplicar_el_rendimiento():
+    """Un digestor GENERA harina: a su materia prima se le aplica el
+    rendimiento. Un molino PROCESA la harina que ya salio, asi que su
+    capacidad ya esta en harina y no se multiplica otra vez."""
+    eqs, harina_coccion = _planta_completa()
+    rend = plant_yield_factor(eqs)
+
+    d6 = next(e for e in eqs if e.tag == 'D6')
+    assert eq_capacity_basis(d6) == 'MP'
+    assert eq_capacity_tm_day(d6) == 36.0                    # materia prima
+    assert eq_harina_tm_day(d6, rend) == 36.0 * 0.7          # con rendimiento
+
+    mol = next(e for e in eqs if e.tag == 'MOL1')
+    assert eq_capacity_basis(mol) == 'PRODUCTO'
+    # Su capacidad YA es harina: no se le vuelve a aplicar el 70%
+    assert eq_harina_tm_day(mol, rend) == eq_capacity_tm_day(mol)
+
+
+def test_la_planta_produce_lo_que_permite_la_etapa_mas_limitada():
+    """Coccion, secado y molienda van en SERIE: la planta saca lo que permita
+    la etapa mas corta, no la suma de las tres."""
+    eqs, harina_coccion = _planta_completa()
+    etapas = plant_stages(eqs)
+    assert set(etapas) == {'COCCION', 'SECADOR', 'MOLINO'}
+    for st in etapas.values():
+        assert round(st['tm_dia'], 2) == round(harina_coccion, 2)
+    assert round(plant_harina_tm_day(eqs), 2) == round(harina_coccion, 2)
+
+
+def test_un_molino_fuera_de_servicio_deja_la_planta_a_la_mitad():
+    """Cuando falla el molino #1 se desactiva y solo trabaja el #2: la
+    molienda queda a la mitad y con ella toda la planta, porque las etapas
+    estan en serie."""
+    eqs, harina_coccion = _planta_completa()
+    assert round(plant_harina_tm_day(eqs), 2) == round(harina_coccion, 2)
+
+    mol1 = next(e for e in eqs if e.tag == 'MOL1')
+    mol1.in_service = False
+    etapas = plant_stages(eqs)
+    assert etapas['MOLINO']['operativos'] == 1
+    assert round(etapas['MOLINO']['tm_dia'], 2) == round(harina_coccion / 2, 2)
+    # La coccion sigue igual, pero la planta baja a la mitad
+    assert round(etapas['COCCION']['tm_dia'], 2) == round(harina_coccion, 2)
+    assert round(plant_harina_tm_day(eqs), 2) == round(harina_coccion / 2, 2)
+
+    # Y lo mismo con un secador
+    mol1.in_service = True
+    next(e for e in eqs if e.tag == 'SEC2').in_service = False
+    assert round(plant_harina_tm_day(eqs), 2) == round(harina_coccion / 2, 2)
 
 
 def test_diagnostico_no_puede_perder_mas_que_la_capacidad(auth_admin, app):
