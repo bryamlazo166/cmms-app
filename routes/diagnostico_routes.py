@@ -1442,21 +1442,53 @@ def register_diagnostico_routes(app, db, logger):
     # request devolviendo una pagina HTML -> "Unexpected token '<'" en el
     # navegador. Por eso el POST lanza un hilo y responde al instante con un
     # job_id; el frontend consulta GET /narrativa/<job_id> hasta tener el texto.
-    _narrativa_jobs = {}
+    # Los trabajos se guardan en la tabla narrative_jobs, NO en memoria: con
+    # gunicorn corriendo varios workers, el POST que crea el trabajo y el GET
+    # que lo consulta caen en procesos distintos, y el que preguntaba nunca
+    # encontraba el trabajo del otro.
+
+    def _job_get(job_id):
+        from models import NarrativeJob
+        return db.session.get(NarrativeJob, job_id) if job_id else None
+
+    def _job_set(job_id, **campos):
+        """Actualiza el trabajo desde el hilo de fondo, con su propia sesion."""
+        from models import NarrativeJob
+        with app.app_context():
+            try:
+                job = db.session.get(NarrativeJob, job_id)
+                if not job:
+                    return
+                for k_, v_ in campos.items():
+                    setattr(job, k_, v_)
+                job.updated_at = dt.datetime.utcnow()
+                db.session.commit()
+            except Exception:
+                db.session.rollback()
+                logger.exception('no se pudo actualizar la narrativa %s', job_id)
 
     def _limpiar_jobs():
-        import time as _t
-        ahora = _t.time()
-        viejos = [k for k, v in _narrativa_jobs.items() if ahora - v.get('ts', 0) > 1800]
-        for k in viejos:
-            _narrativa_jobs.pop(k, None)
+        """Borra los analisis de mas de 3 dias."""
+        from models import NarrativeJob
+        try:
+            limite = dt.datetime.utcnow() - dt.timedelta(days=3)
+            NarrativeJob.query.filter(NarrativeJob.created_at < limite).delete()
+            db.session.commit()
+        except Exception:
+            db.session.rollback()
 
     @app.route('/api/diagnostico/narrativa/<job_id>', methods=['GET'])
     def diagnostico_narrativa_status(job_id):
-        job = _narrativa_jobs.get(job_id)
+        job = _job_get(job_id)
         if not job:
-            return jsonify({'error': 'Trabajo no encontrado (expiro o el servidor se reinicio). Vuelve a generar.'}), 404
-        return jsonify({k: v for k, v in job.items() if k != 'ts'})
+            return jsonify({'error': 'Trabajo no encontrado (expiro o el servidor '
+                                     'se reinicio). Vuelve a generar.'}), 404
+        d = job.to_dict()
+        # Segundos que lleva corriendo: el frontend lo muestra en vez de
+        # inventarse un contador propio.
+        if job.status == 'PENDIENTE' and job.created_at:
+            d['esperando_s'] = round((dt.datetime.utcnow() - job.created_at).total_seconds())
+        return jsonify(d)
 
     @app.route('/api/diagnostico/narrativa', methods=['POST'])
     def diagnostico_narrativa():
@@ -1604,13 +1636,52 @@ def register_diagnostico_routes(app, db, logger):
             import threading
             import time as _t
             import uuid
+            from models import NarrativeJob
             _limpiar_jobs()
-            job_id = uuid.uuid4().hex[:12]
-            _narrativa_jobs[job_id] = {'status': 'PENDIENTE', 'ts': _t.time()}
+
             prompt_usuario = "\n".join(resumen)
+            scope = (f"{mt.get('desde')}..{mt.get('hasta')}")[:60]
+
+            if not request.args.get('forzar'):
+                ahora = dt.datetime.utcnow()
+                # Ya hay un analisis reciente de este MISMO periodo: se
+                # devuelve en vez de esperar (y pagar) una generacion igual.
+                previo = (NarrativeJob.query
+                          .filter_by(scope=scope, status='OK')
+                          .filter(NarrativeJob.created_at >= ahora - dt.timedelta(hours=6))
+                          .order_by(NarrativeJob.created_at.desc()).first())
+                if previo:
+                    return jsonify({'job_id': previo.id, 'status': 'OK',
+                                    'narrativa': previo.narrativa, 'reutilizado': True})
+                # O hay uno CORRIENDO del mismo periodo: se reengancha a el en
+                # vez de lanzar un segundo analisis en paralelo. Asi, si el
+                # navegador se canso de esperar, al volver a pulsar retoma.
+                corriendo = (NarrativeJob.query
+                             .filter_by(scope=scope, status='PENDIENTE')
+                             .filter(NarrativeJob.created_at >= ahora - dt.timedelta(minutes=30))
+                             .order_by(NarrativeJob.created_at.desc()).first())
+                if corriendo:
+                    return jsonify({'job_id': corriendo.id, 'status': 'PENDIENTE',
+                                    'reenganchado': True,
+                                    'prompt_chars': corriendo.prompt_chars,
+                                    'espera_estimada_s': max(
+                                        30, 240 - int((ahora - corriendo.created_at).total_seconds()))})
+
+            # Cuanto mas ancho el periodo, mas datos lleva el prompt y mas
+            # tarda el modelo. El limite de lectura se ajusta al tamano en vez
+            # de ser un numero fijo que se quedaba corto en rangos largos.
+            n_chars = len(prompt_usuario)
+            read_timeout = min(1500, max(600, int(n_chars / 4)))
+
+            job_id = uuid.uuid4().hex[:12]
+            job = NarrativeJob(id=job_id, status='PENDIENTE', scope=scope,
+                               prompt_chars=n_chars)
+            db.session.add(job)
+            db.session.commit()
 
             def _worker():
                 import requests as _rq
+                t0 = _t.time()
                 try:
                     r = _rq.post(url, headers={
                         'Authorization': f'Bearer {key}', 'Content-Type': 'application/json',
@@ -1622,20 +1693,33 @@ def register_diagnostico_routes(app, db, logger):
                         ],
                         'max_tokens': 3000, 'temperature': 0.3,
                         'thinking': DEEPSEEK_THINKING,
-                    }, timeout=360)
+                        # (conectar, leer): el modelo puede tardar minutos en
+                        # redactar; lo que no puede es dejar de responder.
+                    }, timeout=(30, read_timeout))
+                    tardo = round(_t.time() - t0, 1)
                     if r.status_code != 200:
-                        _narrativa_jobs[job_id] = {
-                            'status': 'ERROR', 'ts': _t.time(),
-                            'error': f'DeepSeek HTTP {r.status_code}: {r.text[:200]}'}
+                        _job_set(job_id, status='ERROR', elapsed_s=tardo,
+                                 error=f'DeepSeek HTTP {r.status_code}: {r.text[:300]}')
                         return
                     texto = r.json()['choices'][0]['message']['content']
-                    _narrativa_jobs[job_id] = {'status': 'OK', 'narrativa': texto, 'ts': _t.time()}
+                    _job_set(job_id, status='OK', narrativa=texto, elapsed_s=tardo)
+                    logger.info('narrativa %s lista en %ss (%s chars de prompt)',
+                                job_id, tardo, n_chars)
+                except _rq.exceptions.ReadTimeout:
+                    _job_set(job_id, status='ERROR',
+                             elapsed_s=round(_t.time() - t0, 1),
+                             error=f'La IA dejo de responder tras {read_timeout // 60} minutos. '
+                                   f'Prueba con un periodo mas corto.')
                 except Exception as e:
-                    _narrativa_jobs[job_id] = {'status': 'ERROR', 'error': str(e)[:300], 'ts': _t.time()}
+                    _job_set(job_id, status='ERROR',
+                             elapsed_s=round(_t.time() - t0, 1), error=str(e)[:400])
 
             threading.Thread(target=_worker, daemon=True).start()
-            return jsonify({'job_id': job_id, 'status': 'PENDIENTE'})
+            return jsonify({'job_id': job_id, 'status': 'PENDIENTE',
+                            'prompt_chars': n_chars,
+                            'espera_estimada_s': min(600, max(60, n_chars // 12))})
         except Exception as e:
+            db.session.rollback()
             logger.exception('diagnostico_narrativa error')
             return jsonify({'error': str(e)}), 500
 
@@ -1656,9 +1740,9 @@ def register_diagnostico_routes(app, db, logger):
                                    request.args.get('desde'),
                                    request.args.get('hasta'))
             narrativa = ''
-            job = _narrativa_jobs.get((request.args.get('narrativa_job') or '').strip())
-            if job and job.get('status') == 'OK':
-                narrativa = job.get('narrativa') or ''
+            job = _job_get((request.args.get('narrativa_job') or '').strip())
+            if job and job.status == 'OK':
+                narrativa = job.narrativa or ''
             html = render_template('informe_diagnostico.html', d=d, narrativa=narrativa)
             resp = app.make_response(html)
             resp.headers['Content-Type'] = 'text/html; charset=utf-8'

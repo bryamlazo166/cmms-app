@@ -948,6 +948,9 @@ async function safeJson(res) {
 
 let NARR_JOB = null;  // ultimo job de narrativa terminado OK (se incrusta en el informe)
 
+const NARR_ESPERA_MAX_MS = 20 * 60 * 1000;   // 20 min: la IA redacta 700-1000 palabras
+const NARR_FALLOS_SEGUIDOS = 8;              // ~24 s sin poder leer el estado
+
 async function generarNarrativa() {
     if (!DIAG) return;
     const box = el('narrativaBox');
@@ -959,25 +962,55 @@ async function generarNarrativa() {
         });
         const data = await safeJson(res);
         if (data.error) { box.textContent = 'Error: ' + data.error; return; }
-        if (data.narrativa) { box.textContent = data.narrativa; return; }  // compat
+        // Analisis ya hecho de este mismo periodo: se devuelve al instante
+        if (data.narrativa) {
+            box.textContent = data.narrativa;
+            if (data.job_id) NARR_JOB = data.job_id;
+            return;
+        }
 
-        // Sondear el resultado cada 3s hasta 7 minutos (el analisis completo
-        // puede tardar: la IA redacta 700-1000 palabras con todos los datos)
         const jobId = data.job_id;
+        const estimado = data.espera_estimada_s || 120;
         const inicio = Date.now();
-        while (Date.now() - inicio < 420000) {
+        let fallos = 0;
+
+        while (Date.now() - inicio < NARR_ESPERA_MAX_MS) {
             await new Promise(r => setTimeout(r, 3000));
             const seg = Math.round((Date.now() - inicio) / 1000);
-            box.textContent = `Generando analisis ejecutivo con IA... (${seg}s — el analisis completo puede tardar varios minutos)`;
+            box.textContent = `Generando analisis ejecutivo con IA... ${seg}s de ` +
+                `~${estimado}s estimados. Puedes seguir usando el diagnostico: ` +
+                `el analisis sigue corriendo en el servidor.`;
+
             let st;
             try {
                 st = await safeJson(await fetch(`/api/diagnostico/narrativa/${jobId}`));
-            } catch (_) { continue; }  // fallo transitorio de red: seguir sondeando
-            if (st.status === 'OK') { box.textContent = st.narrativa; NARR_JOB = jobId; return; }
+                fallos = 0;
+            } catch (_) {
+                // Antes se reintentaba en silencio para siempre y el usuario
+                // acababa viendo solo "tardo demasiado". Si el servidor deja
+                // de responder JSON (sesion caida, reinicio), se dice.
+                if (++fallos >= NARR_FALLOS_SEGUIDOS) {
+                    box.textContent = 'Se perdio la conexion con el servidor mientras se ' +
+                        'generaba el analisis (puede ser la sesion expirada). Recarga la ' +
+                        'pagina e intenta de nuevo: si el analisis alcanzo a terminar, ' +
+                        'saldra al instante.';
+                    return;
+                }
+                continue;
+            }
+            if (st.status === 'OK') {
+                box.textContent = st.narrativa;
+                NARR_JOB = jobId;
+                return;
+            }
             if (st.status === 'ERROR') { box.textContent = 'Error: ' + st.error; return; }
             if (st.error) { box.textContent = 'Error: ' + st.error; return; }
         }
-        box.textContent = 'La IA tardo mas de 7 minutos. Intenta de nuevo.';
+        // Se agoto la espera del navegador, pero el trabajo sigue vivo en el
+        // servidor: al volver a pulsar se recupera sin repetir la generacion.
+        box.textContent = 'El analisis sigue generandose en el servidor (lleva mas de 20 ' +
+            'minutos). Vuelve a pulsar "Narrativa IA" en un momento para recogerlo, o ' +
+            'elige un periodo mas corto.';
     } catch (e) { box.textContent = 'Error generando narrativa: ' + e.message; }
 }
 window.generarNarrativa = generarNarrativa;

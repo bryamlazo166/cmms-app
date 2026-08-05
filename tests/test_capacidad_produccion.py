@@ -282,6 +282,54 @@ def test_diagnostico_acepta_rango_de_fechas(auth_admin):
     assert r.json['portada']['veredicto']
 
 
+def test_narrativa_sobrevive_al_cambio_de_worker(auth_admin, app, monkeypatch):
+    """El trabajo de la narrativa vive en la BD, no en memoria del proceso.
+
+    Con gunicorn corriendo varios workers, el POST que crea el trabajo y el
+    GET que consulta el resultado caen en procesos distintos: guardado en
+    memoria, el que preguntaba nunca lo encontraba y el navegador se quedaba
+    sondeando hasta rendirse con 'la IA tardo demasiado'.
+    """
+    import routes.diagnostico_routes as dr
+
+    class _Resp:
+        status_code = 200
+        text = ''
+        @staticmethod
+        def json():
+            return {'choices': [{'message': {'content': 'RESUMEN EJECUTIVO\nTodo bien.'}}]}
+
+    monkeypatch.setattr(dr, 'DEEPSEEK_MODEL', 'test-model', raising=False)
+    import requests
+    monkeypatch.setattr(requests, 'post', lambda *a, **k: _Resp())
+    monkeypatch.setenv('DEEPSEEK_API_KEY', 'sk-test')
+
+    hoy = dt.date.today()
+    d = auth_admin.get(f"/api/diagnostico/data?month={hoy.strftime('%Y-%m')}").json
+    r = auth_admin.post('/api/diagnostico/narrativa?forzar=1', data=json.dumps(d),
+                        content_type='application/json')
+    assert r.status_code == 200
+    job_id = r.json['job_id']
+
+    # El trabajo esta en la BD: cualquier worker lo encuentra
+    with app.app_context():
+        from models import NarrativeJob
+        from database import db
+        assert db.session.get(NarrativeJob, job_id) is not None
+
+    # Y un cliente NUEVO (otra conexion) puede consultarlo
+    otro = app.test_client()
+    otro.post('/login', data={'username': 'admin', 'password': 'admin123'})
+    st = otro.get(f'/api/diagnostico/narrativa/{job_id}')
+    assert st.status_code == 200
+    assert st.json['status'] in ('PENDIENTE', 'OK')
+
+    # Un job_id inexistente sigue devolviendo JSON (no HTML), para que el
+    # navegador pueda distinguir el error en vez de reintentar en silencio
+    faltante = auth_admin.get('/api/diagnostico/narrativa/noexiste123')
+    assert faltante.status_code == 404 and 'error' in faltante.json
+
+
 def test_atajos_de_periodo(auth_admin):
     """El selector arranca en el ultimo mes con datos, no en el mes en curso
     (que suele tener dos dias cargados y no sirve para presentar)."""

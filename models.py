@@ -172,6 +172,36 @@ class AppSetting(db.Model):
         return {"key": self.key, "value": self.value}
 
 
+class NarrativeJob(db.Model):
+    """Analisis ejecutivo del diagnostico generado con IA (asincrono).
+
+    Vive en la BD y no en memoria del proceso a proposito: gunicorn corre con
+    varios workers, asi que el POST que crea el trabajo y el GET que consulta
+    el resultado caen en procesos distintos. Guardado aqui, cualquier worker
+    lo encuentra, sobrevive a un reinicio, y si el usuario cierra la pagina
+    puede volver a pedir el mismo periodo y recibir el analisis ya hecho.
+    """
+    __tablename__ = 'narrative_jobs'
+    id: Mapped[str] = mapped_column(String(32), primary_key=True)
+    status: Mapped[str] = mapped_column(String(20), nullable=False, default='PENDIENTE')
+    # Periodo analizado ('2026-07' o '2026-06-15..2026-07-15'): permite
+    # reutilizar un analisis reciente en vez de volver a pagarlo.
+    scope: Mapped[str | None] = mapped_column(String(60), nullable=True)
+    narrativa: Mapped[str | None] = mapped_column(Text, nullable=True)
+    error: Mapped[str | None] = mapped_column(String(500), nullable=True)
+    prompt_chars: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    elapsed_s: Mapped[float | None] = mapped_column(Float, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+    updated_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow,
+                                                 onupdate=datetime.utcnow)
+
+    def to_dict(self):
+        return {"job_id": self.id, "status": self.status, "scope": self.scope,
+                "narrativa": self.narrativa, "error": self.error,
+                "prompt_chars": self.prompt_chars, "elapsed_s": self.elapsed_s,
+                "created_at": self.created_at.isoformat() if self.created_at else None}
+
+
 # Taxonomy: Area -> Line -> Equipment -> System -> Component -> SparePart
 
 class Area(db.Model):
