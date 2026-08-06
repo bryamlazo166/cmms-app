@@ -2,6 +2,9 @@
 auth_info/
 qr.png
 
+# Cache local de identidades @lid <-> numero (se reconstruye sola)
+lid_map.json
+
 node_modules/
 .env
 *.log

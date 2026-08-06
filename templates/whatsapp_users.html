@@ -73,6 +73,17 @@
                 <div class="areas-chips" id="areasChips">Cargando areas…</div>
             </div>
 
+            <div class="info-box" style="background:rgba(100,180,255,.08);border-color:rgba(100,180,255,.28);color:#cfe4fb">
+                <i class="fas fa-user-shield"></i>
+                <strong>Identificador de WhatsApp (perfiles con nombre de usuario):</strong>
+                WhatsApp permite ocultar el numero de telefono detras de un nombre de usuario. Cuando eso
+                pasa, el bot recibe un codigo de identidad en lugar del numero y no puede cruzarlo con esta
+                tabla. <strong>Normalmente se vincula solo</strong>: el bot le pregunta a WhatsApp el codigo
+                de cada numero registrado y lo guarda aqui. Si algun contacto sigue sin entrar, el bot le
+                respondera con su codigo de identidad — pideselo, pulsa el lapiz de editar en su fila y
+                pegalo en esta columna.
+            </div>
+
             <div class="panel">
                 <h3><i class="fas fa-user-plus" style="color:#34D472;margin-right:6px"></i>Agregar numero</h3>
                 <div class="form-grid">
@@ -121,12 +132,13 @@
                             <th>Rol</th>
                             <th>Areas</th>
                             <th>Grupo destino</th>
+                            <th>Identificador de WhatsApp</th>
                             <th>Estado</th>
                             <th style="text-align:right">Acciones</th>
                         </tr>
                     </thead>
                     <tbody id="usersBody">
-                        <tr><td colspan="7" class="empty">Cargando…</td></tr>
+                        <tr><td colspan="8" class="empty">Cargando…</td></tr>
                     </tbody>
                 </table>
             </div>
@@ -213,11 +225,11 @@
             try {
                 const r = await fetch('/api/admin/whatsapp-users');
                 const data = await r.json();
-                if (!r.ok) { tbody.innerHTML = `<tr><td colspan="7" class="empty">Error: ${data.error||r.statusText}</td></tr>`; return; }
-                if (!data.length) { tbody.innerHTML = `<tr><td colspan="7" class="empty">No hay numeros registrados todavia.</td></tr>`; return; }
+                if (!r.ok) { tbody.innerHTML = `<tr><td colspan="8" class="empty">Error: ${data.error||r.statusText}</td></tr>`; return; }
+                if (!data.length) { tbody.innerHTML = `<tr><td colspan="8" class="empty">No hay numeros registrados todavia.</td></tr>`; return; }
                 tbody.innerHTML = data.map(u => renderRow(u)).join('');
             } catch (e) {
-                tbody.innerHTML = `<tr><td colspan="7" class="empty">Error: ${e.message}</td></tr>`;
+                tbody.innerHTML = `<tr><td colspan="8" class="empty">Error: ${e.message}</td></tr>`;
             }
         }
 
@@ -231,6 +243,11 @@
             const grupo = u.grupo_nombre
                 ? `${escapeHtml(u.grupo_nombre)}<span class="jid">${escapeHtml(u.grupo_destino||'')}</span>`
                 : escapeHtml(u.grupo_destino || '—');
+            // Identificador de privacidad de WhatsApp: cuando el contacto tiene
+            // nombre de usuario, es lo unico que llega en vez del telefono.
+            const lidCell = u.lid
+                ? `<code style="font-size:.74rem">${escapeHtml(u.lid)}</code>`
+                : '<span style="opacity:.45">sin vincular</span>';
             return `
                 <tr class="${inactive}" data-id="${u.phone_number}">
                     <td><code>${escapeHtml(u.phone_number)}</code></td>
@@ -238,6 +255,7 @@
                     <td>${rolPill(u.rol)}</td>
                     <td>${u.puede_ver_todo ? '<em>todas (planta)</em>' : areasLabel(u.areas_visibles)}</td>
                     <td>${grupo}</td>
+                    <td data-lid="${escapeHtml(u.lid || '')}">${lidCell}</td>
                     <td>${estadoPill}</td>
                     <td class="actions">
                         <button class="btn btn-secondary btn-sm" onclick="editRow('${escapeHtml(u.phone_number)}')" title="Editar"><i class="fas fa-pen"></i></button>
@@ -315,7 +333,8 @@
             tds[3].innerHTML = `<input type="text" id="e-areas" placeholder="3,4 (vacio=todas)">`;
             tds[4].innerHTML = `<input type="text" id="e-grupo" value="${escapeHtml(grupoJid)}" placeholder="JID @g.us">
                                 <input type="text" id="e-grupo-nombre" value="${escapeHtml(grupoNombre)}" placeholder="Nombre grupo" style="margin-top:4px">`;
-            tds[6].innerHTML = `
+            tds[5].innerHTML = `<input type="text" id="e-lid" value="${escapeHtml(tds[5].dataset.lid || '')}" placeholder="Codigo de identidad">`;
+            tds[7].innerHTML = `
                 <button class="btn btn-primary btn-sm" onclick="saveEdit('${escapeHtml(phone)}')"><i class="fas fa-check"></i></button>
                 <button class="btn btn-secondary btn-sm" onclick="loadUsers()"><i class="fas fa-times"></i></button>
             `;
@@ -331,6 +350,8 @@
             };
             const areas = document.getElementById('e-areas').value.trim();
             if (areas !== '') body.areas_visibles = areas;
+            const lidInput = document.getElementById('e-lid');
+            if (lidInput) body.lid = lidInput.value.trim();
             if (!body.nombre) { alert('Nombre no puede estar vacio.'); return; }
             try {
                 const r = await fetch('/api/admin/whatsapp-users/' + phone, {

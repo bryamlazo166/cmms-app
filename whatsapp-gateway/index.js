@@ -14,7 +14,7 @@
  * (0.8-2.5 s) e indicador "escribiendo...". Nunca inicia conversaciones.
  */
 import 'dotenv/config'
-import { existsSync, unlinkSync } from 'fs'
+import { existsSync, unlinkSync, readFileSync, writeFileSync } from 'fs'
 import pino from 'pino'
 import qrcodeTerminal from 'qrcode-terminal'
 import QRCode from 'qrcode'
@@ -38,6 +38,13 @@ const MAX_MEDIA_BYTES = 16 * 1024 * 1024 // 16 MB
 const OUTBOX_URL = WEBHOOK_URL.replace(/\/webhook$/, '/outbox')
 const OUTBOX_ACK_URL = WEBHOOK_URL.replace(/\/webhook$/, '/outbox/ack')
 const OUTBOX_POLL_MS = Number(process.env.OUTBOX_POLL_MS || 15000)
+
+// Directorio de numeros autorizados: sirve para resolver identidades @lid
+// (ver bloque "Mapa @lid <-> numero" mas abajo).
+const DIRECTORY_URL = WEBHOOK_URL.replace(/\/webhook$/, '/directory')
+const LIDMAP_URL = WEBHOOK_URL.replace(/\/webhook$/, '/lid-map')
+const LID_MAP_FILE = 'lid_map.json'
+const LID_SYNC_MS = Number(process.env.LID_SYNC_MS || 6 * 60 * 60 * 1000) // 6 h
 
 const logger = pino({ level: 'warn' })
 
@@ -130,6 +137,9 @@ async function start() {
         outboxLoop()
         console.log(`🔁 Sondeo de cola de salida activo (cada ${OUTBOX_POLL_MS / 1000}s)\n`)
       }
+      // Resolver de entrada las identidades @lid de los numeros autorizados:
+      // asi el primer mensaje de un perfil con nombre de usuario ya entra.
+      syncLidDirectory(sock, { force: true }).catch(() => {})
     }
     if (connection === 'close') {
       const code = lastDisconnect?.error?.output?.statusCode
@@ -153,19 +163,199 @@ async function start() {
       }
     }
   })
+
+  // La libreta que sincroniza WhatsApp trae las dos caras del mismo contacto
+  // (id/lid/jid): fuente gratuita de pares @lid <-> numero.
+  const learnFromContacts = (contacts) => {
+    const nuevos = []
+    for (const c of contacts || []) {
+      const lid = onlyDigits(c?.lid || (String(c?.id || '').endsWith('@lid') ? c.id : ''))
+      const phone = onlyDigits(c?.jid || (String(c?.id || '').includes('@s.whatsapp.net') ? c.id : ''))
+      if (lid && phone && rememberLid(lid, phone, { report: false })) {
+        nuevos.push({ lid, phone })
+      }
+    }
+    if (nuevos.length) reportLidPairs(nuevos)
+  }
+  sock.ev.on('contacts.upsert', learnFromContacts)
+  sock.ev.on('contacts.update', learnFromContacts)
 }
 
-function resolvePhone(msg, jid) {
-  // WhatsApp puede entregar el chat como @lid (ID de privacidad) en vez del
-  // numero real. Baileys expone el numero verdadero en campos alternos del
-  // key segun la version (senderPn / participantPn / remoteJidAlt).
-  if (jid.endsWith('@lid')) {
-    const alt = msg.key?.senderPn || msg.key?.participantPn ||
-                msg.key?.remoteJidAlt || msg.key?.participantAlt || ''
-    if (alt) return String(alt).split('@')[0].replace(/\D/g, '')
-    console.warn(`⚠️ Mensaje @lid sin numero real. key=${JSON.stringify(msg.key)}`)
+// ── Mapa @lid <-> numero ────────────────────────────────────────────────────
+// WhatsApp esta migrando a identidades de privacidad: un contacto con "nombre
+// de usuario" ya no expone su numero y el mensaje llega como
+// 1575909903770074@lid. El CMMS autoriza por numero, asi que hay que traducir.
+//
+// Tres fuentes, de mas barata a mas cara:
+//   1. El propio mensaje (key.senderPn) — cuando WhatsApp lo incluye.
+//   2. La libreta de contactos que sincroniza Baileys (contacts.upsert trae
+//      id/lid/jid del mismo contacto).
+//   3. Consulta directa a WhatsApp (onWhatsApp) de los numeros autorizados que
+//      publica el CMMS: devuelve el @lid de cada uno. Es la via fiable y no
+//      exige que el tecnico haga nada.
+// Cada par descubierto se guarda en disco y se reporta al CMMS, que lo archiva
+// en la ficha del usuario — asi el reconocimiento sobrevive a reinicios.
+
+const lidToPhone = new Map()
+let lidMapDirty = false
+let lastLidSync = 0
+let lidSyncInFlight = null
+
+function loadLidMap() {
+  try {
+    if (!existsSync(LID_MAP_FILE)) return
+    const raw = JSON.parse(readFileSync(LID_MAP_FILE, 'utf8'))
+    for (const [lid, phone] of Object.entries(raw || {})) {
+      if (lid && phone) lidToPhone.set(lid, String(phone))
+    }
+    console.log(`🔗 Mapa de identidades @lid cargado (${lidToPhone.size} contactos)`)
+  } catch (e) {
+    console.warn('No pude leer lid_map.json:', e.message)
   }
-  return jid.split('@')[0].replace(/\D/g, '')
+}
+
+function saveLidMap() {
+  if (!lidMapDirty) return
+  try {
+    writeFileSync(LID_MAP_FILE, JSON.stringify(Object.fromEntries(lidToPhone), null, 2))
+    lidMapDirty = false
+  } catch (e) {
+    console.warn('No pude guardar lid_map.json:', e.message)
+  }
+}
+
+const onlyDigits = (v) => String(v || '').split('@')[0].split(':')[0].replace(/\D/g, '')
+
+/** Registra un par y avisa al CMMS si es nuevo. */
+function rememberLid(lid, phone, { report = true } = {}) {
+  const l = onlyDigits(lid)
+  const p = onlyDigits(phone)
+  if (!l || !p || l === p) return false
+  if (lidToPhone.get(l) === p) return false
+  lidToPhone.set(l, p)
+  lidMapDirty = true
+  saveLidMap()
+  console.log(`🔗 Identidad @lid ${l} = numero ${p}`)
+  if (report) reportLidPairs([{ lid: l, phone: p }])
+  return true
+}
+
+async function reportLidPairs(pairs) {
+  if (!pairs.length) return
+  try {
+    await fetch(LIDMAP_URL, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'X-Gateway-Token': GATEWAY_TOKEN },
+      body: JSON.stringify({ pairs }),
+      signal: AbortSignal.timeout(30000),
+    })
+  } catch (e) {
+    // No es critico: el mapa local ya resuelve; el CMMS lo aprendera despues.
+    console.warn('No pude reportar el mapa @lid al CMMS:', e.message)
+  }
+}
+
+/**
+ * Pregunta a WhatsApp el @lid de cada numero autorizado en el CMMS.
+ * `force` salta el intervalo minimo (se usa cuando llega un @lid desconocido).
+ */
+async function syncLidDirectory(sock, { force = false } = {}) {
+  if (!sock) return false
+  if (!force && Date.now() - lastLidSync < LID_SYNC_MS) return false
+  if (lidSyncInFlight) return lidSyncInFlight
+  // Aunque sea forzado, no mas de una consulta por minuto (anti-baneo).
+  if (force && Date.now() - lastLidSync < 60000) return false
+
+  lidSyncInFlight = (async () => {
+    let users = []
+    try {
+      const res = await fetch(DIRECTORY_URL, {
+        headers: { 'X-Gateway-Token': GATEWAY_TOKEN },
+        signal: AbortSignal.timeout(30000),
+      })
+      if (!res.ok) throw new Error(`HTTP ${res.status}`)
+      users = (await res.json())?.users || []
+    } catch (e) {
+      console.warn('No pude leer el directorio de numeros del CMMS:', e.message)
+      return false
+    }
+
+    const phones = users.map((u) => onlyDigits(u.phone)).filter(Boolean)
+    if (!phones.length) return false
+
+    // Los pares que el CMMS ya tiene guardados entran gratis al mapa local.
+    for (const u of users) {
+      if (u.lid) rememberLid(u.lid, u.phone, { report: false })
+    }
+
+    const nuevos = []
+    try {
+      // Consulta en bloques: una sola query con cientos de numeros es lenta y
+      // llamativa; de a 20 pasa desapercibida.
+      for (let i = 0; i < phones.length; i += 20) {
+        const lote = phones.slice(i, i + 20)
+        const results = (await sock.onWhatsApp(...lote)) || []
+        for (const r of results) {
+          if (!r?.lid || !r?.jid) continue
+          if (rememberLid(r.lid, r.jid, { report: false })) {
+            nuevos.push({ lid: onlyDigits(r.lid), phone: onlyDigits(r.jid) })
+          }
+        }
+        if (i + 20 < phones.length) await sleep(1500)
+      }
+    } catch (e) {
+      console.warn('Consulta de identidades @lid a WhatsApp fallo:', e.message)
+    }
+
+    lastLidSync = Date.now()
+    if (nuevos.length) {
+      console.log(`🔗 ${nuevos.length} identidad(es) @lid resueltas y enviadas al CMMS`)
+      await reportLidPairs(nuevos)
+    }
+    return true
+  })().finally(() => { lidSyncInFlight = null })
+
+  return lidSyncInFlight
+}
+
+/**
+ * Devuelve { phone, lid }: el numero real si se pudo resolver y la identidad
+ * @lid si el chat viene por esa via. Al menos uno de los dos siempre llega.
+ */
+async function resolveIdentity(sock, msg, jid) {
+  if (!jid.endsWith('@lid')) {
+    // Chat normal: el jid ya es el numero. Aprovechar para aprender su @lid.
+    const lid = onlyDigits(msg.key?.senderLid || msg.key?.participantLid || '')
+    const phone = onlyDigits(jid)
+    if (lid) rememberLid(lid, phone)
+    return { phone, lid }
+  }
+
+  const lid = onlyDigits(jid)
+
+  // 1) El propio mensaje trae el numero verdadero.
+  const alt = msg.key?.senderPn || msg.key?.participantPn ||
+              msg.key?.remoteJidAlt || msg.key?.participantAlt || ''
+  if (alt) {
+    const phone = onlyDigits(alt)
+    if (phone) {
+      rememberLid(lid, phone)
+      return { phone, lid }
+    }
+  }
+
+  // 2) Mapa ya conocido (disco / sincronizaciones previas).
+  const cached = lidToPhone.get(lid)
+  if (cached) return { phone: cached, lid }
+
+  // 3) Preguntar a WhatsApp por los numeros autorizados y reintentar.
+  await syncLidDirectory(sock, { force: true })
+  const resolved = lidToPhone.get(lid)
+  if (resolved) return { phone: resolved, lid }
+
+  console.warn(`⚠️ Identidad @lid ${lid} sin numero conocido (perfil con nombre de usuario). ` +
+               `El CMMS le pedira al usuario que la registre.`)
+  return { phone: '', lid }
 }
 
 async function handleMessage(sock, msg) {
@@ -176,7 +366,7 @@ async function handleMessage(sock, msg) {
   if (!msg.message) return
   if (seen(msg.key.id)) return
 
-  const phone = resolvePhone(msg, jid)
+  const { phone, lid } = await resolveIdentity(sock, msg, jid)
   const text = extractText(msg)
   const media = mediaInfo(msg)
 
@@ -184,6 +374,22 @@ async function handleMessage(sock, msg) {
   if (text.toLowerCase() === 'ping') {
     await humanDelay()
     await sock.sendMessage(jid, { text: 'pong 🏓 (gateway OK)' })
+    return
+  }
+  // /id: devuelve como identifica el bot a quien escribe. Sirve cuando un
+  // perfil con nombre de usuario oculta el numero y hay que vincular el
+  // codigo de identidad a mano en el panel del CMMS.
+  if (text.toLowerCase() === '/id') {
+    await humanDelay()
+    const lineas = ['🪪 Asi te identifico:', '']
+    lineas.push(`• Nombre del perfil: ${msg.pushName || '(sin nombre)'}`)
+    lineas.push(`• Numero detectado: ${phone || 'oculto por WhatsApp'}`)
+    if (lid) lineas.push(`• Codigo de identidad: ${lid}`)
+    if (!phone) {
+      lineas.push('', 'Pasale el codigo de identidad al administrador del CMMS: '
+        + 'con eso te habilita en un minuto.')
+    }
+    await sock.sendMessage(jid, { text: lineas.join('\n') })
     return
   }
   // /grupos: lista JIDs de los grupos donde esta el bot (solo el owner).
@@ -222,7 +428,8 @@ async function handleMessage(sock, msg) {
   if (!text && !mediaPayload) return // stickers, reacciones, etc: ignorar
 
   // ── Reenviar al CMMS ──────────────────────────────────────────────────
-  console.log(`📩 ${phone} (${msg.pushName || '?'}): ${text ? text.slice(0, 80) : `[${media?.type}]`}`)
+  const quien = phone || `lid:${lid}`
+  console.log(`📩 ${quien} (${msg.pushName || '?'}): ${text ? text.slice(0, 80) : `[${media?.type}]`}`)
   await sock.sendPresenceUpdate('composing', jid)
 
   let result
@@ -230,7 +437,10 @@ async function handleMessage(sock, msg) {
     result = await postWebhook({
       message_id: msg.key.id,
       from: jid,
-      phone,
+      // Si WhatsApp oculto el numero se manda el lid en ambos campos: el CMMS
+      // compara los dos y sabe que 'phone' no es un telefono de verdad.
+      phone: phone || lid,
+      lid,
       push_name: msg.pushName || '',
       text,
       media: mediaPayload,
@@ -333,13 +543,21 @@ async function pollOutboxOnce() {
 }
 
 async function outboxLoop() {
+  let ticks = 0
+  const ticksPorSync = Math.max(1, Math.round(LID_SYNC_MS / OUTBOX_POLL_MS))
   for (;;) {
     try { await pollOutboxOnce() } catch (e) { console.warn('outboxLoop:', e.message) }
+    // Refrescar el mapa @lid cada LID_SYNC_MS: capta las altas de numeros
+    // nuevas en el CMMS sin reiniciar el gateway.
+    if (++ticks % ticksPorSync === 0) {
+      try { await syncLidDirectory(currentSock) } catch (e) { console.warn('syncLid:', e.message) }
+    }
     await sleep(OUTBOX_POLL_MS)
   }
 }
 
 console.log('🚀 Iniciando gateway WhatsApp del CMMS...')
+loadLidMap()
 if (!GATEWAY_TOKEN) console.warn('⚠️ GATEWAY_TOKEN vacio — configura .env antes de produccion.')
 start().catch((e) => {
   console.error('Fallo fatal al iniciar:', e)

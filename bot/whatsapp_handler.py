@@ -51,15 +51,27 @@ def _dry_run():
 # ── Tabla de usuarios autorizados ─────────────────────────────────────────
 # Cada numero (celular de area o personal) define rol, areas visibles y el
 # grupo de WhatsApp al que se reenvia su aviso ordenado.
+#
+# IDENTIDAD @lid: WhatsApp esta migrando a identificadores de privacidad
+# ("nombres de usuario"). Un contacto con esa modalidad ya NO entrega su
+# numero: el mensaje llega como 1575909903770074@lid. Ese identificador es
+# estable por contacto, asi que se guarda en la columna `lid` y sirve de
+# segunda llave de acceso. Se rellena solo (el gateway resuelve lid<->numero
+# y lo reporta) o a mano desde el panel de administracion.
 
 _wa_table_ready = False
-_wa_table_lock = threading.Lock()
+# Reentrante: la creacion de la tabla llama a la migracion de la columna lid
+# y ambas toman este mismo candado.
+_wa_table_lock = threading.RLock()
+# None = sin probar; True/False = la columna lid existe / no existe.
+_lid_col_ok = None
 
 
 def _ensure_wa_users_table(app):
     """Crea bot_whatsapp_users si no existe (idempotente, dialect-aware)."""
     global _wa_table_ready
     if _wa_table_ready:
+        _ensure_lid_column(app)  # tabla vieja sin la columna de identidad @lid
         return True
     with _wa_table_lock:
         if _wa_table_ready:
@@ -83,10 +95,12 @@ def _ensure_wa_users_table(app):
                     "grupo_nombre VARCHAR(80), "
                     "puede_ver_todo BOOLEAN DEFAULT FALSE, "
                     "activo BOOLEAN DEFAULT TRUE, "
+                    "lid VARCHAR(40), "
                     "created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP)"
                 ))
                 _db.session.commit()
             _wa_table_ready = True
+            _ensure_lid_column(app)
             return True
         except Exception as e:
             logger.warning(f"No se pudo crear bot_whatsapp_users: {e}")
@@ -99,13 +113,60 @@ def _ensure_wa_users_table(app):
             return False
 
 
-# Cache phone -> fila de usuario (dict) con TTL, igual que el bot de Telegram
-_wa_users_cache = {"ts": 0.0, "map": {}}
+def _ensure_lid_column(app):
+    """Agrega la columna `lid` a una tabla ya existente. Devuelve True si esta.
+
+    Tolera fallos: si la BD no deja hacer el ALTER (pooler read-only, permisos)
+    el bot sigue funcionando con la identificacion por numero de siempre.
+    """
+    global _lid_col_ok
+    if _lid_col_ok is not None:
+        return _lid_col_ok
+    from sqlalchemy import text
+    from database import db as _db
+    with _wa_table_lock:
+        if _lid_col_ok is not None:
+            return _lid_col_ok
+        try:
+            with app.app_context():
+                try:
+                    _db.session.execute(text("SELECT lid FROM bot_whatsapp_users LIMIT 1")).fetchone()
+                    _lid_col_ok = True
+                    return True
+                except Exception:
+                    _db.session.rollback()
+                _db.session.execute(text(
+                    "ALTER TABLE bot_whatsapp_users ADD COLUMN lid VARCHAR(40)"))
+                _db.session.commit()
+            logger.info("bot_whatsapp_users: columna lid agregada (identidad @lid de WhatsApp)")
+            _lid_col_ok = True
+        except Exception as e:
+            logger.warning(f"No se pudo agregar la columna lid a bot_whatsapp_users: {e}")
+            try:
+                with app.app_context():
+                    _db.session.rollback()
+            except Exception:
+                pass
+            _lid_col_ok = False
+    return _lid_col_ok
+
+
+# Cache phone -> fila de usuario (dict) con TTL, igual que el bot de Telegram.
+# `lids` es el indice paralelo por identidad @lid.
+_wa_users_cache = {"ts": 0.0, "map": {}, "lids": {}}
 _WA_CACHE_TTL = 60
 
-_WA_USER_COLS = ("SELECT phone_number, nombre, rol, areas_visibles, "
-                 "grupo_destino, grupo_nombre, puede_ver_todo "
-                 "FROM bot_whatsapp_users WHERE activo = TRUE")
+_WA_BASE_COLS = ("phone_number, nombre, rol, areas_visibles, "
+                 "grupo_destino, grupo_nombre, puede_ver_todo")
+
+
+def _wa_user_sql(with_lid):
+    cols = _WA_BASE_COLS + (", lid" if with_lid else "")
+    return f"SELECT {cols} FROM bot_whatsapp_users WHERE activo = TRUE"
+
+
+# Compat: modulos/tests externos que importaban la consulta completa.
+_WA_USER_COLS = _wa_user_sql(False)
 
 
 def _digits(s):
@@ -115,7 +176,14 @@ def _digits(s):
 def _row_to_user(r):
     return {"phone": r[0], "nombre": r[1], "rol": r[2],
             "areas_visibles": r[3], "grupo_destino": r[4],
-            "grupo_nombre": r[5], "puede_ver_todo": bool(r[6])}
+            "grupo_nombre": r[5], "puede_ver_todo": bool(r[6]),
+            "lid": _digits(r[7]) if len(r) > 7 else None}
+
+
+def _index_users(rows):
+    _wa_users_cache["map"] = {_digits(r[0]): _row_to_user(r) for r in rows}
+    _wa_users_cache["lids"] = {u["lid"]: u for u in _wa_users_cache["map"].values() if u.get("lid")}
+    _wa_users_cache["ts"] = time.time()
 
 
 def _refresh_wa_users_cache(app):
@@ -124,80 +192,150 @@ def _refresh_wa_users_cache(app):
     El SELECT va primero: en produccion la tabla ya existe y el CREATE TABLE
     previo era un punto de fallo extra (con el pooler de Supabase una conexion
     puede llegar en modo read-only y tumbar el DDL). Solo si el SELECT falla se
-    intenta crear la tabla y se reintenta una vez.
+    intenta crear la tabla/columna y se reintenta.
     """
     from sqlalchemy import text
     from database import db as _db
 
-    def _select():
+    def _select(with_lid):
         with app.app_context():
             try:
-                rows = _db.session.execute(text(_WA_USER_COLS)).fetchall()
+                rows = _db.session.execute(text(_wa_user_sql(with_lid))).fetchall()
             except Exception:
                 _db.session.rollback()
                 raise
-        _wa_users_cache["map"] = {_digits(r[0]): _row_to_user(r) for r in rows}
-        _wa_users_cache["ts"] = time.time()
+        _index_users(rows)
 
+    global _lid_col_ok
     try:
-        _select()
+        _select(_lid_col_ok is not False)
         return True
     except Exception as e:
-        logger.warning(f"get_wa_user: SELECT fallo ({e}); intento crear tabla y reintento")
+        logger.warning(f"get_wa_user: SELECT fallo ({e}); intento migrar y reintento")
 
-    if not _ensure_wa_users_table(app):
-        return False
+    # Puede ser tabla ausente o columna lid ausente: cubrir ambos casos.
+    _ensure_wa_users_table(app)
+    _ensure_lid_column(app)
     try:
-        _select()
+        _select(_lid_col_ok is True)
+        return True
+    except Exception as e:
+        logger.warning(f"get_wa_user: reintento fallo ({e}); pruebo sin la columna lid")
+
+    # Ultimo recurso: la identificacion por numero de siempre, sin @lid.
+    _lid_col_ok = False
+    try:
+        _select(False)
         return True
     except Exception as e:
         logger.error(f"get_wa_user: cache refresh fallo definitivamente: {e}")
         return False
 
 
-def _query_wa_user(app, key):
-    """Consulta puntual de un numero. Devuelve la fila o None; propaga el error de BD."""
+def _query_wa_user(app, key, by_lid=False):
+    """Consulta puntual por numero o por identidad @lid.
+
+    Devuelve la fila o None; propaga el error de BD para poder distinguir
+    "no registrado" de "base caida".
+    """
     from sqlalchemy import text
     from database import db as _db
+    if by_lid and _lid_col_ok is False:
+        return None
+    with_lid = _lid_col_ok is not False
+    cond = " AND lid = :p" if by_lid else " AND phone_number = :p"
     with app.app_context():
         try:
             return _db.session.execute(text(
-                _WA_USER_COLS + " AND phone_number = :p"), {"p": key}).fetchone()
+                _wa_user_sql(with_lid) + cond), {"p": key}).fetchone()
         except Exception:
             _db.session.rollback()
             raise
 
 
-def lookup_wa_user(app, phone):
-    """Busca el numero autorizado. Devuelve (usuario|None, hubo_error_de_bd).
+def link_lid_to_phone(app, phone, lid):
+    """Guarda la identidad @lid del contacto en su fila. Devuelve True si grabo.
 
-    Distinguir ambos casos importa: un fallo de BD NO debe presentarse al
-    usuario como "no estas registrado" (mensaje falso que manda al tecnico a
-    pedirle un alta al administrador que ya tiene).
+    Es lo que hace que el reconocimiento sea permanente: la proxima vez que ese
+    contacto escriba, WhatsApp puede volver a ocultar su numero y el bot igual
+    lo identifica por el lid.
+    """
+    phone, lid = _digits(phone), _digits(lid)
+    if not phone or not lid or not _ensure_lid_column(app):
+        return False
+    from sqlalchemy import text
+    from database import db as _db
+    try:
+        with app.app_context():
+            # El lid es unico por contacto: soltarlo de cualquier otra fila
+            # evita que dos numeros queden apuntando al mismo identificador.
+            _db.session.execute(text(
+                "UPDATE bot_whatsapp_users SET lid = NULL "
+                "WHERE lid = :l AND phone_number <> :p"), {"l": lid, "p": phone})
+            r = _db.session.execute(text(
+                "UPDATE bot_whatsapp_users SET lid = :l WHERE phone_number = :p"),
+                {"l": lid, "p": phone})
+            _db.session.commit()
+        if r.rowcount:
+            logger.info(f"WhatsApp: identidad @lid {lid} vinculada al numero {phone}")
+            invalidate_wa_users_cache()
+            return True
+        return False
+    except Exception as e:
+        logger.warning(f"link_lid_to_phone({phone}, {lid}) fallo: {e}")
+        try:
+            with app.app_context():
+                _db.session.rollback()
+        except Exception:
+            pass
+        return False
+
+
+def lookup_wa_user(app, phone, lid=None):
+    """Busca el contacto autorizado. Devuelve (usuario|None, hubo_error_de_bd).
+
+    Prueba primero el numero y despues la identidad @lid, porque WhatsApp ya no
+    siempre entrega el numero real del que escribe.
+
+    Distinguir "no registrado" de "BD caida" importa: un fallo de consulta NO
+    debe presentarse al usuario como "no estas registrado" (mensaje falso que
+    manda al tecnico a pedirle un alta al administrador que ya tiene).
     """
     key = _digits(phone)
+    lid_key = _digits(lid)
 
     if time.time() - _wa_users_cache["ts"] > _WA_CACHE_TTL:
         _refresh_wa_users_cache(app)
 
-    user = _wa_users_cache["map"].get(key)
-    if user or not key:
+    user = _wa_users_cache["map"].get(key) if key else None
+    if not user and lid_key:
+        user = _wa_users_cache["lids"].get(lid_key)
+    if user:
         return user, False
+    if not key and not lid_key:
+        return None, False
 
     # Segunda oportunidad: consulta puntual. Cubre el alta reciente que otro
     # proceso hizo (cada worker tiene su propia cache) y confirma si el "no
     # registrado" es real o la BD esta caida.
-    try:
-        row = _query_wa_user(app, key)
-    except Exception as e:
-        logger.error(f"lookup_wa_user: consulta directa fallo: {e}")
-        return None, True
+    db_error = False
+    for value, by_lid in ((key, False), (lid_key, True)):
+        if not value:
+            continue
+        try:
+            row = _query_wa_user(app, value, by_lid=by_lid)
+        except Exception as e:
+            logger.error(f"lookup_wa_user: consulta directa fallo: {e}")
+            db_error = True
+            continue
+        if row:
+            user = _row_to_user(row)
+            _wa_users_cache["map"][_digits(user["phone"])] = user
+            if user.get("lid"):
+                _wa_users_cache["lids"][user["lid"]] = user
+            return user, False
 
-    if row:
-        user = _row_to_user(row)
-        _wa_users_cache["map"][key] = user
-        return user, False
-    return None, False
+    return None, db_error
 
 
 def get_wa_user(app, phone):
@@ -211,6 +349,31 @@ def get_wa_user(app, phone):
 
 def invalidate_wa_users_cache():
     _wa_users_cache["ts"] = 0.0
+
+
+def active_wa_directory(app):
+    """Numeros activos + su lid conocido. El gateway lo usa para resolver @lid.
+
+    Devuelve [{'phone': '51...', 'lid': '...'|None}, ...] o None si la BD falla.
+    """
+    if not _refresh_wa_users_cache(app):
+        return None
+    return [{"phone": p, "lid": u.get("lid")}
+            for p, u in _wa_users_cache["map"].items() if p]
+
+
+def record_lid_mappings(app, pairs):
+    """Registra pares lid<->numero descubiertos por el gateway.
+
+    `pairs` = [{'phone': '51...', 'lid': '...'}, ...]. Devuelve cuantos vinculo.
+    """
+    linked = 0
+    for pair in pairs or []:
+        if not isinstance(pair, dict):
+            continue
+        if link_lid_to_phone(app, pair.get('phone'), pair.get('lid')):
+            linked += 1
+    return linked
 
 
 # ── Sesiones de conversacion (estado multi-paso por numero) ───────────────
@@ -562,28 +725,72 @@ def _norm_choice(text):
 
 # ── Entrada principal ─────────────────────────────────────────────────────
 
+def _looks_like_lid(value):
+    """True si los digitos parecen una identidad @lid y no un telefono.
+
+    Un numero E.164 no pasa de 15 digitos (y en la practica son 11-13 con
+    codigo de pais); los identificadores de privacidad de WhatsApp son de 15 a
+    18 digitos. Solo se usa para redactar el mensaje al usuario, nunca para
+    decidir accesos.
+    """
+    return len(_digits(value)) >= 15
+
+
 def handle_incoming(app, payload):
     """Procesa un mensaje del gateway y devuelve replies/forwards."""
     phone = _digits(payload.get('phone') or '')
+    lid = _digits(payload.get('lid') or '')
     text = (payload.get('text') or '').strip()
     media = payload.get('media')  # {type, mimetype, base64} | None
     push_name = (payload.get('push_name') or '').strip()
 
-    user, db_error = lookup_wa_user(app, phone)
+    # Cuando el gateway no logra resolver el numero real manda el lid tambien
+    # en `phone` (compatibilidad). Tratarlo como telefono contaminaria la BD y
+    # los mensajes al usuario, asi que se separa.
+    if lid and phone == lid:
+        phone = ''
+    elif not lid and _looks_like_lid(phone):
+        lid, phone = phone, ''
+
+    user, db_error = lookup_wa_user(app, phone, lid)
     if not user:
         if db_error:
-            logger.error(f"WhatsApp: no pude verificar el registro de {phone} (BD no disponible)")
+            logger.error(f"WhatsApp: no pude verificar el registro de {phone or lid} (BD no disponible)")
             return {"replies": [
                 "⚠️ Ahora mismo no puedo verificar tu registro: la base del CMMS "
                 "no responde.\n"
                 "No es que te falte permiso — vuelve a enviarme tu mensaje en un "
                 "par de minutos."
             ]}
-        logger.warning(f"WhatsApp no autorizado: {phone} ({push_name})")
+        logger.warning(f"WhatsApp no autorizado: phone={phone or '-'} lid={lid or '-'} ({push_name})")
+        if not phone and lid:
+            # WhatsApp oculto el numero: pedirle al tecnico que registre ese
+            # identificador seria absurdo (el administrador no sabria de quien
+            # es). Se le pide el dato que si conoce.
+            quien = f" de {push_name}" if push_name else ""
+            return {"replies": [
+                "🔒 Todavia no puedo identificarte.\n\n"
+                "WhatsApp esta ocultando tu numero de telefono (perfil con nombre "
+                "de usuario), asi que no logro cruzarlo con el CMMS.\n\n"
+                "Pasale este dato al administrador del CMMS para que te habilite:\n"
+                f"• Nombre del perfil{quien}\n"
+                f"• Codigo de identidad: {lid}\n\n"
+                "Es cosa de un minuto y despues ya me escribes normal."
+            ]}
         return {"replies": [
             "🔒 Este numero no esta registrado en el CMMS.\n"
             f"Pide al administrador que registre el numero {phone}."
         ]}
+
+    # Aprendizaje: si entro por numero y trae una identidad @lid nueva, se
+    # guarda. Asi el dia que WhatsApp deje de mandar el numero ya lo conocemos.
+    if lid and user.get('lid') != lid:
+        if link_lid_to_phone(app, user.get('phone'), lid):
+            user['lid'] = lid
+
+    # La sesion se indexa por el identificador estable disponible: si WhatsApp
+    # oculta el numero, el lid es lo unico constante entre mensajes.
+    phone = _digits(user.get('phone')) or phone or lid
 
     nombre = user.get('nombre') or push_name or 'colega'
     lower = _norm_choice(text)

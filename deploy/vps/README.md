@@ -64,6 +64,33 @@ sync — anotarlos y recrearlos en producción cuando Render vuelva. Para regres
 al primario, restaurar `WEBHOOK_URL=https://cmms-app-acfj.onrender.com/api/public/whatsapp/webhook`
 y reiniciar pm2.
 
+## Actualizar el código del gateway de WhatsApp
+
+El gateway del VPS es una copia de `whatsapp-gateway/index.js` del repo. Cuando
+ese archivo cambia hay que subirlo a mano (no lo despliega Render):
+
+```powershell
+# desde Windows, en la raíz del repo
+scp -i ~/.ssh/id_cmms_vps whatsapp-gateway/index.js bryam16@51.79.11.222:~/whatsapp-gateway/index.js
+ssh -i ~/.ssh/id_cmms_vps bryam16@51.79.11.222 "~/.npm-global/bin/pm2 restart whatsapp-bot && ~/.npm-global/bin/pm2 logs whatsapp-bot --lines 30 --nostream"
+```
+
+En los logs debe aparecer `🔗 Identidad @lid ... = numero ...`: es el gateway
+resolviendo los perfiles que ocultan su número (ver más abajo).
+
+## Perfiles de WhatsApp con nombre de usuario (identidades @lid)
+
+WhatsApp permite ocultar el número detrás de un nombre de usuario. Esos mensajes
+llegan con un código de 16 dígitos (`1575909903770074@lid`) en vez del teléfono,
+y el CMMS autoriza por teléfono.
+
+Se resuelve solo: el gateway pide a Flask el directorio de números autorizados
+(`/api/public/whatsapp/directory`), le pregunta a WhatsApp el código de cada uno
+y lo guarda en la ficha (columna `lid` de `bot_whatsapp_users`). Si algún
+contacto sigue sin entrar, el bot le responde con su código; ese contacto puede
+obtenerlo también escribiendo `/id` al bot. El administrador lo pega en la
+columna **Identificador de WhatsApp** de `/admin/whatsapp-users`.
+
 ## Pendientes conocidos
 
 - HTTP sin TLS en el puerto 8080: las credenciales viajan en claro. Si el espejo

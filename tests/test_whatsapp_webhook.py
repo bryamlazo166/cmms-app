@@ -153,6 +153,100 @@ def test_webhook_bd_caida_no_dice_no_registrado(client, monkeypatch):
     assert 'verificar' in body
 
 
+# ── Identidad @lid (perfiles de WhatsApp con nombre de usuario) ───────────
+# WhatsApp puede ocultar el numero del que escribe y entregar solo un
+# identificador de privacidad. Sin esto el bot rechazaba a gente ya registrada.
+
+LID = '1575909903770074'
+
+
+def test_lid_desconocido_no_pide_registrar_el_codigo_como_telefono(client, wa_env):
+    """El mensaje al usuario no debe decirle al admin que registre el codigo.
+
+    Ese numero de 16 digitos no es un telefono: el administrador no sabria de
+    quien es. El bot pide nombre de perfil + codigo, que si son accionables.
+    """
+    r = _post(client, phone=LID, lid=LID, push_name='Marco Rojas',
+              **{'from': f'{LID}@lid'})
+    body = r.get_json()['replies'][0]
+    assert 'no esta registrado' not in body.lower()
+    assert LID in body
+    assert 'Marco Rojas' in body
+
+
+def test_gateway_viejo_manda_el_codigo_como_telefono(client, wa_env):
+    """Un gateway aun sin actualizar manda el codigo en 'phone' y sin 'lid'.
+
+    El CMMS igual lo reconoce como identidad de privacidad (ningun telefono
+    tiene 16 digitos), asi que el arreglo sirve antes de tocar el gateway.
+    """
+    from sqlalchemy import text
+    from database import db
+    with client.application.app_context():
+        db.session.execute(text(
+            "UPDATE bot_whatsapp_users SET lid = :l WHERE phone_number = :p"),
+            {"l": LID, "p": PHONE})
+        db.session.commit()
+    wa_env.invalidate_wa_users_cache()
+    r = _post(client, phone=LID, text='hola', **{'from': f'{LID}@lid'})
+    assert 'Tester Molino' in r.get_json()['replies'][0]
+
+
+def test_lid_vinculado_identifica_al_usuario(client, wa_env):
+    """Con el codigo guardado en su ficha, el tecnico entra sin numero."""
+    from sqlalchemy import text
+    from database import db
+    with client.application.app_context():
+        assert wa_env._ensure_lid_column(client.application)
+        db.session.execute(text(
+            "UPDATE bot_whatsapp_users SET lid = :l WHERE phone_number = :p"),
+            {"l": LID, "p": PHONE})
+        db.session.commit()
+    wa_env.invalidate_wa_users_cache()
+    r = _post(client, phone=LID, lid=LID, text='hola', **{'from': f'{LID}@lid'})
+    body = r.get_json()['replies'][0]
+    assert 'Tester Molino' in body
+
+
+def test_lid_se_vincula_solo_cuando_llega_junto_al_numero(client, wa_env):
+    """Si el gateway resuelve el numero, el codigo queda guardado para despues."""
+    from sqlalchemy import text
+    from database import db
+    r = _post(client, phone=PHONE, lid=LID, text='hola')
+    assert 'Tester Molino' in r.get_json()['replies'][0]
+    with client.application.app_context():
+        guardado = db.session.execute(text(
+            "SELECT lid FROM bot_whatsapp_users WHERE phone_number = :p"),
+            {"p": PHONE}).scalar()
+    assert guardado == LID
+
+
+def test_directorio_para_el_gateway(client, wa_env, monkeypatch):
+    monkeypatch.setenv('WHATSAPP_GATEWAY_TOKEN', TOKEN)
+    r = client.get('/api/public/whatsapp/directory', headers={'X-Gateway-Token': TOKEN})
+    assert r.status_code == 200
+    phones = [u['phone'] for u in r.get_json()['users']]
+    assert PHONE in phones
+
+
+def test_gateway_reporta_pares_lid_numero(client, wa_env, monkeypatch):
+    monkeypatch.setenv('WHATSAPP_GATEWAY_TOKEN', TOKEN)
+    r = client.post('/api/public/whatsapp/lid-map',
+                    json={'pairs': [{'phone': PHONE, 'lid': LID}]},
+                    headers={'X-Gateway-Token': TOKEN})
+    assert r.status_code == 200
+    assert r.get_json()['linked'] == 1
+    wa_env.invalidate_wa_users_cache()
+    user, _ = wa_env.lookup_wa_user(client.application, '', LID)
+    assert user and user['nombre'] == 'Tester Molino'
+
+
+def test_lid_map_exige_token(client):
+    r = client.post('/api/public/whatsapp/lid-map', json={'pairs': []},
+                    headers={'X-Gateway-Token': 'otro'})
+    assert r.status_code in (403, 503)
+
+
 # ── Conversacion ──────────────────────────────────────────────────────────
 
 def test_saludo(client, wa_env):

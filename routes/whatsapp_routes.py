@@ -42,8 +42,10 @@ def register_whatsapp_routes(app, db, logger):
             return auth_err
 
         payload = request.get_json(silent=True) or {}
-        if not payload.get('phone'):
-            return jsonify({"error": "Payload invalido: falta 'phone'"}), 400
+        # 'lid' es la identidad de privacidad de WhatsApp: en perfiles con
+        # nombre de usuario es lo unico que llega, sin numero de telefono.
+        if not payload.get('phone') and not payload.get('lid'):
+            return jsonify({"error": "Payload invalido: falta 'phone' o 'lid'"}), 400
 
         try:
             from bot.whatsapp_handler import handle_incoming
@@ -75,6 +77,42 @@ def register_whatsapp_routes(app, db, logger):
             logger.error(f"whatsapp_outbox_pull error: {e}", exc_info=True)
             return jsonify({"messages": []}), 200
 
+    # ── Directorio para resolver identidades @lid ─────────────────────────
+    # WhatsApp ya no siempre entrega el numero de quien escribe (perfiles con
+    # nombre de usuario): manda un identificador @lid. El gateway pide este
+    # directorio, le pregunta a WhatsApp el @lid de cada numero autorizado y
+    # devuelve los pares por /lid-map, que quedan guardados en la ficha. A
+    # partir de ahi el reconocimiento es inmediato y permanente.
+
+    @app.route('/api/public/whatsapp/directory', methods=['GET'])
+    def whatsapp_directory():
+        auth_err = _gateway_auth()
+        if auth_err:
+            return auth_err
+        try:
+            from bot.whatsapp_handler import active_wa_directory
+            entries = active_wa_directory(app)
+            if entries is None:
+                return jsonify({"error": "BD no disponible"}), 503
+            return jsonify({"users": entries})
+        except Exception as e:
+            logger.error(f"whatsapp_directory error: {e}", exc_info=True)
+            return jsonify({"error": str(e)}), 500
+
+    @app.route('/api/public/whatsapp/lid-map', methods=['POST'])
+    def whatsapp_lid_map():
+        auth_err = _gateway_auth()
+        if auth_err:
+            return auth_err
+        try:
+            from bot.whatsapp_handler import record_lid_mappings
+            pairs = (request.get_json(silent=True) or {}).get('pairs') or []
+            linked = record_lid_mappings(app, pairs[:200])
+            return jsonify({"ok": True, "linked": linked})
+        except Exception as e:
+            logger.error(f"whatsapp_lid_map error: {e}", exc_info=True)
+            return jsonify({"ok": False, "error": str(e)}), 500
+
     @app.route('/api/public/whatsapp/outbox/ack', methods=['POST'])
     def whatsapp_outbox_ack():
         auth_err = _gateway_auth()
@@ -92,8 +130,13 @@ def register_whatsapp_routes(app, db, logger):
     # ── Panel admin: usuarios del bot WhatsApp ────────────────────────────
 
     def _ensure_table():
-        from bot.whatsapp_handler import _ensure_wa_users_table
+        from bot.whatsapp_handler import _ensure_wa_users_table, _ensure_lid_column
         _ensure_wa_users_table(app)
+        _ensure_lid_column(app)
+
+    def _lid_available():
+        from bot.whatsapp_handler import _ensure_lid_column
+        return _ensure_lid_column(app)
 
     def _invalidate():
         from bot.whatsapp_handler import invalidate_wa_users_cache
@@ -106,9 +149,10 @@ def register_whatsapp_routes(app, db, logger):
             return jsonify({"error": "Solo admin"}), 403
         _ensure_table()
         try:
+            lid_col = ", lid" if _lid_available() else ", NULL AS lid"
             rows = db.session.execute(text(
                 "SELECT phone_number, nombre, rol, areas_visibles, grupo_destino, "
-                "grupo_nombre, puede_ver_todo, activo, created_at "
+                f"grupo_nombre, puede_ver_todo, activo, created_at{lid_col} "
                 "FROM bot_whatsapp_users ORDER BY activo DESC, nombre"
             )).fetchall()
             return jsonify([{
@@ -117,6 +161,7 @@ def register_whatsapp_routes(app, db, logger):
                 "puede_ver_todo": bool(r[6]), "activo": bool(r[7]),
                 # sqlite devuelve str, postgres datetime — tolerar ambos
                 "created_at": (r[8].isoformat() if hasattr(r[8], 'isoformat') else r[8]) if r[8] else None,
+                "lid": r[9],
             } for r in rows])
         except Exception as e:
             logger.exception('list_whatsapp_users error')
@@ -162,12 +207,23 @@ def register_whatsapp_routes(app, db, logger):
             if existing:
                 return jsonify({"error": f"El numero {phone} ya existe"}), 409
 
-            db.session.execute(text(
-                "INSERT INTO bot_whatsapp_users (phone_number, nombre, rol, areas_visibles, "
-                "grupo_destino, grupo_nombre, puede_ver_todo, activo) "
-                "VALUES (:p, :n, :r, :a, :g, :gn, :pv, TRUE)"
-            ), {"p": phone, "n": nombre, "r": rol, "a": areas, "g": grupo,
-                "gn": grupo_nombre, "pv": puede_ver_todo})
+            lid = ''.join(ch for ch in (data.get('lid') or '') if ch.isdigit()) or None
+            if lid and _lid_available():
+                db.session.execute(text(
+                    "UPDATE bot_whatsapp_users SET lid = NULL WHERE lid = :l"), {"l": lid})
+                db.session.execute(text(
+                    "INSERT INTO bot_whatsapp_users (phone_number, nombre, rol, areas_visibles, "
+                    "grupo_destino, grupo_nombre, puede_ver_todo, activo, lid) "
+                    "VALUES (:p, :n, :r, :a, :g, :gn, :pv, TRUE, :l)"
+                ), {"p": phone, "n": nombre, "r": rol, "a": areas, "g": grupo,
+                    "gn": grupo_nombre, "pv": puede_ver_todo, "l": lid})
+            else:
+                db.session.execute(text(
+                    "INSERT INTO bot_whatsapp_users (phone_number, nombre, rol, areas_visibles, "
+                    "grupo_destino, grupo_nombre, puede_ver_todo, activo) "
+                    "VALUES (:p, :n, :r, :a, :g, :gn, :pv, TRUE)"
+                ), {"p": phone, "n": nombre, "r": rol, "a": areas, "g": grupo,
+                    "gn": grupo_nombre, "pv": puede_ver_todo})
             db.session.commit()
             _invalidate()
             return jsonify({"ok": True, "phone_number": phone}), 201
@@ -203,6 +259,17 @@ def register_whatsapp_routes(app, db, logger):
                 updates['puede_ver_todo'] = bool(data['puede_ver_todo'])
             if 'activo' in data:
                 updates['activo'] = bool(data['activo'])
+            if 'lid' in data and _lid_available():
+                # Identidad @lid de WhatsApp: se pega tal cual la reporta el bot
+                # cuando el perfil oculta el numero de telefono.
+                v = ''.join(ch for ch in (data['lid'] or '') if ch.isdigit()) or None
+                if v:
+                    # Un mismo identificador no puede quedar en dos fichas.
+                    db.session.execute(text(
+                        "UPDATE bot_whatsapp_users SET lid = NULL "
+                        "WHERE lid = :l AND phone_number <> :p"),
+                        {"l": v, "p": ''.join(c for c in phone if c.isdigit())})
+                updates['lid'] = v
 
             if not updates:
                 return jsonify({"error": "Sin campos para actualizar"}), 400
