@@ -132,7 +132,8 @@ def register_production_routes(app, db, logger, ProductionGoal, WorkOrder, Area,
         # Los digestores GENERAN (se les aplica el rendimiento de planta); los
         # secadores y molinos PROCESAN la harina que ya salio, asi que su
         # capacidad ya esta en harina. Los auxiliares devuelven 0.
-        from utils.kpi_helpers import eq_output_tph, plant_yield_factor
+        from utils.kpi_helpers import (eq_harina_tm_day, eq_output_tph,
+                                       plant_yield_factor)
         _plant_yield = plant_yield_factor(equips)
         _tph_cache = {}
 
@@ -141,6 +142,16 @@ def register_production_routes(app, db, logger, ProductionGoal, WorkOrder, Area,
                 eq = equip_map.get(eq_id)
                 _tph_cache[eq_id] = eq_output_tph(eq, _plant_yield) if eq else 0.0
             return _tph_cache[eq_id]
+
+        def _eq_harina_dia(eq_id):
+            """TM de harina al dia del equipo. Un equipo fuera de servicio
+            (overhaul) no aporta capacidad: no puede producir."""
+            eq = equip_map.get(eq_id)
+            if not eq or not getattr(eq, 'in_service', True):
+                return 0.0
+            if not getattr(eq, 'include_in_kpi', True):
+                return 0.0
+            return eq_harina_tm_day(eq, _plant_yield)
 
         area_results = []
         total_tons_lost = 0.0
@@ -186,12 +197,10 @@ def register_production_routes(app, db, logger, ProductionGoal, WorkOrder, Area,
             # Período analizado ya transcurrido (hasta hoy si el mes está en curso)
             today = dt.date.today()
             effective_end = min(end, today)
-            hours_in_period = max(1, (effective_end - start).days + 1) * 24
+            dias_analizados = max(1, (effective_end - start).days + 1)
+            hours_in_period = dias_analizados * 24
             # Cap hours a operating_hours si estamos dentro del mes
             analyzed_hours = min(hours_in_period, operating_hours)
-
-            uptime = max(0, analyzed_hours - total_downtime)
-            availability = round((uptime / analyzed_hours) * 100, 2) if analyzed_hours > 0 else 100.0
 
             # Toneladas perdidas: cada equipo aporta SU capacidad real (los
             # digestores por sus llenadas), no el rendimiento del area entera.
@@ -203,6 +212,30 @@ def register_production_routes(app, db, logger, ProductionGoal, WorkOrder, Area,
                 tons_lost += ev['hours'] * _eq_output_tph(ev['ot'].equipment_id)
             tons_lost = round(tons_lost, 2)
             sacks_lost = round((tons_lost * 1000) / SACK_KG, 0)
+
+            # Capacidad real del área: la de sus equipos productivos EN
+            # SERVICIO. En COCCION son 9 digestores que trabajan en PARALELO.
+            area_cap_dia = sum(
+                _eq_harina_dia(e.id) for e in equips
+                if e.line_id in line_map and line_map[e.line_id].area_id == area.id)
+            area_cap_periodo = area_cap_dia * dias_analizados
+
+            if area_cap_periodo > 0:
+                # Disponibilidad ponderada por capacidad: lo que el área dejo
+                # de entregar sobre lo que podía entregar.
+                # ANTES se restaba la SUMA de horas de parada de todos sus
+                # equipos como si el área fuera una sola máquina en serie: en
+                # COCCION esas horas (744 h entre 20 equipos) superaban las
+                # 720 h del mes, el uptime daba 0 y el área aparecia sin
+                # produccion teorica en todos los graficos de la pagina.
+                perdido = min(tons_lost / area_cap_periodo, 1.0)
+                availability = round((1 - perdido) * 100, 2)
+                uptime = analyzed_hours * (1 - perdido)
+            else:
+                # Área sin equipos productivos configurados: se conserva el
+                # cálculo en serie para no dejarla sin dato.
+                uptime = max(0, analyzed_hours - total_downtime)
+                availability = round((uptime / analyzed_hours) * 100, 2) if analyzed_hours > 0 else 100.0
 
             # Disponibilidad requerida
             if tons_per_hour > 0:
@@ -219,8 +252,12 @@ def register_production_routes(app, db, logger, ProductionGoal, WorkOrder, Area,
             gap_pp = round(availability - required_with_sf, 2)
             at_risk = gap_pp < 0
 
-            # Producción teórica actual (si se mantuviera el ritmo)
-            tons_produced_theoretical = round(tons_per_hour * uptime, 2)
+            # Producción teórica: lo que el área SÍ pudo entregar = su
+            # capacidad real del periodo menos lo que costaron las paradas.
+            if area_cap_periodo > 0:
+                tons_produced_theoretical = round(max(0.0, area_cap_periodo - tons_lost), 2)
+            else:
+                tons_produced_theoretical = round(tons_per_hour * uptime, 2)
 
             # Proyección fin de mes (ritmo actual extrapolado)
             if start <= today <= end:
@@ -705,8 +742,11 @@ def register_production_routes(app, db, logger, ProductionGoal, WorkOrder, Area,
         # un secador o molino ya trabaja sobre harina, asi que input = output.
         yield_factor = eq_yield_factor(eq)
         shift_h, work_days = eq_jornada(eq)
-        input_tph = eq_input_tph(eq)
-        output_tph = eq_output_tph(eq, plant_yield)
+        # Un equipo fuera de servicio (overhaul) no produce ni en teoria: si
+        # sumara su capacidad, el area aparentaria un techo que no tiene.
+        en_servicio = bool(getattr(eq, 'in_service', True))
+        input_tph = eq_input_tph(eq) if en_servicio else 0.0
+        output_tph = eq_output_tph(eq, plant_yield) if en_servicio else 0.0
 
         input_tons_theoretical = round(usable_hours * input_tph, 2)
         input_tons_realized = round(uptime_real * input_tph, 2)
@@ -730,6 +770,7 @@ def register_production_routes(app, db, logger, ProductionGoal, WorkOrder, Area,
             'capacity_tm': round(cap_tm, 1),
             'capacity_tm_day': round(eq_capacity_tm_day(eq), 2),
             'capacity_basis': eq_capacity_basis(eq),
+            'in_service': en_servicio,
             'yield_factor': yield_factor,
             'shift_hours_per_day': shift_h,
             'work_days_per_week': work_days,

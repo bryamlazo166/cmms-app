@@ -282,6 +282,77 @@ def test_diagnostico_acepta_rango_de_fechas(auth_admin):
     assert r.json['portada']['veredicto']
 
 
+def test_area_en_paralelo_no_se_queda_sin_produccion_teorica(auth_admin, app):
+    """Un area con varios equipos en PARALELO no puede quedar en cero.
+
+    Regresion: Produccion vs Mantenimiento restaba la SUMA de horas de parada
+    de todos los equipos del area como si fuera una sola maquina en serie. En
+    COCCION, con 9 digestores, esas horas superaban las del mes, el uptime
+    daba 0 y el area aparecia sin produccion teorica en TODOS los graficos.
+    """
+    with app.app_context():
+        from database import db
+        from models import Area, Line, Equipment, ProductionGoal, WorkOrder
+        area = Area(name='AREA PARALELO TEST')
+        db.session.add(area); db.session.flush()
+        line = Line(name='LINEA PARALELO TEST', area_id=area.id)
+        db.session.add(line); db.session.flush()
+        # 4 equipos gemelos de 24 TM/dia: en paralelo, 96 TM/dia de area
+        ids = []
+        for i in range(4):
+            e = Equipment(name=f'REACTOR {i}', tag=f'RX{i}', line_id=line.id,
+                          capacity_tm_day=24.0, is_production_unit=True)
+            db.session.add(e); db.session.flush()
+            ids.append(e.id)
+        mes = dt.date.today().strftime('%Y-%m')
+        db.session.add(ProductionGoal(goal_period=mes, area_id=area.id,
+                                      monthly_avg_yield_tons=720.0,
+                                      monthly_target_tons=720.0,
+                                      operating_hours_month=720.0))
+        db.session.commit()
+        area_id = area.id
+
+    try:
+        # Cada equipo para un tercio de las horas transcurridas: por separado
+        # es perfectamente posible, pero SUMADAS superan las horas del periodo
+        # — que es justo lo que pasa en COCCION con sus 9 digestores.
+        hoy = dt.date.today()
+        horas_periodo = hoy.day * 24
+        paro_por_equipo = round(horas_periodo / 3, 1)
+        ini = hoy.replace(day=1).isoformat()
+        for eid in ids:
+            auth_admin.post('/api/work-orders', data=json.dumps({
+                'description': 'Parada paralela', 'maintenance_type': 'Correctivo',
+                'status': 'Cerrada', 'equipment_id': eid,
+                'real_start_date': ini, 'real_end_date': hoy.isoformat(),
+                'caused_downtime': True, 'downtime_hours': paro_por_equipo,
+            }), content_type='application/json')
+        assert paro_por_equipo * 4 > horas_periodo, 'el escenario debe superar las horas del mes'
+
+        r = auth_admin.get(f'/api/production/metrics?period={hoy.strftime("%Y-%m")}')
+        assert r.status_code == 200
+        a = next(x for x in r.json['areas'] if x['area_name'] == 'AREA PARALELO TEST')
+
+        # Lo que fallaba: teorico 0 y disponibilidad 0 por sumar en serie
+        assert a['tons_produced_theoretical'] > 0, 'el area quedo sin produccion teorica'
+        assert 0 < a['availability_actual'] <= 100
+        # Perdio un tercio de su capacidad: 4 equipos parados 1/3 del tiempo
+        capacidad = 96.0 * hoy.day
+        assert abs(a['availability_actual'] - 66.67) < 1.5
+        assert a['tons_lost'] <= capacidad + 0.1
+    finally:
+        with app.app_context():
+            from database import db
+            from models import Equipment, WorkOrder
+            for eid in ids:
+                for ot in WorkOrder.query.filter_by(equipment_id=eid).all():
+                    db.session.delete(ot)
+                eq = Equipment.query.get(eid)
+                if eq:
+                    db.session.delete(eq)
+            db.session.commit()
+
+
 def test_narrativa_sobrevive_al_cambio_de_worker(auth_admin, app, monkeypatch):
     """El trabajo de la narrativa vive en la BD, no en memoria del proceso.
 
