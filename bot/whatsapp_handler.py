@@ -728,12 +728,14 @@ def _norm_choice(text):
 def _looks_like_lid(value):
     """True si los digitos parecen una identidad @lid y no un telefono.
 
-    Un numero E.164 no pasa de 15 digitos (y en la practica son 11-13 con
-    codigo de pais); los identificadores de privacidad de WhatsApp son de 15 a
-    18 digitos. Solo se usa para redactar el mensaje al usuario, nunca para
-    decidir accesos.
+    Un numero E.164 no pasa de 15 digitos y en la practica son 11-13 con codigo
+    de pais; las identidades de privacidad observadas van de 14 a 16. El margen
+    es estrecho a proposito y ademas enganya: hay identidades que empiezan por
+    51 como si fueran peruanas. Por eso esto NUNCA decide accesos — solo elige
+    como redactar el mensaje de rechazo. La busqueda se hace por las dos
+    columnas pase lo que pase.
     """
-    return len(_digits(value)) >= 15
+    return len(_digits(value)) >= 14
 
 
 def handle_incoming(app, payload):
@@ -750,9 +752,22 @@ def handle_incoming(app, payload):
     if lid and phone == lid:
         phone = ''
     elif not lid and _looks_like_lid(phone):
-        lid, phone = phone, ''
+        # Gateway sin actualizar: no manda el campo lid. Se prueban las dos
+        # columnas con el mismo valor en vez de apostar por una — equivocarse
+        # aqui rechazaria a alguien que si esta registrado.
+        lid = phone
+
+    # Valor de origen ambiguo: no se sabe todavia si es telefono o identidad.
+    ambiguo = bool(lid) and phone == lid
 
     user, db_error = lookup_wa_user(app, phone, lid)
+    if user and ambiguo:
+        # Ya se sabe: lo dice la ficha por la que entro. Descartar la lectura
+        # equivocada antes de que se guarde un telefono como identidad.
+        if _digits(user.get('phone')) == phone:
+            lid = ''
+        else:
+            phone = ''
     if not user:
         if db_error:
             logger.error(f"WhatsApp: no pude verificar el registro de {phone or lid} (BD no disponible)")

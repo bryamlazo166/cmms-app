@@ -192,6 +192,31 @@ def test_gateway_viejo_manda_el_codigo_como_telefono(client, wa_env):
     assert 'Tester Molino' in r.get_json()['replies'][0]
 
 
+def test_gateway_viejo_no_confunde_un_telefono_largo_con_un_codigo(client, wa_env):
+    """Los codigos reales tienen 14-16 digitos y algunos empiezan por 51.
+
+    Con un gateway sin actualizar no llega la marca de cual es cual, asi que se
+    prueban las dos columnas. Un numero largo debe entrar por telefono y NO
+    quedar archivado como codigo de identidad.
+    """
+    from sqlalchemy import text
+    from database import db
+    largo = '519876543210123'  # 15 digitos, registrado como telefono
+    with client.application.app_context():
+        db.session.execute(text(
+            "INSERT INTO bot_whatsapp_users (phone_number, nombre, rol, activo) "
+            "VALUES (:p, 'Numero Largo', 'tecnico', TRUE)"), {"p": largo})
+        db.session.commit()
+    wa_env.invalidate_wa_users_cache()
+    r = _post(client, phone=largo, text='hola', **{'from': f'{largo}@s.whatsapp.net'})
+    assert 'Numero Largo' in r.get_json()['replies'][0]
+    with client.application.app_context():
+        guardado = db.session.execute(text(
+            "SELECT lid FROM bot_whatsapp_users WHERE phone_number = :p"),
+            {"p": largo}).scalar()
+    assert guardado is None
+
+
 def test_lid_vinculado_identifica_al_usuario(client, wa_env):
     """Con el codigo guardado en su ficha, el tecnico entra sin numero."""
     from sqlalchemy import text
