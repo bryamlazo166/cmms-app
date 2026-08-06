@@ -1334,10 +1334,20 @@ class RotativeAsset(db.Model):
     brand: Mapped[str | None] = mapped_column(String(80), nullable=True)
     model: Mapped[str | None] = mapped_column(String(80), nullable=True)
     serial_number: Mapped[str | None] = mapped_column(String(100), nullable=True)
-    status: Mapped[str] = mapped_column(String(30), nullable=False, default='Disponible')  # Disponible, Instalado, En Taller, Baja
+    # Disponible | Instalado | En Taller | En Proveedor | Baja
+    status: Mapped[str] = mapped_column(String(30), nullable=False, default='Disponible')
     install_date: Mapped[str | None] = mapped_column(String(20), nullable=True)
     notes: Mapped[str | None] = mapped_column(Text, nullable=True)
     is_active: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
+
+    # ── Fuera de servicio (taller interno / proveedor externo / baja) ────
+    # Se llenan al retirar el activo de un equipo y se limpian cuando vuelve
+    # a estar Disponible o se instala. Permiten saber donde esta cada activo
+    # retirado, desde cuando y cuando se espera de vuelta.
+    out_since: Mapped[str | None] = mapped_column(String(20), nullable=True)
+    out_reason: Mapped[str | None] = mapped_column(String(250), nullable=True)
+    service_provider_id: Mapped[int | None] = mapped_column(ForeignKey('providers.id'), nullable=True)
+    expected_return_date: Mapped[str | None] = mapped_column(String(20), nullable=True)
 
     area_id: Mapped[int | None] = mapped_column(ForeignKey('areas.id'), nullable=True)
     line_id: Mapped[int | None] = mapped_column(ForeignKey('lines.id'), nullable=True)
@@ -1372,6 +1382,7 @@ class RotativeAsset(db.Model):
     equipment = relationship("Equipment")
     system = relationship("System")
     component = relationship("Component")
+    service_provider = relationship("Provider")
     history = relationship("RotativeAssetHistory", back_populates="asset", cascade="all, delete-orphan")
     specs = relationship("RotativeAssetSpec", back_populates="asset", cascade="all, delete-orphan")
 
@@ -1398,6 +1409,11 @@ class RotativeAsset(db.Model):
             "equipment_name": self.equipment.name if self.equipment else None,
             "system_name": self.system.name if self.system else None,
             "component_name": self.component.name if self.component else None,
+            "out_since": self.out_since,
+            "out_reason": self.out_reason,
+            "service_provider_id": self.service_provider_id,
+            "service_provider_name": self.service_provider.name if self.service_provider else None,
+            "expected_return_date": self.expected_return_date,
             "is_electric_motor": self.is_electric_motor,
             "megado_frequency_days": self.megado_frequency_days,
             "megado_warning_days": self.megado_warning_days,

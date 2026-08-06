@@ -1448,6 +1448,12 @@ _ENSURE_COLUMNS = [
     ("rotative_assets", "last_measure_date", "VARCHAR(20)"),
     ("rotative_assets", "next_measure_due", "VARCHAR(20)"),
     ("rotative_assets", "measure_status", "VARCHAR(10)"),
+    # Trazabilidad del activo retirado: donde esta (taller interno / proveedor
+    # externo), desde cuando, por que y cuando se espera de vuelta.
+    ("rotative_assets", "out_since", "VARCHAR(20)"),
+    ("rotative_assets", "out_reason", "VARCHAR(250)"),
+    ("rotative_assets", "service_provider_id", "INTEGER REFERENCES providers(id)"),
+    ("rotative_assets", "expected_return_date", "VARCHAR(20)"),
 ]
 
 

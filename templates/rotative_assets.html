@@ -21,10 +21,26 @@
         .status-disponible { background:rgba(33, 150, 243, .17); color:#95d2ff; border-color:rgba(33,150,243,.45); }
         .status-instalado { background:rgba(76, 175, 80, .17); color:#9de4a1; border-color:rgba(76,175,80,.45); }
         .status-taller { background:rgba(255, 193, 7, .17); color:#ffd76f; border-color:rgba(255,193,7,.45); }
+        .status-proveedor { background:rgba(191, 90, 242, .17); color:#dcaaff; border-color:rgba(191,90,242,.45); }
         .status-baja { background:rgba(244, 67, 54, .17); color:#ff9d95; border-color:rgba(244,67,54,.45); }
         .actions-row { display:flex; gap:6px; flex-wrap:wrap; }
         .btn-micro { border:1px solid #3a5372; background:#172338; color:#d7e7fa; border-radius:8px; padding:4px 7px; font-size:.75rem; cursor:pointer; }
         @media (max-width: 1200px) { .toolbar-grid { grid-template-columns: repeat(2, minmax(120px, 1fr)); } }
+        /* Modales de cambio / retiro */
+        .rot-input { width:100%; height:36px; background:rgba(255,255,255,.06); border:1px solid rgba(255,255,255,.10); border-radius:8px; color:rgba(255,255,255,.85); padding:0 10px; font-size:.84rem; }
+        .dest-opt { display:inline-flex; align-items:center; gap:6px; font-size:.82rem; color:rgba(255,255,255,.75); cursor:pointer; padding:6px 10px; border:1px solid rgba(255,255,255,.12); border-radius:8px; background:rgba(255,255,255,.04); }
+        .dest-opt:has(input:checked) { border-color:#FF9F0A; background:rgba(255,159,10,.12); color:#FFB340; }
+        .cand-card { display:block; padding:10px 12px; margin-bottom:8px; border:1px solid rgba(255,255,255,.10); border-radius:10px; background:rgba(255,255,255,.03); cursor:pointer; }
+        .cand-card:has(input:checked) { border-color:#30D158; background:rgba(48,209,88,.10); }
+        .cand-head { display:flex; align-items:center; gap:8px; flex-wrap:wrap; }
+        .cand-code { font-weight:700; color:#5AC8FA; font-size:.86rem; }
+        .cand-name { color:rgba(255,255,255,.85); font-size:.86rem; }
+        .match-badge { font-size:.68rem; font-weight:700; padding:2px 8px; border-radius:10px; text-transform:uppercase; letter-spacing:.3px; }
+        .match-ALTA { background:rgba(48,209,88,.18); color:#5cd870; border:1px solid rgba(48,209,88,.5); }
+        .match-MEDIA { background:rgba(255,159,10,.15); color:#FFB340; border:1px solid rgba(255,159,10,.5); }
+        .match-BAJA { background:rgba(255,69,58,.14); color:#FF8078; border:1px solid rgba(255,69,58,.45); }
+        .cand-reason { font-size:.76rem; color:rgba(255,255,255,.55); margin-top:4px; }
+        .cand-warn { font-size:.76rem; color:#FFB340; margin-top:3px; }
     </style>
 </head>
 <body>
@@ -61,7 +77,9 @@
                 <div class="kpi-card"><div class="label">Total</div><div id="kpiTotal" class="value">0</div></div>
                 <div class="kpi-card"><div class="label">Instalados</div><div id="kpiInstalled" class="value">0</div></div>
                 <div class="kpi-card"><div class="label">Disponibles</div><div id="kpiAvailable" class="value">0</div></div>
-                <div class="kpi-card"><div class="label">En Taller / Baja</div><div id="kpiOut" class="value">0</div></div>
+                <div class="kpi-card"><div class="label">En Taller</div><div id="kpiWorkshop" class="value">0</div></div>
+                <div class="kpi-card"><div class="label">En Proveedor</div><div id="kpiProvider" class="value">0</div></div>
+                <div class="kpi-card"><div class="label">De Baja</div><div id="kpiOut" class="value">0</div></div>
             </div>
 
             <div class="toolbar-grid">
@@ -73,6 +91,7 @@
                     <option value="Instalado">Instalado</option>
                     <option value="Disponible">Disponible</option>
                     <option value="En Taller">En Taller</option>
+                    <option value="En Proveedor">En Proveedor</option>
                     <option value="Baja">Baja</option>
                 </select>
                 <input id="fSearch" placeholder="Buscar por codigo, nombre, serie">
@@ -136,6 +155,7 @@
                         <option value="Disponible">Disponible</option>
                         <option value="Instalado">Instalado</option>
                         <option value="En Taller">En Taller</option>
+                        <option value="En Proveedor">En Proveedor</option>
                         <option value="Baja">Baja</option>
                     </select>
                 </div>
@@ -270,16 +290,113 @@
     </dialog>
 
     <!-- Swap Modal -->
-    <dialog id="swapModal" class="modal" style="max-width:480px;width:94vw;background:#1C1C1E;border:1px solid rgba(255,255,255,.10);border-radius:16px;padding:24px;color:#fff">
-        <h3 style="margin:0 0 16px;font-size:1.05rem;color:rgba(255,255,255,.92)"><i class="fas fa-exchange-alt" style="color:#FF9F0A;margin-right:8px"></i>Swap Rapido</h3>
-        <input type="hidden" id="swapRemoveId">
-        <div style="margin-bottom:12px"><label style="font-size:.72rem;color:rgba(255,255,255,.40);text-transform:uppercase">Retirar activo</label><div id="swapRemoveLabel" style="color:rgba(255,255,255,.80);font-size:.88rem;padding:6px 0"></div></div>
-        <div style="margin-bottom:12px"><label style="font-size:.72rem;color:rgba(255,255,255,.40);text-transform:uppercase">Instalar reemplazo</label><select id="swapInstallId" style="width:100%;height:36px;background:rgba(255,255,255,.06);border:1px solid rgba(255,255,255,.10);border-radius:8px;color:rgba(255,255,255,.80);padding:0 10px;font-size:.84rem"></select></div>
-        <div style="margin-bottom:12px"><label style="font-size:.72rem;color:rgba(255,255,255,.40);text-transform:uppercase">Estado del retirado</label><select id="swapOldStatus" style="width:100%;height:36px;background:rgba(255,255,255,.06);border:1px solid rgba(255,255,255,.10);border-radius:8px;color:rgba(255,255,255,.80);padding:0 10px;font-size:.84rem"><option value="En Taller">En Taller</option><option value="Disponible">Disponible (Stand-by)</option><option value="Baja">Baja</option></select></div>
-        <div style="margin-bottom:12px"><label style="font-size:.72rem;color:rgba(255,255,255,.40);text-transform:uppercase">Motivo</label><input id="swapReason" placeholder="Ej: Vibracion excesiva" style="width:100%;height:36px;background:rgba(255,255,255,.06);border:1px solid rgba(255,255,255,.10);border-radius:8px;color:rgba(255,255,255,.80);padding:0 10px;font-size:.84rem"></div>
-        <div style="display:flex;gap:8px;justify-content:flex-end;margin-top:16px">
-            <button onclick="closeDialog('swapModal')" style="height:34px;padding:0 14px;background:rgba(255,255,255,.10);border:none;border-radius:8px;color:rgba(255,255,255,.70);cursor:pointer">Cancelar</button>
-            <button onclick="executeSwap()" style="height:34px;padding:0 14px;background:#FF9F0A;border:none;border-radius:8px;color:#000;font-weight:600;cursor:pointer"><i class="fas fa-exchange-alt"></i> Ejecutar Swap</button>
+    <dialog id="swapModal" class="modal" style="max-width:760px;width:94vw;background:#1C1C1E;border:1px solid rgba(255,255,255,.10);border-radius:16px;padding:0;color:#fff">
+        <div style="padding:20px 24px 14px;border-bottom:1px solid rgba(255,255,255,.08);display:flex;align-items:center;justify-content:space-between">
+            <h3 style="margin:0;font-size:1.05rem;color:rgba(255,255,255,.92)"><i class="fas fa-exchange-alt" style="color:#FF9F0A;margin-right:8px"></i>Cambio de activo rotativo</h3>
+            <button onclick="closeDialog('swapModal')" style="background:none;border:none;color:rgba(255,255,255,.40);cursor:pointer;font-size:1.1rem"><i class="fas fa-times"></i></button>
+        </div>
+        <div style="padding:16px 24px 24px;max-height:72vh;overflow-y:auto">
+            <input type="hidden" id="swapRemoveId">
+            <div style="margin-bottom:14px;padding:10px 12px;background:rgba(255,159,10,.08);border:1px solid rgba(255,159,10,.30);border-radius:8px">
+                <label style="font-size:.72rem;color:#FFB340;text-transform:uppercase;font-weight:700">Se retira</label>
+                <div id="swapRemoveLabel" style="color:rgba(255,255,255,.85);font-size:.88rem;padding-top:4px"></div>
+            </div>
+
+            <label style="font-size:.72rem;color:rgba(255,255,255,.40);text-transform:uppercase;font-weight:700">Reemplazo a instalar</label>
+            <div id="swapCandidates" style="margin:8px 0 16px">
+                <p style="color:rgba(255,255,255,.35);font-size:.84rem;padding:12px 0"><i class="fas fa-spinner fa-spin"></i> Buscando activos disponibles...</p>
+            </div>
+
+            <div style="border-top:1px solid rgba(255,255,255,.08);padding-top:14px">
+                <label style="font-size:.72rem;color:rgba(255,255,255,.40);text-transform:uppercase;font-weight:700">A donde va el activo retirado</label>
+                <div id="swapDestination" style="display:flex;flex-wrap:wrap;gap:8px;margin:8px 0 12px">
+                    <label class="dest-opt"><input type="radio" name="swapDest" value="TALLER" checked onchange="onSwapDestChange()"> Taller interno</label>
+                    <label class="dest-opt"><input type="radio" name="swapDest" value="PROVEEDOR" onchange="onSwapDestChange()"> Proveedor externo</label>
+                    <label class="dest-opt"><input type="radio" name="swapDest" value="BAJA" onchange="onSwapDestChange()"> Baja definitiva</label>
+                    <label class="dest-opt"><input type="radio" name="swapDest" value="STANDBY" onchange="onSwapDestChange()"> Queda operativo (stand-by)</label>
+                </div>
+                <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px">
+                    <div id="swapProviderBox" style="display:none">
+                        <label style="font-size:.72rem;color:rgba(255,255,255,.40);text-transform:uppercase">Proveedor</label>
+                        <select id="swapProviderId" class="rot-input"></select>
+                    </div>
+                    <div id="swapReturnBox">
+                        <label style="font-size:.72rem;color:rgba(255,255,255,.40);text-transform:uppercase">Retorno estimado</label>
+                        <input id="swapExpectedReturn" type="date" class="rot-input">
+                    </div>
+                    <div>
+                        <label style="font-size:.72rem;color:rgba(255,255,255,.40);text-transform:uppercase">Fecha del cambio</label>
+                        <input id="swapDate" type="date" class="rot-input">
+                    </div>
+                    <div>
+                        <label style="font-size:.72rem;color:rgba(255,255,255,.40);text-transform:uppercase">Motivo de la falla</label>
+                        <input id="swapReason" placeholder="Ej: Rodamiento lado acople trabado" class="rot-input">
+                    </div>
+                </div>
+            </div>
+            <div style="display:flex;gap:8px;justify-content:flex-end;margin-top:18px">
+                <button onclick="closeDialog('swapModal')" style="height:34px;padding:0 14px;background:rgba(255,255,255,.10);border:none;border-radius:8px;color:rgba(255,255,255,.70);cursor:pointer">Cancelar</button>
+                <button onclick="executeSwap()" style="height:34px;padding:0 14px;background:#FF9F0A;border:none;border-radius:8px;color:#000;font-weight:600;cursor:pointer"><i class="fas fa-exchange-alt"></i> Ejecutar cambio</button>
+            </div>
+        </div>
+    </dialog>
+
+    <!-- Retirar Modal -->
+    <dialog id="removeModal" class="modal" style="max-width:560px;width:94vw;background:#1C1C1E;border:1px solid rgba(255,255,255,.10);border-radius:16px;padding:0;color:#fff">
+        <div style="padding:20px 24px 14px;border-bottom:1px solid rgba(255,255,255,.08);display:flex;align-items:center;justify-content:space-between">
+            <h3 style="margin:0;font-size:1.05rem;color:rgba(255,255,255,.92)"><i class="fas fa-dolly" style="color:#FF453A;margin-right:8px"></i>Retirar activo del equipo</h3>
+            <button onclick="closeDialog('removeModal')" style="background:none;border:none;color:rgba(255,255,255,.40);cursor:pointer;font-size:1.1rem"><i class="fas fa-times"></i></button>
+        </div>
+        <div style="padding:16px 24px 24px">
+            <input type="hidden" id="removeAssetId">
+            <div id="removeLabel" style="color:rgba(255,255,255,.85);font-size:.88rem;margin-bottom:14px;padding:10px 12px;background:rgba(255,69,58,.08);border:1px solid rgba(255,69,58,.25);border-radius:8px"></div>
+
+            <label style="font-size:.72rem;color:rgba(255,255,255,.40);text-transform:uppercase;font-weight:700">Que se hace con el activo</label>
+            <div style="display:flex;flex-wrap:wrap;gap:8px;margin:8px 0 14px">
+                <label class="dest-opt"><input type="radio" name="remDest" value="TALLER" checked onchange="onRemoveDestChange()"> Taller interno</label>
+                <label class="dest-opt"><input type="radio" name="remDest" value="PROVEEDOR" onchange="onRemoveDestChange()"> Proveedor externo</label>
+                <label class="dest-opt"><input type="radio" name="remDest" value="BAJA" onchange="onRemoveDestChange()"> Baja definitiva</label>
+                <label class="dest-opt"><input type="radio" name="remDest" value="STANDBY" onchange="onRemoveDestChange()"> Queda operativo (stand-by)</label>
+            </div>
+            <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px">
+                <div><label style="font-size:.72rem;color:rgba(255,255,255,.40);text-transform:uppercase">Fecha</label><input id="removeDate" type="date" class="rot-input"></div>
+                <div id="removeProviderBox" style="display:none"><label style="font-size:.72rem;color:rgba(255,255,255,.40);text-transform:uppercase">Proveedor</label><select id="removeProviderId" class="rot-input"></select></div>
+                <div id="removeReturnBox"><label style="font-size:.72rem;color:rgba(255,255,255,.40);text-transform:uppercase">Retorno estimado</label><input id="removeExpectedReturn" type="date" class="rot-input"></div>
+                <div style="grid-column:1/-1"><label style="font-size:.72rem;color:rgba(255,255,255,.40);text-transform:uppercase">Motivo de la falla</label><input id="removeReason" placeholder="Ej: Fuga de aceite por reten de salida" class="rot-input"></div>
+                <div style="grid-column:1/-1"><label style="font-size:.72rem;color:rgba(255,255,255,.40);text-transform:uppercase">Comentarios</label><textarea id="removeComments" rows="2" class="rot-input" style="height:auto;padding:8px 10px"></textarea></div>
+            </div>
+            <div id="removeBom" style="margin-top:12px"></div>
+            <div id="removeHint" style="margin-top:12px;font-size:.78rem;color:rgba(255,255,255,.45)"></div>
+            <div style="display:flex;gap:8px;justify-content:flex-end;margin-top:16px">
+                <button onclick="closeDialog('removeModal')" style="height:34px;padding:0 14px;background:rgba(255,255,255,.10);border:none;border-radius:8px;color:rgba(255,255,255,.70);cursor:pointer">Cancelar</button>
+                <button onclick="executeRemove()" style="height:34px;padding:0 14px;background:#FF453A;border:none;border-radius:8px;color:#fff;font-weight:600;cursor:pointer"><i class="fas fa-dolly"></i> Confirmar retiro</button>
+            </div>
+        </div>
+    </dialog>
+
+    <!-- Retorno de taller / proveedor -->
+    <dialog id="returnModal" class="modal" style="max-width:520px;width:94vw;background:#1C1C1E;border:1px solid rgba(255,255,255,.10);border-radius:16px;padding:0;color:#fff">
+        <div style="padding:20px 24px 14px;border-bottom:1px solid rgba(255,255,255,.08);display:flex;align-items:center;justify-content:space-between">
+            <h3 style="margin:0;font-size:1.05rem;color:rgba(255,255,255,.92)"><i class="fas fa-truck-loading" style="color:#30D158;margin-right:8px"></i>Recepcion del activo</h3>
+            <button onclick="closeDialog('returnModal')" style="background:none;border:none;color:rgba(255,255,255,.40);cursor:pointer;font-size:1.1rem"><i class="fas fa-times"></i></button>
+        </div>
+        <div style="padding:16px 24px 24px">
+            <input type="hidden" id="returnAssetId">
+            <div id="returnLabel" style="color:rgba(255,255,255,.85);font-size:.88rem;margin-bottom:14px;padding:10px 12px;background:rgba(48,209,88,.08);border:1px solid rgba(48,209,88,.25);border-radius:8px"></div>
+            <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px">
+                <div><label style="font-size:.72rem;color:rgba(255,255,255,.40);text-transform:uppercase">Fecha de recepcion</label><input id="returnDate" type="date" class="rot-input"></div>
+                <div><label style="font-size:.72rem;color:rgba(255,255,255,.40);text-transform:uppercase">Resultado</label>
+                    <select id="returnStatus" class="rot-input">
+                        <option value="Disponible">Reparado — queda Disponible</option>
+                        <option value="Baja">Irreparable — dar de Baja</option>
+                    </select>
+                </div>
+                <div style="grid-column:1/-1"><label style="font-size:.72rem;color:rgba(255,255,255,.40);text-transform:uppercase">Trabajo realizado</label><input id="returnWork" placeholder="Ej: Cambio de rodamientos 6308 y retenes" class="rot-input"></div>
+            </div>
+            <div style="display:flex;gap:8px;justify-content:flex-end;margin-top:16px">
+                <button onclick="closeDialog('returnModal')" style="height:34px;padding:0 14px;background:rgba(255,255,255,.10);border:none;border-radius:8px;color:rgba(255,255,255,.70);cursor:pointer">Cancelar</button>
+                <button onclick="executeReturn()" style="height:34px;padding:0 14px;background:#30D158;border:none;border-radius:8px;color:#000;font-weight:600;cursor:pointer"><i class="fas fa-check"></i> Registrar recepcion</button>
+            </div>
         </div>
     </dialog>
 
@@ -287,19 +404,30 @@
         .tl-item{display:flex;gap:12px;padding:10px 0;border-bottom:1px solid rgba(255,255,255,.05)}
         .tl-item:last-child{border:none}
         .tl-dot{width:10px;height:10px;border-radius:50%;margin-top:5px;flex-shrink:0}
-        .tl-dot-CREACION,.tl-dot-LUBRICACION{background:#30D158}
+        .tl-dot-CREACION{background:#30D158}
+        .tl-dot-LUBRICACION{background:#FFD60A}
         .tl-dot-INSTALACION{background:#0A84FF}
         .tl-dot-RETIRO{background:#FF9F0A}
-        .tl-dot-ACTUALIZACION,.tl-dot-MOVIMIENTO{background:#5AC8FA}
-        .tl-dot-CAMBIO_ESTADO,.tl-dot-OT{background:#BF5AF2}
+        .tl-dot-ACTUALIZACION,.tl-dot-MOVIMIENTO{background:#BF5AF2}
+        .tl-dot-CAMBIO_ESTADO,.tl-dot-OT{background:#0A84FF}
+        .tl-dot-AVISO{background:#FF9F0A}
+        .tl-dot-ELECTRICA{background:#64D2FF}
+        .tl-dot-INSPECCION{background:#30D158}
+        .tl-dot-MONITOREO{background:#FF453A}
         .tl-dot-FICHA_AGREGADA{background:#FFD60A}
         .tl-body{flex:1;min-width:0}
         .tl-type{font-size:.78rem;font-weight:700;text-transform:uppercase;letter-spacing:.3px}
         .tl-type-CREACION{color:#30D158}
         .tl-type-INSTALACION{color:#0A84FF}
         .tl-type-RETIRO{color:#FF9F0A}
-        .tl-type-ACTUALIZACION{color:#5AC8FA}
+        .tl-type-ACTUALIZACION,.tl-type-MOVIMIENTO{color:#BF5AF2}
         .tl-type-CAMBIO_ESTADO{color:#BF5AF2}
+        .tl-type-OT{color:#0A84FF}
+        .tl-type-AVISO{color:#FF9F0A}
+        .tl-type-ELECTRICA{color:#64D2FF}
+        .tl-type-LUBRICACION{color:#FFD60A}
+        .tl-type-INSPECCION{color:#30D158}
+        .tl-type-MONITOREO{color:#FF453A}
         .tl-type-FICHA_AGREGADA{color:#FFD60A}
         .tl-date{font-size:.75rem;color:rgba(255,255,255,.40);margin-left:8px;font-weight:400}
         .tl-location{font-size:.80rem;color:rgba(255,255,255,.55);margin-top:3px}

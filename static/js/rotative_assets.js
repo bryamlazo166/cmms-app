@@ -37,25 +37,41 @@ function setStatusPill(status) {
     const s = status || 'Disponible';
     if (s === 'Instalado') return '<span class="pill status-instalado">Instalado</span>';
     if (s === 'En Taller') return '<span class="pill status-taller">En Taller</span>';
+    if (s === 'En Proveedor') return '<span class="pill status-proveedor">En Proveedor</span>';
     if (s === 'Baja') return '<span class="pill status-baja">Baja</span>';
     return '<span class="pill status-disponible">Disponible</span>';
 }
 
+function escHtml(v) {
+    return String(v == null ? '' : v)
+        .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
+        .replace(/"/g, '&quot;').replace(/'/g, '&#39;');
+}
+
+// Un activo fuera de servicio no tiene ubicacion en planta: lo util ahi es
+// saber donde esta fisicamente (taller, proveedor) y desde cuando.
 function locationText(a) {
+    if (a.status === 'En Taller' || a.status === 'En Proveedor') {
+        const where = a.status === 'En Proveedor'
+            ? (a.service_provider_name || 'Proveedor externo')
+            : 'Taller interno';
+        const since = a.out_since ? ` desde ${a.out_since}` : '';
+        const back = a.expected_return_date
+            ? ` <span style="color:#9ab0cb">· vuelve ${a.expected_return_date}</span>` : '';
+        return `<span style="color:#ffd76f">${escHtml(where)}${since}</span>${back}`;
+    }
     if (!a.area_name && !a.line_name && !a.equipment_name) return '-';
     return `${a.area_name || '-'} / ${a.line_name || '-'} / ${a.equipment_name || '-'}`;
 }
 
 function renderKPIs(rows) {
-    const total = rows.length;
-    const installed = rows.filter(a => a.status === 'Instalado').length;
-    const available = rows.filter(a => a.status === 'Disponible').length;
-    const out = rows.filter(a => a.status === 'En Taller' || a.status === 'Baja').length;
-
-    rQ('kpiTotal').textContent = total;
-    rQ('kpiInstalled').textContent = installed;
-    rQ('kpiAvailable').textContent = available;
-    rQ('kpiOut').textContent = out;
+    const count = s => rows.filter(a => a.status === s).length;
+    rQ('kpiTotal').textContent = rows.length;
+    rQ('kpiInstalled').textContent = count('Instalado');
+    rQ('kpiAvailable').textContent = count('Disponible');
+    rQ('kpiWorkshop').textContent = count('En Taller');
+    rQ('kpiProvider').textContent = count('En Proveedor');
+    rQ('kpiOut').textContent = count('Baja');
 }
 
 function renderAssets(rows) {
@@ -74,14 +90,19 @@ function renderAssets(rows) {
 
     tbody.innerHTML = filtered.map(a => {
         const marcaModel = `${a.brand || '-'} / ${a.model || '-'}`;
+        const installed = a.status === 'Instalado';
+        const outForService = a.status === 'En Taller' || a.status === 'En Proveedor';
+        // Cada estado admite acciones distintas: un activo instalado se cambia
+        // o se retira; uno en taller se recibe de vuelta; uno disponible se instala.
         const actions = `
             <div class="actions-row">
+                ${installed ? `<button class="btn-micro" style="background:rgba(255,159,10,.15);color:#FFB340;border-color:#FF9F0A" onclick="openSwapModal(${a.id})"><i class="fas fa-exchange-alt"></i> Cambiar</button>` : ''}
+                ${installed ? `<button class="btn-micro" style="background:rgba(255,69,58,.12);color:#FF8078" onclick="openRemoveModal(${a.id})">Retirar</button>` : ''}
+                ${outForService ? `<button class="btn-micro" style="background:rgba(48,209,88,.15);color:#5cd870;border-color:#30D158" onclick="openReturnModal(${a.id})"><i class="fas fa-truck-loading"></i> Recibir</button>` : ''}
+                ${!installed && a.status !== 'Baja' ? `<button class="btn-micro" onclick="openInstallModal(${a.id})">Instalar</button>` : ''}
                 <button class="btn-micro" onclick="openAssetModal(${a.id})">Editar</button>
                 <button class="btn-micro" onclick="openSpecModal(${a.id})">Ficha</button>
-                <button class="btn-micro" onclick="openInstallModal(${a.id})">Instalar</button>
-                <button class="btn-micro" onclick="removeAssetFromSite(${a.id})">Retirar</button>
                 <button class="btn-micro" style="background:rgba(48,209,88,.15);color:#5cd870" onclick="openBomModal(${a.id})">Repuestos</button>
-                ${a.status === 'Instalado' ? `<button class="btn-micro" style="background:rgba(255,159,10,.15);color:#FFB340" onclick="openSwapModal(${a.id})">Swap</button>` : ''}
                 <button class="btn-micro" onclick="showAssetHistory(${a.id})">Historial</button>
                 <button class="btn-micro" onclick="toggleAsset(${a.id})">Activo/Inactivo</button>
             </div>
@@ -363,14 +384,162 @@ async function saveInstall(e) {
     await reloadRotative();
 }
 
-async function removeAssetFromSite(id) {
-    if (!confirm('Deseas retirar este activo y dejarlo disponible?')) return;
-    await rFetch(`/api/rotative-assets/${id}/remove`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ event_date: todayISO(), new_status: 'Disponible' })
-    });
-    await reloadRotative();
+// ── Retiro con destino (taller / proveedor / baja / stand-by) ───────────────
+// Un rotativo casi nunca sale "y ya": sale porque fallo y va al taller, se
+// manda a un tercero, o se descarta. El destino decide su estado y si sigue
+// contando como repuesto disponible.
+
+let _providersCache = null;
+
+async function loadProvidersInto(selectId) {
+    const sel = rQ(selectId);
+    if (!sel) return;
+    if (!_providersCache) {
+        try {
+            const rows = await rFetch('/api/providers');
+            _providersCache = (Array.isArray(rows) ? rows : []).filter(p => p.is_active !== false);
+        } catch (e) { _providersCache = []; }
+    }
+    sel.innerHTML = '<option value="">Seleccione proveedor</option>' +
+        _providersCache.map(p => `<option value="${p.id}">${escHtml(p.name)}${p.specialty ? ' — ' + escHtml(p.specialty) : ''}</option>`).join('');
+}
+
+const DEST_HINTS = {
+    TALLER: 'Queda "En Taller". Sigue siendo tuyo y volvera al pool de repuestos cuando lo recibas reparado.',
+    PROVEEDOR: 'Queda "En Proveedor". Registra a quien se envio para poder reclamar el servicio.',
+    BAJA: 'Queda "Baja". No volvera a ofrecerse como reemplazo en ningun cambio.',
+    STANDBY: 'Queda "Disponible": sale operativo y puede instalarse en otro equipo de inmediato.',
+};
+
+function _syncDestUI(dest, providerBoxId, returnBoxId, hintId) {
+    const provBox = rQ(providerBoxId);
+    const retBox = rQ(returnBoxId);
+    if (provBox) provBox.style.display = dest === 'PROVEEDOR' ? '' : 'none';
+    if (retBox) retBox.style.display = (dest === 'TALLER' || dest === 'PROVEEDOR') ? '' : 'none';
+    const hint = hintId ? rQ(hintId) : null;
+    if (hint) hint.textContent = DEST_HINTS[dest] || '';
+}
+
+function onRemoveDestChange() {
+    const dest = document.querySelector('input[name="remDest"]:checked').value;
+    _syncDestUI(dest, 'removeProviderBox', 'removeReturnBox', 'removeHint');
+}
+
+function onSwapDestChange() {
+    const dest = document.querySelector('input[name="swapDest"]:checked').value;
+    _syncDestUI(dest, 'swapProviderBox', 'swapReturnBox', null);
+}
+
+// Si el activo se va al taller, lo primero que se pregunta el tecnico es si
+// tiene los repuestos internos (rodamientos, retenes) para repararlo ya.
+async function renderBomSummary(assetId, containerId) {
+    const box = rQ(containerId);
+    if (!box) return;
+    box.innerHTML = '';
+    try {
+        const items = await rFetch(`/api/rotative-assets/${assetId}/bom`);
+        if (!items.length) {
+            box.innerHTML = '<div style="font-size:.76rem;color:rgba(255,255,255,.35)">Sin repuestos cargados para este activo. Agregalos desde el boton "Repuestos".</div>';
+            return;
+        }
+        const conStock = items.filter(i => i.is_linked && (i.item_stock || 0) >= (i.quantity || 1));
+        box.innerHTML =
+            `<div style="font-size:.72rem;color:rgba(255,255,255,.40);text-transform:uppercase;font-weight:700;margin-bottom:5px">
+                Repuestos del activo — ${conStock.length}/${items.length} con stock suficiente
+            </div>` +
+            items.map(i => {
+                const stock = i.item_stock || 0;
+                const ok = i.is_linked && stock >= (i.quantity || 1);
+                const color = !i.is_linked ? 'rgba(255,255,255,.35)' : (ok ? '#5cd870' : '#FF8078');
+                const stockTxt = i.is_linked ? `stock ${stock} ${escHtml(i.item_unit || '')}` : 'sin vincular al almacen';
+                return `<div style="font-size:.78rem;color:rgba(255,255,255,.65);padding:2px 0">
+                    <i class="fas fa-${ok ? 'check' : 'exclamation'}-circle" style="color:${color};margin-right:5px"></i>
+                    ${escHtml(i.item_name || i.free_text || '-')} <span style="color:rgba(255,255,255,.35)">x${i.quantity}</span>
+                    <span style="color:${color};font-size:.74rem;margin-left:6px">${stockTxt}</span>
+                </div>`;
+            }).join('');
+    } catch (e) {
+        box.innerHTML = '';
+    }
+}
+
+async function openRemoveModal(id) {
+    const a = rotState.assets.find(x => x.id === id);
+    if (!a) return;
+    rQ('removeAssetId').value = id;
+    rQ('removeLabel').innerHTML =
+        `<b>${escHtml(a.code)}</b> ${escHtml(a.name)}<br>` +
+        `<span style="color:rgba(255,255,255,.55);font-size:.80rem">Instalado en: ${locationText(a)}</span>`;
+    rQ('removeDate').value = todayISO();
+    rQ('removeExpectedReturn').value = '';
+    rQ('removeReason').value = '';
+    rQ('removeComments').value = '';
+    document.querySelector('input[name="remDest"][value="TALLER"]').checked = true;
+    await loadProvidersInto('removeProviderId');
+    onRemoveDestChange();
+    rQ('removeModal').showModal();
+    renderBomSummary(id, 'removeBom');
+}
+
+async function executeRemove() {
+    const id = rQ('removeAssetId').value;
+    const dest = document.querySelector('input[name="remDest"]:checked').value;
+    if (dest === 'PROVEEDOR' && !rQ('removeProviderId').value) {
+        alert('Selecciona el proveedor externo al que se envia el activo.');
+        return;
+    }
+    if (dest === 'BAJA' && !confirm('La baja es definitiva: el activo dejara de ofrecerse como reemplazo. Continuar?')) return;
+
+    try {
+        await rFetch(`/api/rotative-assets/${id}/remove`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                event_date: rQ('removeDate').value || todayISO(),
+                destination: dest,
+                provider_id: rNum(rQ('removeProviderId').value),
+                expected_return_date: rQ('removeExpectedReturn').value || null,
+                reason: rQ('removeReason').value || null,
+                comments: rQ('removeComments').value || null,
+            })
+        });
+        closeDialog('removeModal');
+        await reloadRotative();
+    } catch (e) { alert('Error: ' + e.message); }
+}
+
+async function openReturnModal(id) {
+    const a = rotState.assets.find(x => x.id === id);
+    if (!a) return;
+    rQ('returnAssetId').value = id;
+    const where = a.status === 'En Proveedor'
+        ? (a.service_provider_name || 'proveedor externo') : 'taller interno';
+    rQ('returnLabel').innerHTML =
+        `<b>${escHtml(a.code)}</b> ${escHtml(a.name)}<br>` +
+        `<span style="color:rgba(255,255,255,.55);font-size:.80rem">En ${escHtml(where)}` +
+        `${a.out_since ? ' desde ' + a.out_since : ''}` +
+        `${a.out_reason ? ' · Motivo: ' + escHtml(a.out_reason) : ''}</span>`;
+    rQ('returnDate').value = todayISO();
+    rQ('returnStatus').value = 'Disponible';
+    rQ('returnWork').value = '';
+    rQ('returnModal').showModal();
+}
+
+async function executeReturn() {
+    const id = rQ('returnAssetId').value;
+    try {
+        await rFetch(`/api/rotative-assets/${id}/return-to-service`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                event_date: rQ('returnDate').value || todayISO(),
+                new_status: rQ('returnStatus').value,
+                work_done: rQ('returnWork').value || null,
+            })
+        });
+        closeDialog('returnModal');
+        await reloadRotative();
+    } catch (e) { alert('Error: ' + e.message); }
 }
 
 async function toggleAsset(id) {
@@ -380,7 +549,10 @@ async function toggleAsset(id) {
 }
 
 // Estado del historial del rotativo (para filtros y toggle vista)
-let _rotHistoryState = { events: [], bom: [], counts: {}, view: 'timeline', category: 'ALL' };
+// showEnv: incluir los eventos del equipo donde esta montado (chumaceras,
+// fajas, rondas de inspeccion). Apagado por defecto — son del sistema de
+// transmision, no del rotativo, y tapaban su historial real.
+let _rotHistoryState = { events: [], bom: [], counts: {}, view: 'timeline', category: 'ALL', showEnv: false };
 
 async function showAssetHistory(id) {
     const asset = rotState.assets.find(a => a.id === id);
@@ -397,6 +569,7 @@ async function showAssetHistory(id) {
         _rotHistoryState.counts = data.counts || {};
         _rotHistoryState.view = 'timeline';
         _rotHistoryState.category = 'ALL';
+        _rotHistoryState.showEnv = false;
         renderRotHistoryControls();
         renderRotHistory();
     } catch (e) {
@@ -405,12 +578,23 @@ async function showAssetHistory(id) {
     document.getElementById('historyModal').showModal();
 }
 
+function _rotVisibleEvents() {
+    let events = _rotHistoryState.events;
+    if (!_rotHistoryState.showEnv) {
+        events = events.filter(e => e.scope !== 'EQUIPO');
+    }
+    return events;
+}
+
 function renderRotHistoryControls() {
     const container = document.getElementById('historyTimeline');
     const c = _rotHistoryState.counts;
-    const total = _rotHistoryState.events.length;
+    const visible = _rotVisibleEvents();
+    const total = visible.length;
     const catChip = (key, label, color) => {
-        const count = (key === 'ALL') ? total : (c[key.toLowerCase()] || 0);
+        const count = (key === 'ALL')
+            ? total
+            : visible.filter(e => e.category === key).length;
         const active = _rotHistoryState.category === key;
         return `<button onclick="setRotHistoryCategory('${key}')" style="background:${active ? color : 'rgba(255,255,255,.06)'};color:${active ? '#fff' : 'rgba(255,255,255,.75)'};border:1px solid ${active ? color : 'rgba(255,255,255,.12)'};padding:4px 10px;border-radius:16px;font-size:.78rem;cursor:pointer;margin-right:6px;margin-bottom:6px;">${label} <span style="background:rgba(0,0,0,.25);padding:0 6px;border-radius:8px;margin-left:4px;font-weight:700;">${count}</span></button>`;
     };
@@ -421,10 +605,15 @@ function renderRotHistoryControls() {
             ${catChip('MOVIMIENTO', 'Movimientos', '#BF5AF2')}
             ${catChip('OT', 'OTs', '#0A84FF')}
             ${catChip('AVISO', 'Avisos', '#FF9F0A')}
+            ${catChip('ELECTRICA', 'Pruebas eléctricas', '#64D2FF')}
             ${catChip('LUBRICACION', 'Lubricación', '#FFD60A')}
             ${catChip('INSPECCION', 'Inspección', '#30D158')}
             ${catChip('MONITOREO', 'Monitoreo', '#FF453A')}
         </div>
+        <label style="display:flex;align-items:center;gap:6px;margin-top:8px;font-size:.76rem;color:rgba(255,255,255,.55);cursor:pointer;">
+            <input type="checkbox" ${_rotHistoryState.showEnv ? 'checked' : ''} onchange="toggleRotHistoryEnv(this.checked)">
+            Incluir mantenimiento del equipo donde está montado (chumaceras, fajas, rondas de inspección) — ${c.entorno || 0} evento(s)
+        </label>
         <div style="margin-top:8px;display:flex;gap:6px;align-items:center;">
             <span style="font-size:.75rem;color:rgba(255,255,255,.45);margin-right:4px;">Vista:</span>
             <button onclick="setRotHistoryView('timeline')" style="background:${_rotHistoryState.view === 'timeline' ? '#5AC8FA' : 'rgba(255,255,255,.06)'};color:${_rotHistoryState.view === 'timeline' ? '#000' : 'rgba(255,255,255,.75)'};border:1px solid rgba(255,255,255,.12);padding:4px 10px;border-radius:6px;font-size:.78rem;cursor:pointer;font-weight:600;"><i class="fas fa-stream"></i> Línea de tiempo</button>
@@ -446,10 +635,16 @@ function setRotHistoryView(view) {
     renderRotHistory();
 }
 
+function toggleRotHistoryEnv(checked) {
+    _rotHistoryState.showEnv = !!checked;
+    renderRotHistoryControls();
+    renderRotHistory();
+}
+
 function renderRotHistory() {
     const body = document.getElementById('rotHistoryBody');
     if (!body) return;
-    let events = _rotHistoryState.events;
+    let events = _rotVisibleEvents();
     if (_rotHistoryState.category !== 'ALL') {
         events = events.filter(e => e.category === _rotHistoryState.category);
     }
@@ -466,8 +661,8 @@ function renderRotHistory() {
         // Agrupado por categoría
         const groups = {};
         events.forEach(e => { (groups[e.category] = groups[e.category] || []).push(e); });
-        const catOrder = ['OT', 'AVISO', 'MOVIMIENTO', 'LUBRICACION', 'INSPECCION', 'MONITOREO'];
-        const catColors = { OT: '#0A84FF', AVISO: '#FF9F0A', MOVIMIENTO: '#BF5AF2', LUBRICACION: '#FFD60A', INSPECCION: '#30D158', MONITOREO: '#FF453A' };
+        const catOrder = ['OT', 'AVISO', 'MOVIMIENTO', 'ELECTRICA', 'LUBRICACION', 'INSPECCION', 'MONITOREO'];
+        const catColors = { OT: '#0A84FF', AVISO: '#FF9F0A', MOVIMIENTO: '#BF5AF2', ELECTRICA: '#64D2FF', LUBRICACION: '#FFD60A', INSPECCION: '#30D158', MONITOREO: '#FF453A' };
         body.innerHTML = catOrder.filter(c => groups[c]).map(cat => `
             <div style="margin-bottom:16px;">
                 <h4 style="margin:0 0 8px 0;font-size:.9rem;color:${catColors[cat]};padding-bottom:4px;border-bottom:1px solid ${catColors[cat]}44;"><i class="fas fa-circle" style="font-size:.6rem;vertical-align:middle;margin-right:6px;"></i>${cat} <span style="color:rgba(255,255,255,.45);font-weight:400;font-size:.8rem;">(${groups[cat].length})</span></h4>
@@ -477,13 +672,16 @@ function renderRotHistory() {
     renderRotHistoryBom();
 }
 
+const ENV_BADGE = '<span style="font-size:.66rem;padding:1px 6px;border-radius:8px;background:rgba(255,255,255,.08);color:rgba(255,255,255,.50);margin-left:6px;border:1px solid rgba(255,255,255,.12)">DEL EQUIPO</span>';
+
 function _rotEventTimelineHTML(e) {
     const dotClass = `tl-dot-${e.category}`;
     const typeClass = `tl-type-${e.category}`;
-    return `<div class="tl-item">
+    const envBadge = e.scope === 'EQUIPO' ? ENV_BADGE : '';
+    return `<div class="tl-item"${e.scope === 'EQUIPO' ? ' style="opacity:.72"' : ''}>
         <div class="tl-dot ${dotClass}"></div>
         <div class="tl-body">
-            <div><span class="tl-type ${typeClass}">${e.category}${e.code ? ' · ' + e.code : ''}${e.type ? ' — ' + e.type : ''}</span><span class="tl-date">${e.date || '-'}</span></div>
+            <div><span class="tl-type ${typeClass}">${e.category}${e.code ? ' · ' + e.code : ''}${e.type ? ' — ' + e.type : ''}</span>${envBadge}<span class="tl-date">${e.date || '-'}</span></div>
             ${e.location ? `<div class="tl-location"><i class="fas fa-map-marker-alt" style="margin-right:4px"></i>${e.location}</div>` : ''}
             ${e.description ? `<div class="tl-comment">${e.description}</div>` : ''}
             ${e.failure_mode ? `<div style="margin-top:3px;font-size:.75rem;color:#FF9F0A;"><i class="fas fa-exclamation-circle"></i> ${e.failure_mode}</div>` : ''}
@@ -493,9 +691,9 @@ function _rotEventTimelineHTML(e) {
 }
 
 function _rotEventCardHTML(e) {
-    return `<div style="padding:8px 12px;margin-bottom:6px;background:rgba(255,255,255,.03);border-left:3px solid rgba(255,255,255,.15);border-radius:4px;font-size:.85rem;">
+    return `<div style="padding:8px 12px;margin-bottom:6px;background:rgba(255,255,255,.03);border-left:3px solid rgba(255,255,255,.15);border-radius:4px;font-size:.85rem;${e.scope === 'EQUIPO' ? 'opacity:.72;' : ''}">
         <div style="display:flex;justify-content:space-between;gap:12px;color:rgba(255,255,255,.85);">
-            <div><b>${e.code || e.type || '-'}</b> ${e.type && e.code ? `<span style="color:rgba(255,255,255,.5);">· ${e.type}</span>` : ''}</div>
+            <div><b>${e.code || e.type || '-'}</b> ${e.type && e.code ? `<span style="color:rgba(255,255,255,.5);">· ${e.type}</span>` : ''}${e.scope === 'EQUIPO' ? ENV_BADGE : ''}</div>
             <div style="color:rgba(255,255,255,.45);font-size:.78rem;">${e.date || '-'}</div>
         </div>
         ${e.description ? `<div style="color:rgba(255,255,255,.65);margin-top:3px;font-size:.82rem;">${e.description}</div>` : ''}
@@ -521,6 +719,7 @@ function renderRotHistoryBom() {
 
 window.setRotHistoryCategory = setRotHistoryCategory;
 window.setRotHistoryView = setRotHistoryView;
+window.toggleRotHistoryEnv = toggleRotHistoryEnv;
 
 // ── BOM (Bill of Materials) ──────────────────────────────────────────────────
 
@@ -619,42 +818,125 @@ async function removeBomItem(bomId) {
     await loadBomItems(assetId);
 }
 
-// ── Swap ─────────────────────────────────────────────────────────────────────
+// ── Cambio de activo (swap) ─────────────────────────────────────────────────
+// Los candidatos se piden al servidor, NO se filtran de rotState.assets: la
+// tabla de pantalla ya viene filtrada por area/linea/equipo y un repuesto
+// disponible no tiene ubicacion, asi que desaparecia justo cuando el usuario
+// filtraba por el equipo que fallo — y la lista salia vacia.
+
+function _candidateCardHTML(c, selectable) {
+    const reasons = (c.reasons || []).slice(0, 4).map(escHtml).join(' · ');
+    const warns = (c.warnings || []).slice(0, 3).map(escHtml).join(' · ');
+    const specs = [c.brand, c.model].filter(Boolean).map(escHtml).join(' ');
+    const input = selectable
+        ? `<input type="radio" name="swapCandidate" value="${c.id}">`
+        : '';
+    const extra = !selectable
+        ? `<div class="cand-reason">${escHtml(c.status)}${c.service_provider_name ? ' — ' + escHtml(c.service_provider_name) : ''}` +
+          `${c.out_since ? ' · desde ' + escHtml(c.out_since) : ''}` +
+          `${c.expected_return_date ? ' · retorno estimado ' + escHtml(c.expected_return_date) : ''}</div>`
+        : '';
+    return `<label class="cand-card" style="${selectable ? '' : 'cursor:default;opacity:.75'}">
+        <div class="cand-head">
+            ${input}
+            <span class="cand-code">${escHtml(c.code)}</span>
+            <span class="cand-name">${escHtml(c.name)}</span>
+            <span class="match-badge match-${c.match_level}">${c.match_level === 'ALTA' ? 'Compatible' : c.match_level === 'MEDIA' ? 'Revisar' : 'Poco compatible'}</span>
+            <span style="margin-left:auto;font-size:.72rem;color:rgba(255,255,255,.35)">${escHtml(c.category || 'sin categoria')}${specs ? ' · ' + specs : ''}</span>
+        </div>
+        ${reasons ? `<div class="cand-reason"><i class="fas fa-check" style="color:#30D158;margin-right:4px"></i>${reasons}</div>` : ''}
+        ${warns ? `<div class="cand-warn"><i class="fas fa-exclamation-triangle" style="margin-right:4px"></i>${warns}</div>` : ''}
+        ${extra}
+    </label>`;
+}
 
 async function openSwapModal(assetId) {
     const asset = rotState.assets.find(a => a.id === assetId);
     if (!asset) return;
-    document.getElementById('swapRemoveId').value = assetId;
-    document.getElementById('swapRemoveLabel').textContent = `${asset.code} ${asset.name} — ${asset.equipment_name || ''}`;
-    document.getElementById('swapReason').value = '';
+    rQ('swapRemoveId').value = assetId;
+    rQ('swapRemoveLabel').innerHTML =
+        `<b>${escHtml(asset.code)}</b> ${escHtml(asset.name)}` +
+        `${asset.category ? ` <span style="color:rgba(255,255,255,.5)">(${escHtml(asset.category)})</span>` : ''}<br>` +
+        `<span style="font-size:.80rem;color:rgba(255,255,255,.55)">${locationText(asset)}</span>`;
+    rQ('swapReason').value = '';
+    rQ('swapDate').value = todayISO();
+    rQ('swapExpectedReturn').value = '';
+    document.querySelector('input[name="swapDest"][value="TALLER"]').checked = true;
 
-    // Load available assets (Disponible status) for replacement
-    const available = rotState.assets.filter(a => a.id !== assetId && a.status === 'Disponible' && a.is_active);
-    const sel = document.getElementById('swapInstallId');
-    sel.innerHTML = '<option value="">Seleccione reemplazo</option>' +
-        available.map(a => `<option value="${a.id}">${a.code} ${a.name} (${a.category || '-'})</option>`).join('');
+    const box = rQ('swapCandidates');
+    box.innerHTML = '<p style="color:rgba(255,255,255,.35);font-size:.84rem;padding:12px 0"><i class="fas fa-spinner fa-spin"></i> Buscando activos disponibles...</p>';
+    rQ('swapModal').showModal();
+    await loadProvidersInto('swapProviderId');
+    onSwapDestChange();
 
-    document.getElementById('swapModal').showModal();
+    try {
+        const data = await rFetch(`/api/rotative-assets/${assetId}/swap-candidates`);
+        const s = data.summary || {};
+        let html = '';
+
+        if (!(data.candidates || []).length) {
+            html += `<div style="padding:12px;border:1px solid rgba(255,159,10,.4);background:rgba(255,159,10,.08);border-radius:8px;color:#FFB340;font-size:.84rem">
+                <b>No hay ningun activo Disponible para instalar.</b><br>
+                <span style="color:rgba(255,255,255,.6)">Retira el que fallo indicando su destino, y cuando llegue el repuesto nuevo dalo de alta e instalalo.</span>
+                <div style="display:flex;gap:8px;margin-top:10px">
+                    <button type="button" onclick="closeDialog('swapModal');openRemoveModal(${assetId})" style="height:30px;padding:0 12px;background:rgba(255,69,58,.15);border:1px solid #FF453A;border-radius:6px;color:#FF8078;font-size:.78rem;cursor:pointer">Solo retirar</button>
+                    <button type="button" onclick="closeDialog('swapModal');openAssetModal()" style="height:30px;padding:0 12px;background:rgba(90,200,250,.15);border:1px solid #5AC8FA;border-radius:6px;color:#5AC8FA;font-size:.78rem;cursor:pointer">Registrar activo nuevo</button>
+                </div>
+            </div>`;
+        } else {
+            const compat = data.candidates.filter(c => c.match_level !== 'BAJA');
+            const rest = data.candidates.filter(c => c.match_level === 'BAJA');
+            html += `<div style="font-size:.78rem;color:rgba(255,255,255,.45);margin-bottom:8px">
+                ${s.disponibles} disponible(s) · ${s.compatibles} del mismo tipo que ${escHtml(asset.category || 'este activo')}
+            </div>`;
+            if (compat.length) {
+                html += compat.map(c => _candidateCardHTML(c, true)).join('');
+            }
+            if (rest.length) {
+                html += `<details style="margin-top:6px"><summary style="cursor:pointer;font-size:.78rem;color:rgba(255,255,255,.45);padding:6px 0">
+                    Ver ${rest.length} activo(s) disponible(s) de otro tipo</summary>
+                    ${rest.map(c => _candidateCardHTML(c, true)).join('')}</details>`;
+            }
+        }
+
+        if ((data.in_service || []).length) {
+            html += `<details style="margin-top:10px"><summary style="cursor:pointer;font-size:.78rem;color:#ffd76f;padding:6px 0">
+                <i class="fas fa-tools"></i> ${data.in_service.length} activo(s) en taller o proveedor — todavia no se pueden instalar</summary>
+                ${data.in_service.map(c => _candidateCardHTML(c, false)).join('')}</details>`;
+        }
+        box.innerHTML = html;
+    } catch (e) {
+        box.innerHTML = `<p style="color:#FF6B61;font-size:.84rem">Error cargando candidatos: ${escHtml(e.message)}</p>`;
+    }
 }
 
 async function executeSwap() {
-    const removeId = document.getElementById('swapRemoveId').value;
-    const installId = document.getElementById('swapInstallId').value;
-    if (!installId) { alert('Seleccione un activo de reemplazo.'); return; }
+    const removeId = rQ('swapRemoveId').value;
+    const picked = document.querySelector('input[name="swapCandidate"]:checked');
+    if (!picked) { alert('Selecciona el activo que va a entrar en su lugar.'); return; }
+
+    const dest = document.querySelector('input[name="swapDest"]:checked').value;
+    if (dest === 'PROVEEDOR' && !rQ('swapProviderId').value) {
+        alert('Selecciona el proveedor externo al que se envia el activo retirado.');
+        return;
+    }
 
     try {
-        await rFetch('/api/rotative-assets/swap', {
+        const res = await rFetch('/api/rotative-assets/swap', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({
                 remove_asset_id: Number(removeId),
-                install_asset_id: Number(installId),
-                old_status: document.getElementById('swapOldStatus').value,
-                reason: document.getElementById('swapReason').value || null,
+                install_asset_id: Number(picked.value),
+                date: rQ('swapDate').value || todayISO(),
+                destination: dest,
+                provider_id: rNum(rQ('swapProviderId').value),
+                expected_return_date: rQ('swapExpectedReturn').value || null,
+                reason: rQ('swapReason').value || null,
             })
         });
         closeDialog('swapModal');
-        alert('Swap realizado correctamente.');
+        alert(res.message || 'Cambio realizado correctamente.');
         await reloadRotative();
     } catch (e) { alert('Error: ' + e.message); }
 }
