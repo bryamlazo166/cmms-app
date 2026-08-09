@@ -1,0 +1,370 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <link rel="icon" type="image/svg+xml" href="/static/favicon.svg">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Cómo se calculan los indicadores - CMMS</title>
+    <!-- CMMS_THEME_INIT -->
+    <script>(function(){try{var t=localStorage.getItem('cmms.theme');if(t=='management'||t=='developer'){document.documentElement.setAttribute('data-theme',t);}}catch(e){}})();</script>
+    <link rel="stylesheet" href="/static/css/style.css?v={{ v }}">
+    <link rel="stylesheet" href="/static/css/sidebar.css?v={{ v }}">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css">
+    <style>
+        :root{
+            --marino:#123255; --naranja:#F5A05A; --naranja-fuerte:#ED7D31;
+            --tinta:#eaf1f8; --tenue:#93aec6; --linea:#25455f; --panel:#152a3d;
+            --bien:#30D158; --regular:#FF9F0A; --mal:#FF453A;
+        }
+        body{background:#0b1825;}
+        .wrap{max-width:1180px;margin:0 auto;padding:16px;}
+        .header{background:linear-gradient(115deg,var(--marino),#0e2439);
+            border:1px solid var(--linea);border-radius:14px;padding:20px 24px;margin-bottom:16px;
+            display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:14px;}
+        .header h1{margin:0;color:#fff;font-size:1.4rem;display:flex;align-items:center;gap:10px;}
+        .header h1 i{color:var(--naranja);}
+        .header .sub{margin:5px 0 0;color:var(--tenue);font-size:.85rem;max-width:70ch;line-height:1.5;}
+        .tools{display:flex;gap:10px;align-items:center;flex-wrap:wrap;}
+        .tools select,.tools input{height:38px;background:#0d1f31;color:var(--tinta);
+            border:1px solid var(--linea);border-radius:8px;padding:6px 12px;font-size:.88rem;}
+        .btn{height:38px;border-radius:8px;padding:0 16px;font-weight:600;cursor:pointer;
+            font-size:.88rem;border:none;display:inline-flex;align-items:center;gap:6px;}
+        .btn.primary{background:var(--naranja-fuerte);color:#fff;}
+        .btn.ghost{background:#1b3348;color:var(--tinta);border:1px solid var(--linea);}
+
+        .ficha{background:var(--panel);border:1px solid var(--linea);border-radius:14px;
+            padding:20px 24px;margin-bottom:14px;}
+        .ficha h2{margin:0 0 4px;color:#fff;font-size:1.08rem;display:flex;align-items:center;gap:10px;flex-wrap:wrap;}
+        .ficha h2 .n{background:var(--naranja-fuerte);color:#fff;font-size:.72rem;font-weight:800;
+            border-radius:6px;padding:3px 8px;letter-spacing:.05em;}
+        .ficha .que{color:var(--tenue);font-size:.85rem;line-height:1.6;margin:8px 0 12px;}
+        .ficha .que b{color:var(--tinta);}
+
+        .formula{background:#0a1b2a;border:1px solid var(--linea);border-left:3px solid var(--naranja-fuerte);
+            border-radius:10px;padding:14px 18px;margin:10px 0;overflow-x:auto;}
+        .formula .f{font-family:ui-monospace,Consolas,monospace;color:var(--naranja);
+            font-size:1.02rem;font-weight:600;white-space:pre;}
+        .formula .sub{font-family:ui-monospace,Consolas,monospace;color:var(--tinta);
+            font-size:.86rem;white-space:pre;margin-top:11px;line-height:1.75;}
+        .formula .sub .num{color:#8ed0ff;font-weight:700;}
+        .formula .sub .cmt{color:#6d90ad;}
+        .formula .res{font-family:ui-monospace,Consolas,monospace;font-size:1.02rem;font-weight:800;
+            color:var(--bien);margin-top:11px;white-space:pre;}
+
+        .nota{background:rgba(255,159,10,.09);border:1px solid rgba(255,159,10,.3);color:#ffcb7d;
+            border-radius:9px;padding:10px 14px;font-size:.82rem;line-height:1.6;margin-top:11px;}
+        .nota.rojo{background:rgba(255,69,58,.09);border-color:rgba(255,69,58,.35);color:#ff9d94;}
+        .nota.verde{background:rgba(48,209,88,.08);border-color:rgba(48,209,88,.3);color:#98e8ac;}
+        .nota b{color:#fff;}
+        .chip{display:inline-block;border-radius:20px;padding:2px 11px;font-size:.68rem;font-weight:800;
+            letter-spacing:.05em;text-transform:uppercase;}
+        .chip.norma{background:rgba(99,166,216,.15);color:#8ed0ff;}
+        .chip.decidido{background:rgba(48,209,88,.14);color:var(--bien);}
+        .chip.abierto{background:rgba(255,159,10,.15);color:var(--regular);}
+
+        table.met{border-collapse:collapse;width:100%;font-size:.83rem;margin-top:10px;}
+        table.met th{text-align:left;font-size:.66rem;text-transform:uppercase;letter-spacing:.07em;
+            color:var(--tenue);padding:7px 9px;border-bottom:2px solid var(--linea);white-space:nowrap;}
+        table.met td{padding:6px 9px;border-bottom:1px solid rgba(255,255,255,.06);color:var(--tinta);}
+        table.met td.num,table.met th.num{text-align:right;font-variant-numeric:tabular-nums;white-space:nowrap;}
+        table.met tr.apagado td{color:#6d90ad;}
+        .twrap{overflow-x:auto;}
+        .hint{color:#6d90ad;font-size:.76rem;line-height:1.6;}
+
+        .indice{background:var(--panel);border:1px solid var(--linea);border-radius:14px;padding:16px 22px;margin-bottom:14px;}
+        .indice a{color:var(--tinta);text-decoration:none;font-size:.86rem;display:block;padding:5px 0;
+            border-bottom:1px solid rgba(255,255,255,.05);}
+        .indice a:hover{color:var(--naranja);}
+        .indice a b{color:var(--naranja);margin-right:10px;font-variant-numeric:tabular-nums;}
+
+        @media print{
+            body{background:#fff!important;}
+            .sidebar,.tools,.btn{display:none!important;}
+            .home-section{margin-left:0!important;}
+            .ficha,.indice{background:#fff!important;border:1px solid #bbb!important;break-inside:avoid;}
+            .ficha h2,.formula .f,.formula .sub,.ficha .que b{color:#111!important;}
+            .formula{background:#f5f7fa!important;}
+            .formula .sub .num{color:#0b4a7a!important;}
+            table.met td{color:#111!important;}
+            @page{size:A4;margin:12mm;}
+        }
+    </style>
+</head>
+<body>
+<nav class="sidebar"><div class="logo-details"><i class="fas fa-industry icon"></i><div class="logo_name">CMMS Pro</div><i class="fas fa-bars" id="btn_toggle"></i></div><ul class="nav-list"></ul></nav>
+<section class="home-section">
+    <div class="wrap">
+        <div class="header">
+            <div>
+                <h1><i class="fas fa-square-root-variable"></i> Cómo se calculan los indicadores</h1>
+                <div class="sub">La fórmula de cada indicador y su sustitución con los números reales del
+                    periodo, para revisarla con la jefatura y decidir si se acepta o se cambia.
+                    Si un número de la presentación no se puede reconstruir aquí paso a paso, el indicador
+                    no está listo. · <span id="genAt">-</span></div>
+            </div>
+            <div class="tools">
+                <input type="month" id="metMonth" onchange="cargar()" title="Periodo del ejemplo">
+                <select id="metModo" onchange="cargar()" title="Tipo de disponibilidad">
+                    <option value="inherente" selected>Disponibilidad inherente</option>
+                    <option value="operativa">Disponibilidad operativa</option>
+                </select>
+                <button class="btn primary" onclick="cargar()"><i class="fas fa-sync"></i> Actualizar</button>
+                <button class="btn ghost" onclick="window.print()"><i class="fas fa-file-pdf"></i> PDF</button>
+            </div>
+        </div>
+
+        <div class="indice">
+            <a href="#f1"><b>01</b>La base de tiempo: TEP, paro planificado y avería</a>
+            <a href="#f2"><b>02</b>Disponibilidad — operativa e inherente</a>
+            <a href="#f3"><b>03</b>MTBF — tiempo medio entre fallas</a>
+            <a href="#f4"><b>04</b>MTTR — tiempo medio de reparación</a>
+            <a href="#f5"><b>05</b>Confiabilidad R(t)</a>
+            <a href="#f6"><b>06</b>Cómo se sube de equipo a área: ponderación por capacidad</a>
+            <a href="#f7"><b>07</b>Capacidad del equipo y de la planta</a>
+            <a href="#f8"><b>08</b>Disponibilidad requerida para cumplir la meta</a>
+            <a href="#f9"><b>09</b>Cumplimiento del programa preventivo</a>
+            <a href="#f10"><b>10</b>Reglas que evitan los errores clásicos</a>
+            <a href="#f11"><b>11</b>Decisiones pendientes de acordar</a>
+        </div>
+
+        <div id="avisoErr"></div>
+
+        <!-- 01 Base de tiempo -->
+        <div class="ficha" id="f1">
+            <h2><span class="n">01</span> La base de tiempo <span class="chip norma">ISO 14224</span></h2>
+            <div class="que">Todo parte de las horas del periodo y de cómo se reparten. El paro se clasifica
+                en <b>planificado</b> (trabajo programado con anticipación) y <b>avería</b> (falla imprevista).
+                La clasificación sale del campo de la OT; si está vacío se deriva del tipo: correctivo es
+                avería, el resto es planificado. Si la OT cuelga de una parada de planta, manda la parada.</div>
+            <div class="formula">
+                <div class="f">T  = días del periodo × 24        (TEP, tiempo efectivo del periodo)
+Pp = Σ horas de paro planificado
+Pn = Σ horas de paro por avería
+uptime = T − Pp − Pn</div>
+                <div class="sub" id="s1"></div>
+            </div>
+            <div class="nota">Se mide a <b>24 horas por día</b> para todos los equipos, no por turno. La planta
+                trabaja en continuo durante la temporada y usar la jornada haría que dos equipos con el mismo
+                paro tuvieran disponibilidades distintas.</div>
+            <div class="hint" style="margin-top:10px">Una OT solo aporta horas si está marcada como
+                <b>causó parada</b> y tiene horas de parada (o duración real). Las demás quedan en el historial
+                pero no tocan el indicador. Cuando varias OTs comparten la misma parada sobre el mismo equipo,
+                el paro se cuenta <b>una sola vez</b>: son trabajos en paralelo, no consecutivos.</div>
+            <div class="twrap"><table class="met" id="t1"></table></div>
+        </div>
+
+        <!-- 02 Disponibilidad -->
+        <div class="ficha" id="f2">
+            <h2><span class="n">02</span> Disponibilidad <span class="chip norma">ISO 14224</span>
+                <span class="chip decidido">Se presenta la inherente</span></h2>
+            <div class="que">Dos preguntas distintas. La <b>operativa</b> es lo que producción realmente tuvo
+                disponible: la castiga todo paro. La <b>inherente</b> mide la salud del activo: el mantenimiento
+                planificado sale de la base de tiempo, así que solo la castigan las averías — es la que
+                responde «¿el equipo falla?» sin penalizar por hacer preventivo.</div>
+            <div class="formula">
+                <div class="f">Disponibilidad operativa  =  (T − Pp − Pn) / T
+Disponibilidad inherente  =  (T − Pp − Pn) / (T − Pp)</div>
+                <div class="sub" id="s2"></div>
+                <div class="res" id="r2"></div>
+            </div>
+            <div class="nota">Si se decide presentar la <b>operativa</b>, el número baja cada vez que se hace
+                un preventivo bien hecho. La inherente premia el preventivo y castiga la avería, que es el
+                comportamiento que se quiere incentivar. El selector de arriba cambia entre las dos.</div>
+        </div>
+
+        <!-- 03 MTBF -->
+        <div class="ficha" id="f3">
+            <h2><span class="n">03</span> MTBF — Tiempo Medio Entre Fallas</h2>
+            <div class="que">Horas de operación entre una falla y la siguiente. Se compara contra el
+                <b>TEP</b>: cuanto más se acerca el MTBF al total de horas del periodo, menos veces paró.
+                Un equipo que no falló tiene MTBF igual a su base de tiempo.</div>
+            <div class="formula">
+                <div class="f">MTBF = uptime / número de fallas</div>
+                <div class="sub" id="s3"></div>
+                <div class="res" id="r3"></div>
+            </div>
+            <div class="hint">En modo inherente solo cuentan como falla las <b>averías</b>; los paros
+                planificados no entran ni al numerador ni al denominador.</div>
+        </div>
+
+        <!-- 04 MTTR -->
+        <div class="ficha" id="f4">
+            <h2><span class="n">04</span> MTTR — Tiempo Medio de Reparación
+                <span class="chip decidido">Decidido: horas de parada</span></h2>
+            <div class="que">Cuánto cuesta devolver el equipo a servicio. Se mide con las <b>horas que el
+                equipo estuvo detenido</b> por cada avería, no con las horas-hombre gastadas: si tres técnicos
+                trabajan 4 horas, el MTTR son 4 horas de indisponibilidad, no 12 de mano de obra.</div>
+            <div class="formula">
+                <div class="f">MTTR = horas de parada / número de fallas</div>
+                <div class="sub" id="s4"></div>
+                <div class="res" id="r4"></div>
+            </div>
+            <div class="nota">El MTTR así medido incluye <b>toda la espera</b>: repuesto, grúa, permiso,
+                especialista. Por eso puede salir alto aunque la reparación en sí sea corta — y eso es
+                justamente lo que hay que atacar. Si se quiere separar «espera» de «reparación efectiva»,
+                hace falta registrar la hora de inicio de la intervención, no solo el paro.</div>
+        </div>
+
+        <!-- 05 Confiabilidad -->
+        <div class="ficha" id="f5">
+            <h2><span class="n">05</span> Confiabilidad R(t)</h2>
+            <div class="que">Probabilidad de que el equipo opere sin fallar durante un tiempo seguido.
+                Depende del horizonte <b>t</b> que se elija, así que se fija uno solo para toda la aplicación:
+                <b>168 horas</b>, una semana de operación continua. Si cada pantalla usara un t distinto los
+                números no serían comparables.</div>
+            <div class="formula">
+                <div class="f">R(t) = e^(−t / MTBF)        con t = 168 h</div>
+                <div class="sub" id="s5"></div>
+                <div class="res" id="r5"></div>
+            </div>
+            <div class="nota verde">Un equipo <b>sin fallas</b> en el periodo da 100 %. Antes se igualaba el
+                MTBF a las horas del periodo y la fórmula devolvía siempre e⁻¹ = 36,79 %: áreas enteras sin una
+                sola avería aparecían como poco confiables. Está corregido.</div>
+            <div class="hint" style="margin-top:10px">La fórmula asume tasa de fallas constante (distribución
+                exponencial). Es el supuesto estándar para equipo rotativo en operación; para desgaste
+                acelerado o mortalidad infantil habría que usar Weibull, que necesita más historial del que
+                hoy tenemos cargado.</div>
+        </div>
+
+        <!-- 06 Ponderación -->
+        <div class="ficha" id="f6">
+            <h2><span class="n">06</span> De equipo a área: ponderación por capacidad
+                <span class="chip decidido">Decidido: ponderada</span></h2>
+            <div class="que">Los indicadores <b>se calculan equipo por equipo</b> y recién ahí se suben a
+                área y a planta, pesando cada equipo por lo que aporta a la producción. Un digestor de 20 TM/día
+                pesa más que uno de 8. Se pondera la disponibilidad, el MTBF y la confiabilidad.</div>
+            <div class="formula">
+                <div class="f">Indicador del área = Σ (indicador del equipo × capacidad del equipo)
+                    ─────────────────────────────────────────────
+                              Σ capacidad de los equipos</div>
+                <div class="sub" id="s6"></div>
+                <div class="res" id="r6"></div>
+            </div>
+            <div class="twrap"><table class="met" id="t6"></table></div>
+            <div class="nota" id="n6"></div>
+            <div class="hint" style="margin-top:10px">El <b>MTTR no se pondera</b>: es horas de parada entre
+                averías del conjunto. Ponderarlo mezclaría reparaciones de equipos distintos sin sentido físico.
+                Los equipos con capacidad cero (auxiliares, o fuera de servicio por overhaul) no pesan en el
+                promedio, pero sus OTs siguen contándose en las horas de paro del área.</div>
+        </div>
+
+        <!-- 07 Capacidad -->
+        <div class="ficha" id="f7">
+            <h2><span class="n">07</span> Capacidad del equipo y de la planta</h2>
+            <div class="que">Es el peso de la ponderación y la base de la disponibilidad requerida. Se
+                configura en <b>Alcance de Indicadores</b>. Los digestores trabajan por lotes, así que su
+                capacidad sale de las llenadas; los secadores y molinos son continuos y se cargan en TM/día.</div>
+            <div class="formula">
+                <div class="f">Digestor:  TM/día de materia prima = kg por llenada × % llenado × llenadas/día ÷ 1000
+           TM/día de harina        = TM/día de materia prima × rendimiento
+Secador / molino:
+           TM/día de harina        = capacidad configurada  (ya está en harina)</div>
+                <div class="sub" id="s7"></div>
+                <div class="res" id="r7"></div>
+            </div>
+            <div class="nota"><b>Generar no es procesar.</b> El rendimiento se aplica una sola vez, en cocción:
+                los digestores <b>generan</b> la harina a partir de materia prima. Los secadores y molinos la
+                <b>procesan</b>, su capacidad ya está expresada en harina y no se les vuelve a aplicar el
+                rendimiento. Aplicarlo dos veces subestimaba la capacidad de las dos últimas etapas.</div>
+            <div class="hint" style="margin-top:10px">Las tres etapas van <b>en serie</b> (cocción → secado →
+                molienda), así que la capacidad de planta es la de la <b>etapa más limitada</b>, no la suma.
+                Si el molino #1 se desactiva y solo trabaja el #2, la molienda queda a la mitad y la planta con
+                ella, aunque cocción y secado sigan completos.</div>
+        </div>
+
+        <!-- 08 Disponibilidad requerida -->
+        <div class="ficha" id="f8">
+            <h2><span class="n">08</span> Disponibilidad requerida para cumplir la meta</h2>
+            <div class="que">Traduce la meta de producción al lenguaje de mantenimiento. La meta entra solo
+                como dato; lo que se presenta es el <b>porcentaje de disponibilidad necesario</b> y el
+                <b>presupuesto de horas de parada</b> que se puede gastar sin incumplir.</div>
+            <div class="formula">
+                <div class="f">Disponibilidad requerida = meta del periodo / capacidad del periodo
+Presupuesto de parada    = (1 − requerida) × horas del periodo
+Consumido                = (1 − disponibilidad real) × horas del periodo
+Saldo                    = presupuesto − consumido</div>
+                <div class="sub cmt">En vista semanal la meta mensual se prorratea por días. El porcentaje
+requerido no cambia (meta y capacidad escalan juntas); lo que cambia es
+el presupuesto: en una semana son 168 h de margen, no 744.</div>
+            </div>
+            <div class="nota">El <b>consumido</b> son horas equivalentes de área, no la suma bruta de
+                horas-equipo. Los 9 digestores trabajan en paralelo y esa suma supera las horas del mes: el
+                saldo salía negativo aunque el área cumpliera la meta.</div>
+            <div class="nota rojo">Si una etapa necesita <b>más de 100 %</b>, la meta está por encima de la
+                capacidad instalada: ni parando cero horas se alcanza. Es una conversación sobre la meta o
+                sobre ampliar capacidad, no sobre mantenimiento.</div>
+        </div>
+
+        <!-- 09 Cumplimiento -->
+        <div class="ficha" id="f9">
+            <h2><span class="n">09</span> Cumplimiento del programa preventivo
+                <span class="chip norma">SMRP &gt; 90 %</span></h2>
+            <div class="que">El programa preventivo <b>no son solo las órdenes</b>. La lubricación, las rutas
+                de inspección y el monitoreo de condición son mantenimiento preventivo y viven en sus propias
+                tablas, con su frecuencia y sus ejecuciones, sin pasar por una OT.</div>
+            <div class="formula">
+                <div class="f">OTs:      programadas = OTs preventivas/predictivas con fecha en el periodo
+          ejecutadas  = las que además quedaron cerradas
+
+Rutinas:  programadas = Σ (días del periodo ÷ frecuencia del punto)
+          ejecutadas  = ejecuciones registradas en el periodo
+
+Cumplimiento = ejecutadas / programadas × 100   (por fuente y total)</div>
+            </div>
+            <div class="nota">Para las rutinas, «programado» es el <b>plan teórico</b> que declara la
+                frecuencia configurada, no una lista de tareas emitidas: un punto de 15 días pide 2,07
+                servicios en un mes de 31 y 0,47 en una semana. Los puntos sobre equipos fuera de servicio
+                no exigen servicio.</div>
+            <div class="nota verde">Las fuentes <b>no se funden en un solo número</b>: la lubricación
+                aplastaría a las OTs y el cumplimiento dejaría de decir si los preventivos mecánicos se
+                hicieron. Se apilan por fuente, con su porcentaje cada una y el total.</div>
+        </div>
+
+        <!-- 10 Reglas -->
+        <div class="ficha" id="f10">
+            <h2><span class="n">10</span> Reglas que evitan los errores clásicos</h2>
+            <div class="que">Cada una nació de un número que salió mal y se corrigió.</div>
+            <div class="twrap"><table class="met">
+                <tr><th>Regla</th><th>Qué pasaba sin ella</th></tr>
+                <tr><td><b>Paralelo no se suma</b></td><td>Sumar las horas de paro de 9 digestores en paralelo como si fueran en serie daba disponibilidades de 0 % con la planta operando.</td></tr>
+                <tr><td><b>Cada equipo aporta su capacidad</b></td><td>Valorar la parada de un equipo con la cifra del área hacía que un mes reportara más toneladas perdidas de las que la planta produce.</td></tr>
+                <tr><td><b>Generar ≠ procesar</b></td><td>Aplicar el rendimiento también a secadores y molinos subestimaba la capacidad de las dos últimas etapas.</td></tr>
+                <tr><td><b>Solo transforman el producto</b></td><td>Contar transportadores, ciclones, percoladores y fajas como productivos valoraba varias veces el mismo flujo.</td></tr>
+                <tr><td><b>Paradas que cruzan periodos se reparten</b></td><td>Una parada del 23 de abril al 28 de mayo cargaba sus 838 horas enteras a mayo.</td></tr>
+                <tr><td><b>Sin fallas es 100 % de confiabilidad</b></td><td>La fórmula devolvía siempre 36,79 % y un equipo que nunca paró aparecía como poco confiable.</td></tr>
+                <tr><td><b>Techo físico</b></td><td>La pérdida de un periodo no puede superar la capacidad instalada de esos días.</td></tr>
+                <tr><td><b>Un solo horizonte para R(t)</b></td><td>Con t distinto en cada pantalla, las confiabilidades no eran comparables entre sí.</td></tr>
+            </table></div>
+        </div>
+
+        <!-- 11 Decisiones -->
+        <div class="ficha" id="f11">
+            <h2><span class="n">11</span> Decisiones pendientes de acordar
+                <span class="chip abierto">Para revisar en la reunión</span></h2>
+            <div class="que">Lo que sigue no es un defecto del cálculo: son opciones donde hace falta una
+                decisión de la jefatura. Cada una cambia el número que se presenta.</div>
+            <div class="twrap"><table class="met">
+                <tr><th>Decisión</th><th>Opciones</th><th>Hoy</th></tr>
+                <tr><td><b>Los trabajos de proyectos</b><div class="hint">Consumen personal de mantenimiento y desplazan preventivos, pero no son mantenimiento del activo.</div></td>
+                    <td>Contarlos como una clase aparte (MANTENIMIENTO / MEJORA / PROYECTO), fuera del % proactivo y del MTBF/MTTR, pero dentro de horas-hombre y capacidad.</td>
+                    <td>Sin decidir: las 37 OTs de «Mejora» y sus 2 589 h-h están como mejora.</td></tr>
+                <tr><td><b>Meta por área o por planta</b><div class="hint">Hoy la misma meta está cargada tres veces, una por área.</div></td>
+                    <td>Una meta de planta y repartirla por etapa, o mantener una meta por área con su propia capacidad.</td>
+                    <td>La misma cifra en cocción, secado y molienda.</td></tr>
+                <tr><td><b>Indicador oficial de disponibilidad</b></td>
+                    <td>Inherente (salud del activo) u operativa (lo que producción tuvo).</td>
+                    <td>Se presenta la inherente; ambas se calculan siempre.</td></tr>
+                <tr><td><b>Separar espera de reparación en el MTTR</b></td>
+                    <td>Registrar la hora de inicio de la intervención además del paro, para partir el MTTR en espera + reparación efectiva.</td>
+                    <td>El MTTR incluye toda la espera.</td></tr>
+                <tr><td><b>Backlog sin técnico asignado</b><div class="hint">No cambia la fórmula, pero sí la calidad del dato.</div></td>
+                    <td>Exigir técnico al programar, para poder medir carga por persona.</td>
+                    <td>58 OTs en backlog, solo 1 con técnico.</td></tr>
+            </table></div>
+        </div>
+    </div>
+</section>
+<script src="/static/js/sidebar.js?v={{ v }}"></script>
+<script src="/static/js/metodologia.js?v={{ v }}"></script>
+</body>
+</html>

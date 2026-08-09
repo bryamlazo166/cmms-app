@@ -489,6 +489,55 @@ def test_presentacion_semanal_acumula_y_cuadra_con_el_mes(auth_admin):
         assert prohibido not in crudo
 
 
+def test_cumplimiento_preventivo_incluye_lubricacion(auth_admin, app):
+    """El programa preventivo no son solo las OTs.
+
+    La lubricacion, las rutas de inspeccion y el monitoreo de condicion son
+    mantenimiento preventivo y viven en sus propias tablas, sin pasar por
+    WorkOrder. Contando solo OTs, julio 2026 mostraba 33 actividades cuando
+    en realidad se habian hecho 396 lubricaciones: el indicador declaraba
+    100 % de cumplimiento sobre el 8 % del trabajo.
+    """
+    from models import LubricationExecution, LubricationPoint, db
+
+    with app.app_context():
+        eq_id = None
+        p = LubricationPoint(name='Punto de prueba', frequency_days=10,
+                             equipment_id=eq_id, is_active=True,
+                             quantity_unit='L')
+        db.session.add(p)
+        db.session.flush()
+        # 3 servicios en la semana 1 de julio
+        for dia in ('2026-07-02', '2026-07-04', '2026-07-06'):
+            db.session.add(LubricationExecution(point_id=p.id, execution_date=dia,
+                                                action_type='SERVICIO'))
+        db.session.commit()
+
+    d = auth_admin.get('/api/presentacion/data?month=2026-07&vista=mes&meses=1').json
+    prev = d['cumplimiento']['preventivo'][-1]
+    fuentes = {f['codigo']: f for f in prev['fuentes']}
+    assert 'LUB' in fuentes, 'la lubricacion no entra al programa preventivo'
+    lub = fuentes['LUB']
+    assert lub['ejecutadas'] == 3
+    # Plan teorico: 31 dias / 10 de frecuencia = 3,1 -> 3
+    assert lub['programadas'] == 3
+    assert lub['puntos'] == 1
+
+    # El total suma todas las fuentes, y el indicador de solo OTs se conserva
+    assert prev['programadas'] == sum(f['programadas'] for f in prev['fuentes'])
+    assert prev['ejecutadas'] == sum(f['ejecutadas'] for f in prev['fuentes'])
+    assert prev['solo_ot']['ejecutadas'] == fuentes['OT']['ejecutadas']
+
+    # En vista semanal el plan se prorratea y las ejecuciones caen en su semana
+    s = auth_admin.get('/api/presentacion/data?month=2026-07&vista=semana').json
+    semanas = s['cumplimiento']['preventivo']
+    lub_sem = [next(f for f in c['fuentes'] if f['codigo'] == 'LUB') for c in semanas]
+    assert lub_sem[0]['ejecutadas'] == 3, 'las 3 lubricaciones son de la semana 1'
+    assert sum(x['ejecutadas'] for x in lub_sem) == 3
+    # 7 dias / 10 = 0,7 -> 1 servicio esperado por semana completa
+    assert lub_sem[0]['programadas'] == 1
+
+
 def test_presentacion_detalle_muestra_las_ordenes(auth_admin):
     """En pantalla van los indicadores globales; el detalle sale al hacer
     click. Es lo que se abre cuando en la reunion preguntan por que bajo un
@@ -516,6 +565,54 @@ def test_presentacion_detalle_muestra_las_ordenes(auth_admin):
     # Sin rango de fechas responde error, no una pantalla vacia
     malo = auth_admin.get('/api/presentacion/detalle?area_id=0')
     assert malo.status_code == 400 and 'error' in malo.json
+
+
+def test_metodologia_reconstruye_el_numero_de_la_presentacion(auth_admin):
+    """El modulo de metodologia existe para sentarse con la jefatura y cuadrar
+    el numero a mano. Si el area que muestra la presentacion no se puede
+    reconstruir equipo por equipo aqui, el indicador no sirve para presentarse
+    — asi que el vinculo se prueba, no se confia.
+    """
+    r = auth_admin.get('/api/metodologia/data?month=2026-07&modo=inherente')
+    assert r.status_code == 200
+    d = r.json
+    if 'error' in d:                      # base sin equipos de proceso cargados
+        return
+
+    m, e, p = d['meta'], d['ejemplo'], d['ponderacion']
+    assert m['tep'] == m['dias'] * 24
+    assert m['horizonte_h'] == 168
+
+    # La base de tiempo tiene que cerrar: T = uptime + Pp + Pn
+    assert abs(e['tep'] - (e['uptime'] + e['paro_planificado']
+                           + e['paro_averia'])) < 0.02
+    assert abs(e['base_inherente'] - (e['tep'] - e['paro_planificado'])) < 0.02
+    # Y las dos disponibilidades tienen que salir de esa misma base
+    assert abs(e['disp_operativa'] - e['uptime'] / e['tep'] * 100) < 0.02
+    if e['base_inherente'] > 0:
+        assert abs(e['disp_inherente']
+                   - e['uptime'] / e['base_inherente'] * 100) < 0.02
+    if e['fallas']:
+        assert abs(e['mttr'] - e['paro_del_modo'] / e['fallas']) < 0.02
+    else:
+        assert e['confiabilidad'] == 100.0
+
+    # La ponderacion es Σ(disp × cap) / Σcap, sumando las mismas filas
+    assert abs(p['numerador']
+               - sum(f['aporte'] for f in p['filas'] if f['pesa'])) < 0.05
+    assert abs(p['denominador']
+               - sum(f['capacidad'] for f in p['filas'] if f['pesa'])) < 0.05
+    if p['denominador']:
+        assert abs(p['resultado']
+                   - p['numerador'] / p['denominador']) < 0.02
+
+    # Y el resultado es EL MISMO que presenta la lamina de esa area
+    pres = auth_admin.get('/api/presentacion/data'
+                          '?month=2026-07&vista=mes&meses=1&modo=inherente').json
+    lamina = next((a for a in pres['areas'] if a['area'] == p['area']), None)
+    assert lamina is not None, f"la presentacion no tiene el area {p['area']}"
+    assert abs(lamina['actual']['disponibilidad'] - p['resultado']) < 0.02, (
+        'la metodologia no reconstruye el numero de la presentacion')
 
 
 def test_confiabilidad_sin_fallas_es_100(auth_admin, app):

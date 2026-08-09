@@ -470,6 +470,34 @@ Si una etapa necesita más de 100 %, la lámina lo dice explícitamente: la meta
 está por encima de la capacidad instalada y es una conversación sobre la meta o
 sobre ampliar capacidad, no sobre mantenimiento.
 
+### Cumplimiento del programa preventivo
+
+El programa preventivo **no son solo las OTs**. La lubricación, las rutas de
+inspección y el monitoreo de condición son mantenimiento preventivo y viven en
+sus propias tablas (`lubrication_points` / `lubrication_executions`, etc.), con
+su frecuencia y sus ejecuciones, sin pasar nunca por `WorkOrder`. Contando solo
+órdenes, julio 2026 mostraba 33 actividades preventivas al 100 % cuando en
+realidad se habían hecho 396 lubricaciones: el indicador declaraba cumplimiento
+perfecto sobre el 8 % del trabajo.
+
+| Fuente | Programado | Ejecutado |
+|---|---|---|
+| OT preventiva / predictiva | OTs con `scheduled_date` en el periodo | las que además están `Cerrada` |
+| Lubricación | `Σ días del periodo ÷ frequency_days` de cada punto activo | `LubricationExecution` en el periodo |
+| Rutas de inspección | igual, sobre `inspection_routes` | `InspectionExecution` en el periodo |
+| Monitoreo de condición | igual, sobre `monitoring_points` | `MonitoringReading` en el periodo |
+
+Para las rutinas, «programado» es el **plan teórico** que declara la frecuencia
+configurada, no una lista de tareas emitidas: un punto de 15 días pide 2,07
+servicios en un mes de 31 y 0,47 en una semana. Un punto sobre un equipo fuera
+de servicio no exige servicio — si se contara, el programa se incumpliría por un
+equipo que no opera.
+
+Las fuentes **no se funden en un solo número**: la lubricación aplastaría a las
+OTs y el cumplimiento dejaría de decir si los preventivos mecánicos se hicieron.
+Se apilan por fuente, cada una con su porcentaje, más el total. El indicador
+anterior (solo OTs) se conserva en `solo_ot` para no perder la serie histórica.
+
 ### Detalle bajo demanda
 
 En pantalla van solo los indicadores globales (planta y área). Al hacer click
@@ -512,7 +540,12 @@ reunión.
   (capacidad, jornada, calendar hours, paradas planificadas).
 - **Producción vs mantenimiento**: [routes/production_routes.py](routes/production_routes.py).
 - **Presentación semanal / mensual**: [routes/presentacion_routes.py](routes/presentacion_routes.py)
-  (`_bloques_semana`, `_periodos`, `_ponderar`, `presentacion_detalle`).
+  (`_bloques_semana`, `_periodos`, `_ponderar`, `_cumplimiento`, `presentacion_detalle`).
+- **Metodología en pantalla**: [routes/metodologia_routes.py](routes/metodologia_routes.py)
+  — módulo `/metodologia-indicadores`, la versión viva de este documento: cada
+  fórmula con su sustitución sobre los números reales del periodo y las OTs que
+  la alimentan. Una prueba verifica que reconstruye el mismo número que muestra
+  la presentación.
 - **Espesores**: [routes/thickness_routes.py](routes/thickness_routes.py)
   (semáforo, análisis predictivo, vida residual).
 - **Plan semanal**: [routes/reports_routes.py](routes/reports_routes.py)

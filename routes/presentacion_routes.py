@@ -45,6 +45,23 @@ AREAS_PROCESO = ['COCCION', 'SECADO', 'MOLINO']
 
 MESES = ['', 'Enero', 'Febrero', 'Marzo', 'Abril', 'Mayo', 'Junio',
          'Julio', 'Agosto', 'Setiembre', 'Octubre', 'Noviembre', 'Diciembre']
+
+# El programa preventivo no son solo las OTs. La lubricacion, las rutas de
+# inspeccion y el monitoreo de condicion son mantenimiento preventivo (tareas
+# sistematicas basadas en tiempo) y viven en sus propias tablas, con su
+# frecuencia y sus ejecuciones, sin pasar por WorkOrder. Contar solo las OTs
+# dejaba fuera casi todo el trabajo preventivo: en julio 2026 fueron 33 OTs
+# contra 396 ejecuciones de lubricacion.
+#
+# No se funden en un solo numero a proposito: la lubricacion aplastaria a las
+# OTs y el cumplimiento dejaria de decir si los preventivos mecanicos se
+# hicieron. Se apilan por fuente, con su porcentaje cada una y el total.
+FUENTES_PREVENTIVAS = [
+    ('OT', 'OT preventiva / predictiva'),
+    ('LUB', 'Lubricacion'),
+    ('INS', 'Rutas de inspeccion'),
+    ('MON', 'Monitoreo de condicion'),
+]
 MESES_CORTO = ['', 'ENE', 'FEB', 'MAR', 'ABR', 'MAY', 'JUN',
                'JUL', 'AGO', 'SET', 'OCT', 'NOV', 'DIC']
 
@@ -60,7 +77,10 @@ def _invalidar_cache():
 
 
 def register_presentacion_routes(app, db, logger):
-    from models import (Area, Equipment, Line, ProductionGoal, WorkOrder)
+    from models import (Area, Equipment, InspectionExecution, InspectionRoute,
+                        Line, LubricationExecution, LubricationPoint,
+                        MonitoringPoint, MonitoringReading, ProductionGoal,
+                        WorkOrder)
 
     # ── Utilidades de periodo ────────────────────────────────────────────
 
@@ -206,10 +226,35 @@ def register_presentacion_routes(app, db, logger):
                 metas.setdefault(str(g.goal_period)[:7], {})[g.area_id] = \
                     float(g.monthly_target_tons)
 
+        # Rutinas preventivas que no pasan por WorkOrder. Un punto sobre un
+        # equipo fuera de servicio (overhaul) no exige servicio: si se
+        # contara, el programa se incumpliria por un equipo que no opera.
+        fuera = {e.id for e in equipos if not e.in_service}
+
+        def rutinas(Punto, Ejecucion, col_fecha):
+            puntos = [(p.frequency_days, p.equipment_id) for p in
+                      Punto.query.with_entities(Punto.frequency_days,
+                                                Punto.equipment_id)
+                      .filter(Punto.is_active.is_(True)).all()
+                      if p.equipment_id not in fuera]
+            fechas = sorted(str(r[0])[:10] for r in
+                            Ejecucion.query.with_entities(col_fecha).all() if r[0])
+            return {'puntos': puntos, 'fechas': fechas}
+
+        rutinas_prev = {
+            'LUB': rutinas(LubricationPoint, LubricationExecution,
+                           LubricationExecution.execution_date),
+            'INS': rutinas(InspectionRoute, InspectionExecution,
+                           InspectionExecution.execution_date),
+            'MON': rutinas(MonitoringPoint, MonitoringReading,
+                           MonitoringReading.reading_date),
+        }
+
         return {'areas': areas, 'lines': lines, 'equipos': equipos,
                 'rendimiento': rend, 'cap_eq': cap_eq, 'cap_area': cap_area,
                 'eq_de_area': eq_de_area, 'ots': cerradas,
-                'programadas': programadas, 'metas': metas}
+                'programadas': programadas, 'metas': metas,
+                'rutinas': rutinas_prev}
 
     def _base():
         ahora = time.monotonic()
@@ -295,12 +340,32 @@ def register_presentacion_routes(app, db, logger):
 
     # ── Cumplimiento (preventivo y correctivo programado) ────────────────
 
+    def _plan_rutina(rut, dias):
+        """Servicios que el programa exige en el periodo.
+
+        Cada punto activo pide `dias del periodo / frecuencia` servicios: un
+        punto de 15 dias pide 2,07 en un mes de 31 y 0,47 en una semana. Es
+        el plan teorico que declara la frecuencia configurada, y por eso la
+        lamina lo dice explicitamente: no es una lista de tareas emitidas.
+        """
+        total = 0.0
+        for freq, _eq in rut['puntos']:
+            if freq and freq > 0:
+                total += dias / freq
+        return total
+
     def _cumplimiento(base, per):
         """Programadas vs ejecutadas del periodo, separando preventivo de
-        correctivo programado — los dos indicadores del informe."""
+        correctivo programado — los dos indicadores del informe.
+
+        El preventivo suma las cuatro fuentes (OT, lubricacion, inspeccion y
+        monitoreo) y ademas las devuelve desglosadas, para que el total no
+        esconda de donde sale.
+        """
+        ini, fin = per['desde'], per['hasta']
         prev_prog = prev_ejec = corr_prog = corr_term = 0
         for o in base['programadas']:
-            if not (per['desde'] <= o['fecha'] <= per['hasta']):
+            if not (ini <= o['fecha'] <= fin):
                 continue
             mt = (o['maintenance_type'] or '').strip().lower()
             cerrada = (o['status'] == 'Cerrada')
@@ -311,9 +376,35 @@ def register_presentacion_routes(app, db, logger):
                 # Correctivo PROGRAMADO: el que tenia fecha planificada
                 corr_prog += 1
                 corr_term += 1 if cerrada else 0
+
+        fuentes = [{'codigo': 'OT', 'nombre': dict(FUENTES_PREVENTIVAS)['OT'],
+                    'programadas': prev_prog, 'ejecutadas': prev_ejec,
+                    'pct': round(prev_ejec / prev_prog * 100, 1) if prev_prog else None}]
+        for codigo, nombre in FUENTES_PREVENTIVAS[1:]:
+            rut = base['rutinas'].get(codigo) or {'puntos': [], 'fechas': []}
+            prog = _plan_rutina(rut, per['dias'])
+            ejec = sum(1 for f in rut['fechas'] if ini <= f <= fin)
+            if not prog and not ejec:
+                continue                       # fuente sin usar, no se muestra
+            fuentes.append({
+                'codigo': codigo, 'nombre': nombre,
+                'programadas': int(round(prog)), 'ejecutadas': ejec,
+                'puntos': len(rut['puntos']),
+                'pct': round(ejec / prog * 100, 1) if prog else None,
+            })
+
+        tot_prog = sum(f['programadas'] for f in fuentes)
+        tot_ejec = sum(f['ejecutadas'] for f in fuentes)
         return {
-            'preventivo': {'programadas': prev_prog, 'ejecutadas': prev_ejec,
-                           'pct': round(prev_ejec / prev_prog * 100, 1) if prev_prog else None},
+            'preventivo': {
+                'programadas': tot_prog, 'ejecutadas': tot_ejec,
+                'pct': round(tot_ejec / tot_prog * 100, 1) if tot_prog else None,
+                'fuentes': fuentes,
+                # El indicador que se venia presentando, para no perder la
+                # serie historica al ampliar el alcance
+                'solo_ot': {'programadas': prev_prog, 'ejecutadas': prev_ejec,
+                            'pct': round(prev_ejec / prev_prog * 100, 1) if prev_prog else None},
+            },
             'correctivo': {'programados': corr_prog, 'terminados': corr_term,
                            'pct': round(corr_term / corr_prog * 100, 1) if corr_prog else None},
         }

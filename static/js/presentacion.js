@@ -39,6 +39,15 @@ function el(id) { return document.getElementById(id); }
 function chart(id) {
     const box = el(id);
     if (!box) return null;
+    // Las cajas por area se rehacen con innerHTML en cada render. Si se
+    // reusa la instancia vieja, esta sigue atada al div que ya se
+    // desecho y pinta sobre un nodo que no esta en la pagina: la lamina
+    // se quedaba congelada en la vista anterior — al pasar de mensual a
+    // semanal, los graficos por area seguian mostrando los meses.
+    if (CH[id] && CH[id].getDom && CH[id].getDom() !== box) {
+        CH[id].dispose();
+        delete CH[id];
+    }
     if (!CH[id]) CH[id] = echarts.init(box);
     return CH[id];
 }
@@ -381,30 +390,84 @@ function pintar(id, campo, bloque, titulo, opt) {
 }
 
 // ── 05 y 06 Cumplimiento ─────────────────────────────────────────────────
+// Color de cada fuente del programa preventivo
+const COLOR_FUENTE = { OT: '#1f4b73', LUB: NARANJA, INS: '#3AA6A0', MON: '#8A6FD1' };
+
 function renderCumplimiento() {
     barrasCumplimiento('cumpPrevChart', PRES.cumplimiento.preventivo,
         'programadas', 'ejecutadas', 'PROGRAMADAS', 'EJECUTADAS',
-        'Cumplimiento de mantenimiento preventivo', 90);
+        'Cumplimiento del programa preventivo', 90, true);
+    tablaFuentes();
     barrasCumplimiento('cumpCorrChart', PRES.cumplimiento.correctivo,
         'programados', 'terminados', 'PROGRAMADOS', 'TERMINADOS',
-        'Cumplimiento de mantenimiento correctivo programado', null);
+        'Cumplimiento de mantenimiento correctivo programado', null, false);
 }
 
-function barrasCumplimiento(id, datos, kProg, kEjec, lProg, lEjec, titulo, meta) {
+// Desglose del periodo que se esta presentando: de donde sale el total
+function tablaFuentes() {
+    const t = el('cumpPrevTabla');
+    if (!t) return;
+    const ult = PRES.cumplimiento.preventivo[PRES.cumplimiento.preventivo.length - 1] || {};
+    const fs = ult.fuentes || [];
+    if (!fs.length) { t.innerHTML = ''; return; }
+    t.innerHTML =
+        `<tr><th>Fuente del programa</th><th class="num">Puntos / rutas</th>
+         <th class="num">Programado</th><th class="num">Ejecutado</th><th class="num">Cumplimiento</th></tr>`
+        + fs.map(f => `<tr>
+            <td><span style="color:${COLOR_FUENTE[f.codigo] || AZUL};font-weight:800">●</span>
+                <b>${esc(f.nombre)}</b></td>
+            <td class="num">${f.puntos == null ? '—' : f.puntos}</td>
+            <td class="num">${nf(f.programadas, 0)}</td>
+            <td class="num">${nf(f.ejecutadas, 0)}</td>
+            <td class="num" style="font-weight:700;color:${f.pct == null ? TENUE : (f.pct >= 90 ? BIEN : f.pct >= 70 ? REGULAR : MAL)}">${f.pct == null ? '—' : nf(f.pct) + ' %'}</td>
+         </tr>`).join('')
+        + `<tr><td><b>TOTAL DEL PROGRAMA</b></td><td class="num"></td>
+           <td class="num"><b>${nf(ult.programadas, 0)}</b></td>
+           <td class="num"><b>${nf(ult.ejecutadas, 0)}</b></td>
+           <td class="num" style="font-weight:800;color:${ult.pct >= 90 ? BIEN : ult.pct >= 70 ? REGULAR : MAL}">${nf(ult.pct)} %</td></tr>`
+        + `<tr><td colspan="5" class="hint">El indicador que se venia presentando —solo OTs— cerro en
+           ${ult.solo_ot && ult.solo_ot.pct != null ? nf(ult.solo_ot.pct) + ' %' : '—'}
+           (${(ult.solo_ot || {}).ejecutadas || 0} de ${(ult.solo_ot || {}).programadas || 0} ordenes).
+           La diferencia es el trabajo preventivo que no pasa por una OT.</td></tr>`;
+}
+
+function barrasCumplimiento(id, datos, kProg, kEjec, lProg, lEjec, titulo, meta, porFuente) {
     const c = chart(id);
     if (!c) return;
     const series = [
         { name: lProg, type: 'bar', data: datos.map(d => d[kProg]),
           itemStyle: { color: degradado('#9fb4c6'), borderRadius: [4, 4, 0, 0] }, barMaxWidth: 48,
           label: { show: true, position: 'top', color: TINTA, fontSize: 11 } },
-        { name: lEjec, type: 'bar', data: datos.map(d => d[kEjec]),
-          itemStyle: { color: degradado(AZUL), borderRadius: [4, 4, 0, 0] }, barMaxWidth: 48,
-          label: { show: true, position: 'top', color: TINTA, fontSize: 11 } },
+    ];
+    // Lo ejecutado se apila por fuente: el total no esconde de donde sale
+    const codigos = porFuente
+        ? (datos[datos.length - 1].fuentes || []).map(f => f.codigo) : [];
+    if (codigos.length > 1) {
+        (datos[datos.length - 1].fuentes || []).forEach(ref => {
+            series.push({
+                name: ref.nombre, type: 'bar', stack: 'ejec', barMaxWidth: 48,
+                data: datos.map(d => {
+                    const f = (d.fuentes || []).find(x => x.codigo === ref.codigo);
+                    return f ? f.ejecutadas : 0;
+                }),
+                itemStyle: { color: degradado(COLOR_FUENTE[ref.codigo] || AZUL) },
+            });
+        });
+        // Total ejecutado encima de la pila
+        series[series.length - 1].label = {
+            show: true, position: 'top', color: TINTA, fontSize: 11,
+            formatter: p => nf(datos[p.dataIndex][kEjec], 0),
+        };
+    } else {
+        series.push({ name: lEjec, type: 'bar', data: datos.map(d => d[kEjec]),
+            itemStyle: { color: degradado(AZUL), borderRadius: [4, 4, 0, 0] }, barMaxWidth: 48,
+            label: { show: true, position: 'top', color: TINTA, fontSize: 11 } });
+    }
+    series.push(
         { name: '% CUMPLIMIENTO', type: 'line', yAxisIndex: 1, smooth: true,
           data: datos.map(d => d.pct), itemStyle: { color: NARANJA },
           lineStyle: { width: 3 }, symbolSize: 10, connectNulls: true, z: 4,
-          label: { show: true, position: 'top', color: NARANJA, formatter: '{c}%', fontSize: 12, fontWeight: 700 } },
-    ];
+          label: { show: true, position: 'top', color: NARANJA, formatter: '{c}%', fontSize: 12, fontWeight: 700 } });
     const t = tendencia(datos.map(d => d.pct));
     if (t) {
         series.push({ name: 'Tendencia', type: 'line', yAxisIndex: 1, data: t.vals,
@@ -412,7 +475,10 @@ function barrasCumplimiento(id, datos, kProg, kEjec, lProg, lEjec, titulo, meta)
             lineStyle: { width: 2, type: 'dashed', color: t.pend >= 0 ? BIEN : MAL } });
     }
     if (meta) {
-        series[2].markLine = { silent: true, symbol: 'none', data: [{ yAxis: meta }],
+        // La linea de meta cuelga de la serie de %, que ya no esta en una
+        // posicion fija: con el desglose por fuente el numero de barras varia.
+        const pct = series.find(s => s.name === '% CUMPLIMIENTO');
+        pct.markLine = { silent: true, symbol: 'none', data: [{ yAxis: meta }],
             lineStyle: { color: BIEN, type: 'dashed' },
             label: { formatter: `meta ${meta}%`, color: BIEN } };
     }
@@ -422,14 +488,17 @@ function barrasCumplimiento(id, datos, kProg, kEjec, lProg, lEjec, titulo, meta)
         tooltip: { trigger: 'axis', backgroundColor: 'rgba(10,25,38,.95)',
                    borderColor: REJILLA, textStyle: { color: TINTA },
                    formatter: ps => `<b>${esc((datos[ps[0].dataIndex] || {}).nombre || '')}</b><br/>`
-                       + ps.map(p => `${p.marker} ${p.seriesName}: <b>${nf(p.value)}</b>`).join('<br/>') },
-        legend: { textStyle: { color: TENUE }, top: 26 },
-        grid: { left: 56, right: 56, top: 66, bottom: 34 },
+                       + ps.filter(p => p.value)
+                           .map(p => `${p.marker} ${p.seriesName}: <b>${nf(p.value)}`
+                                + `${p.seriesName.indexOf('%') === 0 ? ' %' : ''}</b>`).join('<br/>') },
+        legend: { textStyle: { color: TENUE, fontSize: 11 }, top: 24, itemWidth: 15 },
+        grid: { left: 56, right: 56, top: codigos.length > 1 ? 84 : 66, bottom: 34 },
         xAxis: { type: 'category', data: datos.map(d => d.label),
                  axisLine: { lineStyle: { color: REJILLA } },
                  axisLabel: { color: TINTA, fontWeight: 700 } },
         yAxis: [
-            { type: 'value', name: 'OTs', axisLabel: { color: TENUE },
+            { type: 'value', name: codigos.length > 1 ? 'Actividades' : 'OTs',
+              axisLabel: { color: TENUE },
               splitLine: { lineStyle: { color: REJILLA, type: 'dashed' } } },
             { type: 'value', name: '%', min: 0, max: 100,
               axisLabel: { color: TENUE, formatter: '{value}%' }, splitLine: { show: false } },

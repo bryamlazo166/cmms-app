@@ -186,7 +186,7 @@
                 <div class="it"><b>02</b><span>Disponibilidad</span></div>
                 <div class="it"><b>03</b><span>MTBF (Tiempo Medio Entre Fallas)</span></div>
                 <div class="it"><b>04</b><span>MTTR (Tiempo Medio de Reparacion)</span></div>
-                <div class="it"><b>05</b><span>Cumplimiento de Mantenimiento Preventivo</span></div>
+                <div class="it"><b>05</b><span>Cumplimiento del Programa Preventivo (OTs, lubricacion, inspeccion y monitoreo)</span></div>
                 <div class="it"><b>06</b><span>Cumplimiento de Mantenimiento Correctivo Programado</span></div>
                 <div class="it"><b>07</b><span>Confiabilidad</span></div>
             </div>
@@ -247,11 +247,17 @@
 
         <!-- 05 Cumplimiento preventivo -->
         <div class="slide" data-slide>
-            <h2><span class="idx">05</span> Cumplimiento de Mantenimiento Preventivo
+            <h2><span class="idx">05</span> Cumplimiento del Programa Preventivo
                 <span class="peri-chip" data-peri>—</span></h2>
-            <div class="method">Ordenes preventivas y predictivas programadas en el periodo contra las que se
-                ejecutaron. Referencia SMRP: &gt;90 %.</div>
-            <div class="chart-box" id="cumpPrevChart" style="height:380px;"></div>
+            <div class="method">Todo el trabajo preventivo del periodo, no solo las ordenes: la
+                <b>lubricacion</b>, las <b>rutas de inspeccion</b> y el <b>monitoreo de condicion</b> son
+                mantenimiento preventivo y viven fuera de las OTs. La barra clara es lo que pide el programa;
+                la barra de color es lo ejecutado, desglosado por fuente. Referencia SMRP: &gt;90 %.
+                <span class="hint">Para las rutinas, «programado» es el plan teorico que declara la frecuencia
+                configurada (dias del periodo ÷ frecuencia del punto), no una lista de tareas emitidas.
+                Los puntos sobre equipos fuera de servicio no exigen servicio.</span></div>
+            <div class="chart-box" id="cumpPrevChart" style="height:360px;"></div>
+            <div class="twrap" style="margin-top:12px;"><table class="pres" id="cumpPrevTabla"></table></div>
         </div>
 
         <!-- 06 Cumplimiento correctivo programado -->
