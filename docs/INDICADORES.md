@@ -20,7 +20,7 @@ de Indicadores (drill-down por Área → Línea → Equipo).
 | Disp. Inherente | `(T − Pp − Pn) / (T − Pp) × 100` | % | [routes/indicators_routes.py](routes/indicators_routes.py) (`_calc_indicators`) |
 | Confiabilidad R(t) | `e^(−t/MTBF) × 100` | % | [routes/indicators_routes.py:55-58](routes/indicators_routes.py#L55-L58) |
 | Disp. ponderada (área) | `Σ(disp_eq × cap_eq) / Σ(cap_eq)` | % | [routes/indicators_routes.py:159-177](routes/indicators_routes.py#L159-L177) |
-| Disp. en serie (área) | `∏(disp_eq_i)` | % | [routes/indicators_routes.py:139-153](routes/indicators_routes.py#L139-L153) |
+| MTBF / Confiab. (área) | ponderados por capacidad, igual que la disponibilidad | h / % | [routes/indicators_routes.py](routes/indicators_routes.py) |
 | Cumplimiento | `OTs cerradas / OTs programadas × 100` | % | [routes/reports_routes.py:392](routes/reports_routes.py#L392) |
 | Horas de paro | `Σ downtime_hours (OTs con caused_downtime=True)` | horas | [routes/indicators_routes.py:28-49](routes/indicators_routes.py#L28-L49) |
 | Costo de OTs | `Σ (qty × costo_unitario_warehouse) por OT` | S/. | [routes/reports_routes.py:367-372](routes/reports_routes.py#L367-L372) |
@@ -118,13 +118,16 @@ Disponibilidad INHERENTE  = (T − Pp − Pn) / (T − Pp) × 100
      ```
      Pondera por `Equipment.capacity_tm` (TM/mes). Equipos con `capacity_tm = 0`
      no aportan al cálculo.
-  3. **Área en SERIE**:
-     ```
-     Disp_area = Disp_eq_1 × Disp_eq_2 × ... × Disp_eq_n
-     ```
-     Se aplica solo a las áreas listadas en `SERIES_AREAS` de
-     [utils/kpi_helpers.py:19](utils/kpi_helpers.py#L19) (hoy: `MOLINO`).
-     Refleja procesos en serie donde si un equipo cae, toda la línea cae.
+  3. **Decidido con la jefatura de mantenimiento (ago-2026)**: la
+     disponibilidad de un área es SIEMPRE la ponderada por capacidad. Se
+     eliminó el cálculo en serie que se aplicaba solo a `MOLINO`: multiplicar
+     la disponibilidad de sus 13 equipos daba 87 % con trece equipos al 99 %,
+     aunque la línea nunca se hubiera detenido.
+     El MTBF y la confiabilidad del área se ponderan igual — medirlos sobre el
+     conjunto de OTs del área hacía que un área con muchos equipos pareciera
+     siempre peor (COCCIÓN daba 17 h de MTBF por tener 20 equipos, cuando cada
+     digestor por separado supera las 500 h). El MTTR sí es del área completa:
+     es el promedio de lo que cuesta reparar una avería.
 
 **Filtro de KPI**: solo aportan al promedio las áreas y equipos con
 `include_in_kpi = True`. Eso excluye "BAJA / FUERA DE SERVICIO",
@@ -142,16 +145,22 @@ periodo `t`, asumiendo distribución exponencial de fallas.
 R(t) = e^(−t/MTBF) × 100
 ```
 
-- `t` = `total_horas` del periodo analizado.
+- `t` = **168 h (una semana)** en toda la aplicación, definido en
+  `RELIABILITY_HOURS`. Antes cada pantalla usaba un `t` distinto (el periodo
+  completo en Indicadores, 168 h en el Diagnóstico) y los números no eran
+  comparables entre sí.
 - Si `MTBF = 0` y hubo fallas → `R(t) = 0`.
-- Si no hubo fallas → `R(t) = 100%`.
+- **Si no hubo fallas → `R(t) = 100%`.** Antes se igualaba el MTBF a las horas
+  del periodo y la fórmula devolvía siempre `e⁻¹ = 36,79 %`: un equipo que
+  nunca paró aparecía como poco confiable.
 
-**Ejemplo**: MTBF = 232 h, periodo = 720 h:
+**Ejemplo**: MTBF = 600 h, horizonte de una semana:
 ```
-R(720) = e^(−720/232) × 100 = e^(−3.10) × 100 ≈ 4.5%
+R(168) = e^(−168/600) × 100 = e^(−0.28) × 100 ≈ 75.6%
 ```
-> Que la confiabilidad caiga rápido al evaluar periodos largos es
-> comportamiento esperado del modelo exponencial.
+> Se lee: «este equipo tiene 76 % de probabilidad de aguantar una semana
+> completa sin fallar». Con horizontes largos el resultado tiende a cero, que
+> es comportamiento esperado del modelo exponencial pero no informa nada.
 
 ---
 
@@ -327,7 +336,7 @@ Estados posibles de `WeeklyPlanItem.status`:
 | `Equipment.capacity_tm` | LEGACY: capacidad mensual. Hoy se deriva de `capacity_tm_day`. |
 | `Equipment.yield_factor` | Rendimiento MP → producto (0..1). |
 | `Equipment.in_service` | Si false (overhaul, parada larga) el equipo NO suma capacidad de planta. |
-| `SERIES_AREAS` | Set de áreas cuya disponibilidad se calcula multiplicando equipos en serie. |
+| `RELIABILITY_HOURS` | Horizonte de la confiabilidad: 168 h (una semana) para toda la aplicación. |
 
 ---
 

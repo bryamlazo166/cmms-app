@@ -1,0 +1,234 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <link rel="icon" type="image/svg+xml" href="/static/favicon.svg">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Indicadores Mensuales de Mantenimiento - CMMS</title>
+    <!-- CMMS_THEME_INIT -->
+    <script>(function(){try{var t=localStorage.getItem('cmms.theme');if(t=='management'||t=='developer'){document.documentElement.setAttribute('data-theme',t);}}catch(e){}})();</script>
+    <link rel="stylesheet" href="/static/css/style.css?v={{ v }}">
+    <link rel="stylesheet" href="/static/css/sidebar.css?v={{ v }}">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css">
+    <script src="https://cdn.jsdelivr.net/npm/echarts@5.5.0/dist/echarts.min.js"></script>
+    <style>
+        /* Paleta del informe que ya se presenta: azul marino + naranja */
+        :root{
+            --marino:#123255; --marino-claro:#1c4a7a; --naranja:#F5A05A;
+            --naranja-fuerte:#ED7D31; --tinta:#eaf1f8; --tenue:#93aec6;
+            --linea:#25455f; --panel:#152a3d;
+            --bien:#30D158; --regular:#FF9F0A; --mal:#FF453A;
+        }
+        body{background:#0b1825;}
+        .wrap{max-width:1500px;margin:0 auto;padding:16px;}
+        .header{background:linear-gradient(115deg,var(--marino),#0e2439);
+            border:1px solid var(--linea);border-radius:14px;padding:20px 24px;margin-bottom:16px;
+            display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:14px;}
+        .header h1{margin:0;color:#fff;font-size:1.45rem;display:flex;align-items:center;gap:10px;}
+        .header h1 i{color:var(--naranja);}
+        .header .sub{margin:4px 0 0;color:var(--tenue);font-size:.85rem;}
+        .tools{display:flex;gap:10px;align-items:center;flex-wrap:wrap;}
+        .tools select,.tools input{height:38px;background:#0d1f31;color:var(--tinta);
+            border:1px solid var(--linea);border-radius:8px;padding:6px 12px;font-size:.88rem;}
+        .btn{height:38px;border-radius:8px;padding:0 16px;font-weight:600;cursor:pointer;
+            font-size:.88rem;border:none;display:inline-flex;align-items:center;gap:6px;}
+        .btn.primary{background:var(--naranja-fuerte);color:#fff;}
+        .btn.present{background:#fff;color:var(--marino);}
+        .btn.ghost{background:#1b3348;color:var(--tinta);border:1px solid var(--linea);}
+
+        .slide{background:var(--panel);border:1px solid var(--linea);border-radius:14px;
+            padding:22px 26px;margin-bottom:16px;}
+        .slide h2{margin:0 0 2px;color:#fff;font-size:1.2rem;display:flex;align-items:center;gap:11px;}
+        .slide h2 .idx{background:var(--naranja-fuerte);color:#fff;font-size:.8rem;font-weight:800;
+            border-radius:6px;padding:3px 9px;letter-spacing:.05em;}
+        .slide .method{color:var(--tenue);font-size:.79rem;margin:8px 0 14px;line-height:1.5;}
+        .chart-box{height:340px;width:100%;}
+        .grid2{display:grid;grid-template-columns:1fr 1fr;gap:14px;}
+        .grid3{display:grid;grid-template-columns:repeat(3,1fr);gap:14px;}
+        @media(max-width:1000px){.grid2,.grid3{grid-template-columns:1fr;}}
+
+        .kpi-strip{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:12px;margin:4px 0 14px;}
+        .kpi-item{background:#0f2436;border:1px solid var(--linea);border-radius:12px;padding:13px;text-align:center;}
+        .kpi-item .label{font-size:.7rem;color:var(--tenue);text-transform:uppercase;letter-spacing:.5px;line-height:1.3;}
+        .kpi-item .value{font-size:1.7rem;font-weight:700;margin-top:6px;color:#fff;font-variant-numeric:tabular-nums;}
+        .kpi-item .delta{font-size:.74rem;margin-top:3px;color:var(--tenue);}
+        .v-good{color:var(--bien)!important;}.v-warn{color:var(--regular)!important;}.v-crit{color:var(--mal)!important;}
+
+        table.pres{border-collapse:collapse;width:100%;font-size:.85rem;}
+        table.pres th{text-align:left;font-size:.68rem;text-transform:uppercase;letter-spacing:.07em;
+            color:var(--tenue);padding:8px 10px;border-bottom:2px solid var(--linea);white-space:nowrap;}
+        table.pres td{padding:7px 10px;border-bottom:1px solid rgba(255,255,255,.06);color:var(--tinta);}
+        table.pres td.num,table.pres th.num{text-align:right;font-variant-numeric:tabular-nums;white-space:nowrap;}
+        .twrap{overflow-x:auto;}
+
+        .aviso{background:rgba(255,159,10,.1);border:1px solid rgba(255,159,10,.35);
+            color:var(--regular);border-radius:9px;padding:10px 14px;font-size:.84rem;
+            line-height:1.55;margin-bottom:12px;}
+        .aviso.rojo{background:rgba(255,69,58,.1);border-color:rgba(255,69,58,.4);color:#ff8d82;}
+        .hint{color:#6d90ad;font-size:.75rem;}
+
+        /* Portada del informe */
+        .portada{background:linear-gradient(125deg,var(--marino) 0%,#0d2135 65%);border-color:#2c5578;}
+        .portada .marca{font-size:.76rem;letter-spacing:.22em;text-transform:uppercase;color:var(--naranja);font-weight:700;}
+        .portada h1{margin:12px 0 0;font-size:2.6rem;color:#fff;line-height:1.08;letter-spacing:-.02em;}
+        .portada .peri{color:var(--naranja);font-size:1.15rem;font-weight:600;margin-top:8px;}
+        .portada .area-lbl{color:var(--tenue);font-size:.9rem;margin-top:14px;}
+        .indice{display:flex;flex-direction:column;gap:9px;margin-top:20px;}
+        .indice .it{display:flex;align-items:center;gap:14px;padding-left:2px;}
+        .indice .it b{color:var(--naranja);font-size:.95rem;min-width:26px;font-variant-numeric:tabular-nums;}
+        .indice .it span{color:var(--tinta);font-size:1rem;border-left:2px solid var(--linea);padding-left:14px;}
+
+        /* Modo presentacion */
+        body.presenting .sidebar,body.presenting .header,body.presenting .no-present{display:none!important;}
+        body.presenting .home-section{margin-left:0!important;}
+        body.presenting{overflow:hidden;}
+        body.presenting .wrap{max-width:none;padding:0;}
+        body.presenting .slide{display:none;position:fixed;inset:0;margin:0;border-radius:0;
+            border:none;padding:40px 60px;overflow-y:auto;z-index:60;}
+        body.presenting .slide.active{display:block;}
+        body.presenting .slide h2{font-size:1.9rem;}
+        body.presenting .chart-box{height:60vh;}
+        body.presenting .kpi-item .value{font-size:2.4rem;}
+        body.presenting .portada h1{font-size:4rem;}
+        #presentNav{display:none;position:fixed;bottom:18px;right:24px;z-index:70;gap:10px;align-items:center;}
+        body.presenting #presentNav{display:flex;}
+        #presentNav button{background:#12293d;color:var(--tinta);border:1px solid var(--linea);
+            border-radius:8px;padding:8px 14px;cursor:pointer;font-size:1rem;}
+        #presentNav .cnt{color:var(--tenue);font-size:.9rem;}
+
+        @media print{
+            body{background:#fff!important;}
+            .sidebar,.tools,.btn,#presentNav,.hint{display:none!important;}
+            .home-section{margin-left:0!important;}
+            .slide{background:#fff!important;border:1px solid #ccc!important;break-inside:avoid;}
+            .kpi-item{background:#fff!important;border:1px solid #ccc!important;}
+            .kpi-item .value,.slide h2{color:#111!important;}
+            table.pres td{color:#111!important;}
+            @page{size:A4 landscape;margin:10mm;}
+        }
+    </style>
+</head>
+<body>
+<nav class="sidebar"><div class="logo-details"><i class="fas fa-industry icon"></i><div class="logo_name">CMMS Pro</div><i class="fas fa-bars" id="btn_toggle"></i></div><ul class="nav-list"></ul></nav>
+<section class="home-section">
+    <div class="wrap">
+        <div class="header">
+            <div>
+                <h1><i class="fas fa-chart-column"></i> Indicadores Mensuales de Mantenimiento</h1>
+                <div class="sub">Presentacion para gerencia — solo indicadores de mantenimiento, sin toneladas · <span id="genAt">-</span></div>
+            </div>
+            <div class="tools">
+                <input type="month" id="presMonth" title="Mes a presentar">
+                <select id="presMeses" title="Meses de historico" onchange="cargar()">
+                    <option value="4" selected>4 meses</option>
+                    <option value="6">6 meses</option>
+                    <option value="12">12 meses</option>
+                </select>
+                <select id="presModo" title="Tipo de disponibilidad" onchange="cargar()">
+                    <option value="inherente" selected>Disponibilidad inherente</option>
+                    <option value="operativa">Disponibilidad operativa</option>
+                </select>
+                <button class="btn primary" onclick="cargar()"><i class="fas fa-sync"></i> Actualizar</button>
+                <button class="btn present" onclick="togglePresent()" title="Pantalla completa, avanza con las flechas"><i class="fas fa-display"></i> Presentar</button>
+                <button class="btn ghost" onclick="window.print()"><i class="fas fa-file-pdf"></i> PDF</button>
+            </div>
+        </div>
+
+        <!-- Portada -->
+        <div class="slide portada" data-slide>
+            <div class="marca">Operaciones · Mantenimiento</div>
+            <h1>Indicadores de Mantenimiento</h1>
+            <div class="peri" id="portPeriodo">—</div>
+            <div class="area-lbl" id="portAreas">—</div>
+            <div class="indice">
+                <div class="it"><b>01</b><span>Disponibilidad requerida para cumplir la meta</span></div>
+                <div class="it"><b>02</b><span>Disponibilidad</span></div>
+                <div class="it"><b>03</b><span>MTBF (Tiempo Medio Entre Fallas)</span></div>
+                <div class="it"><b>04</b><span>MTTR (Tiempo Medio de Reparacion)</span></div>
+                <div class="it"><b>05</b><span>Cumplimiento de Mantenimiento Preventivo</span></div>
+                <div class="it"><b>06</b><span>Cumplimiento de Mantenimiento Correctivo Programado</span></div>
+                <div class="it"><b>07</b><span>Confiabilidad</span></div>
+            </div>
+        </div>
+
+        <!-- 01 Disponibilidad requerida -->
+        <div class="slide" data-slide>
+            <h2><span class="idx">01</span> Disponibilidad requerida para cumplir la meta</h2>
+            <div class="method">Cuanta disponibilidad necesita cada area, segun la capacidad teorica de sus equipos:
+                los digestores por sus llenadas, los secadores y molinos por sus TM/dia.
+                <b>Presupuesto de parada</b> = las horas que se pueden gastar sin incumplir.
+                <span class="hint">La meta de produccion es solo el dato de entrada; aqui todo se expresa en horas y porcentaje.</span></div>
+            <div id="reqAvisos"></div>
+            <div class="chart-box" id="reqChart" style="height:300px;"></div>
+            <div class="twrap" style="margin-top:12px;"><table class="pres" id="reqTable"></table></div>
+        </div>
+
+        <!-- 02 Disponibilidad -->
+        <div class="slide" data-slide>
+            <h2><span class="idx">02</span> <span id="dispTitulo">Disponibilidad</span></h2>
+            <div class="method" id="dispMetodo">—</div>
+            <div class="kpi-strip" id="dispKpis"></div>
+            <div class="grid3" id="dispAreas"></div>
+            <div style="margin-top:16px;"><div class="chart-box" id="dispLineas" style="height:330px;"></div></div>
+        </div>
+
+        <!-- 03 MTBF -->
+        <div class="slide" data-slide>
+            <h2><span class="idx">03</span> MTBF — Tiempo Medio Entre Fallas</h2>
+            <div class="method">Horas de operacion entre una falla y la siguiente, comparado con el <b>TEP</b>
+                (tiempo efectivo del periodo: las horas que tuvo el mes). Cuanto mas cerca del TEP, mejor.
+                Se calcula equipo por equipo y se pondera por capacidad.</div>
+            <div class="grid3" id="mtbfAreas"></div>
+            <div style="margin-top:16px;"><div class="chart-box" id="mtbfLineas" style="height:330px;"></div></div>
+        </div>
+
+        <!-- 04 MTTR -->
+        <div class="slide" data-slide>
+            <h2><span class="idx">04</span> MTTR — Tiempo Medio de Reparacion</h2>
+            <div class="method">Horas que el equipo estuvo <b>detenido</b> por cada averia: horas de parada
+                dividido entre el numero de averias. Es el indicador de la capacidad de respuesta.</div>
+            <div class="grid3" id="mttrAreas"></div>
+            <div style="margin-top:16px;"><div class="chart-box" id="mttrLineas" style="height:330px;"></div></div>
+        </div>
+
+        <!-- 05 Cumplimiento preventivo -->
+        <div class="slide" data-slide>
+            <h2><span class="idx">05</span> Cumplimiento de Mantenimiento Preventivo</h2>
+            <div class="method">Ordenes preventivas y predictivas programadas en el mes contra las que se
+                ejecutaron. Referencia SMRP: &gt;90 %.</div>
+            <div class="chart-box" id="cumpPrevChart" style="height:360px;"></div>
+        </div>
+
+        <!-- 06 Cumplimiento correctivo programado -->
+        <div class="slide" data-slide>
+            <h2><span class="idx">06</span> Cumplimiento de Mantenimiento Correctivo Programado</h2>
+            <div class="method">Correctivos con fecha programada contra los que se terminaron dentro del mes.</div>
+            <div class="chart-box" id="cumpCorrChart" style="height:360px;"></div>
+        </div>
+
+        <!-- 07 Confiabilidad -->
+        <div class="slide" data-slide>
+            <h2><span class="idx">07</span> Confiabilidad</h2>
+            <div class="method" id="confMetodo">—</div>
+            <div class="grid3" id="confAreas"></div>
+            <div class="aviso" style="margin-top:16px;">
+                <b>La confiabilidad no es solo «que no falle»</b>, sino controlar y predecir las fallas.
+                Herramientas para actuar sobre ella: ruta de mantenimiento predictivo · analisis causa raiz (ACR) ·
+                mejoras de diseño · monitoreo en tiempo real (temperatura, torque, corriente) ·
+                analisis de laboratorio de las fallas.
+            </div>
+        </div>
+    </div>
+</section>
+
+<div id="presentNav">
+    <button onclick="prevSlide()"><i class="fas fa-chevron-left"></i></button>
+    <span class="cnt" id="slideCnt">1/8</span>
+    <button onclick="nextSlide()"><i class="fas fa-chevron-right"></i></button>
+    <button onclick="togglePresent()" title="Salir (Esc)"><i class="fas fa-xmark"></i></button>
+</div>
+
+<script src="/static/js/sidebar.js?v={{ v }}"></script>
+<script src="/static/js/presentacion.js?v={{ v }}"></script>
+</body>
+</html>

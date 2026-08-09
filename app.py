@@ -71,6 +71,7 @@ from routes.shutdown_routes import register_shutdown_routes
 from routes.indicators_routes import register_indicators_routes
 from routes.plant_flow_routes import register_plant_flow_routes
 from routes.operatividad_routes import register_operatividad_routes
+from routes.presentacion_routes import register_presentacion_routes
 from routes.notices_routes import register_notices_routes
 from routes.reports_routes import register_reports_routes
 from routes.rotative_assets_routes import register_rotative_assets_routes
@@ -295,6 +296,7 @@ _MODULE_ROUTES = {
     'cockpit':          {'pages': ['/cockpit'], 'api': []},
     'indicadores':      {'pages': ['/indicadores'], 'api': ['/api/indicators']},
     'diagnostico':      {'pages': ['/diagnostico'], 'api': ['/api/diagnostico']},
+    'indicadores_mensuales': {'pages': ['/indicadores-mensuales'], 'api': ['/api/presentacion']},
     'analisis_pf':      {'pages': ['/analisis-pf'], 'api': ['/api/pf']},
     'produccion':       {'pages': ['/produccion'], 'api': ['/api/production']},
     'programa_nocturno': {'pages': ['/programa-nocturno'], 'api': ['/api/weekly-plans', '/api/preventive-sources']},
@@ -323,6 +325,7 @@ _DEFAULT_PERMS = {
         'espesores': {'view': True, 'edit': True}, 'cockpit': {'view': True, 'edit': False},
         'indicadores': {'view': True, 'edit': False},
         'diagnostico': {'view': True, 'edit': False},
+        'indicadores_mensuales': {'view': True, 'edit': False},
         'analisis_pf': {'view': True, 'edit': False},
         'produccion': {'view': True, 'edit': True},
         'paradas': {'view': True, 'edit': True},
@@ -507,6 +510,7 @@ _DEFAULT_PERMS = {
         'espesores': {'view': True, 'edit': False}, 'cockpit': {'view': True, 'edit': False},
         'indicadores': {'view': True, 'edit': False},
         'diagnostico': {'view': True, 'edit': False},
+        'indicadores_mensuales': {'view': True, 'edit': False},
         'analisis_pf': {'view': True, 'edit': False},
         'produccion': {'view': True, 'edit': True},
         'paradas': {'view': True, 'edit': False},
@@ -1256,6 +1260,10 @@ register_operatividad_routes(
     Line=Line,
     WorkOrder=WorkOrder,
 )
+
+# Indicadores Mensuales de Mantenimiento: presentacion para gerencia que corre
+# EN PARALELO al Diagnostico Mensual, sin hablar de toneladas.
+register_presentacion_routes(app=app, db=db, logger=logger)
 
 
 _ENSURE_INDEXES_SQL = [

@@ -3,11 +3,203 @@ import datetime as dt
 import math
 from flask import jsonify, request
 
-from utils.kpi_helpers import (
-    SERIES_AREAS,
-    eq_capacity as _eq_capacity,
-)
+from utils.kpi_helpers import eq_capacity as _eq_capacity
 
+
+
+
+# ── Nucleo del calculo, a nivel de modulo ────────────────────────────────
+# Vive fuera de register_indicators_routes para que otros modulos (la
+# presentacion mensual) usen EXACTAMENTE la misma formula en vez de
+# reimplementarla y volver a abrir la brecha entre pantallas.
+
+def _shutdown_duration(sh):
+    """Horas de una parada calculadas a partir de start_time/end_time.
+    Si end < start asume cruce de medianoche (+24h)."""
+    if not sh:
+        return 0
+    try:
+        t_start = dt.datetime.strptime(sh.start_time or '07:00', '%H:%M').time()
+        t_end = dt.datetime.strptime(sh.end_time or '19:00', '%H:%M').time()
+        base = dt.date(1970, 1, 1)
+        diff = (dt.datetime.combine(base, t_end) - dt.datetime.combine(base, t_start)).total_seconds() / 3600
+        if diff < 0:
+            diff += 24
+        return max(0.0, diff)
+    except Exception:
+        return 0
+
+def _ot_downtime_planned(ot):
+    """True si el paro de la OT se considera PLANIFICADO.
+    Prioridad: campo explicito downtime_planned de la OT; si es NULL se
+    deriva del tipo de mantenimiento (correctivo → no planificado; el
+    resto — preventivo, predictivo, mejora — → planificado)."""
+    dp = ot.get('downtime_planned')
+    if dp is not None:
+        return bool(dp)
+    mt = (ot.get('maintenance_type') or '').strip().lower()
+    return mt not in ('correctivo', 'correctiva', 'corrective')
+
+# Horizonte por defecto de la confiabilidad: una semana de operacion.
+# R(t) depende de t, asi que si cada pantalla usa un t distinto los
+# numeros no son comparables. Se fija aqui para toda la aplicacion.
+RELIABILITY_HOURS = 168.0
+
+def _calc_indicators(ots, total_hours, shutdown_map=None,
+                     mode='operativa', unplanned_shutdown_ids=None,
+                     reliability_hours=None):
+    """Calcula MTBF, MTTR, Disponibilidad, Confiabilidad para un conjunto de OTs.
+
+    CONSOLIDACIÓN POR PARADA: cuando varias OTs comparten shutdown_id sobre el
+    mismo equipo (trabajos paralelos durante una parada programada), su downtime
+    NO se suma — se cuenta UNA sola vez usando la duración de la parada.
+    Esto evita inflar artificialmente el MTTR/Indisponibilidad cuando se
+    aprovecha una parada para hacer múltiples mejorías.
+
+    Todo el downtime se clasifica en PLANIFICADO (Pp) o NO PLANIFICADO (Pn)
+    segun WorkOrder.downtime_planned / Shutdown.is_planned, y con eso se
+    calculan SIEMPRE ambas disponibilidades (T = horas del periodo):
+        operativa = (T - Pp - Pn) / T          → lo que produccion tuvo
+        inherente = (T - Pp - Pn) / (T - Pp)   → salud del activo
+                    (ISO 14224: el mtto planificado sale de la base)
+
+    mode elige que juego de KPIs (MTBF/MTTR/fallas/availability) se expone
+    en las claves principales: 'operativa' usa todo el downtime;
+    'inherente' solo las averias.
+    """
+    shutdown_map = shutdown_map or {}
+    unplanned_shutdown_ids = unplanned_shutdown_ids or set()
+    is_inherent = (str(mode).lower() == 'inherente')
+    reliability_hours = reliability_hours or RELIABILITY_HOURS
+
+    # Paso 1: extraer todas las OTs con downtime > 0 (lista cruda para
+    # detalle), clasificando cada una como paro planificado o averia.
+    failures_raw = []
+    for ot in ots:
+        dh = 0
+        if ot.get('caused_downtime') and ot.get('downtime_hours'):
+            dh = float(ot['downtime_hours'])
+        elif ot.get('real_duration') and ot.get('caused_downtime'):
+            dh = float(ot['real_duration'])
+        if dh <= 0:
+            continue
+        failures_raw.append({
+            'id': ot.get('id'),
+            'code': ot.get('code'),
+            'description': ot.get('description'),
+            'downtime_hours': dh,
+            'maintenance_type': ot.get('maintenance_type'),
+            'status': ot.get('status'),
+            'scheduled_date': ot.get('scheduled_date'),
+            'equipment_name': ot.get('equipment_name', ''),
+            'equipment_tag': ot.get('equipment_tag', ''),
+            'shutdown_id': ot.get('shutdown_id'),
+            'equipment_id': ot.get('equipment_id'),
+            'downtime_planned': _ot_downtime_planned(ot),
+        })
+
+    # Paso 2: consolidar OTs que pertenecen a la misma parada (mismo equipo).
+    # standalone = OTs sin shutdown_id (correctivos espontáneos) → se cuentan 1 a 1
+    # in_shutdown = OTs con shutdown_id → se agrupan por (shutdown_id, equipment_id)
+    standalone = [f for f in failures_raw if not f.get('shutdown_id')]
+    in_shutdown = [f for f in failures_raw if f.get('shutdown_id')]
+
+    groups = {}
+    for f in in_shutdown:
+        # Si la OT no tiene equipment_id, agrupar por shutdown únicamente
+        key = (f['shutdown_id'], f.get('equipment_id') or 0)
+        groups.setdefault(key, []).append(f)
+
+    consolidated = list(standalone)
+    for (sh_id, eq_id), group in groups.items():
+        sh = shutdown_map.get(sh_id)
+        sh_dur = _shutdown_duration(sh)
+        # Preferir duración real de la parada; si no se conoce, usar el MAX
+        # del downtime registrado en las OTs (NO la suma, asumimos paralelismo)
+        dh = sh_dur if sh_dur > 0 else max(f['downtime_hours'] for f in group)
+        # Clasificacion del grupo: manda la bandera de la parada; si no
+        # esta cargada, cae al set de paradas no planificadas.
+        if sh is not None:
+            grp_planned = bool(getattr(sh, 'is_planned', True))
+        else:
+            grp_planned = sh_id not in unplanned_shutdown_ids
+        consolidated.append({
+            'id': group[0]['id'],
+            'code': (sh.code if sh and sh.code else f'PP-{sh_id}'),
+            'description': (sh.name if sh else f'Parada {sh_id}') + f' — {len(group)} OT(s) consolidada(s)',
+            'downtime_hours': round(dh, 2),
+            'maintenance_type': 'Parada Programada' if grp_planned else 'Parada por Avería',
+            'status': 'Cerrada',
+            'scheduled_date': group[0].get('scheduled_date'),
+            'equipment_name': group[0].get('equipment_name', ''),
+            'equipment_tag': group[0].get('equipment_tag', ''),
+            'shutdown_id': sh_id,
+            'equipment_id': eq_id,
+            'downtime_planned': grp_planned,
+            'consolidated_count': len(group),
+            'consolidated_ot_ids': [f['id'] for f in group],
+            'consolidated_raw_total': round(sum(f['downtime_hours'] for f in group), 2),
+        })
+
+    # Paso 3: separar paro planificado (Pp) y no planificado (Pn) y
+    # calcular AMBAS disponibilidades sobre el mismo uptime real.
+    down_planned = sum(f['downtime_hours'] for f in consolidated if f['downtime_planned'])
+    down_unplanned = sum(f['downtime_hours'] for f in consolidated if not f['downtime_planned'])
+    uptime = max(0, total_hours - down_planned - down_unplanned)
+    inherent_base = max(0.0, total_hours - down_planned)
+
+    avail_op = round((uptime / total_hours) * 100, 2) if total_hours > 0 else 100
+    avail_inh = round((uptime / inherent_base) * 100, 2) if inherent_base > 0 else 100.0
+
+    # KPIs del modo elegido: en inherente solo las averias son "fallas" y
+    # la base temporal excluye el mantenimiento planificado.
+    if is_inherent:
+        mode_failures = [f for f in consolidated if not f['downtime_planned']]
+        mode_raw = [f for f in failures_raw if not f['downtime_planned']]
+        base_hours = inherent_base
+        availability = avail_inh
+    else:
+        mode_failures = consolidated
+        mode_raw = failures_raw
+        base_hours = total_hours
+        availability = avail_op
+
+    n_failures = len(mode_failures)
+    total_downtime = sum(f['downtime_hours'] for f in mode_failures)
+
+    mtbf = round(uptime / n_failures, 2) if n_failures > 0 else round(base_hours, 2)
+    # MTTR = tiempo medio de REPARACION: horas que el equipo estuvo
+    # detenido por falla, divididas entre el numero de fallas.
+    mttr = round(total_downtime / n_failures, 2) if n_failures > 0 else 0
+    # Confiabilidad R(t) = e^(-t/MTBF). Sin fallas en el periodo la
+    # confiabilidad es 100%: antes se igualaba MTBF a las horas del
+    # periodo y la formula devolvia siempre e^-1 = 36,79%, de modo que un
+    # equipo que nunca paro aparecia como poco confiable.
+    if n_failures == 0:
+        reliability = 100.0
+    elif mtbf > 0 and reliability_hours > 0:
+        reliability = round(math.exp(-reliability_hours / mtbf) * 100, 2)
+    else:
+        reliability = 0.0
+
+    return {
+        'mtbf': mtbf,
+        'mttr': mttr,
+        'availability': availability,
+        'availability_operativa': avail_op,
+        'availability_inherente': avail_inh,
+        'reliability': reliability,
+        'total_hours': total_hours,
+        'base_hours': round(base_hours, 2),
+        'downtime_hours': round(total_downtime, 2),
+        'downtime_planned_hours': round(down_planned, 2),
+        'downtime_unplanned_hours': round(down_unplanned, 2),
+        'failure_count': n_failures,
+        'total_ots': len(ots),
+        'failures': sorted(mode_failures, key=lambda f: f['downtime_hours'], reverse=True),
+        'failures_detail': sorted(mode_raw, key=lambda f: f['downtime_hours'], reverse=True),
+        'consolidated_groups': len(groups),
+    }
 
 def register_indicators_routes(app, db, logger, WorkOrder, Area, Line, Equipment):
 
@@ -20,22 +212,6 @@ def register_indicators_routes(app, db, logger, WorkOrder, Area, Line, Equipment
             except Exception:
                 pass
         return None
-
-    def _shutdown_duration(sh):
-        """Horas de una parada calculadas a partir de start_time/end_time.
-        Si end < start asume cruce de medianoche (+24h)."""
-        if not sh:
-            return 0
-        try:
-            t_start = dt.datetime.strptime(sh.start_time or '07:00', '%H:%M').time()
-            t_end = dt.datetime.strptime(sh.end_time or '19:00', '%H:%M').time()
-            base = dt.date(1970, 1, 1)
-            diff = (dt.datetime.combine(base, t_end) - dt.datetime.combine(base, t_start)).total_seconds() / 3600
-            if diff < 0:
-                diff += 24
-            return max(0.0, diff)
-        except Exception:
-            return 0
 
     def _load_shutdown_map(ots):
         """Pre-carga el dict {id: Shutdown} para las OTs que tengan shutdown_id."""
@@ -51,164 +227,6 @@ def register_indicators_routes(app, db, logger, WorkOrder, Area, Line, Equipment
         if not sh_ids:
             return {}
         return {s.id: s for s in Shutdown.query.filter(Shutdown.id.in_(sh_ids)).all()}
-
-    def _ot_downtime_planned(ot):
-        """True si el paro de la OT se considera PLANIFICADO.
-        Prioridad: campo explicito downtime_planned de la OT; si es NULL se
-        deriva del tipo de mantenimiento (correctivo → no planificado; el
-        resto — preventivo, predictivo, mejora — → planificado)."""
-        dp = ot.get('downtime_planned')
-        if dp is not None:
-            return bool(dp)
-        mt = (ot.get('maintenance_type') or '').strip().lower()
-        return mt not in ('correctivo', 'correctiva', 'corrective')
-
-    def _calc_indicators(ots, total_hours, shutdown_map=None,
-                         mode='operativa', unplanned_shutdown_ids=None):
-        """Calcula MTBF, MTTR, Disponibilidad, Confiabilidad para un conjunto de OTs.
-
-        CONSOLIDACIÓN POR PARADA: cuando varias OTs comparten shutdown_id sobre el
-        mismo equipo (trabajos paralelos durante una parada programada), su downtime
-        NO se suma — se cuenta UNA sola vez usando la duración de la parada.
-        Esto evita inflar artificialmente el MTTR/Indisponibilidad cuando se
-        aprovecha una parada para hacer múltiples mejorías.
-
-        Todo el downtime se clasifica en PLANIFICADO (Pp) o NO PLANIFICADO (Pn)
-        segun WorkOrder.downtime_planned / Shutdown.is_planned, y con eso se
-        calculan SIEMPRE ambas disponibilidades (T = horas del periodo):
-            operativa = (T - Pp - Pn) / T          → lo que produccion tuvo
-            inherente = (T - Pp - Pn) / (T - Pp)   → salud del activo
-                        (ISO 14224: el mtto planificado sale de la base)
-
-        mode elige que juego de KPIs (MTBF/MTTR/fallas/availability) se expone
-        en las claves principales: 'operativa' usa todo el downtime;
-        'inherente' solo las averias.
-        """
-        shutdown_map = shutdown_map or {}
-        unplanned_shutdown_ids = unplanned_shutdown_ids or set()
-        is_inherent = (str(mode).lower() == 'inherente')
-
-        # Paso 1: extraer todas las OTs con downtime > 0 (lista cruda para
-        # detalle), clasificando cada una como paro planificado o averia.
-        failures_raw = []
-        for ot in ots:
-            dh = 0
-            if ot.get('caused_downtime') and ot.get('downtime_hours'):
-                dh = float(ot['downtime_hours'])
-            elif ot.get('real_duration') and ot.get('caused_downtime'):
-                dh = float(ot['real_duration'])
-            if dh <= 0:
-                continue
-            failures_raw.append({
-                'id': ot.get('id'),
-                'code': ot.get('code'),
-                'description': ot.get('description'),
-                'downtime_hours': dh,
-                'maintenance_type': ot.get('maintenance_type'),
-                'status': ot.get('status'),
-                'scheduled_date': ot.get('scheduled_date'),
-                'equipment_name': ot.get('equipment_name', ''),
-                'equipment_tag': ot.get('equipment_tag', ''),
-                'shutdown_id': ot.get('shutdown_id'),
-                'equipment_id': ot.get('equipment_id'),
-                'downtime_planned': _ot_downtime_planned(ot),
-            })
-
-        # Paso 2: consolidar OTs que pertenecen a la misma parada (mismo equipo).
-        # standalone = OTs sin shutdown_id (correctivos espontáneos) → se cuentan 1 a 1
-        # in_shutdown = OTs con shutdown_id → se agrupan por (shutdown_id, equipment_id)
-        standalone = [f for f in failures_raw if not f.get('shutdown_id')]
-        in_shutdown = [f for f in failures_raw if f.get('shutdown_id')]
-
-        groups = {}
-        for f in in_shutdown:
-            # Si la OT no tiene equipment_id, agrupar por shutdown únicamente
-            key = (f['shutdown_id'], f.get('equipment_id') or 0)
-            groups.setdefault(key, []).append(f)
-
-        consolidated = list(standalone)
-        for (sh_id, eq_id), group in groups.items():
-            sh = shutdown_map.get(sh_id)
-            sh_dur = _shutdown_duration(sh)
-            # Preferir duración real de la parada; si no se conoce, usar el MAX
-            # del downtime registrado en las OTs (NO la suma, asumimos paralelismo)
-            dh = sh_dur if sh_dur > 0 else max(f['downtime_hours'] for f in group)
-            # Clasificacion del grupo: manda la bandera de la parada; si no
-            # esta cargada, cae al set de paradas no planificadas.
-            if sh is not None:
-                grp_planned = bool(getattr(sh, 'is_planned', True))
-            else:
-                grp_planned = sh_id not in unplanned_shutdown_ids
-            consolidated.append({
-                'id': group[0]['id'],
-                'code': (sh.code if sh and sh.code else f'PP-{sh_id}'),
-                'description': (sh.name if sh else f'Parada {sh_id}') + f' — {len(group)} OT(s) consolidada(s)',
-                'downtime_hours': round(dh, 2),
-                'maintenance_type': 'Parada Programada' if grp_planned else 'Parada por Avería',
-                'status': 'Cerrada',
-                'scheduled_date': group[0].get('scheduled_date'),
-                'equipment_name': group[0].get('equipment_name', ''),
-                'equipment_tag': group[0].get('equipment_tag', ''),
-                'shutdown_id': sh_id,
-                'equipment_id': eq_id,
-                'downtime_planned': grp_planned,
-                'consolidated_count': len(group),
-                'consolidated_ot_ids': [f['id'] for f in group],
-                'consolidated_raw_total': round(sum(f['downtime_hours'] for f in group), 2),
-            })
-
-        # Paso 3: separar paro planificado (Pp) y no planificado (Pn) y
-        # calcular AMBAS disponibilidades sobre el mismo uptime real.
-        down_planned = sum(f['downtime_hours'] for f in consolidated if f['downtime_planned'])
-        down_unplanned = sum(f['downtime_hours'] for f in consolidated if not f['downtime_planned'])
-        uptime = max(0, total_hours - down_planned - down_unplanned)
-        inherent_base = max(0.0, total_hours - down_planned)
-
-        avail_op = round((uptime / total_hours) * 100, 2) if total_hours > 0 else 100
-        avail_inh = round((uptime / inherent_base) * 100, 2) if inherent_base > 0 else 100.0
-
-        # KPIs del modo elegido: en inherente solo las averias son "fallas" y
-        # la base temporal excluye el mantenimiento planificado.
-        if is_inherent:
-            mode_failures = [f for f in consolidated if not f['downtime_planned']]
-            mode_raw = [f for f in failures_raw if not f['downtime_planned']]
-            base_hours = inherent_base
-            availability = avail_inh
-        else:
-            mode_failures = consolidated
-            mode_raw = failures_raw
-            base_hours = total_hours
-            availability = avail_op
-
-        n_failures = len(mode_failures)
-        total_downtime = sum(f['downtime_hours'] for f in mode_failures)
-
-        mtbf = round(uptime / n_failures, 2) if n_failures > 0 else round(base_hours, 2)
-        mttr = round(total_downtime / n_failures, 2) if n_failures > 0 else 0
-        # Confiabilidad R(t) = e^(-t/MTBF) para t = horas base del modo
-        if mtbf > 0 and base_hours > 0:
-            reliability = round(math.exp(-base_hours / mtbf) * 100, 2)
-        else:
-            reliability = round(math.exp(0) * 100, 2) if n_failures == 0 else 0
-
-        return {
-            'mtbf': mtbf,
-            'mttr': mttr,
-            'availability': availability,
-            'availability_operativa': avail_op,
-            'availability_inherente': avail_inh,
-            'reliability': reliability,
-            'total_hours': total_hours,
-            'base_hours': round(base_hours, 2),
-            'downtime_hours': round(total_downtime, 2),
-            'downtime_planned_hours': round(down_planned, 2),
-            'downtime_unplanned_hours': round(down_unplanned, 2),
-            'failure_count': n_failures,
-            'total_ots': len(ots),
-            'failures': sorted(mode_failures, key=lambda f: f['downtime_hours'], reverse=True),
-            'failures_detail': sorted(mode_raw, key=lambda f: f['downtime_hours'], reverse=True),
-            'consolidated_groups': len(groups),
-        }
 
     def _load_unplanned_shutdown_ids():
         """Set de IDs de paradas marcadas como NO planificadas (averias).
@@ -299,56 +317,52 @@ def register_indicators_routes(app, db, logger, WorkOrder, Area, Line, Equipment
             result = []
             for area in areas:
                 area_ots = ots_by_area.get(area.id, [])
-                area_name = area.name.upper()
-                is_series = area_name in SERIES_AREAS
 
                 # Las tres claves de disponibilidad se agregan en paralelo para
                 # que la vista muestre siempre operativa e inherente juntas.
                 AVAIL_KEYS = ('availability', 'availability_operativa', 'availability_inherente')
 
-                if is_series:
-                    # Serie: calcular por equipo individual y multiplicar disponibilidades
-                    area_equips = [e for e in equips if e.line_id and line_map.get(e.line_id) and line_map[e.line_id].area_id == area.id]
-                    if area_equips:
-                        series_avail = {k: 1.0 for k in AVAIL_KEYS}
-                        for eq in area_equips:
-                            eq_ots = [o for o in area_ots if o.get('equipment_id') == eq.id]
-                            ind = _calc_indicators(eq_ots, total_hours, shutdown_map, mode=mode, unplanned_shutdown_ids=unplanned_ids)
-                            for k in AVAIL_KEYS:
-                                series_avail[k] *= ind[k] / 100
-                        area_indicators = _calc_indicators(area_ots, total_hours, shutdown_map, mode=mode, unplanned_shutdown_ids=unplanned_ids)
-                        for k in AVAIL_KEYS:
-                            area_indicators[k] = round(series_avail[k] * 100, 2)
-                        area_indicators['calc_method'] = 'serie'
-                    else:
-                        area_indicators = _calc_indicators(area_ots, total_hours, shutdown_map, mode=mode, unplanned_shutdown_ids=unplanned_ids)
-                        area_indicators['calc_method'] = 'simple'
-                else:
-                    # Ponderado por capacidad
-                    area_equips = [e for e in equips if e.line_id and line_map.get(e.line_id) and line_map[e.line_id].area_id == area.id]
-                    has_capacity = any(_eq_capacity(e) > 0 for e in area_equips)
+                # Disponibilidad del area = PONDERADA POR CAPACIDAD, sin
+                # excepciones. Antes MOLINO se calculaba multiplicando la
+                # disponibilidad de sus 13 equipos en serie: trece equipos al
+                # 99% daban 87% aunque la linea nunca se hubiera detenido.
+                area_equips = [e for e in equips
+                               if e.line_id and line_map.get(e.line_id)
+                               and line_map[e.line_id].area_id == area.id]
+                has_capacity = any(_eq_capacity(e) > 0 for e in area_equips)
 
-                    if has_capacity and area_equips:
-                        weighted_sum = {k: 0.0 for k in AVAIL_KEYS}
-                        total_cap = 0
-                        for eq in area_equips:
-                            cap = _eq_capacity(eq)
-                            if cap == 0:
-                                continue
-                            eq_ots = [o for o in area_ots if o.get('equipment_id') == eq.id]
-                            ind = _calc_indicators(eq_ots, total_hours, shutdown_map, mode=mode, unplanned_shutdown_ids=unplanned_ids)
-                            for k in AVAIL_KEYS:
-                                weighted_sum[k] += ind[k] * cap
-                            total_cap += cap
-                        area_indicators = _calc_indicators(area_ots, total_hours, shutdown_map, mode=mode, unplanned_shutdown_ids=unplanned_ids)
-                        if total_cap > 0:
-                            for k in AVAIL_KEYS:
-                                area_indicators[k] = round(weighted_sum[k] / total_cap, 2)
-                        area_indicators['calc_method'] = 'ponderado'
-                        area_indicators['total_capacity'] = total_cap
-                    else:
-                        area_indicators = _calc_indicators(area_ots, total_hours, shutdown_map, mode=mode, unplanned_shutdown_ids=unplanned_ids)
-                        area_indicators['calc_method'] = 'simple'
+                if has_capacity and area_equips:
+                    # Se calcula EQUIPO POR EQUIPO y se pondera por capacidad.
+                    # MTBF y confiabilidad tambien: medirlos sobre el conjunto
+                    # de OTs del area entera hacia que un area con muchos
+                    # equipos pareciera siempre peor — COCCION daba 17 h de
+                    # MTBF por tener 20 equipos, cuando cada digestor por
+                    # separado supera las 500 h.
+                    PESADOS = AVAIL_KEYS + ('mtbf', 'reliability')
+                    weighted_sum = {k: 0.0 for k in PESADOS}
+                    total_cap = 0
+                    for eq in area_equips:
+                        cap = _eq_capacity(eq)
+                        if cap == 0:
+                            continue
+                        eq_ots = [o for o in area_ots if o.get('equipment_id') == eq.id]
+                        ind = _calc_indicators(eq_ots, total_hours, shutdown_map, mode=mode, unplanned_shutdown_ids=unplanned_ids)
+                        for k in PESADOS:
+                            weighted_sum[k] += ind[k] * cap
+                        total_cap += cap
+                    # El MTTR sí es del area completa: es el promedio de lo que
+                    # cuesta reparar una averia, sin importar en que equipo.
+                    area_indicators = _calc_indicators(area_ots, total_hours, shutdown_map, mode=mode, unplanned_shutdown_ids=unplanned_ids)
+                    if total_cap > 0:
+                        for k in PESADOS:
+                            area_indicators[k] = round(weighted_sum[k] / total_cap, 2)
+                    area_indicators['calc_method'] = 'ponderado'
+                    area_indicators['total_capacity'] = total_cap
+                else:
+                    # Area sin capacidad configurada: promedio simple sobre el
+                    # conjunto de OTs del area.
+                    area_indicators = _calc_indicators(area_ots, total_hours, shutdown_map, mode=mode, unplanned_shutdown_ids=unplanned_ids)
+                    area_indicators['calc_method'] = 'simple'
 
                 area_indicators['area_id'] = area.id
                 area_indicators['area_name'] = area.name
@@ -422,7 +436,7 @@ def register_indicators_routes(app, db, logger, WorkOrder, Area, Line, Equipment
                 'mode': mode,
                 'area_id': area_id,
                 'area_name': area.name,
-                'is_series': area.name.upper() in SERIES_AREAS,
+                'is_series': False,   # la disponibilidad de area es ponderada
                 'equipments': result,
             })
         except Exception as e:

@@ -401,6 +401,57 @@ def test_narrativa_sobrevive_al_cambio_de_worker(auth_admin, app, monkeypatch):
     assert faltante.status_code == 404 and 'error' in faltante.json
 
 
+def test_presentacion_mensual_no_habla_de_toneladas(auth_admin):
+    """El modulo de Indicadores Mensuales corre en paralelo al Diagnostico y
+    su regla es no mencionar toneladas: el unico dato de produccion que entra
+    es la meta, y solo para despejar la disponibilidad requerida."""
+    hoy = dt.date.today()
+    r = auth_admin.get(f"/api/presentacion/data?month={hoy.strftime('%Y-%m')}&meses=4")
+    assert r.status_code == 200
+    d = r.json
+    assert 'error' not in d
+
+    crudo = json.dumps(d, ensure_ascii=False)
+    # LANZAHARINA es un equipo, no una referencia a producto
+    crudo = crudo.replace('LANZAHARINA', '')
+    for prohibido in ('tons', 'tonelada', 'sacks', 'sacos', 'tm_dia',
+                      'monthly_target', 'capacidad_periodo'):
+        assert prohibido not in crudo.lower(), f'la presentacion expone {prohibido}'
+
+    # Las 6 laminas del informe siguen ahi
+    assert 'areas' in d and 'requerida' in d and 'cumplimiento' in d
+    assert 'preventivo' in d['cumplimiento'] and 'correctivo' in d['cumplimiento']
+    for a in d['areas']:
+        for campo in ('disponibilidad', 'mtbf', 'mttr', 'confiabilidad', 'tep'):
+            assert campo in a['actual'], f'falta {campo}'
+    # Y el diagnostico mensual sigue vivo, con sus toneladas
+    r2 = auth_admin.get(f"/api/diagnostico/data?month={hoy.strftime('%Y-%m')}")
+    assert r2.status_code == 200 and 'produccion' in r2.json
+
+
+def test_confiabilidad_sin_fallas_es_100(auth_admin, app):
+    """Un equipo que no fallo en el periodo tiene 100% de confiabilidad.
+
+    Antes se igualaba el MTBF a las horas del periodo y R(t) = e^(-T/T) daba
+    siempre 36,79%: areas enteras sin una sola falla aparecian como poco
+    confiables en la presentacion.
+    """
+    from routes.indicators_routes import _calc_indicators
+    ind = _calc_indicators([], 744.0)
+    assert ind['failure_count'] == 0
+    assert ind['reliability'] == 100.0
+    assert ind['availability'] == 100
+
+    # Con una falla, R(t) se mide al horizonte estandar de 168 h
+    ots = [{'id': 1, 'caused_downtime': True, 'downtime_hours': 24.0,
+            'maintenance_type': 'Correctivo', 'equipment_id': 1}]
+    ind2 = _calc_indicators(ots, 744.0, mode='operativa')
+    assert ind2['failure_count'] == 1
+    assert 0 < ind2['reliability'] < 100
+    # MTTR = tiempo medio de reparacion = horas detenido / averias
+    assert ind2['mttr'] == 24.0
+
+
 def test_atajos_de_periodo(auth_admin):
     """El selector arranca en el ultimo mes con datos, no en el mes en curso
     (que suele tener dos dias cargados y no sirve para presentar)."""

@@ -750,11 +750,15 @@ def register_diagnostico_routes(app, db, logger):
                 proa = [o for o in mes if _mtype(o) in ('preventivo', 'predictivo')]
                 mejora = [o for o in mes if _mtype(o) == 'mejora']
                 mix_base = len(corr) + len(proa)
-                mttr_vals = [float(o.real_duration) for o in corr if o.real_duration]
                 # Horas de parada QUE OCURRIERON en el periodo (las paradas
                 # que cruzan meses se reparten por dias, no se cargan enteras
                 # al mes en que se cerro la OT).
                 dt_total = sum(_paro_en_rango(o, ini, fin) for o in closed)
+                # MTTR = tiempo medio de REPARACION: horas que el equipo
+                # estuvo detenido por averia / numero de averias. Antes se
+                # promediaba real_duration (horas-hombre del trabajo), que es
+                # otra cosa y no coincidia con el modulo de Indicadores.
+                paro_corr = [h for h in (_paro_en_rango(o, ini, fin) for o in corr) if h > 0]
 
                 dias_nom = (fin - ini).days + 1
                 dias_efectivos = max((min(fin, hoy) - ini).days + 1, 0)
@@ -792,7 +796,7 @@ def register_diagnostico_routes(app, db, logger):
                     'mejoras': len(mejora),
                     'proactive_pct': round(len(proa) / mix_base * 100, 1) if mix_base else 0.0,
                     'reactive_pct': round(len(corr) / mix_base * 100, 1) if mix_base else 0.0,
-                    'mttr_h': round(sum(mttr_vals) / len(mttr_vals), 1) if mttr_vals else None,
+                    'mttr_h': round(sum(paro_corr) / len(paro_corr), 1) if paro_corr else None,
                     'downtime_h': round(dt_total, 1),
                     'mtbf_h': mtbf,
                     'disponibilidad_pct': disp,
@@ -913,7 +917,8 @@ def register_diagnostico_routes(app, db, logger):
                 proa_w = [o for o in mes_w if _mtype(o) in ('preventivo', 'predictivo')]
                 mix_w = len(corr_w) + len(proa_w)
                 dt_w = sum(_paro_en_rango(o, d_ini, d_fin) for o in closed)
-                mttr_vals_w = [float(o.real_duration) for o in corr_w if o.real_duration]
+                # MTTR de la semana: horas de parada por averia / nº de averias
+                mttr_vals_w = [h for h in (_paro_en_rango(o, d_ini, d_fin) for o in corr_w) if h > 0]
 
                 # Bloque aun no transcurrido: sin KPIs de horas
                 futura = d_ini > hoy
