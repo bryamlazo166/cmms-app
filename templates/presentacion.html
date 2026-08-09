@@ -4,7 +4,7 @@
     <meta charset="UTF-8">
     <link rel="icon" type="image/svg+xml" href="/static/favicon.svg">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Indicadores Mensuales de Mantenimiento - CMMS</title>
+    <title>Indicadores de Mantenimiento - CMMS</title>
     <!-- CMMS_THEME_INIT -->
     <script>(function(){try{var t=localStorage.getItem('cmms.theme');if(t=='management'||t=='developer'){document.documentElement.setAttribute('data-theme',t);}}catch(e){}})();</script>
     <link rel="stylesheet" href="/static/css/style.css?v={{ v }}">
@@ -20,7 +20,7 @@
             --bien:#30D158; --regular:#FF9F0A; --mal:#FF453A;
         }
         body{background:#0b1825;}
-        .wrap{max-width:1500px;margin:0 auto;padding:16px;}
+        .wrap{max-width:1560px;margin:0 auto;padding:16px;}
         .header{background:linear-gradient(115deg,var(--marino),#0e2439);
             border:1px solid var(--linea);border-radius:14px;padding:20px 24px;margin-bottom:16px;
             display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:14px;}
@@ -38,18 +38,40 @@
 
         .slide{background:var(--panel);border:1px solid var(--linea);border-radius:14px;
             padding:22px 26px;margin-bottom:16px;}
-        .slide h2{margin:0 0 2px;color:#fff;font-size:1.2rem;display:flex;align-items:center;gap:11px;}
+        .slide h2{margin:0 0 2px;color:#fff;font-size:1.2rem;display:flex;align-items:center;gap:11px;flex-wrap:wrap;}
         .slide h2 .idx{background:var(--naranja-fuerte);color:#fff;font-size:.8rem;font-weight:800;
             border-radius:6px;padding:3px 9px;letter-spacing:.05em;}
+        .slide h2 .peri-chip{margin-left:auto;background:#0f2436;border:1px solid var(--linea);
+            color:var(--naranja);font-size:.74rem;font-weight:700;border-radius:20px;padding:4px 13px;
+            letter-spacing:.04em;text-transform:uppercase;}
         .slide .method{color:var(--tenue);font-size:.79rem;margin:8px 0 14px;line-height:1.5;}
         .chart-box{height:340px;width:100%;}
+        .chart-box.glob{height:290px;}
         .grid2{display:grid;grid-template-columns:1fr 1fr;gap:14px;}
-        .grid3{display:grid;grid-template-columns:repeat(3,1fr);gap:14px;}
-        @media(max-width:1000px){.grid2,.grid3{grid-template-columns:1fr;}}
+        .grid3{display:grid;grid-template-columns:repeat(auto-fit,minmax(300px,1fr));gap:13px;}
+        @media(max-width:1000px){.grid2{grid-template-columns:1fr;}}
+
+        /* Bloque separado por area, como en el informe impreso */
+        .area-card{background:linear-gradient(180deg,#10283c,#0e2032);border:1px solid var(--linea);
+            border-radius:12px;overflow:hidden;}
+        .area-card .area-head{display:flex;align-items:center;gap:9px;padding:9px 13px;
+            background:linear-gradient(90deg,rgba(237,125,49,.16),rgba(237,125,49,0));
+            border-bottom:1px solid var(--linea);}
+        .area-card .area-head .dot{width:9px;height:9px;border-radius:50%;background:var(--naranja-fuerte);flex:none;}
+        .area-card .area-head .nom{color:#fff;font-weight:800;font-size:.86rem;letter-spacing:.06em;text-transform:uppercase;}
+        .area-card .area-head .val{margin-left:auto;font-weight:800;font-size:1.05rem;font-variant-numeric:tabular-nums;}
+        .area-card .area-head .trend{font-size:.72rem;color:var(--tenue);font-weight:600;}
+        .area-card .chart-box{height:210px;}
+
+        .sep{display:flex;align-items:center;gap:12px;margin:18px 0 11px;color:var(--tenue);
+            font-size:.72rem;text-transform:uppercase;letter-spacing:.14em;font-weight:700;}
+        .sep::after{content:'';flex:1;height:1px;background:var(--linea);}
 
         .kpi-strip{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:12px;margin:4px 0 14px;}
         .kpi-item{background:#0f2436;border:1px solid var(--linea);border-radius:12px;padding:13px;text-align:center;}
+        .kpi-item.planta{background:linear-gradient(150deg,#173a5b,#0f2436);border-color:#2f5c85;}
         .kpi-item .label{font-size:.7rem;color:var(--tenue);text-transform:uppercase;letter-spacing:.5px;line-height:1.3;}
+        .kpi-item.planta .label{color:var(--naranja);}
         .kpi-item .value{font-size:1.7rem;font-weight:700;margin-top:6px;color:#fff;font-variant-numeric:tabular-nums;}
         .kpi-item .delta{font-size:.74rem;margin-top:3px;color:var(--tenue);}
         .v-good{color:var(--bien)!important;}.v-warn{color:var(--regular)!important;}.v-crit{color:var(--mal)!important;}
@@ -66,6 +88,7 @@
             line-height:1.55;margin-bottom:12px;}
         .aviso.rojo{background:rgba(255,69,58,.1);border-color:rgba(255,69,58,.4);color:#ff8d82;}
         .hint{color:#6d90ad;font-size:.75rem;}
+        .clickhint{color:#6d90ad;font-size:.73rem;margin-top:9px;display:flex;align-items:center;gap:6px;}
 
         /* Portada del informe */
         .portada{background:linear-gradient(125deg,var(--marino) 0%,#0d2135 65%);border-color:#2c5578;}
@@ -78,17 +101,34 @@
         .indice .it b{color:var(--naranja);font-size:.95rem;min-width:26px;font-variant-numeric:tabular-nums;}
         .indice .it span{color:var(--tinta);font-size:1rem;border-left:2px solid var(--linea);padding-left:14px;}
 
+        /* Detalle de ordenes (drill-down al hacer click en el grafico) */
+        #modalDet{display:none;position:fixed;inset:0;z-index:200;background:rgba(4,12,20,.75);
+            backdrop-filter:blur(3px);padding:26px;overflow-y:auto;}
+        #modalDet.open{display:block;}
+        #modalDet .box{max-width:1180px;margin:0 auto;background:#102638;border:1px solid var(--linea);
+            border-radius:14px;padding:20px 24px;}
+        #modalDet .top{display:flex;align-items:flex-start;gap:14px;margin-bottom:12px;}
+        #modalDet h3{margin:0;color:#fff;font-size:1.15rem;}
+        #modalDet .top .sub{color:var(--tenue);font-size:.8rem;margin-top:3px;}
+        #modalDet .x{margin-left:auto;background:#1b3348;border:1px solid var(--linea);color:var(--tinta);
+            border-radius:8px;width:34px;height:34px;cursor:pointer;font-size:1rem;flex:none;}
+        .tag{display:inline-block;border-radius:6px;padding:1px 7px;font-size:.7rem;font-weight:700;}
+        .tag.plan{background:rgba(48,209,88,.14);color:var(--bien);}
+        .tag.aver{background:rgba(255,69,58,.14);color:#ff8d82;}
+
         /* Modo presentacion */
         body.presenting .sidebar,body.presenting .header,body.presenting .no-present{display:none!important;}
         body.presenting .home-section{margin-left:0!important;}
         body.presenting{overflow:hidden;}
         body.presenting .wrap{max-width:none;padding:0;}
         body.presenting .slide{display:none;position:fixed;inset:0;margin:0;border-radius:0;
-            border:none;padding:40px 60px;overflow-y:auto;z-index:60;}
+            border:none;padding:32px 52px;overflow-y:auto;z-index:60;}
         body.presenting .slide.active{display:block;}
-        body.presenting .slide h2{font-size:1.9rem;}
-        body.presenting .chart-box{height:60vh;}
-        body.presenting .kpi-item .value{font-size:2.4rem;}
+        body.presenting .slide h2{font-size:1.75rem;}
+        body.presenting .chart-box{height:56vh;}
+        body.presenting .chart-box.glob{height:34vh;}
+        body.presenting .area-card .chart-box{height:27vh;}
+        body.presenting .kpi-item .value{font-size:2.2rem;}
         body.presenting .portada h1{font-size:4rem;}
         #presentNav{display:none;position:fixed;bottom:18px;right:24px;z-index:70;gap:10px;align-items:center;}
         body.presenting #presentNav{display:flex;}
@@ -98,11 +138,11 @@
 
         @media print{
             body{background:#fff!important;}
-            .sidebar,.tools,.btn,#presentNav,.hint{display:none!important;}
+            .sidebar,.tools,.btn,#presentNav,.hint,.clickhint,#modalDet{display:none!important;}
             .home-section{margin-left:0!important;}
             .slide{background:#fff!important;border:1px solid #ccc!important;break-inside:avoid;}
-            .kpi-item{background:#fff!important;border:1px solid #ccc!important;}
-            .kpi-item .value,.slide h2{color:#111!important;}
+            .kpi-item,.area-card{background:#fff!important;border:1px solid #ccc!important;}
+            .kpi-item .value,.slide h2,.area-card .area-head .nom{color:#111!important;}
             table.pres td{color:#111!important;}
             @page{size:A4 landscape;margin:10mm;}
         }
@@ -114,21 +154,22 @@
     <div class="wrap">
         <div class="header">
             <div>
-                <h1><i class="fas fa-chart-column"></i> Indicadores Mensuales de Mantenimiento</h1>
+                <h1><i class="fas fa-chart-column"></i> Indicadores de Mantenimiento</h1>
                 <div class="sub">Presentacion para gerencia — solo indicadores de mantenimiento, sin toneladas · <span id="genAt">-</span></div>
             </div>
             <div class="tools">
-                <input type="month" id="presMonth" title="Mes a presentar">
-                <select id="presMeses" title="Meses de historico" onchange="cargar()">
-                    <option value="4" selected>4 meses</option>
-                    <option value="6">6 meses</option>
-                    <option value="12">12 meses</option>
+                <input type="month" id="presMonth" title="Mes a presentar" onchange="cambioMes()">
+                <select id="presVista" title="Que periodo se presenta" onchange="cargar()"></select>
+                <select id="presMeses" title="Meses de historico (solo vista mensual)" onchange="cargar()">
+                    <option value="4" selected>vs 4 meses</option>
+                    <option value="6">vs 6 meses</option>
+                    <option value="12">vs 12 meses</option>
                 </select>
                 <select id="presModo" title="Tipo de disponibilidad" onchange="cargar()">
                     <option value="inherente" selected>Disponibilidad inherente</option>
                     <option value="operativa">Disponibilidad operativa</option>
                 </select>
-                <button class="btn primary" onclick="cargar()"><i class="fas fa-sync"></i> Actualizar</button>
+                <button class="btn primary" onclick="cargar(true)"><i class="fas fa-sync"></i> Actualizar</button>
                 <button class="btn present" onclick="togglePresent()" title="Pantalla completa, avanza con las flechas"><i class="fas fa-display"></i> Presentar</button>
                 <button class="btn ghost" onclick="window.print()"><i class="fas fa-file-pdf"></i> PDF</button>
             </div>
@@ -153,7 +194,8 @@
 
         <!-- 01 Disponibilidad requerida -->
         <div class="slide" data-slide>
-            <h2><span class="idx">01</span> Disponibilidad requerida para cumplir la meta</h2>
+            <h2><span class="idx">01</span> Disponibilidad requerida para cumplir la meta
+                <span class="peri-chip" data-peri>—</span></h2>
             <div class="method">Cuanta disponibilidad necesita cada area, segun la capacidad teorica de sus equipos:
                 los digestores por sus llenadas, los secadores y molinos por sus TM/dia.
                 <b>Presupuesto de parada</b> = las horas que se pueden gastar sin incumplir.
@@ -165,51 +207,69 @@
 
         <!-- 02 Disponibilidad -->
         <div class="slide" data-slide>
-            <h2><span class="idx">02</span> <span id="dispTitulo">Disponibilidad</span></h2>
+            <h2><span class="idx">02</span> <span id="dispTitulo">Disponibilidad</span>
+                <span class="peri-chip" data-peri>—</span></h2>
             <div class="method" id="dispMetodo">—</div>
             <div class="kpi-strip" id="dispKpis"></div>
+            <div class="chart-box glob" id="dispGlobal"></div>
+            <div class="sep">Por area</div>
             <div class="grid3" id="dispAreas"></div>
-            <div style="margin-top:16px;"><div class="chart-box" id="dispLineas" style="height:330px;"></div></div>
+            <div class="clickhint no-present"><i class="fas fa-hand-pointer"></i> Haz click en cualquier punto del grafico para ver las ordenes de ese periodo.</div>
         </div>
 
         <!-- 03 MTBF -->
         <div class="slide" data-slide>
-            <h2><span class="idx">03</span> MTBF — Tiempo Medio Entre Fallas</h2>
+            <h2><span class="idx">03</span> MTBF — Tiempo Medio Entre Fallas
+                <span class="peri-chip" data-peri>—</span></h2>
             <div class="method">Horas de operacion entre una falla y la siguiente, comparado con el <b>TEP</b>
-                (tiempo efectivo del periodo: las horas que tuvo el mes). Cuanto mas cerca del TEP, mejor.
+                (tiempo efectivo del periodo: las horas que tuvo el periodo). Cuanto mas cerca del TEP, mejor.
                 Se calcula equipo por equipo y se pondera por capacidad.</div>
+            <div class="kpi-strip" id="mtbfKpis"></div>
+            <div class="chart-box glob" id="mtbfGlobal"></div>
+            <div class="sep">Por area</div>
             <div class="grid3" id="mtbfAreas"></div>
-            <div style="margin-top:16px;"><div class="chart-box" id="mtbfLineas" style="height:330px;"></div></div>
+            <div class="clickhint no-present"><i class="fas fa-hand-pointer"></i> Haz click en cualquier punto del grafico para ver las ordenes de ese periodo.</div>
         </div>
 
         <!-- 04 MTTR -->
         <div class="slide" data-slide>
-            <h2><span class="idx">04</span> MTTR — Tiempo Medio de Reparacion</h2>
+            <h2><span class="idx">04</span> MTTR — Tiempo Medio de Reparacion
+                <span class="peri-chip" data-peri>—</span></h2>
             <div class="method">Horas que el equipo estuvo <b>detenido</b> por cada averia: horas de parada
-                dividido entre el numero de averias. Es el indicador de la capacidad de respuesta.</div>
+                dividido entre el numero de averias. Es el indicador de la capacidad de respuesta —
+                aqui bajar es mejorar.</div>
+            <div class="kpi-strip" id="mttrKpis"></div>
+            <div class="chart-box glob" id="mttrGlobal"></div>
+            <div class="sep">Por area</div>
             <div class="grid3" id="mttrAreas"></div>
-            <div style="margin-top:16px;"><div class="chart-box" id="mttrLineas" style="height:330px;"></div></div>
+            <div class="clickhint no-present"><i class="fas fa-hand-pointer"></i> Haz click en cualquier punto del grafico para ver las ordenes de ese periodo.</div>
         </div>
 
         <!-- 05 Cumplimiento preventivo -->
         <div class="slide" data-slide>
-            <h2><span class="idx">05</span> Cumplimiento de Mantenimiento Preventivo</h2>
-            <div class="method">Ordenes preventivas y predictivas programadas en el mes contra las que se
+            <h2><span class="idx">05</span> Cumplimiento de Mantenimiento Preventivo
+                <span class="peri-chip" data-peri>—</span></h2>
+            <div class="method">Ordenes preventivas y predictivas programadas en el periodo contra las que se
                 ejecutaron. Referencia SMRP: &gt;90 %.</div>
-            <div class="chart-box" id="cumpPrevChart" style="height:360px;"></div>
+            <div class="chart-box" id="cumpPrevChart" style="height:380px;"></div>
         </div>
 
         <!-- 06 Cumplimiento correctivo programado -->
         <div class="slide" data-slide>
-            <h2><span class="idx">06</span> Cumplimiento de Mantenimiento Correctivo Programado</h2>
-            <div class="method">Correctivos con fecha programada contra los que se terminaron dentro del mes.</div>
-            <div class="chart-box" id="cumpCorrChart" style="height:360px;"></div>
+            <h2><span class="idx">06</span> Cumplimiento de Mantenimiento Correctivo Programado
+                <span class="peri-chip" data-peri>—</span></h2>
+            <div class="method">Correctivos con fecha programada contra los que se terminaron dentro del periodo.</div>
+            <div class="chart-box" id="cumpCorrChart" style="height:380px;"></div>
         </div>
 
         <!-- 07 Confiabilidad -->
         <div class="slide" data-slide>
-            <h2><span class="idx">07</span> Confiabilidad</h2>
+            <h2><span class="idx">07</span> Confiabilidad
+                <span class="peri-chip" data-peri>—</span></h2>
             <div class="method" id="confMetodo">—</div>
+            <div class="kpi-strip" id="confKpis"></div>
+            <div class="chart-box glob" id="confGlobal"></div>
+            <div class="sep">Por area</div>
             <div class="grid3" id="confAreas"></div>
             <div class="aviso" style="margin-top:16px;">
                 <b>La confiabilidad no es solo «que no falle»</b>, sino controlar y predecir las fallas.
@@ -226,6 +286,24 @@
     <span class="cnt" id="slideCnt">1/8</span>
     <button onclick="nextSlide()"><i class="fas fa-chevron-right"></i></button>
     <button onclick="togglePresent()" title="Salir (Esc)"><i class="fas fa-xmark"></i></button>
+</div>
+
+<!-- Drill-down: las ordenes detras del indicador -->
+<div id="modalDet" onclick="if(event.target===this)cerrarDetalle()">
+    <div class="box">
+        <div class="top">
+            <div>
+                <h3 id="detTitulo">—</h3>
+                <div class="sub" id="detSub">—</div>
+            </div>
+            <button class="x" onclick="cerrarDetalle()"><i class="fas fa-xmark"></i></button>
+        </div>
+        <div class="kpi-strip" id="detKpis"></div>
+        <div class="sep">Equipos del area en el periodo</div>
+        <div class="twrap"><table class="pres" id="detEquipos"></table></div>
+        <div class="sep">Ordenes cerradas en el periodo</div>
+        <div class="twrap"><table class="pres" id="detOts"></table></div>
+    </div>
 </div>
 
 <script src="/static/js/sidebar.js?v={{ v }}"></script>

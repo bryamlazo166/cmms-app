@@ -530,7 +530,7 @@
         { group: G_ANALISIS, href: '/reportes', icon: 'fas fa-file-contract', label: 'Reportes', tip: 'Reportes' },
         { group: G_ANALISIS, href: '/indicadores', icon: 'fas fa-chart-bar', label: 'Indicadores', tip: 'Indicadores Directorio', restricted: true },
         { group: G_ANALISIS, href: '/diagnostico', icon: 'fas fa-stethoscope', label: 'Diagnóstico Mensual', tip: 'Informe ejecutivo con IA + programación del próximo mes', restricted: true },
-        { group: G_ANALISIS, href: '/indicadores-mensuales', icon: 'fas fa-chart-column', label: 'Indicadores Mensuales', tip: 'Presentación para gerencia: disponibilidad, MTBF, MTTR, cumplimiento y confiabilidad — sin toneladas', restricted: true },
+        { group: G_ANALISIS, href: '/indicadores-mensuales', icon: 'fas fa-chart-column', label: 'Indicadores de Mantenimiento', tip: 'Presentación para gerencia, semanal o mensual: disponibilidad, MTBF, MTTR, cumplimiento y confiabilidad — sin toneladas', restricted: true },
         { group: G_ANALISIS, href: '/analisis-pf', icon: 'fas fa-wave-square', label: 'Confiabilidad P-F', tip: 'Correlación predictivos vs fallas — curva P-F con datos reales', restricted: true },
         { group: G_ANALISIS, href: '/cockpit', icon: 'fas fa-chart-pie', label: 'Cockpit Gerencial', tip: 'Cockpit Gerencial', restricted: true },
         { group: G_ANALISIS, href: '/produccion', icon: 'fas fa-seedling', label: 'Produccion vs Mtto', tip: 'Confiabilidad de Produccion', restricted: true },

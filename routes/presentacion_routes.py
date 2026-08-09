@@ -1,4 +1,4 @@
-"""Indicadores Mensuales de Mantenimiento — presentacion para gerencia.
+"""Indicadores de Mantenimiento — presentacion para gerencia.
 
 Corre EN PARALELO al Diagnostico Mensual, no lo reemplaza. La diferencia es
 deliberada: aqui NO se habla de toneladas. Ni las no producidas ni las
@@ -10,17 +10,31 @@ responder una pregunta de mantenimiento:
 De ahi en adelante todo se expresa en horas y porcentajes, que es el lenguaje
 sobre el que mantenimiento puede actuar.
 
+DOS VISTAS, porque el informe se presenta cada semana y al cierre del mes:
+
+  · Vista SEMANAL — el eje son las semanas del mes hasta la que se elige.
+    Al cerrar la semana 1 se presenta S1; al cerrar la semana 2 se ven S1 y
+    S2 juntas, y asi. Ademas de la barra de cada semana se lleva la linea
+    ACUMULADA (del dia 1 hasta el fin de esa semana), que es la que responde
+    "¿como va el mes?".
+  · Vista MENSUAL — el mes cerrado contra los meses anteriores.
+
 El orden de las laminas sigue el informe que la jefatura ya venia presentando:
-    1. Disponibilidad          (area + desglose por linea)
-    2. MTBF                    (contra el TEP, tiempo efectivo del periodo)
-    3. MTTR                    (tiempo medio de reparacion)
-    4. Cumplimiento de mantenimiento preventivo
-    5. Cumplimiento de mantenimiento correctivo programado
-    6. Confiabilidad
-mas una lamina inicial de disponibilidad requerida.
+    01 Disponibilidad requerida para cumplir la meta
+    02 Disponibilidad
+    03 MTBF (contra el TEP, tiempo efectivo del periodo)
+    04 MTTR (tiempo medio de reparacion)
+    05 Cumplimiento de mantenimiento preventivo
+    06 Cumplimiento de mantenimiento correctivo programado
+    07 Confiabilidad
+
+En pantalla se muestran los indicadores GLOBALES (planta y area). El detalle
+—equipo por equipo y las ordenes que generaron el paro— sale al hacer click,
+que es cuando alguien pregunta "¿y eso por que?".
 """
 import calendar
 import datetime as dt
+import time
 
 from flask import jsonify, render_template, request
 
@@ -33,6 +47,16 @@ MESES = ['', 'Enero', 'Febrero', 'Marzo', 'Abril', 'Mayo', 'Junio',
          'Julio', 'Agosto', 'Setiembre', 'Octubre', 'Noviembre', 'Diciembre']
 MESES_CORTO = ['', 'ENE', 'FEB', 'MAR', 'ABR', 'MAY', 'JUN',
                'JUL', 'AGO', 'SET', 'OCT', 'NOV', 'DIC']
+
+# La lectura de catalogo + ordenes es lo unico que toca la BD y no cambia
+# entre un cambio de mes, de modo o de vista. Se cachea unos segundos para
+# que mover los selectores de la presentacion sea instantaneo.
+_CACHE_TTL_S = 90.0
+_CACHE = {'t': 0.0, 'data': None}
+
+
+def _invalidar_cache():
+    _CACHE['t'], _CACHE['data'] = 0.0, None
 
 
 def register_presentacion_routes(app, db, logger):
@@ -62,10 +86,63 @@ def register_presentacion_routes(app, db, logger):
     def _corto(ym):
         return MESES_CORTO[int(ym[5:7])]
 
-    # ── Datos base, una sola lectura para todos los meses ────────────────
+    def _bloques_semana(ym):
+        """Semanas del mes como bloques de 7 dias desde el dia 1.
 
-    def _contexto():
-        """Todo lo que se consulta a la BD, de una vez."""
+        No se usan semanas ISO a proposito: el informe es mensual y una
+        semana ISO se reparte entre dos meses, con lo que la suma de las
+        semanas dejaria de cuadrar con el mes. Si el ultimo bloque queda
+        con menos de 3 dias se absorbe en el anterior, para no presentar
+        una "semana" de un dia.
+        """
+        dias = _limites(ym)[1].day
+        bloques, d = [], 1
+        while d <= dias:
+            h = min(d + 6, dias)
+            bloques.append((d, h))
+            d = h + 1
+        if len(bloques) > 1 and (bloques[-1][1] - bloques[-1][0] + 1) < 3:
+            ultimo = bloques.pop()
+            bloques[-1] = (bloques[-1][0], ultimo[1])
+        return bloques
+
+    def _periodo(ini, fin, key, label, nombre):
+        dias = (fin - ini).days + 1
+        return {'key': key, 'label': label, 'nombre': nombre,
+                'ini': ini, 'fin': fin, 'dias': dias, 'tep': dias * 24,
+                'desde': ini.isoformat(), 'hasta': fin.isoformat()}
+
+    def _periodos(month, vista, semana, n_meses):
+        """Eje X de toda la presentacion."""
+        if vista == 'semana':
+            bloques = _bloques_semana(month)
+            n = len(bloques) if not semana else max(1, min(semana, len(bloques)))
+            y, m = int(month[:4]), int(month[5:7])
+            out = []
+            for i, (a, b) in enumerate(bloques[:n], start=1):
+                out.append(_periodo(
+                    dt.date(y, m, a), dt.date(y, m, b),
+                    f'{month}-S{i}', f'S{i}',
+                    f'Semana {i} · {a}–{b} de {MESES[m]}'))
+            return out
+        out = []
+        for ym in _meses_atras(month, n_meses):
+            ini, fin = _limites(ym)
+            out.append(_periodo(ini, fin, ym, _corto(ym), _label(ym)))
+        return out
+
+    def _acumulados(periodos):
+        """Para la vista semanal: del dia 1 hasta el cierre de cada semana."""
+        if len(periodos) < 2:
+            return []
+        ini = periodos[0]['ini']
+        return [_periodo(ini, p['fin'], p['key'] + '-ACUM', p['label'],
+                         f"Acumulado hasta {p['nombre'].split('·')[-1].strip()}")
+                for p in periodos]
+
+    # ── Datos base: una sola lectura de BD para todo ─────────────────────
+
+    def _leer_base():
         from utils.kpi_helpers import (eq_harina_tm_day, eq_produces,
                                        plant_yield_factor)
         areas = {a.id: a for a in Area.query.all()}
@@ -76,8 +153,10 @@ def register_presentacion_routes(app, db, logger):
         # Capacidad de harina por equipo y por area (solo lo que produce y
         # esta en servicio). Es el peso de la ponderacion y la base de la
         # disponibilidad requerida.
-        cap_eq, cap_area, cap_linea = {}, {}, {}
+        cap_eq, cap_area = {}, {}
+        eq_de_area, nombre_eq = {}, {}
         for e in equipos:
+            nombre_eq[e.id] = {'nombre': e.name or '', 'tag': e.tag or ''}
             if not e.include_in_kpi or e.line_id not in lines:
                 continue
             cap = (eq_harina_tm_day(e, rend)
@@ -85,138 +164,146 @@ def register_presentacion_routes(app, db, logger):
             cap_eq[e.id] = cap
             aid = lines[e.line_id].area_id
             cap_area[aid] = cap_area.get(aid, 0.0) + cap
-            cap_linea[e.line_id] = cap_linea.get(e.line_id, 0.0) + cap
+            eq_de_area.setdefault(aid, []).append(e.id)
+
+        # UNA sola pasada por las ordenes: de ahi salen las cerradas (para
+        # los indicadores) y las programadas (para el cumplimiento).
+        filas = WorkOrder.query.with_entities(
+            WorkOrder.id, WorkOrder.code, WorkOrder.description,
+            WorkOrder.maintenance_type, WorkOrder.status, WorkOrder.equipment_id,
+            WorkOrder.shutdown_id, WorkOrder.caused_downtime,
+            WorkOrder.downtime_hours, WorkOrder.downtime_planned,
+            WorkOrder.real_duration, WorkOrder.scheduled_date,
+            WorkOrder.real_start_date, WorkOrder.real_end_date).all()
+
+        cerradas, programadas = [], []
+        for f in filas:
+            if f.scheduled_date:
+                programadas.append({'fecha': str(f.scheduled_date)[:10],
+                                    'maintenance_type': f.maintenance_type,
+                                    'status': f.status})
+            if f.status != 'Cerrada':
+                continue
+            eq = nombre_eq.get(f.equipment_id, {})
+            cerradas.append({
+                'id': f.id, 'code': f.code, 'description': f.description,
+                'maintenance_type': f.maintenance_type, 'status': f.status,
+                'equipment_id': f.equipment_id, 'shutdown_id': f.shutdown_id,
+                'caused_downtime': f.caused_downtime,
+                'downtime_hours': f.downtime_hours,
+                'downtime_planned': f.downtime_planned,
+                'real_duration': f.real_duration,
+                'scheduled_date': f.scheduled_date,
+                'equipment_name': eq.get('nombre', ''),
+                'equipment_tag': eq.get('tag', ''),
+                'fecha': str(f.real_end_date or f.real_start_date
+                             or f.scheduled_date or '')[:10],
+            })
+
+        metas = {}
+        for g in ProductionGoal.query.all():
+            if g.area_id and g.monthly_target_tons and g.goal_period:
+                metas.setdefault(str(g.goal_period)[:7], {})[g.area_id] = \
+                    float(g.monthly_target_tons)
 
         return {'areas': areas, 'lines': lines, 'equipos': equipos,
                 'rendimiento': rend, 'cap_eq': cap_eq, 'cap_area': cap_area,
-                'cap_linea': cap_linea}
+                'eq_de_area': eq_de_area, 'ots': cerradas,
+                'programadas': programadas, 'metas': metas}
 
-    def _ots_cerradas():
-        """OTs cerradas como dicts, que es lo que espera _calc_indicators."""
+    def _base():
+        ahora = time.monotonic()
+        if (not app.config.get('TESTING') and _CACHE['data'] is not None
+                and ahora - _CACHE['t'] < _CACHE_TTL_S):
+            return _CACHE['data']
+        datos = _leer_base()
+        _CACHE['t'], _CACHE['data'] = ahora, datos
+        return datos
+
+    # ── Motor de indicadores ─────────────────────────────────────────────
+
+    def _por_equipo(ots, ini, fin):
+        """Indice equipo → OTs del periodo. La fecha de la OT es la de cierre
+        real; asi las semanas de un mes suman exactamente el mes."""
+        idx = {}
+        for o in ots:
+            if o['fecha'] and ini <= o['fecha'] <= fin and o['equipment_id']:
+                idx.setdefault(o['equipment_id'], []).append(o)
+        return idx
+
+    def _ponderar(base, eq_ids, idx, tep, modo, horizonte):
+        """Indicadores de un conjunto de equipos, PONDERADOS POR CAPACIDAD.
+
+        Se calcula equipo por equipo y se pesa por lo que cada uno aporta a
+        la planta. Sumar las horas de paro de equipos en paralelo (los 9
+        digestores) como si estuvieran en serie es lo que antes devolvia
+        disponibilidades imposibles.
+        """
+        from routes.indicators_routes import _calc_indicators
+        num = {'disponibilidad': 0.0, 'mtbf': 0.0, 'confiabilidad': 0.0}
+        peso = 0.0
+        paro_total, fallas, n_ots = 0.0, 0, 0
+        for eid in eq_ids:
+            cap = base['cap_eq'].get(eid, 0.0)
+            ind = _calc_indicators(idx.get(eid, []), tep, mode=modo,
+                                   reliability_hours=horizonte)
+            paro_total += ind['downtime_hours']
+            fallas += ind['failure_count']
+            n_ots += ind['total_ots']
+            if cap <= 0:
+                continue
+            num['disponibilidad'] += ind['availability'] * cap
+            num['mtbf'] += ind['mtbf'] * cap
+            num['confiabilidad'] += ind['reliability'] * cap
+            peso += cap
+        if peso > 0:
+            res = {k: round(v / peso, 2) for k, v in num.items()}
+            res['ponderado'] = True
+        else:
+            # Sin equipos con capacidad: se mide el conjunto directamente
+            todas = [o for eid in eq_ids for o in idx.get(eid, [])]
+            ind = _calc_indicators(todas, tep, mode=modo,
+                                   reliability_hours=horizonte)
+            res = {'disponibilidad': ind['availability'], 'mtbf': ind['mtbf'],
+                   'confiabilidad': ind['reliability'], 'ponderado': False}
+        # MTTR: cuanto cuesta reparar una averia, no se pondera
+        res['mttr'] = round(paro_total / fallas, 2) if fallas else 0.0
+        res['fallas'] = fallas
+        res['horas_paro'] = round(paro_total, 2)
+        res['ots'] = n_ots
+        res['tep'] = tep
+        return res
+
+    def _areas_kpi(base):
+        """Areas que entran al informe, ordenadas por el flujo del proceso."""
         out = []
-        for o in WorkOrder.query.filter(WorkOrder.status == 'Cerrada').all():
-            d = {
-                'id': o.id, 'code': o.code, 'description': o.description,
-                'maintenance_type': o.maintenance_type, 'status': o.status,
-                'equipment_id': o.equipment_id, 'shutdown_id': o.shutdown_id,
-                'caused_downtime': o.caused_downtime,
-                'downtime_hours': o.downtime_hours,
-                'downtime_planned': o.downtime_planned,
-                'real_duration': o.real_duration,
-                'scheduled_date': o.scheduled_date,
-                'fecha': str(o.real_end_date or o.real_start_date
-                             or o.scheduled_date or '')[:10],
-            }
-            out.append(d)
+        for aid, area in base['areas'].items():
+            if not area.include_in_kpi or not base['eq_de_area'].get(aid):
+                continue
+            nom = (area.name or '').upper()
+            orden = AREAS_PROCESO.index(nom) if nom in AREAS_PROCESO else 99
+            out.append({'id': aid, 'nombre': area.name, 'orden': orden})
+        out.sort(key=lambda x: (x['orden'], x['nombre']))
         return out
 
-    # ── Indicadores de un mes ────────────────────────────────────────────
-
-    def _indicadores_mes(ctx, ots, ym, modo, horizonte):
-        """Disponibilidad, MTBF, MTTR y confiabilidad del mes, por area y por
-        linea. La agregacion a area es PONDERADA POR CAPACIDAD: se calcula
-        equipo por equipo y se pesa por lo que cada uno aporta a la planta."""
-        from routes.indicators_routes import _calc_indicators
-        ini, fin = _limites(ym)
-        tep = ((fin - ini).days + 1) * 24          # tiempo efectivo del periodo
-        s_ini, s_fin = ini.isoformat(), fin.isoformat()
-
-        del_mes = [o for o in ots if o['fecha'] and s_ini <= o['fecha'] <= s_fin]
-        por_equipo = {}
-        for o in del_mes:
-            if o['equipment_id']:
-                por_equipo.setdefault(o['equipment_id'], []).append(o)
-
-        def indicadores_de(eq_ids):
-            """Pondera por capacidad los indicadores de un conjunto de equipos."""
-            num = {'disponibilidad': 0.0, 'mtbf': 0.0, 'confiabilidad': 0.0}
-            peso = 0.0
-            paro_total, fallas = 0.0, 0
-            for eid in eq_ids:
-                cap = ctx['cap_eq'].get(eid, 0.0)
-                ind = _calc_indicators(por_equipo.get(eid, []), tep, mode=modo,
-                                       reliability_hours=horizonte)
-                paro_total += ind['downtime_hours']
-                fallas += ind['failure_count']
-                if cap <= 0:
-                    continue
-                num['disponibilidad'] += ind['availability'] * cap
-                num['mtbf'] += ind['mtbf'] * cap
-                num['confiabilidad'] += ind['reliability'] * cap
-                peso += cap
-            if peso > 0:
-                res = {k: round(v / peso, 2) for k, v in num.items()}
-                res['ponderado'] = True
-            else:
-                # Sin equipos con capacidad: se mide el conjunto directamente
-                todas = [o for eid in eq_ids for o in por_equipo.get(eid, [])]
-                ind = _calc_indicators(todas, tep, mode=modo,
-                                       reliability_hours=horizonte)
-                res = {'disponibilidad': ind['availability'], 'mtbf': ind['mtbf'],
-                       'confiabilidad': ind['reliability'], 'ponderado': False}
-            # MTTR: cuanto cuesta reparar una averia, sin ponderar
-            res['mttr'] = round(paro_total / fallas, 2) if fallas else 0.0
-            res['fallas'] = fallas
-            res['horas_paro'] = round(paro_total, 2)
-            res['tep'] = tep
-            return res
-
-        salida = {}
-        for aid, area in ctx['areas'].items():
-            if not area.include_in_kpi:
-                continue
-            eq_area = [e.id for e in ctx['equipos']
-                       if e.include_in_kpi and e.line_id in ctx['lines']
-                       and ctx['lines'][e.line_id].area_id == aid]
-            if not eq_area:
-                continue
-            datos = indicadores_de(eq_area)
-
-            # Desglose por linea (lo que el informe llama "LINEAS")
-            lineas = []
-            for lid, ln in ctx['lines'].items():
-                if ln.area_id != aid:
-                    continue
-                eq_ln = [e.id for e in ctx['equipos']
-                         if e.include_in_kpi and e.line_id == lid]
-                if not eq_ln:
-                    continue
-                d_ln = indicadores_de(eq_ln)
-                d_ln['linea'] = ln.name
-                d_ln['etiqueta'] = _etiqueta_linea(ctx, lid, ln.name)
-                d_ln['capacidad'] = round(ctx['cap_linea'].get(lid, 0.0), 2)
-                lineas.append(d_ln)
-            lineas.sort(key=lambda x: x['etiqueta'])
-            datos['lineas'] = lineas
-            salida[aid] = datos
-        return salida
-
-    def _etiqueta_linea(ctx, line_id, nombre):
-        """Etiqueta corta para el grafico: el tag del equipo con capacidad de
-        la linea (D1, MOL1...) o el nombre de la linea sin la palabra LINEA."""
-        tags = [e.tag for e in ctx['equipos']
-                if e.line_id == line_id and e.include_in_kpi
-                and ctx['cap_eq'].get(e.id, 0) > 0 and e.tag]
-        if len(tags) == 1:
-            return tags[0]
-        corto = (nombre or '').upper().replace('LINEA ', '').replace('LÍNEA ', '')
-        return corto.strip()[:14] or (nombre or '')[:14]
+    def _punto(base, eq_ids, per, modo, horizonte, idx=None):
+        i = idx if idx is not None else _por_equipo(base['ots'], per['desde'], per['hasta'])
+        d = _ponderar(base, eq_ids, i, per['tep'], modo, horizonte)
+        d.update(key=per['key'], label=per['label'], nombre=per['nombre'],
+                 desde=per['desde'], hasta=per['hasta'], dias=per['dias'])
+        return d
 
     # ── Cumplimiento (preventivo y correctivo programado) ────────────────
 
-    def _cumplimiento(ots_todas, ym):
-        """Programadas vs ejecutadas del mes, separando preventivo de
+    def _cumplimiento(base, per):
+        """Programadas vs ejecutadas del periodo, separando preventivo de
         correctivo programado — los dos indicadores del informe."""
-        ini, fin = _limites(ym)
-        s_ini, s_fin = ini.isoformat(), fin.isoformat()
-
         prev_prog = prev_ejec = corr_prog = corr_term = 0
-        for o in ots_todas:
-            f = str(o.scheduled_date or '')[:10]
-            if not f or not (s_ini <= f <= s_fin):
+        for o in base['programadas']:
+            if not (per['desde'] <= o['fecha'] <= per['hasta']):
                 continue
-            mt = (o.maintenance_type or '').strip().lower()
-            cerrada = (o.status == 'Cerrada')
+            mt = (o['maintenance_type'] or '').strip().lower()
+            cerrada = (o['status'] == 'Cerrada')
             if mt in ('preventivo', 'predictivo'):
                 prev_prog += 1
                 prev_ejec += 1 if cerrada else 0
@@ -233,33 +320,35 @@ def register_presentacion_routes(app, db, logger):
 
     # ── Disponibilidad requerida ─────────────────────────────────────────
 
-    def _requerida(ctx, ym, indicadores):
+    def _requerida(base, per, indicadores):
         """Cuanta disponibilidad necesita cada area para cumplir la meta.
 
         La meta viene en toneladas, pero NO se muestra: solo se usa para
         despejar el porcentaje y el presupuesto de horas de parada, que es
         con lo que mantenimiento puede trabajar.
 
-            disponibilidad requerida = meta del mes / capacidad del mes
+            disponibilidad requerida = meta del periodo / capacidad del periodo
             presupuesto de parada    = (1 - requerida) x horas del periodo
-        """
-        ini, fin = _limites(ym)
-        dias = (fin - ini).days + 1
-        horas = dias * 24
 
-        metas = {}
-        for g in ProductionGoal.query.filter_by(goal_period=ym).all():
-            if g.area_id and g.monthly_target_tons:
-                metas[g.area_id] = float(g.monthly_target_tons)
+        En vista semanal la meta se prorratea por dias. El porcentaje sale
+        igual (meta y capacidad escalan juntas); lo que cambia, y es lo util,
+        es el presupuesto de horas: en una semana son 168 h, no 744.
+        """
+        fin = dt.date.fromisoformat(per['hasta'])
+        ym = f"{fin.year}-{fin.month:02d}"
+        dias_mes = calendar.monthrange(fin.year, fin.month)[1]
+        metas = base['metas'].get(ym, {})
+        horas = per['tep']
 
         out = []
         for aid, datos in indicadores.items():
-            area = ctx['areas'][aid]
-            cap_dia = ctx['cap_area'].get(aid, 0.0)
+            area = base['areas'][aid]
+            cap_dia = base['cap_area'].get(aid, 0.0)
             if cap_dia <= 0 or aid not in metas:
                 continue
-            cap_periodo = cap_dia * dias
-            req = metas[aid] / cap_periodo * 100
+            meta_periodo = metas[aid] * per['dias'] / dias_mes
+            cap_periodo = cap_dia * per['dias']
+            req = meta_periodo / cap_periodo * 100
             alcanzable = req <= 100
             real = datos['disponibilidad']
             presupuesto = (1 - min(req, 100) / 100) * horas
@@ -294,95 +383,173 @@ def register_presentacion_routes(app, db, logger):
 
     @app.route('/api/presentacion/data', methods=['GET'])
     def presentacion_data():
-        """month=YYYY-MM · meses=N (default 4, como el informe actual)
-        modo=inherente|operativa · horizonte=horas para R(t) (default 168)"""
+        """month=YYYY-MM · vista=mes|semana · semana=N (vista semanal)
+        meses=N historico (vista mensual) · modo=inherente|operativa
+        horizonte=horas para R(t) (default 168)"""
         try:
             hoy = dt.date.today()
-            mes_actual = hoy.strftime('%Y-%m')
-            month = (request.args.get('month') or _mes_anterior(mes_actual))[:7]
+            month = (request.args.get('month')
+                     or _mes_anterior(hoy.strftime('%Y-%m')))[:7]
+            vista = (request.args.get('vista') or 'mes').lower()
+            vista = 'semana' if vista.startswith('sem') else 'mes'
+            semana = request.args.get('semana', default=0, type=int)
             n = max(1, min(request.args.get('meses', default=4, type=int), 12))
             modo = (request.args.get('modo') or 'inherente').lower()
             horizonte = request.args.get('horizonte', default=168, type=float)
+            if request.args.get('refrescar'):
+                _invalidar_cache()
 
-            ctx = _contexto()
-            ots = _ots_cerradas()
-            todas = WorkOrder.query.all()
-            meses = _meses_atras(month, n)
+            base = _base()
+            periodos = _periodos(month, vista, semana, n)
+            acums = _acumulados(periodos) if vista == 'semana' else []
+            actual = periodos[-1]
+            areas = _areas_kpi(base)
+            eq_proceso = [e for a in areas if a['orden'] < 99
+                          for e in base['eq_de_area'].get(a['id'], [])]
 
-            # Indicadores mes a mes
-            por_mes = {ym: _indicadores_mes(ctx, ots, ym, modo, horizonte)
-                       for ym in meses}
-            cumpl = {ym: _cumplimiento(todas, ym) for ym in meses}
+            # Un indice de OTs por periodo, reutilizado por todas las areas
+            idx = {p['key']: _por_equipo(base['ots'], p['desde'], p['hasta'])
+                   for p in periodos + acums}
 
-            # Reorganizado por area: una serie por indicador
+            def serie_de(eq_ids, lista):
+                return [_punto(base, eq_ids, p, modo, horizonte, idx[p['key']])
+                        for p in lista]
+
             areas_out = []
-            for aid in {a for m in por_mes.values() for a in m}:
-                area = ctx['areas'][aid]
-                serie = []
-                for ym in meses:
-                    d = por_mes[ym].get(aid)
-                    serie.append({
-                        'month': ym, 'label': _corto(ym),
-                        'disponibilidad': d['disponibilidad'] if d else None,
-                        'mtbf': d['mtbf'] if d else None,
-                        'mttr': d['mttr'] if d else None,
-                        'confiabilidad': d['confiabilidad'] if d else None,
-                        'fallas': d['fallas'] if d else 0,
-                        'horas_paro': d['horas_paro'] if d else 0,
-                        'tep': d['tep'] if d else 0,
-                    })
-                # Desglose por linea de cada mes (para el grafico de barras)
-                lineas = []
-                etiquetas = []
-                for ym in meses:
-                    d = por_mes[ym].get(aid)
-                    for ln in (d or {}).get('lineas', []):
-                        if ln['etiqueta'] not in etiquetas:
-                            etiquetas.append(ln['etiqueta'])
-                for et in etiquetas:
-                    fila = {'etiqueta': et, 'valores': []}
-                    for ym in meses:
-                        d = por_mes[ym].get(aid)
-                        m = next((x for x in (d or {}).get('lineas', [])
-                                  if x['etiqueta'] == et), None)
-                        fila['valores'].append({
-                            'month': ym, 'label': _corto(ym),
-                            'disponibilidad': m['disponibilidad'] if m else None,
-                            'mtbf': m['mtbf'] if m else None,
-                            'mttr': m['mttr'] if m else None,
-                            'confiabilidad': m['confiabilidad'] if m else None,
-                        })
-                    lineas.append(fila)
-                orden = (AREAS_PROCESO.index(area.name.upper())
-                         if area.name.upper() in AREAS_PROCESO else 99)
+            for a in areas:
+                eq_ids = base['eq_de_area'].get(a['id'], [])
+                serie = serie_de(eq_ids, periodos)
                 areas_out.append({
-                    'area_id': aid, 'area': area.name, 'orden': orden,
-                    'es_proceso': orden < 99,
-                    'capacidad_dia': round(ctx['cap_area'].get(aid, 0.0), 2),
-                    'serie': serie, 'lineas': lineas,
+                    'area_id': a['id'], 'area': a['nombre'], 'orden': a['orden'],
+                    'es_proceso': a['orden'] < 99,
+                    'capacidad_dia': round(base['cap_area'].get(a['id'], 0.0), 2),
+                    'serie': serie,
+                    'acumulado': serie_de(eq_ids, acums),
                     'actual': serie[-1],
                 })
-            areas_out.sort(key=lambda x: (x['orden'], x['area']))
 
+            # PLANTA: las areas de proceso ponderadas por capacidad, que es
+            # el indicador "global" que abre cada lamina.
+            glob_serie = serie_de(eq_proceso, periodos)
+            planta = {'area': 'PLANTA', 'area_id': 0,
+                      'serie': glob_serie,
+                      'acumulado': serie_de(eq_proceso, acums),
+                      'actual': glob_serie[-1]}
+
+            indic_actual = {a['area_id']: a['serie'][-1] for a in areas_out}
+            cumpl = [dict(key=p['key'], label=p['label'], nombre=p['nombre'],
+                          **_cumplimiento(base, p)) for p in periodos]
+
+            n_semanas = len(_bloques_semana(month))
             return jsonify({
                 'meta': {
                     'month': month, 'label': _label(month),
-                    'meses': [{'month': m, 'label': _corto(m),
-                               'nombre': _label(m)} for m in meses],
+                    'vista': vista,
+                    'semana': len(periodos) if vista == 'semana' else 0,
+                    'semanas_mes': n_semanas,
+                    'periodo_actual': actual['nombre'],
+                    'eje': ('Semanas de ' + _label(month)) if vista == 'semana'
+                           else f'Ultimos {len(periodos)} meses',
+                    'periodos': [{k: p[k] for k in
+                                  ('key', 'label', 'nombre', 'desde', 'hasta', 'dias', 'tep')}
+                                 for p in periodos],
                     'modo': modo,
                     'horizonte_h': horizonte,
-                    'rendimiento_pct': round(ctx['rendimiento'] * 100, 1),
+                    'rendimiento_pct': round(base['rendimiento'] * 100, 1),
                     'generado': dt.datetime.now().strftime('%Y-%m-%d %H:%M'),
                 },
+                'planta': planta,
                 'areas': areas_out,
-                'requerida': _requerida(ctx, month, por_mes[month]),
+                'requerida': _requerida(base, actual, indic_actual),
                 'cumplimiento': {
-                    'preventivo': [dict(month=m, label=_corto(m),
-                                        **cumpl[m]['preventivo']) for m in meses],
-                    'correctivo': [dict(month=m, label=_corto(m),
-                                        **cumpl[m]['correctivo']) for m in meses],
+                    'preventivo': [dict(key=c['key'], label=c['label'],
+                                        nombre=c['nombre'], **c['preventivo'])
+                                   for c in cumpl],
+                    'correctivo': [dict(key=c['key'], label=c['label'],
+                                        nombre=c['nombre'], **c['correctivo'])
+                                   for c in cumpl],
                 },
             })
         except Exception as e:
             logger.exception('presentacion_data error')
+            return jsonify({'error': str(e)}), 500
+
+    @app.route('/api/presentacion/detalle', methods=['GET'])
+    def presentacion_detalle():
+        """Drill-down de una barra del grafico: equipo por equipo y las
+        ordenes que generaron el paro. Es lo que se abre cuando en la
+        reunion preguntan "¿y por que bajo esa area?"."""
+        try:
+            from routes.indicators_routes import _calc_indicators
+            aid = request.args.get('area_id', default=0, type=int)
+            desde = (request.args.get('desde') or '')[:10]
+            hasta = (request.args.get('hasta') or '')[:10]
+            modo = (request.args.get('modo') or 'inherente').lower()
+            horizonte = request.args.get('horizonte', default=168, type=float)
+            if not desde or not hasta:
+                return jsonify({'error': 'Falta el rango de fechas'}), 400
+
+            base = _base()
+            areas = _areas_kpi(base)
+            if aid:
+                eq_ids = base['eq_de_area'].get(aid, [])
+                titulo = base['areas'][aid].name if aid in base['areas'] else 'Area'
+            else:
+                eq_ids = [e for a in areas if a['orden'] < 99
+                          for e in base['eq_de_area'].get(a['id'], [])]
+                titulo = 'PLANTA (areas de proceso)'
+
+            dias = ((dt.date.fromisoformat(hasta)
+                     - dt.date.fromisoformat(desde)).days + 1)
+            tep = dias * 24
+            idx = _por_equipo(base['ots'], desde, hasta)
+            resumen = _ponderar(base, eq_ids, idx, tep, modo, horizonte)
+
+            nombres = {e.id: (e.tag or e.name or f'EQ-{e.id}')
+                       for e in base['equipos']}
+            equipos, ots = [], []
+            for eid in eq_ids:
+                de_eq = idx.get(eid, [])
+                ind = _calc_indicators(de_eq, tep, mode=modo,
+                                       reliability_hours=horizonte)
+                if ind['total_ots'] == 0 and ind['downtime_hours'] == 0:
+                    continue
+                equipos.append({
+                    'equipo': nombres.get(eid, f'EQ-{eid}'),
+                    'capacidad': round(base['cap_eq'].get(eid, 0.0), 2),
+                    'disponibilidad': ind['availability'],
+                    'mtbf': ind['mtbf'], 'mttr': ind['mttr'],
+                    'confiabilidad': ind['reliability'],
+                    'fallas': ind['failure_count'],
+                    'horas_paro': ind['downtime_hours'],
+                    'ots': ind['total_ots'],
+                })
+                for o in de_eq:
+                    paro = 0.0
+                    if o.get('caused_downtime'):
+                        paro = float(o.get('downtime_hours')
+                                     or o.get('real_duration') or 0)
+                    ots.append({
+                        'code': o.get('code') or f"OT-{o['id']}",
+                        'equipo': nombres.get(eid, ''),
+                        'tipo': o.get('maintenance_type') or '—',
+                        'descripcion': (o.get('description') or '')[:180],
+                        'fecha': o.get('fecha'),
+                        'horas_paro': round(paro, 2),
+                        'planificado': bool(o.get('downtime_planned')) if o.get('downtime_planned') is not None
+                                       else (o.get('maintenance_type') or '').strip().lower() != 'correctivo',
+                    })
+            equipos.sort(key=lambda x: (-x['horas_paro'], x['equipo']))
+            ots.sort(key=lambda x: (-x['horas_paro'], x['fecha'] or ''))
+
+            return jsonify({
+                'titulo': titulo,
+                'periodo': f'{desde} a {hasta}',
+                'dias': dias, 'tep': tep, 'modo': modo,
+                'resumen': resumen,
+                'equipos': equipos,
+                'ots': ots,
+            })
+        except Exception as e:
+            logger.exception('presentacion_detalle error')
             return jsonify({'error': str(e)}), 500

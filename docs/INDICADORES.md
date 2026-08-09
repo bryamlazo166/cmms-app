@@ -406,6 +406,82 @@ equipos gemelos.
 
 ---
 
+## 11 ter. Indicadores de Mantenimiento (presentación semanal y mensual)
+
+Módulo `/indicadores-mensuales`. Corre **en paralelo** al Diagnóstico Mensual
+y su regla es no hablar de toneladas: el único dato de producción que entra es
+la meta, y solo para despejar cuánta disponibilidad hace falta.
+
+### Periodización
+
+El informe se presenta al cierre de cada semana y al cierre del mes, así que
+hay dos ejes:
+
+| Vista | Eje X | Para qué |
+|---|---|---|
+| **Semanal** | S1 … Sn del mes elegido, truncado a la semana que se presenta | Al cerrar la semana 2 se ven S1 y S2; al cerrar la 3, S1–S3 |
+| **Mensual** | El mes cerrado contra los N meses anteriores | El cierre de mes |
+
+Las semanas son **bloques de 7 días contados desde el día 1**, no semanas ISO.
+Una semana ISO se reparte entre dos meses y entonces las semanas dejarían de
+sumar el mes; con bloques desde el día 1 la partición es exacta y verificable:
+`Σ fallas de las semanas = fallas del mes` y lo mismo con las horas de paro.
+Si el último bloque queda con menos de 3 días se absorbe en el anterior, para
+no presentar una «semana» de un día.
+
+- Julio (31 días) → S1 1–7 · S2 8–14 · S3 15–21 · S4 22–28 · S5 29–31
+- Junio (30 días) → S1 1–7 · S2 8–14 · S3 15–21 · **S4 22–30**
+- Febrero (28 días) → cuatro semanas exactas
+
+En la vista semanal cada barra es el resultado de **esa semana sola** y la
+línea naranja es el **acumulado del mes** (del día 1 al cierre de esa semana),
+que es lo que responde «¿cómo va el mes?». El acumulado de la última semana
+es, por construcción, el indicador mensual.
+
+Una OT se asigna a un periodo por su **fecha de cierre real**
+(`real_end_date` → `real_start_date` → `scheduled_date`), la misma regla que
+usa la vista mensual. Por eso las semanas cuadran con el mes sin prorrateo.
+
+### Agregación
+
+Todo se calcula **equipo por equipo** con `_calc_indicators` y se **pondera por
+capacidad** al subir a línea, área y planta — disponibilidad, MTBF y
+confiabilidad. El MTTR no se pondera: es `horas de paro ÷ averías`, el tiempo
+medio de reparación. El indicador **PLANTA** es la ponderación de todos los
+equipos de las áreas de proceso (cocción, secado, molienda).
+
+### Disponibilidad requerida
+
+```
+disponibilidad requerida = meta del periodo ÷ capacidad del periodo
+presupuesto de parada    = (1 − requerida) × horas del periodo
+consumido                = (1 − disponibilidad real) × horas del periodo
+```
+
+En vista semanal la meta mensual se **prorratea por días**. El porcentaje
+requerido no cambia (meta y capacidad escalan juntas); lo que cambia, y es lo
+útil, es el presupuesto: en una semana son 168 h de margen, no 744.
+
+El *consumido* son horas **equivalentes de área**, no la suma bruta de
+horas-equipo: los 9 digestores trabajan en paralelo y esa suma supera las horas
+del mes, con lo que el saldo salía negativo aunque el área cumpliera la meta.
+
+Si una etapa necesita más de 100 %, la lámina lo dice explícitamente: la meta
+está por encima de la capacidad instalada y es una conversación sobre la meta o
+sobre ampliar capacidad, no sobre mantenimiento.
+
+### Detalle bajo demanda
+
+En pantalla van solo los indicadores globales (planta y área). Al hacer click
+en cualquier barra o punto se abre `/api/presentacion/detalle`, que devuelve
+para ese área y ese rango: el resumen, los indicadores equipo por equipo y las
+OTs cerradas con sus horas de paro clasificadas en planificado / avería. El
+resumen del detalle es el mismo número que muestra el gráfico — hay una prueba
+que lo verifica, para que el drill-down no contradiga a la lámina en plena
+reunión.
+
+---
+
 ## 12. Cómo verificar manualmente un cálculo
 
 1. **Pega la ventana de fechas** (ej. `2026-04-01 a 2026-04-30`).
@@ -435,6 +511,8 @@ equipos gemelos.
 - **Helpers compartidos**: [utils/kpi_helpers.py](utils/kpi_helpers.py)
   (capacidad, jornada, calendar hours, paradas planificadas).
 - **Producción vs mantenimiento**: [routes/production_routes.py](routes/production_routes.py).
+- **Presentación semanal / mensual**: [routes/presentacion_routes.py](routes/presentacion_routes.py)
+  (`_bloques_semana`, `_periodos`, `_ponderar`, `presentacion_detalle`).
 - **Espesores**: [routes/thickness_routes.py](routes/thickness_routes.py)
   (semáforo, análisis predictivo, vida residual).
 - **Plan semanal**: [routes/reports_routes.py](routes/reports_routes.py)

@@ -424,9 +424,98 @@ def test_presentacion_mensual_no_habla_de_toneladas(auth_admin):
     for a in d['areas']:
         for campo in ('disponibilidad', 'mtbf', 'mttr', 'confiabilidad', 'tep'):
             assert campo in a['actual'], f'falta {campo}'
+    # El indicador GLOBAL de planta abre cada lamina
+    assert 'planta' in d and d['planta']['serie']
+    for campo in ('disponibilidad', 'mtbf', 'mttr', 'confiabilidad'):
+        assert campo in d['planta']['actual'], f'falta {campo} en planta'
     # Y el diagnostico mensual sigue vivo, con sus toneladas
     r2 = auth_admin.get(f"/api/diagnostico/data?month={hoy.strftime('%Y-%m')}")
     assert r2.status_code == 200 and 'produccion' in r2.json
+
+
+def test_presentacion_semanal_acumula_y_cuadra_con_el_mes(auth_admin):
+    """El informe se presenta cada semana: al cerrar la semana 3 se muestran
+    S1, S2 y S3, cada una con su resultado y la linea del acumulado del mes.
+
+    La regla que sostiene todo el modulo es que las semanas PARTICIONEN el
+    mes: si un aviso cae en una semana no puede caer tambien en otra, y la
+    suma de las cuatro (o cinco) tiene que dar exactamente el mes. Por eso
+    se usan bloques de 7 dias desde el dia 1 y no semanas ISO, que se
+    reparten entre dos meses.
+    """
+    mes = '2026-07'
+    sem = auth_admin.get(f'/api/presentacion/data?month={mes}&vista=semana').json
+    assert 'error' not in sem
+    assert sem['meta']['vista'] == 'semana'
+    periodos = sem['meta']['periodos']
+    assert [p['label'] for p in periodos] == ['S1', 'S2', 'S3', 'S4', 'S5']
+    # Julio tiene 31 dias: los bloques los cubren sin huecos ni solapes
+    assert periodos[0]['desde'] == '2026-07-01'
+    assert periodos[-1]['hasta'] == '2026-07-31'
+    assert sum(p['dias'] for p in periodos) == 31
+    for a, b in zip(periodos, periodos[1:]):
+        assert a['hasta'] < b['desde'], 'las semanas se solapan'
+
+    # Truncar a la semana 3: se ven S1, S2 y S3 y nada mas
+    s3 = auth_admin.get(f'/api/presentacion/data?month={mes}&vista=semana&semana=3').json
+    assert [p['label'] for p in s3['meta']['periodos']] == ['S1', 'S2', 'S3']
+    assert len(s3['planta']['serie']) == 3
+    # El acumulado va del dia 1 al cierre de cada semana
+    acum = s3['planta']['acumulado']
+    assert len(acum) == 3
+    assert acum[0]['desde'] == acum[-1]['desde'] == '2026-07-01'
+    assert acum[-1]['hasta'] == s3['meta']['periodos'][-1]['hasta']
+
+    # Las semanas suman el mes, falla por falla y hora por hora
+    mensual = auth_admin.get(f'/api/presentacion/data?month={mes}&vista=mes&meses=1').json
+    fallas_mes = mensual['planta']['actual']['fallas']
+    horas_mes = mensual['planta']['actual']['horas_paro']
+    assert sum(s['fallas'] for s in sem['planta']['serie']) == fallas_mes
+    assert abs(sum(s['horas_paro'] for s in sem['planta']['serie']) - horas_mes) < 0.05
+    # Y el acumulado de la ultima semana ES el mes
+    assert sem['planta']['acumulado'][-1]['fallas'] == fallas_mes
+
+    # La disponibilidad requerida se prorratea: el porcentaje no cambia
+    # (meta y capacidad escalan juntas) pero el presupuesto de horas si.
+    req_mes = {r['area']: r for r in mensual['requerida']}
+    for r in sem['requerida']:
+        if r['area'] in req_mes:
+            assert abs(r['requerida_pct'] - req_mes[r['area']]['requerida_pct']) < 0.2
+            assert r['horas_periodo'] < req_mes[r['area']]['horas_periodo']
+
+    # Sigue sin hablar de toneladas
+    crudo = json.dumps(sem, ensure_ascii=False).replace('LANZAHARINA', '').lower()
+    for prohibido in ('tonelada', 'sacos', 'monthly_target'):
+        assert prohibido not in crudo
+
+
+def test_presentacion_detalle_muestra_las_ordenes(auth_admin):
+    """En pantalla van los indicadores globales; el detalle sale al hacer
+    click. Es lo que se abre cuando en la reunion preguntan por que bajo un
+    area, asi que tiene que traer los equipos y las OTs de ese periodo."""
+    r = auth_admin.get('/api/presentacion/detalle'
+                       '?area_id=0&desde=2026-07-01&hasta=2026-07-31&modo=inherente')
+    assert r.status_code == 200
+    d = r.json
+    assert 'error' not in d
+    assert d['dias'] == 31 and d['tep'] == 744
+    for campo in ('disponibilidad', 'mtbf', 'mttr', 'confiabilidad', 'fallas'):
+        assert campo in d['resumen'], f'falta {campo}'
+    assert isinstance(d['equipos'], list) and isinstance(d['ots'], list)
+    for e in d['equipos']:
+        assert 0 <= e['disponibilidad'] <= 100
+    for o in d['ots']:
+        assert o['code'] and 'planificado' in o
+
+    # El resumen del detalle es el MISMO numero que muestra la lamina: si
+    # divergen, en la reunion el drill-down contradice al grafico.
+    data = auth_admin.get('/api/presentacion/data?month=2026-07&vista=mes&meses=1').json
+    assert abs(d['resumen']['disponibilidad']
+               - data['planta']['actual']['disponibilidad']) < 0.01
+
+    # Sin rango de fechas responde error, no una pantalla vacia
+    malo = auth_admin.get('/api/presentacion/detalle?area_id=0')
+    assert malo.status_code == 400 and 'error' in malo.json
 
 
 def test_confiabilidad_sin_fallas_es_100(auth_admin, app):
