@@ -393,7 +393,46 @@ function pintar(id, campo, bloque, titulo, opt) {
 // Color de cada fuente del programa preventivo
 const COLOR_FUENTE = { OT: '#1f4b73', LUB: NARANJA, INS: '#3AA6A0', MON: '#8A6FD1' };
 
+// Que programas preventivos estan EN VIGOR. Un programa en implementacion
+// tiene sus puntos cargados pero todavia no se le exige a nadie; cobrarle el
+// plan teorico hunde el cumplimiento con trabajo que no se pidio. No hay dato
+// que distinga "implementando" de "no se hizo", asi que la declaracion es
+// explicita y queda a la vista en la propia lamina.
+function renderFuentes() {
+    const cont = el('cumpFuentes');
+    if (!cont) return;
+    const fs = PRES.meta.fuentes_disponibles || [];
+    cont.innerHTML = `<span class="tit">Programas en vigor</span>`
+        + fs.map(f => f.codigo === 'OT'
+            ? `<label class="fija" title="Las ordenes siempre entran al indicador">
+                 <input type="checkbox" checked disabled> ${esc(f.nombre)}</label>`
+            : `<label><input type="checkbox" data-fuente="${f.codigo}"
+                 ${f.en_vigor ? 'checked' : ''} onchange="guardarFuentes()"> ${esc(f.nombre)}</label>`).join('')
+        + `<span class="msg" id="cumpFuentesMsg">Los programas que se estan implementando se listan
+           abajo con su plan, pero no bajan el cumplimiento.</span>`;
+}
+
+async function guardarFuentes() {
+    const marcadas = Array.from(document.querySelectorAll('#cumpFuentes input[data-fuente]'))
+        .filter(i => i.checked).map(i => i.getAttribute('data-fuente'));
+    const msg = el('cumpFuentesMsg');
+    if (msg) msg.textContent = 'Guardando...';
+    try {
+        const r = await fetch('/api/presentacion/fuentes', {
+            method: 'POST', headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ fuentes: marcadas }),
+        });
+        const d = await r.json();
+        if (d.error) { if (msg) msg.textContent = 'No se pudo guardar: ' + d.error; return; }
+        await cargar(true);
+    } catch (e) {
+        if (msg) msg.textContent = 'No se pudo guardar: ' + e.message;
+    }
+}
+window.guardarFuentes = guardarFuentes;
+
 function renderCumplimiento() {
+    renderFuentes();
     barrasCumplimiento('cumpPrevChart', PRES.cumplimiento.preventivo,
         'programadas', 'ejecutadas', 'PROGRAMADAS', 'EJECUTADAS',
         'Cumplimiento del programa preventivo', 90, true);
@@ -413,13 +452,19 @@ function tablaFuentes() {
     t.innerHTML =
         `<tr><th>Fuente del programa</th><th class="num">Puntos / rutas</th>
          <th class="num">Programado</th><th class="num">Ejecutado</th><th class="num">Cumplimiento</th></tr>`
-        + fs.map(f => `<tr>
+        + fs.map(f => f.activa ? `<tr>
             <td><span style="color:${COLOR_FUENTE[f.codigo] || AZUL};font-weight:800">●</span>
                 <b>${esc(f.nombre)}</b></td>
             <td class="num">${f.puntos == null ? '—' : f.puntos}</td>
             <td class="num">${nf(f.programadas, 0)}</td>
             <td class="num">${nf(f.ejecutadas, 0)}</td>
             <td class="num" style="font-weight:700;color:${f.pct == null ? TENUE : (f.pct >= 90 ? BIEN : f.pct >= 70 ? REGULAR : MAL)}">${f.pct == null ? '—' : nf(f.pct) + ' %'}</td>
+         </tr>` : `<tr style="opacity:.55">
+            <td><span style="color:${TENUE};font-weight:800">○</span> ${esc(f.nombre)}
+                <span class="hint">— en implementacion, aun sin ejecuciones registradas</span></td>
+            <td class="num">${f.puntos == null ? '—' : f.puntos}</td>
+            <td class="num" colspan="3">no entra al indicador
+                <span class="hint">(el plan seria ${nf(f.plan_teorico, 0)})</span></td>
          </tr>`).join('')
         + `<tr><td><b>TOTAL DEL PROGRAMA</b></td><td class="num"></td>
            <td class="num"><b>${nf(ult.programadas, 0)}</b></td>
@@ -439,11 +484,13 @@ function barrasCumplimiento(id, datos, kProg, kEjec, lProg, lEjec, titulo, meta,
           itemStyle: { color: degradado('#9fb4c6'), borderRadius: [4, 4, 0, 0] }, barMaxWidth: 48,
           label: { show: true, position: 'top', color: TINTA, fontSize: 11 } },
     ];
-    // Lo ejecutado se apila por fuente: el total no esconde de donde sale
-    const codigos = porFuente
-        ? (datos[datos.length - 1].fuentes || []).map(f => f.codigo) : [];
+    // Lo ejecutado se apila por fuente: el total no esconde de donde sale.
+    // Las fuentes en implementacion no se dibujan — no entran al indicador.
+    const activas = porFuente
+        ? (datos[datos.length - 1].fuentes || []).filter(f => f.activa) : [];
+    const codigos = activas.map(f => f.codigo);
     if (codigos.length > 1) {
-        (datos[datos.length - 1].fuentes || []).forEach(ref => {
+        activas.forEach(ref => {
             series.push({
                 name: ref.nombre, type: 'bar', stack: 'ejec', barMaxWidth: 48,
                 data: datos.map(d => {

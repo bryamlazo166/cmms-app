@@ -538,6 +538,108 @@ def test_cumplimiento_preventivo_incluye_lubricacion(auth_admin, app):
     assert lub_sem[0]['programadas'] == 1
 
 
+def test_programa_en_implementacion_no_baja_el_cumplimiento(auth_admin, app):
+    """Que un programa este cargado no significa que este en vigor.
+
+    Las rutas de inspeccion pueden tener sus rutas creadas y alguna ejecucion
+    de prueba mientras se implantan; cobrarles el plan teorico hunde el
+    cumplimiento con trabajo que todavia no se le exige a nadie. Y no hay dato
+    que distinga «implementando» de «no se hizo» —una ejecucion suelta no lo
+    dice—, asi que la jefatura lo declara y queda a la vista en la lamina.
+    """
+    from models import AppSetting, InspectionExecution, InspectionRoute, db
+
+    with app.app_context():
+        r = InspectionRoute(name='Ruta en implantacion', frequency_days=7,
+                            is_active=True)
+        db.session.add(r)
+        db.session.flush()
+        db.session.add(InspectionExecution(route_id=r.id,
+                                           execution_date='2026-07-03'))
+        db.session.commit()
+
+    def fuentes(d):
+        return {f['codigo']: f for f in d['cumplimiento']['preventivo'][-1]['fuentes']}
+
+    # Por defecto solo OT y lubricacion estan en vigor
+    d = auth_admin.get('/api/presentacion/data?month=2026-07&vista=mes&meses=1').json
+    fs = fuentes(d)
+    assert fs['OT']['activa'] is True
+    assert fs['INS']['activa'] is False
+    assert fs['INS']['programadas'] == 0 and fs['INS']['ejecutadas'] == 0
+    # Pero su plan se sigue viendo: se lista, no se esconde
+    assert fs['INS']['plan_teorico'] > 0
+    total_sin = d['cumplimiento']['preventivo'][-1]
+    assert total_sin['programadas'] == sum(f['programadas'] for f in fs.values() if f['activa'])
+    assert {x['codigo'] for x in d['meta']['fuentes_disponibles']} >= {'OT', 'LUB', 'INS'}
+
+    # Al declararlas en vigor, entran y el cumplimiento baja
+    r = auth_admin.post('/api/presentacion/fuentes',
+                        json={'fuentes': ['LUB', 'INS']})
+    assert r.status_code == 200 and r.json['ok']
+    assert r.json['fuentes'] == ['OT', 'LUB', 'INS']
+    d2 = auth_admin.get('/api/presentacion/data?month=2026-07&vista=mes&meses=1').json
+    fs2 = fuentes(d2)
+    assert fs2['INS']['activa'] is True
+    assert fs2['INS']['programadas'] > 0
+    total_con = d2['cumplimiento']['preventivo'][-1]
+    assert total_con['programadas'] > total_sin['programadas']
+    assert total_con['pct'] <= total_sin['pct']
+
+    # Las OTs siempre entran, aunque no se las mencione
+    auth_admin.post('/api/presentacion/fuentes', json={'fuentes': []})
+    d3 = auth_admin.get('/api/presentacion/data?month=2026-07&vista=mes&meses=1').json
+    assert fuentes(d3)['OT']['activa'] is True
+    assert fuentes(d3)['LUB']['activa'] is False
+
+    # Basura en la peticion no rompe la configuracion
+    malo = auth_admin.post('/api/presentacion/fuentes', json={'fuentes': 'LUB'})
+    assert malo.status_code == 400
+    ok = auth_admin.post('/api/presentacion/fuentes',
+                         json={'fuentes': ['LUB', 'NO_EXISTE']})
+    assert ok.json['fuentes'] == ['OT', 'LUB']
+    with app.app_context():
+        assert db.session.get(AppSetting, 'preventivo_fuentes').value == 'OT,LUB'
+
+
+def test_metodologia_explica_las_tres_etapas(auth_admin):
+    """Cocción genera la harina y secado y molienda la procesan: son dos
+    cuentas distintas, y el modulo tiene que mostrar las dos con ejemplos.
+    Aplicar el rendimiento tambien a secadores y molinos subestimaba a la
+    mitad la capacidad de las dos ultimas etapas."""
+    d = auth_admin.get('/api/metodologia/data?month=2026-07').json
+    if 'error' in d:
+        return
+    etapas = {e['etapa']: e for e in d['etapas']}
+    assert etapas, 'no hay etapas de proceso'
+
+    for et in d['etapas']:
+        assert et['filas'], f"la etapa {et['etapa']} no lista sus equipos"
+        # El total de la etapa es la suma de lo que aportan sus equipos
+        assert abs(et['tm_dia'] - sum(f['tm_harina'] for f in et['filas'])) < 0.05
+        for f in et['filas']:
+            if not f['en_servicio']:
+                assert f['tm_harina'] == 0.0, 'un equipo fuera de servicio no aporta'
+                continue
+            if et['aplica_rendimiento']:
+                # Cocción: por lotes y con rendimiento aplicado una vez
+                assert f['por_lotes'], 'la coccion se mide por llenadas'
+                assert f['kg'] and f['llenadas']
+                esperado = f['capacidad_cruda'] * d['meta']['rendimiento_pct'] / 100
+                assert abs(f['tm_harina'] - esperado) < 0.05
+            else:
+                # Secado y molienda: la capacidad ya está en harina
+                assert not f['por_lotes']
+                assert abs(f['tm_harina'] - f['capacidad_cruda']) < 0.05, (
+                    'a un secador o molino no se le vuelve a aplicar el rendimiento')
+
+    # La planta es la etapa más corta, no la suma
+    conc = [e['tm_dia'] for e in d['etapas'] if e['tm_dia'] > 0]
+    if conc:
+        assert abs(d['planta_tm_dia'] - min(conc)) < 0.05
+        assert d['cuello'] in etapas
+
+
 def test_presentacion_detalle_muestra_las_ordenes(auth_admin):
     """En pantalla van los indicadores globales; el detalle sale al hacer
     click. Es lo que se abre cuando en la reunion preguntan por que bajo un

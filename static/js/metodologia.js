@@ -158,14 +158,74 @@ function ponderacion() {
           + `es de los que mas producen — por eso se pondera.`;
 }
 
-// ── 07 Capacidad ─────────────────────────────────────────────────────────
+// ── 07 Capacidad: una etapa por vez, cada una con su cuenta ──────────────
 function capacidad() {
     const c = MET.capacidad;
-    if (!c) { el('s7').innerHTML = cmt('No hay digestores configurados.'); el('r7').innerHTML = ''; return; }
-    el('s7').innerHTML = cmt(`Ejemplo con datos reales · equipo ${c.equipo}`) + '\n\n'
-        + fila(`${n(c.kg, 0)} kg × ${n(c.llenado, 0)} % × ${n(c.llenadas, 0)} llenadas / 1000`,
-               'lo que entra al digestor') + '\n'
-        + fila(`= ${n(c.tm_mp)} TM/dia de materia prima`, '') + '\n'
-        + fila(`× ${n(c.rendimiento, 0)} % de rendimiento`, 'lo que sale como harina');
-    el('r7').innerHTML = `${esc(c.equipo)} = ${nf(c.tm_harina)} TM/dia de harina`;
+    if (c) {
+        el('s7').innerHTML = cmt(`Ejemplo de coccion · digestor ${c.equipo}`) + '\n\n'
+            + fila(`${n(c.kg, 0)} kg × ${n(c.llenado, 0)} % × ${n(c.llenadas, 0)} llenadas / 1000`,
+                   'lo que entra al digestor') + '\n'
+            + fila(`= ${n(c.tm_mp)} TM/dia de materia prima`, '') + '\n'
+            + fila(`× ${n(c.rendimiento, 0)} % de rendimiento`, 'lo que sale como harina');
+        el('r7').innerHTML = `${esc(c.equipo)} = ${nf(c.tm_harina)} TM/dia de harina`;
+    } else {
+        el('s7').innerHTML = cmt('No hay digestores configurados.');
+        el('r7').innerHTML = '';
+    }
+    etapas();
+}
+
+const TITULO_ETAPA = { COCCION: 'Cocción — genera la harina',
+                       SECADOR: 'Secado — procesa la harina',
+                       SECADO: 'Secado — procesa la harina',
+                       MOLINO: 'Molienda — procesa la harina',
+                       MOLIENDA: 'Molienda — procesa la harina' };
+
+function etapas() {
+    const cont = el('etapasBloque');
+    if (!cont) return;
+    const ets = MET.etapas || [];
+    if (!ets.length) { cont.innerHTML = ''; el('n7').innerHTML = ''; return; }
+
+    cont.innerHTML = ets.map((et, i) => {
+        const esCuello = et.etapa === MET.cuello;
+        const filas = et.filas.map(f => {
+            const calc = f.por_lotes
+                ? `${nf(f.kg, 0)} kg × ${nf(f.llenado, 0)} % × ${nf(f.llenadas, 0)} / 1000 `
+                  + `= ${nf(f.capacidad_cruda)} TM MP × ${nf(MET.meta.rendimiento_pct, 0)} %`
+                : `${nf(f.capacidad_cruda)} TM/dia configurados — sin rendimiento`;
+            return `<tr class="${f.en_servicio ? '' : 'apagado'}">
+                <td><b>${esc(f.equipo)}</b> <span class="hint">${esc(f.nombre)}</span></td>
+                <td class="calc">${calc}</td>
+                <td class="num">${f.en_servicio ? nf(f.tm_harina) + ' TM/dia'
+                    : 'fuera de servicio' + (f.motivo ? ' — ' + esc(f.motivo) : '')}</td></tr>`;
+        }).join('');
+        return `${i ? '<div class="flecha">↓</div>' : ''}
+            <div class="etapa${esCuello ? ' cuello' : ''}">
+              <div class="cab"><span class="nom">${esc(TITULO_ETAPA[et.etapa] || et.etapa)}</span>
+                ${esCuello ? '<span class="chip abierto">cuello de botella</span>' : ''}
+                <span class="tot">${nf(et.tm_dia)} TM/día</span></div>
+              <div class="como">${et.aplica_rendimiento
+                  ? `Base <b>materia prima</b>: se le aplica el rendimiento de ${nf(MET.meta.rendimiento_pct, 0)} %.`
+                  : `Base <b>harina</b>: la capacidad ya está en producto, no se le aplica rendimiento.`}
+                  ${et.operativos} de ${et.equipos} equipos en servicio${
+                  et.fuera_servicio.length ? ` · fuera: ${et.fuera_servicio.map(esc).join(', ')}` : ''}.</div>
+              <div class="twrap"><table class="met">
+                <tr><th>Equipo</th><th>Cómo sale su capacidad</th><th class="num">Aporta</th></tr>
+                ${filas}
+                <tr><td><b>Total de la etapa</b></td><td></td>
+                    <td class="num"><b>${nf(et.tm_dia)} TM/día</b></td></tr>
+              </table></div>
+            </div>`;
+    }).join('');
+
+    const cuello = ets.find(e => e.etapa === MET.cuello);
+    const otras = ets.filter(e => e.etapa !== MET.cuello && e.tm_dia > 0);
+    el('n7').innerHTML = !cuello ? ''
+        : `<b>Capacidad de planta = ${nf(MET.planta_tm_dia)} TM/día</b>, la de
+           ${esc(TITULO_ETAPA[cuello.etapa] || cuello.etapa).split('—')[0].trim()}.
+           No es la suma de las tres: van en serie, así que manda la más corta.
+           ${otras.length ? `Las demás etapas tienen holgura (${otras.map(o =>
+               `${esc(o.etapa)} ${nf(o.tm_dia)}`).join(' · ')} TM/día), y esa holgura no
+               produce nada mientras la etapa limitante no suba.` : ''}`;
 }

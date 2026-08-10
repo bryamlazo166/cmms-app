@@ -327,7 +327,9 @@ _DEFAULT_PERMS = {
         'espesores': {'view': True, 'edit': True}, 'cockpit': {'view': True, 'edit': False},
         'indicadores': {'view': True, 'edit': False},
         'diagnostico': {'view': True, 'edit': False},
-        'indicadores_mensuales': {'view': True, 'edit': False},
+        # edit=True para declarar que programas preventivos estan en vigor:
+        # es una decision de mantenimiento, no de sistemas.
+        'indicadores_mensuales': {'view': True, 'edit': True},
         'metodologia': {'view': True, 'edit': False},
         'analisis_pf': {'view': True, 'edit': False},
         'produccion': {'view': True, 'edit': True},

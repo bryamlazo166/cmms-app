@@ -90,6 +90,15 @@
         .hint{color:#6d90ad;font-size:.75rem;}
         .clickhint{color:#6d90ad;font-size:.73rem;margin-top:9px;display:flex;align-items:center;gap:6px;}
 
+        /* Que programas preventivos estan en vigor — decision de la jefatura */
+        .fuentes{display:flex;align-items:center;gap:16px;flex-wrap:wrap;margin:0 0 12px;
+            background:#0f2436;border:1px solid var(--linea);border-radius:10px;padding:10px 14px;}
+        .fuentes .tit{font-size:.7rem;text-transform:uppercase;letter-spacing:.08em;color:var(--tenue);font-weight:700;}
+        .fuentes label{display:flex;align-items:center;gap:6px;color:var(--tinta);font-size:.82rem;cursor:pointer;}
+        .fuentes label.fija{opacity:.6;cursor:default;}
+        .fuentes input{accent-color:var(--naranja-fuerte);width:15px;height:15px;cursor:pointer;}
+        .fuentes .msg{margin-left:auto;font-size:.76rem;color:var(--tenue);}
+
         /* Portada del informe */
         .portada{background:linear-gradient(125deg,var(--marino) 0%,#0d2135 65%);border-color:#2c5578;}
         .portada .marca{font-size:.76rem;letter-spacing:.22em;text-transform:uppercase;color:var(--naranja);font-weight:700;}
@@ -256,6 +265,7 @@
                 <span class="hint">Para las rutinas, «programado» es el plan teorico que declara la frecuencia
                 configurada (dias del periodo ÷ frecuencia del punto), no una lista de tareas emitidas.
                 Los puntos sobre equipos fuera de servicio no exigen servicio.</span></div>
+            <div class="fuentes no-present" id="cumpFuentes"></div>
             <div class="chart-box" id="cumpPrevChart" style="height:360px;"></div>
             <div class="twrap" style="margin-top:12px;"><table class="pres" id="cumpPrevTabla"></table></div>
         </div>

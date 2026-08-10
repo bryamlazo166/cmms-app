@@ -62,6 +62,18 @@ FUENTES_PREVENTIVAS = [
     ('INS', 'Rutas de inspeccion'),
     ('MON', 'Monitoreo de condicion'),
 ]
+
+# Que un programa este cargado no significa que este en vigor. Las rutas de
+# inspeccion pueden tener sus 22 rutas creadas y alguna ejecucion de prueba
+# mientras se implementan: cobrarles el plan teorico hunde el cumplimiento por
+# trabajo que todavia no se le exige a nadie.
+#
+# No se resuelve con una heuristica sobre los datos (una ejecucion suelta no
+# distingue "programa en marcha" de "prueba"). Es una decision de la jefatura,
+# asi que se guarda como tal y se muestra en la propia lamina: quien presenta
+# declara que fuentes entran, y se ve en pantalla.
+SETTING_FUENTES = 'preventivo_fuentes'
+FUENTES_POR_DEFECTO = 'OT,LUB'
 MESES_CORTO = ['', 'ENE', 'FEB', 'MAR', 'ABR', 'MAY', 'JUN',
                'JUL', 'AGO', 'SET', 'OCT', 'NOV', 'DIC']
 
@@ -77,10 +89,24 @@ def _invalidar_cache():
 
 
 def register_presentacion_routes(app, db, logger):
-    from models import (Area, Equipment, InspectionExecution, InspectionRoute,
-                        Line, LubricationExecution, LubricationPoint,
-                        MonitoringPoint, MonitoringReading, ProductionGoal,
-                        WorkOrder)
+    from models import (AppSetting, Area, Equipment, InspectionExecution,
+                        InspectionRoute, Line, LubricationExecution,
+                        LubricationPoint, MonitoringPoint, MonitoringReading,
+                        ProductionGoal, WorkOrder)
+
+    def _fuentes_en_vigor():
+        """Fuentes que la jefatura declara en vigor. Se lee en cada peticion
+        —no se cachea— para que al cambiarlas el numero se corrija de
+        inmediato, incluso si responde otro worker de gunicorn."""
+        validos = {c for c, _ in FUENTES_PREVENTIVAS}
+        try:
+            fila = db.session.get(AppSetting, SETTING_FUENTES)
+            crudo = (fila.value if fila and fila.value else FUENTES_POR_DEFECTO)
+        except Exception:
+            crudo = FUENTES_POR_DEFECTO
+        sel = {c.strip().upper() for c in crudo.split(',') if c.strip()} & validos
+        sel.add('OT')                # las ordenes siempre entran al indicador
+        return sel
 
     # ── Utilidades de periodo ────────────────────────────────────────────
 
@@ -239,7 +265,13 @@ def register_presentacion_routes(app, db, logger):
                       if p.equipment_id not in fuera]
             fechas = sorted(str(r[0])[:10] for r in
                             Ejecucion.query.with_entities(col_fecha).all() if r[0])
-            return {'puntos': puntos, 'fechas': fechas}
+            # Una fuente entra al indicador desde su PRIMERA ejecucion, no
+            # antes: un programa que se esta implementando ya tiene sus puntos
+            # cargados, y contarle el plan teorico hundiria el cumplimiento por
+            # trabajo que todavia no se le pide a nadie. El dia que se registre
+            # la primera ejecucion empieza a medirse solo.
+            return {'puntos': puntos, 'fechas': fechas,
+                    'desde': fechas[0] if fechas else None}
 
         rutinas_prev = {
             'LUB': rutinas(LubricationPoint, LubricationExecution,
@@ -354,7 +386,7 @@ def register_presentacion_routes(app, db, logger):
                 total += dias / freq
         return total
 
-    def _cumplimiento(base, per):
+    def _cumplimiento(base, per, en_vigor=None):
         """Programadas vs ejecutadas del periodo, separando preventivo de
         correctivo programado — los dos indicadores del informe.
 
@@ -363,6 +395,7 @@ def register_presentacion_routes(app, db, logger):
         esconda de donde sale.
         """
         ini, fin = per['desde'], per['hasta']
+        en_vigor = en_vigor if en_vigor is not None else {'OT', 'LUB'}
         prev_prog = prev_ejec = corr_prog = corr_term = 0
         for o in base['programadas']:
             if not (ini <= o['fecha'] <= fin):
@@ -379,22 +412,30 @@ def register_presentacion_routes(app, db, logger):
 
         fuentes = [{'codigo': 'OT', 'nombre': dict(FUENTES_PREVENTIVAS)['OT'],
                     'programadas': prev_prog, 'ejecutadas': prev_ejec,
+                    'activa': True, 'desde': None,
                     'pct': round(prev_ejec / prev_prog * 100, 1) if prev_prog else None}]
         for codigo, nombre in FUENTES_PREVENTIVAS[1:]:
-            rut = base['rutinas'].get(codigo) or {'puntos': [], 'fechas': []}
-            prog = _plan_rutina(rut, per['dias'])
+            rut = base['rutinas'].get(codigo) or {'puntos': [], 'fechas': [],
+                                                  'desde': None}
+            plan = _plan_rutina(rut, per['dias'])
             ejec = sum(1 for f in rut['fechas'] if ini <= f <= fin)
-            if not prog and not ejec:
+            if not plan and not ejec:
                 continue                       # fuente sin usar, no se muestra
+            # Un programa que la jefatura no declara en vigor se lista aparte,
+            # con su plan a la vista, pero no arrastra el cumplimiento.
+            activa = codigo in en_vigor
             fuentes.append({
                 'codigo': codigo, 'nombre': nombre,
-                'programadas': int(round(prog)), 'ejecutadas': ejec,
+                'programadas': int(round(plan)) if activa else 0,
+                'ejecutadas': ejec if activa else 0,
+                'plan_teorico': int(round(plan)),
                 'puntos': len(rut['puntos']),
-                'pct': round(ejec / prog * 100, 1) if prog else None,
+                'activa': activa, 'desde': rut['desde'],
+                'pct': round(ejec / plan * 100, 1) if (activa and plan) else None,
             })
 
-        tot_prog = sum(f['programadas'] for f in fuentes)
-        tot_ejec = sum(f['ejecutadas'] for f in fuentes)
+        tot_prog = sum(f['programadas'] for f in fuentes if f['activa'])
+        tot_ejec = sum(f['ejecutadas'] for f in fuentes if f['activa'])
         return {
             'preventivo': {
                 'programadas': tot_prog, 'ejecutadas': tot_ejec,
@@ -528,8 +569,9 @@ def register_presentacion_routes(app, db, logger):
                       'actual': glob_serie[-1]}
 
             indic_actual = {a['area_id']: a['serie'][-1] for a in areas_out}
+            en_vigor = _fuentes_en_vigor()
             cumpl = [dict(key=p['key'], label=p['label'], nombre=p['nombre'],
-                          **_cumplimiento(base, p)) for p in periodos]
+                          **_cumplimiento(base, p, en_vigor)) for p in periodos]
 
             n_semanas = len(_bloques_semana(month))
             return jsonify({
@@ -548,6 +590,9 @@ def register_presentacion_routes(app, db, logger):
                     'horizonte_h': horizonte,
                     'rendimiento_pct': round(base['rendimiento'] * 100, 1),
                     'generado': dt.datetime.now().strftime('%Y-%m-%d %H:%M'),
+                    'fuentes_disponibles': [{'codigo': c, 'nombre': n,
+                                             'en_vigor': c in en_vigor}
+                                            for c, n in FUENTES_PREVENTIVAS],
                 },
                 'planta': planta,
                 'areas': areas_out,
@@ -563,6 +608,39 @@ def register_presentacion_routes(app, db, logger):
             })
         except Exception as e:
             logger.exception('presentacion_data error')
+            return jsonify({'error': str(e)}), 500
+
+    @app.route('/api/presentacion/fuentes', methods=['POST'])
+    def presentacion_fuentes():
+        """Declara que programas preventivos estan EN VIGOR.
+
+        Un programa en implementacion tiene sus puntos cargados pero todavia
+        no se le exige a nadie: cobrarle el plan teorico hunde el cumplimiento
+        con trabajo que no se pidio. Como no hay dato que distinga
+        "implementando" de "no se hizo", la declaracion es explicita y queda
+        a la vista en la propia lamina.
+        """
+        try:
+            datos = request.get_json(silent=True) or {}
+            pedidos = datos.get('fuentes')
+            if not isinstance(pedidos, list):
+                return jsonify({'error': 'Se espera una lista de fuentes'}), 400
+            validos = {c for c, _ in FUENTES_PREVENTIVAS}
+            sel = {str(c).strip().upper() for c in pedidos} & validos
+            sel.add('OT')
+            orden = [c for c, _ in FUENTES_PREVENTIVAS if c in sel]
+
+            fila = db.session.get(AppSetting, SETTING_FUENTES)
+            if fila is None:
+                fila = AppSetting(key=SETTING_FUENTES)
+                db.session.add(fila)
+            fila.value = ','.join(orden)
+            db.session.commit()
+            logger.info('presentacion: fuentes preventivas en vigor = %s', fila.value)
+            return jsonify({'ok': True, 'fuentes': orden})
+        except Exception as e:
+            db.session.rollback()
+            logger.exception('presentacion_fuentes error')
             return jsonify({'error': str(e)}), 500
 
     @app.route('/api/presentacion/detalle', methods=['GET'])

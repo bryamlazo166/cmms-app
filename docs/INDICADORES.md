@@ -498,6 +498,20 @@ OTs y el cumplimiento dejaría de decir si los preventivos mecánicos se hiciero
 Se apilan por fuente, cada una con su porcentaje, más el total. El indicador
 anterior (solo OTs) se conserva en `solo_ot` para no perder la serie histórica.
 
+**Programas en vigor.** Que un programa esté cargado no significa que esté en
+vigor: las rutas de inspección pueden tener sus 22 rutas creadas y alguna
+ejecución de prueba mientras se implantan, y cobrarles el plan teórico hunde el
+cumplimiento con trabajo que todavía no se le exige a nadie. No se resuelve con
+una heurística sobre los datos — una ejecución suelta no distingue «programa en
+marcha» de «prueba» — así que es una declaración explícita, guardada en
+`AppSetting['preventivo_fuentes']` (por defecto `OT,LUB`) y editable desde la
+propia lámina 05, donde queda a la vista de quien presencia la presentación. Las
+fuentes fuera de vigor se listan igual, con su plan teórico, pero no entran al
+indicador. Las OTs siempre entran.
+
+El ajuste se lee **en cada petición**, sin cachear, para que al cambiarlo el
+número se corrija de inmediato aunque responda otro worker de gunicorn.
+
 ### Detalle bajo demanda
 
 En pantalla van solo los indicadores globales (planta y área). Al hacer click
@@ -544,8 +558,10 @@ reunión.
 - **Metodología en pantalla**: [routes/metodologia_routes.py](routes/metodologia_routes.py)
   — módulo `/metodologia-indicadores`, la versión viva de este documento: cada
   fórmula con su sustitución sobre los números reales del periodo y las OTs que
-  la alimentan. Una prueba verifica que reconstruye el mismo número que muestra
-  la presentación.
+  la alimentan. Incluye las **tres etapas resueltas equipo por equipo** —
+  digestores por llenadas con rendimiento, secadores y molinos por su capacidad
+  ya expresada en harina — y cuál es el cuello de botella. Una prueba verifica
+  que reconstruye el mismo número que muestra la presentación.
 - **Espesores**: [routes/thickness_routes.py](routes/thickness_routes.py)
   (semáforo, análisis predictivo, vida residual).
 - **Plan semanal**: [routes/reports_routes.py](routes/reports_routes.py)

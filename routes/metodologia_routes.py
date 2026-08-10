@@ -206,14 +206,63 @@ def register_metodologia_routes(app, db, logger):
                                     if den else None),
             }
 
-            # ── Capacidad: la formula de llenadas sobre un digestor real ─
+            # ── Capacidad: una etapa por vez, con su propia formula ──────
+            # Coccion GENERA harina (base MP, se aplica rendimiento); secado y
+            # molienda la PROCESAN (base PRODUCTO, ya viene en harina). Son
+            # dos cuentas distintas y por eso se muestran las dos.
+            from utils.kpi_helpers import (DEFAULT_BATCHES_PER_DAY,
+                                           DEFAULT_FILL_PCT, eq_capacity_tm_day,
+                                           eq_stage, plant_stages)
+
+            lista_eq = list(equipos.values())
+            resumen_etapas = plant_stages(lista_eq)
+            # El orden es el del flujo. Las etapas se nombran por el equipo que
+            # las hace (SECADOR, MOLINO), asi que no se listan a mano: se
+            # ordena lo que devuelva plant_stages y coccion va primero.
+            orden_flujo = {'COCCION': 0, 'SECADOR': 1, 'SECADO': 1,
+                           'MOLINO': 2, 'MOLIENDA': 2}
+            etapas = []
+            for nombre_etapa in sorted(resumen_etapas,
+                                       key=lambda n: (orden_flujo.get(n, 9), n)):
+                st = resumen_etapas[nombre_etapa]
+                miembros = [e for e in lista_eq
+                            if eq_produces(e) and e.include_in_kpi
+                            and eq_stage(e) == nombre_etapa]
+                filas_eq = []
+                for e in sorted(miembros, key=lambda x: _nombre(x)):
+                    lote = eq_is_batch(e)
+                    filas_eq.append({
+                        'equipo': _nombre(e),
+                        'nombre': e.name or '',
+                        'por_lotes': lote,
+                        'kg': e.batch_capacity_kg if lote else None,
+                        'llenado': ((e.fill_pct if e.fill_pct is not None else DEFAULT_FILL_PCT)
+                                    if lote else None),
+                        'llenadas': ((e.batches_per_day if e.batches_per_day is not None
+                                      else DEFAULT_BATCHES_PER_DAY) if lote else None),
+                        'capacidad_cruda': round(eq_capacity_tm_day(e), 2),
+                        'tm_harina': (round(eq_harina_tm_day(e, rend), 2)
+                                      if e.in_service else 0.0),
+                        'en_servicio': bool(e.in_service),
+                        'motivo': getattr(e, 'out_of_service_reason', None),
+                    })
+                etapas.append({
+                    'etapa': nombre_etapa,
+                    'base': st['base'],
+                    'aplica_rendimiento': st['base'] == 'MP',
+                    'equipos': st['equipos'],
+                    'operativos': st['operativos'],
+                    'fuera_servicio': st['fuera_servicio'],
+                    'tm_dia': round(st['tm_dia'], 2),
+                    'filas': filas_eq,
+                })
+            cuello = min((e for e in etapas if e['tm_dia'] > 0),
+                         key=lambda e: e['tm_dia'], default=None)
+
             batch = next((e for e in equipos.values()
                           if eq_is_batch(e) and e.include_in_kpi and e.in_service), None)
             capacidad = None
             if batch:
-                from utils.kpi_helpers import (DEFAULT_BATCHES_PER_DAY,
-                                               DEFAULT_FILL_PCT,
-                                               eq_capacity_tm_day)
                 capacidad = {
                     'equipo': _nombre(batch),
                     'kg': batch.batch_capacity_kg,
@@ -237,6 +286,9 @@ def register_metodologia_routes(app, db, logger):
                 'ejemplo': ejemplo,
                 'ponderacion': ponderacion,
                 'capacidad': capacidad,
+                'etapas': etapas,
+                'cuello': (cuello or {}).get('etapa'),
+                'planta_tm_dia': (cuello or {}).get('tm_dia'),
             })
         except Exception as e:
             logger.exception('metodologia_data error')

@@ -71,6 +71,18 @@
         .twrap{overflow-x:auto;}
         .hint{color:#6d90ad;font-size:.76rem;line-height:1.6;}
 
+        /* Etapas del proceso: cada una con su propia cuenta */
+        .etapa{background:#0f2436;border:1px solid var(--linea);border-radius:11px;
+            padding:13px 16px;margin-top:12px;}
+        .etapa .cab{display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin-bottom:4px;}
+        .etapa .cab .nom{color:#fff;font-weight:800;font-size:.92rem;letter-spacing:.05em;}
+        .etapa .cab .tot{margin-left:auto;color:var(--naranja);font-weight:800;font-size:.95rem;
+            font-variant-numeric:tabular-nums;}
+        .etapa .como{color:var(--tenue);font-size:.78rem;line-height:1.5;}
+        .etapa.cuello{border-color:var(--naranja-fuerte);box-shadow:inset 0 0 0 1px rgba(237,125,49,.25);}
+        .etapa .flecha{text-align:center;color:var(--tenue);font-size:.8rem;margin:6px 0 0;}
+        table.met td.calc{font-family:ui-monospace,Consolas,monospace;font-size:.78rem;color:#8ed0ff;}
+
         .indice{background:var(--panel);border:1px solid var(--linea);border-radius:14px;padding:16px 22px;margin-bottom:14px;}
         .indice a{color:var(--tinta);text-decoration:none;font-size:.86rem;display:block;padding:5px 0;
             border-bottom:1px solid rgba(255,255,255,.05);}
@@ -255,21 +267,30 @@ Disponibilidad inherente  =  (T − Pp − Pn) / (T − Pp)</div>
                 configura en <b>Alcance de Indicadores</b>. Los digestores trabajan por lotes, así que su
                 capacidad sale de las llenadas; los secadores y molinos son continuos y se cargan en TM/día.</div>
             <div class="formula">
-                <div class="f">Digestor:  TM/día de materia prima = kg por llenada × % llenado × llenadas/día ÷ 1000
-           TM/día de harina        = TM/día de materia prima × rendimiento
-Secador / molino:
-           TM/día de harina        = capacidad configurada  (ya está en harina)</div>
+                <div class="f">COCCIÓN — los digestores GENERAN la harina (trabajan por lotes)
+    TM/día de materia prima = kg por llenada × % llenado × llenadas/día ÷ 1000
+    TM/día de harina        = TM/día de materia prima × rendimiento
+
+SECADO y MOLIENDA — secadores y molinos PROCESAN la harina (son continuos)
+    TM/día de harina        = capacidad configurada
+                              (ya está en harina: NO se le aplica el rendimiento)</div>
                 <div class="sub" id="s7"></div>
                 <div class="res" id="r7"></div>
             </div>
             <div class="nota"><b>Generar no es procesar.</b> El rendimiento se aplica una sola vez, en cocción:
                 los digestores <b>generan</b> la harina a partir de materia prima. Los secadores y molinos la
-                <b>procesan</b>, su capacidad ya está expresada en harina y no se les vuelve a aplicar el
-                rendimiento. Aplicarlo dos veces subestimaba la capacidad de las dos últimas etapas.</div>
+                <b>procesan</b> — reciben lo que salió de cocción, su capacidad ya está expresada en harina y
+                no se les vuelve a aplicar el rendimiento. Aplicarlo dos veces subestimaba la capacidad de las
+                dos últimas etapas a la mitad.</div>
+
+            <div id="etapasBloque"></div>
+
+            <div class="nota" id="n7"></div>
             <div class="hint" style="margin-top:10px">Las tres etapas van <b>en serie</b> (cocción → secado →
                 molienda), así que la capacidad de planta es la de la <b>etapa más limitada</b>, no la suma.
                 Si el molino #1 se desactiva y solo trabaja el #2, la molienda queda a la mitad y la planta con
-                ella, aunque cocción y secado sigan completos.</div>
+                ella, aunque cocción y secado sigan completos. Los equipos <b>fuera de servicio</b> no suman:
+                su capacidad aparece calculada pero aporta cero mientras dure el overhaul.</div>
         </div>
 
         <!-- 08 Disponibilidad requerida -->
@@ -318,6 +339,13 @@ Cumplimiento = ejecutadas / programadas × 100   (por fuente y total)</div>
             <div class="nota verde">Las fuentes <b>no se funden en un solo número</b>: la lubricación
                 aplastaría a las OTs y el cumplimiento dejaría de decir si los preventivos mecánicos se
                 hicieron. Se apilan por fuente, con su porcentaje cada una y el total.</div>
+            <div class="nota"><b>Programas en vigor.</b> Que un programa esté cargado no significa que esté
+                en vigor: las rutas de inspección pueden tener sus rutas creadas y alguna ejecución de prueba
+                mientras se implantan, y cobrarles el plan teórico hunde el cumplimiento con trabajo que
+                todavía no se le exige a nadie. No hay dato que distinga «implementando» de «no se hizo»,
+                así que <b>la jefatura declara qué programas entran</b> — se marca en la propia lámina 05 y
+                queda a la vista. Los que no están en vigor se listan igual, con su plan, pero fuera del
+                indicador. Las OTs siempre entran.</div>
         </div>
 
         <!-- 10 Reglas -->
@@ -346,8 +374,8 @@ Cumplimiento = ejecutadas / programadas × 100   (por fuente y total)</div>
             <div class="twrap"><table class="met">
                 <tr><th>Decisión</th><th>Opciones</th><th>Hoy</th></tr>
                 <tr><td><b>Los trabajos de proyectos</b><div class="hint">Consumen personal de mantenimiento y desplazan preventivos, pero no son mantenimiento del activo.</div></td>
-                    <td>Contarlos como una clase aparte (MANTENIMIENTO / MEJORA / PROYECTO), fuera del % proactivo y del MTBF/MTTR, pero dentro de horas-hombre y capacidad.</td>
-                    <td>Sin decidir: las 37 OTs de «Mejora» y sus 2 589 h-h están como mejora.</td></tr>
+                    <td>Contarlos como una clase aparte, fuera del % proactivo y del MTBF/MTTR, pero dentro de horas-hombre y capacidad.</td>
+                    <td>Las 37 OTs de «Mejora» quedan como <b>mejora</b> — no son proyectos. La gestión de proyectos se está implantando; cuando arranque hay que decidir cómo se registran.</td></tr>
                 <tr><td><b>Meta por área o por planta</b><div class="hint">Hoy la misma meta está cargada tres veces, una por área.</div></td>
                     <td>Una meta de planta y repartirla por etapa, o mantener una meta por área con su propia capacidad.</td>
                     <td>La misma cifra en cocción, secado y molienda.</td></tr>
