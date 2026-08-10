@@ -602,6 +602,49 @@ def test_programa_en_implementacion_no_baja_el_cumplimiento(auth_admin, app):
         assert db.session.get(AppSetting, 'preventivo_fuentes').value == 'OT,LUB'
 
 
+def test_produccion_usa_la_capacidad_real_y_no_el_rendimiento_manual(auth_admin):
+    """Produccion vs Mantenimiento calculaba la disponibilidad requerida con
+    el rendimiento y las horas cargados a mano en la meta.
+
+    Como esa cifra es la misma para las tres areas, las tres pedian 98,8 %,
+    mientras la presentacion —que divide por la capacidad instalada de cada
+    etapa— pedia 86,5 / 84,9 / 70,8 %. Dos pantallas y dos respuestas para el
+    mismo mes. Ahora ambas dividen por la capacidad real de los equipos en
+    servicio, asi que el numero tiene que ser el MISMO.
+    """
+    p = auth_admin.get('/api/production/metrics?period=2026-07').json
+    if 'error' in p or not p.get('areas'):
+        return
+    r = auth_admin.get('/api/presentacion/data'
+                       '?month=2026-07&vista=mes&meses=1&modo=inherente').json
+    req = {x['area']: x for x in r['requerida']}
+
+    for a in p['areas']:
+        if not a['capacidad_automatica']:
+            continue
+        assert a['area_capacity_tm_day'] > 0
+        # La capacidad del area es la misma en los dos modulos
+        q = req.get(a['area_name'])
+        if not q:
+            continue
+        assert abs(a['area_capacity_tm_day'] - q['capacidad_dia']) < 0.05
+        # Y por tanto la disponibilidad requerida tambien
+        assert abs(a['required_availability'] - q['requerida_pct']) < 0.2, (
+            f"{a['area_name']}: produccion pide {a['required_availability']} % "
+            f"y la presentacion {q['requerida_pct']} %")
+        # tons_per_hour sale de la capacidad, no del campo manual
+        assert abs(a['tons_per_hour'] - a['area_capacity_tm_day'] / 24) < 0.01
+
+    # La disponibilidad que muestra produccion es la OPERATIVA (la castiga
+    # todo paro, que es lo que produccion realmente tuvo), no la inherente.
+    op = auth_admin.get('/api/presentacion/data'
+                        '?month=2026-07&vista=mes&meses=1&modo=operativa').json
+    disp_op = {a['area']: a['actual']['disponibilidad'] for a in op['areas']}
+    for a in p['areas']:
+        if a['area_name'] in disp_op and a['capacidad_automatica']:
+            assert abs(a['availability_actual'] - disp_op[a['area_name']]) < 1.5
+
+
 def test_metodologia_explica_las_tres_etapas(auth_admin):
     """Cocción genera la harina y secado y molienda la procesan: son dos
     cuentas distintas, y el modulo tiene que mostrar las dos con ejemplos.

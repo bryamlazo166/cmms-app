@@ -399,6 +399,19 @@ capacidad porque los digestores trabajan en paralelo; restar la suma bruta de
 sus horas de parada, como si estuvieran en serie, daba disponibilidades de 0 %
 con la planta operando.
 
+**La capacidad no se carga a mano.** `ProductionGoal.monthly_avg_yield_tons` y
+`operating_hours_month` quedan solo como respaldo para áreas sin ningún equipo
+con capacidad configurada. Mientras el área tenga equipos productivos en
+servicio, *Producción vs Mantenimiento* usa `tons_per_hour = capacidad del área
+÷ 24` y horas de calendario del periodo — la misma cuenta que la presentación de
+indicadores. Con la cifra manual las tres áreas pedían **98,8 %** de
+disponibilidad (compartían el mismo rendimiento cargado a mano) mientras la
+presentación pedía 86,5 / 84,9 / 70,8 %: dos pantallas con dos respuestas para
+el mismo mes. La disponibilidad que muestra *Producción* es la **operativa** (la
+castiga todo paro, que es lo que producción realmente tuvo); la presentación
+muestra la **inherente**. Ambas se calculan siempre y una prueba verifica que
+coinciden.
+
 Los equipos sin capacidad configurada no suman toneladas: el diagnóstico avisa
 cuántas OTs y horas quedaron fuera, y el botón *Completar capacidades vacías*
 las rellena heredando la capacidad de la línea o repartiendo la planta entre

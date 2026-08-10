@@ -172,8 +172,26 @@ def register_production_routes(app, db, logger, ProductionGoal, WorkOrder, Area,
             if not getattr(area, 'include_in_kpi', True):
                 continue
 
-            operating_hours = goal.operating_hours_month or 720.0
-            tons_per_hour = (goal.monthly_avg_yield_tons / operating_hours) if operating_hours > 0 else 0
+            # Capacidad REAL del area: la de sus equipos productivos EN
+            # SERVICIO. En COCCION son 9 digestores que trabajan en PARALELO.
+            area_cap_dia = sum(
+                _eq_harina_dia(e.id) for e in equips
+                if e.line_id in line_map and line_map[e.line_id].area_id == area.id)
+
+            # El rendimiento y las horas cargados a mano en la meta solo se
+            # usan si el area no tiene capacidad configurada. Con ellos, las
+            # tres areas pedian la MISMA disponibilidad (98,8 %) porque
+            # compartian la cifra manual, mientras la presentacion —que si
+            # divide por la capacidad instalada de cada etapa— pedia 86,5 /
+            # 84,9 / 70,8 %. Dos pantallas, dos respuestas para el mismo mes.
+            capacidad_automatica = area_cap_dia > 0
+            if capacidad_automatica:
+                operating_hours = days_in_period * 24.0    # horas de calendario
+                tons_per_hour = area_cap_dia / 24.0
+            else:
+                operating_hours = goal.operating_hours_month or 720.0
+                tons_per_hour = ((goal.monthly_avg_yield_tons / operating_hours)
+                                 if operating_hours > 0 else 0)
 
             # OTs del área en el periodo
             area_ots = []
@@ -213,11 +231,6 @@ def register_production_routes(app, db, logger, ProductionGoal, WorkOrder, Area,
             tons_lost = round(tons_lost, 2)
             sacks_lost = round((tons_lost * 1000) / SACK_KG, 0)
 
-            # Capacidad real del área: la de sus equipos productivos EN
-            # SERVICIO. En COCCION son 9 digestores que trabajan en PARALELO.
-            area_cap_dia = sum(
-                _eq_harina_dia(e.id) for e in equips
-                if e.line_id in line_map and line_map[e.line_id].area_id == area.id)
             area_cap_periodo = area_cap_dia * dias_analizados
 
             if area_cap_periodo > 0:
@@ -237,7 +250,9 @@ def register_production_routes(app, db, logger, ProductionGoal, WorkOrder, Area,
                 uptime = max(0, analyzed_hours - total_downtime)
                 availability = round((uptime / analyzed_hours) * 100, 2) if analyzed_hours > 0 else 100.0
 
-            # Disponibilidad requerida
+            # Disponibilidad requerida = meta / capacidad del periodo. Con la
+            # capacidad automatica es exactamente la misma cuenta que hace la
+            # presentacion de indicadores, asi que los dos modulos coinciden.
             if tons_per_hour > 0:
                 required_uptime = goal.monthly_target_tons / tons_per_hour
                 required_availability = round((required_uptime / operating_hours) * 100, 2)
@@ -302,6 +317,9 @@ def register_production_routes(app, db, logger, ProductionGoal, WorkOrder, Area,
                 'monthly_target_tons': goal.monthly_target_tons,
                 'operating_hours_month': operating_hours,
                 'tons_per_hour': round(tons_per_hour, 3),
+                # De donde salio la capacidad con la que se midio el area
+                'capacidad_automatica': capacidad_automatica,
+                'area_capacity_tm_day': round(area_cap_dia, 2),
                 'availability_actual': availability,
                 'required_availability': required_availability,
                 'safety_factor': safety_factor,
@@ -322,10 +340,14 @@ def register_production_routes(app, db, logger, ProductionGoal, WorkOrder, Area,
             total_sacks_lost += sacks_lost
             total_target += goal.monthly_target_tons
             total_yield += goal.monthly_avg_yield_tons
-            # Disponibilidad ponderada por capacidad (yield) de cada área
-            weighted_avail_num += availability * goal.monthly_avg_yield_tons
-            weighted_avail_den += goal.monthly_avg_yield_tons
-            weighted_req_num += required_with_sf * goal.monthly_avg_yield_tons
+            # Disponibilidad ponderada por la capacidad REAL del area. Antes
+            # pesaba con el rendimiento manual, que es la misma cifra en las
+            # tres areas: eso las hacia valer igual aunque secado tenga 144
+            # TM/dia y coccion 118.
+            peso = area_cap_dia if capacidad_automatica else goal.monthly_avg_yield_tons
+            weighted_avail_num += availability * peso
+            weighted_avail_den += peso
+            weighted_req_num += required_with_sf * peso
 
         # Top 5 equipos por impacto en TM
         top_equips = sorted(

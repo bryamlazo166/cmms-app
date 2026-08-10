@@ -269,6 +269,12 @@
 
         <label>Rendimiento promedio mensual (TM de harina procesada)</label>
         <input type="number" id="goalYield" step="0.01" min="0" placeholder="Ej: 2800" />
+        <small style="display:block;margin:-6px 0 10px;color:#8fa6bb;line-height:1.5;">
+            Solo se usa como <b>respaldo</b>. La capacidad del área se calcula sola con los equipos
+            en servicio (digestores por sus llenadas, secadores y molinos por sus TM/día), que es lo
+            que se configura en <b>Alcance de Indicadores</b>. Este campo entra únicamente si el área
+            no tiene ningún equipo con capacidad cargada.
+        </small>
 
         <label>Meta mensual (TM de harina procesada)</label>
         <input type="number" id="goalTarget" step="0.01" min="0" placeholder="Ej: 3000" />
