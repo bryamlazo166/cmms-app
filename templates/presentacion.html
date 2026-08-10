@@ -111,16 +111,35 @@
         .indice .it span{color:var(--tinta);font-size:1rem;border-left:2px solid var(--linea);padding-left:14px;}
 
         /* Detalle de ordenes (drill-down al hacer click en el grafico) */
-        #modalDet{display:none;position:fixed;inset:0;z-index:200;background:rgba(4,12,20,.75);
+        #modalDet,#modalGuion{display:none;position:fixed;inset:0;z-index:200;background:rgba(4,12,20,.75);
             backdrop-filter:blur(3px);padding:26px;overflow-y:auto;}
-        #modalDet.open{display:block;}
-        #modalDet .box{max-width:1180px;margin:0 auto;background:#102638;border:1px solid var(--linea);
-            border-radius:14px;padding:20px 24px;}
-        #modalDet .top{display:flex;align-items:flex-start;gap:14px;margin-bottom:12px;}
-        #modalDet h3{margin:0;color:#fff;font-size:1.15rem;}
-        #modalDet .top .sub{color:var(--tenue);font-size:.8rem;margin-top:3px;}
-        #modalDet .x{margin-left:auto;background:#1b3348;border:1px solid var(--linea);color:var(--tinta);
+        #modalDet.open,#modalGuion.open{display:block;}
+        #modalDet .box,#modalGuion .box{max-width:1180px;margin:0 auto;background:#102638;
+            border:1px solid var(--linea);border-radius:14px;padding:20px 24px;}
+        #modalGuion .box.guion{max-width:900px;}
+        #modalDet .top,#modalGuion .top{display:flex;align-items:flex-start;gap:14px;margin-bottom:12px;}
+        #modalDet h3,#modalGuion h3{margin:0;color:#fff;font-size:1.15rem;}
+        #modalDet .top .sub,#modalGuion .top .sub{color:var(--tenue);font-size:.8rem;margin-top:3px;}
+        #modalDet .x,#modalGuion .x{background:#1b3348;border:1px solid var(--linea);color:var(--tinta);
             border-radius:8px;width:34px;height:34px;cursor:pointer;font-size:1rem;flex:none;}
+        #modalDet .x{margin-left:auto;}
+        #modalGuion .top .x:first-of-type{margin-left:auto;}
+
+        /* Guion */
+        .gsec{border-top:1px solid var(--linea);padding:14px 0 4px;}
+        .gsec:first-child{border-top:none;}
+        .gtit{display:flex;align-items:center;gap:10px;color:#fff;font-weight:800;font-size:.98rem;margin-bottom:7px;}
+        .gtit .gn{background:var(--naranja-fuerte);color:#fff;font-size:.68rem;font-weight:800;
+            border-radius:5px;padding:2px 7px;letter-spacing:.05em;}
+        .gque{color:var(--tenue);font-size:.79rem;line-height:1.55;margin-bottom:8px;}
+        .gdi{margin:0 0 9px;padding:11px 15px;background:#0a1b2a;border-left:3px solid var(--naranja);
+            border-radius:0 9px 9px 0;color:var(--tinta);font-size:.92rem;line-height:1.7;}
+        .gdi b{color:#fff;}
+        .gpre{color:var(--tenue);font-size:.79rem;line-height:1.6;padding-left:2px;}
+        .gpre b{color:var(--naranja);}
+        .gpre .q{color:var(--tinta);}
+        .gav{background:rgba(255,159,10,.09);border:1px solid rgba(255,159,10,.3);color:#ffcb7d;
+            border-radius:9px;padding:9px 13px;font-size:.79rem;line-height:1.6;margin:8px 0 2px;}
         .tag{display:inline-block;border-radius:6px;padding:1px 7px;font-size:.7rem;font-weight:700;}
         .tag.plan{background:rgba(48,209,88,.14);color:var(--bien);}
         .tag.aver{background:rgba(255,69,58,.14);color:#ff8d82;}
@@ -145,9 +164,21 @@
             border-radius:8px;padding:8px 14px;cursor:pointer;font-size:1rem;}
         #presentNav .cnt{color:var(--tenue);font-size:.9rem;}
 
+        /* Al imprimir con el guion abierto sale SOLO el guion: es la chuleta
+           que uno se lleva a la reunion, no la presentacion otra vez. */
+        @media print{
+            body.con-guion .slide,body.con-guion .header,body.con-guion .sidebar{display:none!important;}
+            body.con-guion #modalGuion{display:block!important;position:static;padding:0;
+                background:#fff!important;backdrop-filter:none;}
+            body.con-guion #modalGuion .box{background:#fff!important;border:none!important;max-width:none;}
+            body.con-guion #modalGuion h3,body.con-guion .gtit,body.con-guion .gdi{color:#111!important;}
+            body.con-guion .gdi{background:#f5f7fa!important;}
+            body.con-guion #modalGuion .x{display:none!important;}
+        }
         @media print{
             body{background:#fff!important;}
             .sidebar,.tools,.btn,#presentNav,.hint,.clickhint,#modalDet{display:none!important;}
+            #modalGuion{display:none!important;}
             .home-section{margin-left:0!important;}
             .slide{background:#fff!important;border:1px solid #ccc!important;break-inside:avoid;}
             .kpi-item,.area-card{background:#fff!important;border:1px solid #ccc!important;}
@@ -179,6 +210,7 @@
                     <option value="operativa">Disponibilidad operativa</option>
                 </select>
                 <button class="btn primary" onclick="cargar(true)"><i class="fas fa-sync"></i> Actualizar</button>
+                <button class="btn ghost" onclick="abrirGuion()" title="Que decir en cada lamina, con los numeros de este periodo"><i class="fas fa-comment-dots"></i> Guion</button>
                 <button class="btn present" onclick="togglePresent()" title="Pantalla completa, avanza con las flechas"><i class="fas fa-display"></i> Presentar</button>
                 <button class="btn ghost" onclick="window.print()"><i class="fas fa-file-pdf"></i> PDF</button>
             </div>
@@ -302,6 +334,21 @@
     <span class="cnt" id="slideCnt">1/8</span>
     <button onclick="nextSlide()"><i class="fas fa-chevron-right"></i></button>
     <button onclick="togglePresent()" title="Salir (Esc)"><i class="fas fa-xmark"></i></button>
+</div>
+
+<!-- Guion: que decir en cada lamina, con los numeros de este periodo -->
+<div id="modalGuion" onclick="if(event.target===this)cerrarGuion()">
+    <div class="box guion">
+        <div class="top">
+            <div>
+                <h3>Guion de la presentacion</h3>
+                <div class="sub" id="guionSub">—</div>
+            </div>
+            <button class="x" onclick="window.print()" title="Imprimir el guion"><i class="fas fa-print"></i></button>
+            <button class="x" onclick="cerrarGuion()"><i class="fas fa-xmark"></i></button>
+        </div>
+        <div id="guionCuerpo"></div>
+    </div>
 </div>
 
 <!-- Drill-down: las ordenes detras del indicador -->

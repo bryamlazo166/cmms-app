@@ -554,6 +554,264 @@ function barrasCumplimiento(id, datos, kProg, kEjec, lProg, lEjec, titulo, meta,
     }, true);
 }
 
+// ── Guion: que decir en cada lamina ──────────────────────────────────────
+// Se arma con reglas fijas sobre los numeros que ya estan en pantalla, sin
+// IA: la lectura de estos indicadores es determinista (si la real esta bajo
+// la requerida hay brecha; si el MTBF baja y el MTTR sube el problema es de
+// respuesta, no de frecuencia). Una IA aqui añadiria espera y el riesgo de
+// inventar una causa que no esta en los datos, delante de la gerencia.
+function sec(n, titulo, que, decir, pregunta) {
+    return `<div class="gsec">
+        <div class="gtit"><span class="gn">${n}</span> ${titulo}</div>
+        ${que ? `<div class="gque">${que}</div>` : ''}
+        <div class="gdi">${decir}</div>
+        ${pregunta ? `<div class="gpre">${pregunta}</div>` : ''}
+    </div>`;
+}
+function pp(x) { return `${x >= 0 ? '+' : ''}${nf(x)}`; }
+function peorPor(lista, campo, menorEsPeor) {
+    const v = lista.filter(a => a.actual[campo] != null);
+    if (!v.length) return null;
+    return v.reduce((p, a) => (menorEsPeor
+        ? (a.actual[campo] < p.actual[campo] ? a : p)
+        : (a.actual[campo] > p.actual[campo] ? a : p)));
+}
+function rumbo(campo, serie, subirEsBueno) {
+    const t = tendencia(serie.map(s => s[campo]));
+    if (!t) return { txt: '', bueno: null };
+    if (Math.abs(t.pend) < 0.01) return { txt: 'se mantiene estable', bueno: true };
+    const sube = t.pend > 0;
+    return { txt: sube ? 'viene subiendo' : 'viene bajando',
+             bueno: subirEsBueno ? sube : !sube };
+}
+
+function generarGuion() {
+    const m = PRES.meta;
+    const areas = PRES.areas.filter(a => a.es_proceso);
+    const pl = PRES.planta.actual;
+    const semanal = m.vista === 'semana';
+    const acum = semanal && PRES.planta.acumulado.length
+        ? PRES.planta.acumulado[PRES.planta.acumulado.length - 1] : null;
+    let h = '';
+
+    // ── Apertura ────────────────────────────────────────────────────────
+    h += sec('00', 'Como abrir',
+        semanal
+            ? `Es el cierre de la ${m.periodo_actual.toLowerCase()}. En pantalla estan todas las semanas
+               corridas del mes: la barra es la semana sola y la linea naranja es el acumulado.`
+            : `Es el cierre de ${m.label}, comparado con los meses anteriores.`,
+        `"Presento los indicadores de mantenimiento de <b>${esc(m.periodo_actual)}</b>.
+         Son las tres areas de proceso: ${areas.map(a => esc(a.area)).join(', ')}.
+         Todo esta medido <b>equipo por equipo y ponderado por capacidad</b>, no por promedio simple:
+         un digestor grande pesa mas que uno chico.
+         La disponibilidad que presento es la <b>${m.modo}</b>${m.modo === 'inherente'
+             ? ', que descuenta el mantenimiento planificado y solo la castigan las averias'
+             : ', que castiga todo paro, planificado o averia'}."`,
+        `<b>Si preguntan por que ponderada:</b> <span class="q">"Porque las areas tienen equipos de
+         capacidades distintas. Con promedio simple, parar el digestor mas grande pesaria igual que
+         parar el mas chico, y eso no es lo que pierde la planta."</span>`);
+
+    // ── 01 Disponibilidad requerida ─────────────────────────────────────
+    const req = PRES.requerida || [];
+    if (!req.length) {
+        h += sec('01', 'Disponibilidad requerida', '',
+            `"No hay meta de produccion cargada para este periodo, asi que esta lamina va vacia."`,
+            `<b>Accion:</b> cargar la meta en Produccion vs Mantenimiento antes de presentar.`);
+    } else {
+        const imp = req.filter(r => !r.alcanzable);
+        const apretada = req.filter(r => r.alcanzable).sort((a, b) => a.brecha_pp - b.brecha_pp)[0];
+        const holgada = req.filter(r => r.alcanzable).sort((a, b) => b.brecha_pp - a.brecha_pp)[0];
+        let d = `"Esta lamina traduce la meta de produccion a lenguaje de mantenimiento.
+            No hablo de toneladas: hablo de <b>cuanta disponibilidad necesito</b> y de
+            <b>cuantas horas de parada me puedo gastar</b>.<br><br>`;
+        req.forEach(r => {
+            d += `${esc(r.area)} necesita <b>${nf(r.requerida_pct)} %</b> y esta en
+                  <b>${nf(r.real_pct)} %</b>${r.alcanzable
+                    ? ` — ${r.brecha_pp >= 0 ? 'cumple' : 'no alcanza'}, ${pp(r.brecha_pp)} puntos.`
+                    : ` — <b>imposible</b>.`}<br>`;
+        });
+        if (apretada) {
+            d += `<br>El area mas apretada es <b>${esc(apretada.area)}</b>: el presupuesto del periodo es
+                  de <b>${nf(apretada.presupuesto_h)} horas</b> de parada, llevo consumidas
+                  <b>${nf(apretada.consumido_h)}</b>, y me quedan
+                  <b>${nf(apretada.saldo_h)} horas</b>${apretada.saldo_h < 0
+                    ? ' — es decir, ya me pase' : ''}."`;
+        } else { d += `"`; }
+        h += sec('01', 'Disponibilidad requerida para cumplir la meta',
+            `Barra = disponibilidad real. Linea roja punteada = la que hace falta. Si la barra pasa la
+             linea, esa etapa no es el problema.`,
+            d,
+            (imp.length
+                ? `<div class="gav"><b>Ojo:</b> ${imp.map(r => esc(r.area)).join(' y ')}
+                   ${imp.length > 1 ? 'necesitan' : 'necesita'} mas del 100 %. Di esto tal cual:
+                   <span class="q">"Ni parando cero horas se alcanza. La meta esta por encima de la
+                   capacidad instalada de esa etapa. Es una conversacion sobre la meta o sobre ampliar
+                   capacidad, no sobre mantenimiento."</span></div>`
+                : '')
+            + `<b>Si preguntan de donde sale el presupuesto de horas:</b>
+               <span class="q">"De la meta y de la capacidad instalada. Si necesito
+               ${apretada ? nf(apretada.requerida_pct) : '—'} % de disponibilidad, el resto del tiempo
+               es lo que me puedo permitir parar. Es el mismo numero que usa Produccion vs
+               Mantenimiento."</span>`
+            + (holgada && holgada !== apretada
+                ? `<br><b>Si te aprietan por ${esc(holgada.area)}:</b> <span class="q">"Tiene
+                   ${nf(holgada.saldo_h)} horas de saldo. No es donde esta el riesgo."</span>` : ''));
+    }
+
+    // ── 02 Disponibilidad ───────────────────────────────────────────────
+    const peorD = peorPor(areas, 'disponibilidad', true);
+    const rD = rumbo('disponibilidad', PRES.planta.serie, true);
+    h += sec('02', `Disponibilidad ${esc(m.modo)}`,
+        `Tarjeta de planta arriba, y una caja por area. La linea verde o roja de cada caja es la
+         tendencia del periodo.`,
+        `"La planta cerro en <b>${nf(pl.disponibilidad)} %</b>${rD.txt ? ` y ${rD.txt}` : ''}${
+            semanal && acum ? `. El acumulado del mes va en <b>${nf(acum.disponibilidad)} %</b>` : ''}.<br><br>`
+        // Las horas de paro del area son la SUMA de horas-equipo: en COCCION los
+        // 9 digestores paran en paralelo, asi que decir "590 horas de paro" a
+        // secas suena a que el area estuvo detenida 590 h y no es eso.
+        + areas.map(a => `${esc(a.area)}: <b>${nf(a.actual.disponibilidad)} %</b>`
+            + `, ${a.actual.fallas} averia${a.actual.fallas === 1 ? '' : 's'}`
+            + ` y ${nf(a.actual.horas_paro)} horas-equipo de parada`).join('.<br>')
+        + `.<br><br>${peorD ? `La que manda es <b>${esc(peorD.area)}</b> con
+             ${nf(peorD.actual.disponibilidad)} %${peorD.actual.fallas
+                ? `, por ${peorD.actual.fallas} averia${peorD.actual.fallas === 1 ? '' : 's'}` : ''}.` : ''}"`,
+        `<b>Si preguntan que paso exactamente:</b> haz click en la barra de esa area en la pantalla —
+         se abre el detalle con los equipos y las ordenes de ese periodo, con sus horas de parada.
+         <span class="q">"Lo tengo aqui mismo, orden por orden."</span>`
+        + `<br><b>Si preguntan por las horas-equipo:</b> <span class="q">"Es la suma de lo que paro
+           cada equipo. En coccion los digestores trabajan en paralelo, asi que esas horas no son
+           horas de area detenida: por eso la disponibilidad se pondera por capacidad y no se saca
+           restando esa suma."</span>`
+        + `<br><b>Si preguntan por que no coincide con Produccion:</b> <span class="q">"Produccion
+           mide la operativa, que castiga tambien el mantenimiento planificado. Yo presento la
+           inherente, que mide la salud del equipo. Las dos estan calculadas, es el mismo dato leido
+           de dos formas."</span>`);
+
+    // ── 03 MTBF ─────────────────────────────────────────────────────────
+    const peorM = peorPor(areas, 'mtbf', true);
+    const rM = rumbo('mtbf', PRES.planta.serie, true);
+    h += sec('03', 'MTBF — tiempo medio entre fallas',
+        `Se lee contra el TEP (la linea punteada gris): son las horas que tuvo el periodo. Cuanto mas
+         cerca del TEP, menos veces paro.`,
+        `"El MTBF de planta es de <b>${nf(pl.mtbf)} horas</b> contra un TEP de
+         <b>${nf(pl.tep, 0)}</b>${rM.txt ? `, y ${rM.txt}` : ''}.
+         ${peorM ? `El area con el MTBF mas corto es <b>${esc(peorM.area)}</b>, con
+          ${nf(peorM.actual.mtbf)} horas: ahi es donde mas seguido se para.` : ''}
+         Subir el MTBF es trabajo de <b>preventivo y de causa raiz</b>: espaciar las fallas."`,
+        `<b>Si preguntan por que el MTBF es tan alto o tan bajo:</b> <span class="q">"Es horas de
+         operacion divididas entre numero de averias. Un area con una sola averia en el mes tiene un
+         MTBF enorme aunque esa averia haya durado dias — por eso el MTBF hay que leerlo junto al
+         MTTR, no solo."</span>`);
+
+    // ── 04 MTTR ─────────────────────────────────────────────────────────
+    const peorR = peorPor(areas, 'mttr', false);
+    const rR = rumbo('mttr', PRES.planta.serie, false);
+    h += sec('04', 'MTTR — tiempo medio de reparacion',
+        `Aqui <b>bajar es mejorar</b>. La tendencia verde significa que estamos respondiendo mas rapido.`,
+        `"El MTTR de planta es de <b>${nf(pl.mttr)} horas</b> por averia${rR.txt ? ` y ${rR.txt}` : ''}.
+         ${peorR && peorR.actual.mttr > 0 ? `El mas alto es <b>${esc(peorR.area)}</b> con
+          ${nf(peorR.actual.mttr)} horas.` : ''}
+         Este numero es el tiempo que el equipo estuvo <b>detenido</b>, no las horas-hombre:
+         incluye la espera de repuesto, de grua y de permiso. Por eso puede salir alto aunque la
+         reparacion en si sea corta — y esa espera es justamente lo que hay que atacar."`,
+        `<b>Si preguntan como bajarlo:</b> <span class="q">"Repuestos criticos en almacen,
+         procedimiento de intervencion listo antes de parar, y decidir mas rapido. Hoy no puedo
+         separar cuanto es espera y cuanto es reparacion efectiva porque no registramos la hora de
+         inicio de la intervencion; si lo registramos, el proximo mes lo puedo partir."</span>`);
+
+    // ── 05 Cumplimiento preventivo ──────────────────────────────────────
+    const cp = PRES.cumplimiento.preventivo[PRES.cumplimiento.preventivo.length - 1];
+    const fuentes = (cp.fuentes || []).filter(f => f.activa);
+    const fuera = (cp.fuentes || []).filter(f => !f.activa);
+    const floja = fuentes.filter(f => f.pct != null).sort((a, b) => a.pct - b.pct)[0];
+    h += sec('05', 'Cumplimiento del programa preventivo',
+        `La barra clara es lo que pide el programa; la de color es lo ejecutado, separado por fuente.`,
+        `"El programa preventivo cerro en <b>${nf(cp.pct)} %</b>: ${cp.ejecutadas} actividades
+         ejecutadas de ${cp.programadas} que pide el programa.<br><br>`
+        + fuentes.map(f => `${esc(f.nombre)}: <b>${f.ejecutadas} de ${f.programadas}</b>`
+            + (f.pct != null ? ` (${nf(f.pct)} %)` : '')).join('.<br>')
+        + `.<br><br>Esto <b>no son solo las ordenes de trabajo</b>: la lubricacion, las rutas de
+           inspeccion y el monitoreo tambien son preventivo y viven fuera de las OTs. Presentar solo
+           las ordenes daria ${cp.solo_ot && cp.solo_ot.pct != null ? nf(cp.solo_ot.pct) + ' %' : '—'},
+           que es cierto pero cuenta una parte chica del trabajo."`,
+        (floja && floja.pct != null && floja.pct < 90
+            ? `<div class="gav"><b>Prepara esta:</b> lo mas flojo es
+               <b>${esc(floja.nombre)}</b> con ${nf(floja.pct)} %. Antes de presentar confirma si es
+               que <b>no se hizo</b> o que <b>no se registro</b> — son dos conversaciones muy
+               distintas y te la van a preguntar.</div>` : '')
+        + (fuera.length
+            ? `<b>Si preguntan por ${fuera.map(f => esc(f.nombre)).join(' y ')}:</b>
+               <span class="q">"${fuera.length > 1 ? 'Estan' : 'Esta'} en implementacion. Los programas
+               que todavia no estan en vigor se listan con su plan pero no entran al indicador,
+               porque seria cobrar trabajo que aun no se le exige a nadie. El dia que arranquen,
+               entran."</span><br>` : '')
+        + `<b>Referencia:</b> SMRP pide mas de 90 %.`);
+
+    // ── 06 Correctivo programado ────────────────────────────────────────
+    const cc = PRES.cumplimiento.correctivo[PRES.cumplimiento.correctivo.length - 1];
+    h += sec('06', 'Cumplimiento de correctivo programado',
+        `Correctivos que tenian fecha planificada, contra los que se terminaron dentro del periodo.`,
+        cc.programados
+            ? `"De ${cc.programados} correctivos programados se terminaron <b>${cc.terminados}</b>:
+               <b>${nf(cc.pct)} %</b>. ${cc.pct >= 90
+                 ? 'Lo programado se esta cumpliendo.'
+                 : 'Lo que queda abierto pasa al backlog y compite con el preventivo del proximo periodo.'}"`
+            : `"No hubo correctivos con fecha programada en el periodo."`,
+        `<b>Si preguntan la diferencia con el preventivo:</b> <span class="q">"El preventivo es lo que
+         yo decido hacer para que no falle. El correctivo programado es una falla que ya ocurrio pero
+         que pude planificar en vez de atender de emergencia. Que suba este numero es bueno: significa
+         que estoy planificando en vez de apagando incendios."</span>`);
+
+    // ── 07 Confiabilidad ────────────────────────────────────────────────
+    const peorC = peorPor(areas, 'confiabilidad', true);
+    h += sec('07', 'Confiabilidad',
+        `Probabilidad de operar ${m.horizonte_h} horas seguidas sin fallar. Un equipo sin averias da 100 %.`,
+        `"La confiabilidad de planta es <b>${nf(pl.confiabilidad)} %</b>: esa es la probabilidad de
+         aguantar <b>${nf(m.horizonte_h, 0)} horas seguidas</b> — una semana de operacion continua —
+         sin una averia.
+         ${peorC ? `La mas baja es <b>${esc(peorC.area)}</b> con ${nf(peorC.actual.confiabilidad)} %.` : ''}
+         <br><br>Confiabilidad no es solo que no falle: es <b>controlar y predecir</b> la falla. Sobre
+         esto se actua con ruta predictiva, analisis causa raiz, mejoras de diseño y monitoreo en
+         linea."`,
+        `<b>Si preguntan de donde sale ese porcentaje:</b> <span class="q">"Es R(t) = e elevado a
+         menos t sobre MTBF, con t de una semana. Sale del MTBF, no es una opinion. Esta la formula
+         resuelta con estos mismos numeros en el modulo Como se calculan."</span>`);
+
+    // ── Cierre ──────────────────────────────────────────────────────────
+    const compromisos = [];
+    if (peorD) compromisos.push(`atacar <b>${esc(peorD.area)}</b>, que es la que baja la disponibilidad`);
+    if (peorR && peorR.actual.mttr > 0) compromisos.push(`bajar el MTTR de <b>${esc(peorR.area)}</b>
+        (${nf(peorR.actual.mttr)} h) revisando repuestos y tiempos de espera`);
+    if (floja && floja.pct != null && floja.pct < 90)
+        compromisos.push(`cerrar la brecha de <b>${esc(floja.nombre)}</b> en el programa preventivo`);
+    h += sec('08', 'Como cerrar',
+        `Tres compromisos concretos, sacados de los mismos numeros. No prometas mas de tres.`,
+        `"Me llevo tres cosas de este periodo: ${compromisos.map((c, i) =>
+            `${i + 1}) ${c}`).join('; ')}.
+         ${req.length && req.some(r => !r.alcanzable)
+            ? 'Y dejo sobre la mesa que hay una meta por encima de la capacidad instalada, que no se resuelve con mantenimiento.'
+            : 'Los numeros estan en el sistema y cualquiera puede abrirlos orden por orden.'}"`,
+        `<b>Si te piden el detalle despues:</b> el modulo <b>Como se calculan</b> tiene cada formula
+         resuelta con estos mismos numeros y las ordenes que la alimentan.`);
+
+    return h;
+}
+
+function abrirGuion() {
+    if (!PRES) { alert('Primero carga los indicadores.'); return; }
+    el('guionSub').textContent = `${PRES.meta.periodo_actual} · disponibilidad ${PRES.meta.modo}`
+        + ` · generado con los numeros en pantalla, sin IA`;
+    el('guionCuerpo').innerHTML = generarGuion();
+    el('modalGuion').classList.add('open');
+    document.body.classList.add('con-guion');
+}
+function cerrarGuion() {
+    el('modalGuion').classList.remove('open');
+    document.body.classList.remove('con-guion');
+}
+window.abrirGuion = abrirGuion;
+window.cerrarGuion = cerrarGuion;
+
 // ── Drill-down: las ordenes detras del indicador ─────────────────────────
 async function abrirDetalle(areaId, i) {
     const per = (PRES.meta.periodos || [])[i];
@@ -642,6 +900,7 @@ window.nextSlide = nextSlide;
 window.prevSlide = prevSlide;
 
 function teclas(e) {
+    if (e.key === 'Escape' && el('modalGuion').classList.contains('open')) { cerrarGuion(); return; }
     if (e.key === 'Escape' && el('modalDet').classList.contains('open')) { cerrarDetalle(); return; }
     if (!document.body.classList.contains('presenting')) return;
     if (e.key === 'ArrowRight' || e.key === 'PageDown' || e.key === ' ') { e.preventDefault(); nextSlide(); }
