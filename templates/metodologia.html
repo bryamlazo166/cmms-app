@@ -240,15 +240,22 @@ Disponibilidad inherente  =  (T − Pp − Pn) / (T − Pp)</div>
 
         <!-- 06 Ponderación -->
         <div class="ficha" id="f6">
-            <h2><span class="n">06</span> De equipo a área: ponderación por capacidad
+            <h2><span class="n">06</span> De equipo a área: la línea en serie, las líneas en paralelo
                 <span class="chip decidido">Decidido: ponderada</span></h2>
-            <div class="que">Los indicadores <b>se calculan equipo por equipo</b> y recién ahí se suben a
-                área y a planta, pesando cada equipo por lo que aporta a la producción. Un digestor de 20 TM/día
-                pesa más que uno de 8. Se pondera la disponibilidad, el MTBF y la confiabilidad.</div>
+            <div class="que">La planta tiene dos topologías y el cálculo respeta las dos.
+                <b>Dentro de una línea los equipos van en SERIE</b>: la línea SECADOR #1 son el secador y
+                siete auxiliares (TH alimentador, TH de salida, TH fino, ciclón de finos…), y si cualquiera
+                de ellos para, esa línea de secado para completa. Por eso la línea se mide como
+                <b>una sola máquina</b> y no solo por su secador.
+                <b>Entre líneas van en PARALELO</b>, así que se ponderan por capacidad: una línea de 96 TM/día
+                pesa más que una de 48. Se pondera la disponibilidad, el MTBF y la confiabilidad.</div>
             <div class="formula">
-                <div class="f">Indicador del área = Σ (indicador del equipo × capacidad del equipo)
+                <div class="f">Disponibilidad de la línea = (T − paro de CUALQUIERA de sus equipos) / T
+                             (en serie: basta que pare uno)
+
+Indicador del área = Σ (indicador de la línea × capacidad de la línea)
                     ─────────────────────────────────────────────
-                              Σ capacidad de los equipos</div>
+                              Σ capacidad de las líneas</div>
                 <div class="sub" id="s6"></div>
                 <div class="res" id="r6"></div>
             </div>
@@ -256,8 +263,10 @@ Disponibilidad inherente  =  (T − Pp − Pn) / (T − Pp)</div>
             <div class="nota" id="n6"></div>
             <div class="hint" style="margin-top:10px">El <b>MTTR no se pondera</b>: es horas de parada entre
                 averías del conjunto. Ponderarlo mezclaría reparaciones de equipos distintos sin sentido físico.
-                Los equipos con capacidad cero (auxiliares, o fuera de servicio por overhaul) no pesan en el
-                promedio, pero sus OTs siguen contándose en las horas de paro del área.</div>
+                Un auxiliar <b>dentro de una línea con capacidad</b> sí la detiene y por eso entra; una
+                <b>línea entera sin capacidad</b> (percolador, purificador, enfriador, zaranda, faja, ciclones)
+                no pondera hoy: sus OTs se cuentan en las horas de paro del área pero no bajan la
+                disponibilidad. <b>Esa es una decisión pendiente</b> — ver la ficha 11.</div>
         </div>
 
         <!-- 07 Capacidad -->
@@ -385,6 +394,9 @@ Cumplimiento = ejecutadas / programadas × 100   (por fuente y total)</div>
                 <tr><td><b>Separar espera de reparación en el MTTR</b></td>
                     <td>Registrar la hora de inicio de la intervención además del paro, para partir el MTTR en espera + reparación efectiva.</td>
                     <td>El MTTR incluye toda la espera.</td></tr>
+                <tr><td><b>Las líneas auxiliares sin capacidad</b><div class="hint">Percolador, purificador, enfriador, zaranda, faja transportadora, ciclones de llegada y ensaque.</div></td>
+                    <td>Si son comunes a toda el área y su parada detiene la etapa, deberían entrar en serie con el área. Si el proceso puede seguir sin ellas (o hay by-pass), quedan como hoy.</td>
+                    <td>No pesan en la disponibilidad; sus horas sí aparecen como horas-equipo.</td></tr>
                 <tr><td><b>Backlog sin técnico asignado</b><div class="hint">No cambia la fórmula, pero sí la calidad del dato.</div></td>
                     <td>Exigir técnico al programar, para poder medir carga por persona.</td>
                     <td>58 OTs en backlog, solo 1 con técnico.</td></tr>

@@ -153,6 +153,29 @@ def register_production_routes(app, db, logger, ProductionGoal, WorkOrder, Area,
                 return 0.0
             return eq_harina_tm_day(eq, _plant_yield)
 
+        # Capacidad de cada linea: la suma de sus equipos productivos.
+        _cap_linea = {}
+        for e in equips:
+            if e.line_id in line_map:
+                _cap_linea[e.line_id] = _cap_linea.get(e.line_id, 0.0) + _eq_harina_dia(e.id)
+
+        def _paro_tph(eq_id):
+            """TM de harina por hora que se pierden cuando ESTE equipo para.
+
+            Dentro de una linea los equipos van EN SERIE: si para el TH de
+            salida del secador #1, esa linea de secado para completa, no solo
+            el auxiliar. Valorar su parada en cero decia que la planta no
+            perdio nada mientras el secado estaba detenido.
+            """
+            eq = equip_map.get(eq_id)
+            if not eq or not getattr(eq, 'include_in_kpi', True):
+                return 0.0
+            propio = _eq_output_tph(eq_id)
+            if propio > 0:
+                return propio
+            cap_linea = _cap_linea.get(eq.line_id, 0.0)
+            return cap_linea / 24.0 if cap_linea > 0 else 0.0
+
         area_results = []
         total_tons_lost = 0.0
         total_sacks_lost = 0.0
@@ -227,7 +250,7 @@ def register_production_routes(app, db, logger, ProductionGoal, WorkOrder, Area,
             # hubiera detenido el area completa.
             tons_lost = 0.0
             for ev in downtime_events:
-                tons_lost += ev['hours'] * _eq_output_tph(ev['ot'].equipment_id)
+                tons_lost += ev['hours'] * _paro_tph(ev['ot'].equipment_id)
             tons_lost = round(tons_lost, 2)
             sacks_lost = round((tons_lost * 1000) / SACK_KG, 0)
 
@@ -293,7 +316,7 @@ def register_production_routes(app, db, logger, ProductionGoal, WorkOrder, Area,
                 # Excluir equipos marcados como fuera de KPI (ej: hidrolavadora 4)
                 if eq and not getattr(eq, 'include_in_kpi', True):
                     continue
-                tons = ev['hours'] * _eq_output_tph(eq_id)
+                tons = ev['hours'] * _paro_tph(eq_id)
                 if eq_id not in equipment_impact:
                     equipment_impact[eq_id] = {
                         'equipment_id': eq_id,

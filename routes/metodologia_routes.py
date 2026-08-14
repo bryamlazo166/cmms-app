@@ -117,14 +117,21 @@ def register_metodologia_routes(app, db, logger):
             equipos, por_equipo = _ots_del_rango(per)
             rend = plant_yield_factor(list(equipos.values()))
 
-            # Capacidad por equipo (el peso de la ponderacion)
-            cap_eq, eq_de_area = {}, {}
+            # Capacidad por equipo y por LINEA. La linea es la unidad de
+            # medida de la disponibilidad: dentro de ella los equipos van en
+            # serie, asi que basta que pare uno para que pare la linea.
+            cap_eq, cap_linea, eq_de_area, eq_de_linea = {}, {}, {}, {}
+            lineas_de_area = {}
             for e in equipos.values():
                 if not e.include_in_kpi or e.line_id not in lines:
                     continue
                 cap_eq[e.id] = (eq_harina_tm_day(e, rend)
                                 if eq_produces(e) and e.in_service else 0.0)
-                eq_de_area.setdefault(lines[e.line_id].area_id, []).append(e.id)
+                cap_linea[e.line_id] = cap_linea.get(e.line_id, 0.0) + cap_eq[e.id]
+                aid_e = lines[e.line_id].area_id
+                eq_de_area.setdefault(aid_e, []).append(e.id)
+                eq_de_linea.setdefault(e.line_id, []).append(e.id)
+                lineas_de_area.setdefault(aid_e, set()).add(e.line_id)
 
             proceso = [aid for aid, a in areas.items()
                        if (a.name or '').upper() in AREAS_PROCESO]
@@ -178,23 +185,50 @@ def register_metodologia_routes(app, db, logger):
                 } for o in ots_eq],
             }
 
-            # ── Ponderacion del area de ese equipo ──────────────────────
+            # ── Ponderacion del area: una medicion por LINEA ────────────
+            # Dentro de una linea los equipos van en serie (si para el TH de
+            # salida del secador #1, esa linea de secado para completa), asi
+            # que la linea se mide como una sola maquina. Entre lineas van en
+            # paralelo y se ponderan por capacidad.
             filas, num, den = [], 0.0, 0.0
-            for otro in eq_de_area.get(aid, []):
-                cap = cap_eq.get(otro, 0.0)
-                i2 = _calc_indicators(por_equipo.get(otro, []), per['tep'],
-                                      mode=modo, reliability_hours=horizonte)
+            for lid in lineas_de_area.get(aid, set()):
+                cap = cap_linea.get(lid, 0.0)
+                miembros = eq_de_linea.get(lid, [])
+                de_linea = []
+                for otro in miembros:
+                    for o in por_equipo.get(otro, []):
+                        copia = dict(o)
+                        copia['equipment_id'] = -1000000 - lid   # la linea, una maquina
+                        de_linea.append(copia)
+                i2 = _calc_indicators(de_linea, per['tep'], mode=modo,
+                                      reliability_hours=horizonte)
+                # Que equipo de la linea la detuvo, para poder explicarlo
+                culpables = []
+                for otro in miembros:
+                    ie = _calc_indicators(por_equipo.get(otro, []), per['tep'],
+                                          mode=modo, reliability_hours=horizonte)
+                    if ie['downtime_hours'] > 0:
+                        culpables.append({
+                            'equipo': _nombre(equipos.get(otro)),
+                            'horas': ie['downtime_hours'],
+                            'fallas': ie['failure_count'],
+                            'produce': cap_eq.get(otro, 0.0) > 0,
+                        })
+                culpables.sort(key=lambda x: -x['horas'])
                 filas.append({
-                    'equipo': _nombre(equipos.get(otro)),
+                    'linea': (lines[lid].name or f'LINEA {lid}'),
+                    'equipos': len(miembros),
                     'capacidad': round(cap, 2),
                     'disponibilidad': i2['availability'],
                     'aporte': round(i2['availability'] * cap, 2),
                     'pesa': cap > 0,
+                    'horas_paro': i2['downtime_hours'],
+                    'culpables': culpables,
                 })
                 if cap > 0:
                     num += i2['availability'] * cap
                     den += cap
-            filas.sort(key=lambda x: (-x['capacidad'], x['equipo']))
+            filas.sort(key=lambda x: (-x['capacidad'], x['linea']))
             ponderacion = {
                 'area': area.name,
                 'filas': filas,

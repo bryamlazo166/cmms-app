@@ -823,7 +823,8 @@ async function abrirDetalle(areaId, i) {
     el('modalDet').classList.add('open');
     el('detTitulo').textContent = 'Cargando...';
     el('detSub').textContent = per.nombre;
-    el('detKpis').innerHTML = ''; el('detEquipos').innerHTML = ''; el('detOts').innerHTML = '';
+    el('detKpis').innerHTML = ''; el('detLineas').innerHTML = '';
+    el('detEquipos').innerHTML = ''; el('detOts').innerHTML = '';
     try {
         const r = await fetch(`/api/presentacion/detalle?${q}`);
         const d = await r.json();
@@ -841,6 +842,22 @@ async function abrirDetalle(areaId, i) {
             ['Horas de paro', nf(s.horas_paro) + ' h', ''],
         ].map(([l, v, cl]) => `<div class="kpi-item"><div class="label">${l}</div>
             <div class="value ${cl}" style="font-size:1.25rem">${v}</div></div>`).join('');
+
+        // Las lineas primero: son la unidad de medida de la disponibilidad,
+        // porque dentro de ellas los equipos van en serie.
+        el('detLineas').innerHTML = (d.lineas || []).length
+            ? `<tr><th>Línea</th><th class="num">Capacidad</th><th class="num">Disponibilidad</th>
+               <th class="num">Horas de parada</th><th>Qué la detuvo</th></tr>`
+              + d.lineas.map(l => `<tr class="${l.pesa ? '' : 'apagado'}">
+                <td><b>${esc(l.linea)}</b> <span class="hint">${l.equipos} equipos en serie</span></td>
+                <td class="num">${l.pesa ? nf(l.capacidad) + ' TM/día' : '—'}</td>
+                <td class="num ${l.pesa ? clase('disponibilidad', l.disponibilidad) : ''}">${l.pesa ? nf(l.disponibilidad) + ' %' : 'no pondera'}</td>
+                <td class="num">${nf(l.horas_paro)} h</td>
+                <td>${l.detuvieron.length
+                    ? l.detuvieron.map(x => `${esc(x.equipo)} <span class="hint">${nf(x.horas)} h`
+                        + `${x.auxiliar ? ' · auxiliar' : ''}</span>`).join(' · ')
+                    : '<span class="hint">sin paradas</span>'}</td></tr>`).join('')
+            : `<tr><td class="hint">Sin líneas con movimiento en el periodo.</td></tr>`;
 
         el('detEquipos').innerHTML = d.equipos.length
             ? `<tr><th>Equipo</th><th class="num">Disponibilidad</th><th class="num">MTBF</th>

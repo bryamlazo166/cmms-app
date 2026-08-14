@@ -602,6 +602,85 @@ def test_programa_en_implementacion_no_baja_el_cumplimiento(auth_admin, app):
         assert db.session.get(AppSetting, 'preventivo_fuentes').value == 'OT,LUB'
 
 
+def test_la_linea_va_en_serie_y_un_auxiliar_la_detiene(auth_admin, app):
+    """Dentro de una linea los equipos van EN SERIE.
+
+    La linea SECADOR #1 son el secador y siete auxiliares (TH alimentador, TH
+    de salida, TH fino, ciclon de finos...). Si para el TH de salida, esa
+    linea de secado para completa. Midiendo solo el secador, el indicador
+    decia 100 % de disponibilidad con el secado detenido.
+    """
+    from models import Area, Equipment, Line, WorkOrder, db
+
+    # El fixture de BD es de sesion: lo que se cree aqui lo ven las demas
+    # pruebas. Un area con capacidad cambiaria la capacidad de planta, asi
+    # que se borra al terminar pase lo que pase.
+    with app.app_context():
+        area = Area(name='SECADO PRUEBA', include_in_kpi=True)
+        db.session.add(area)
+        db.session.flush()
+        linea = Line(name='LINEA SECADOR PRUEBA', area_id=area.id)
+        db.session.add(linea)
+        db.session.flush()
+        sec = Equipment(name='SECADOR', tag='SECP', line_id=linea.id,
+                        is_production_unit=True, capacity_tm_day=48.0,
+                        include_in_kpi=True, in_service=True)
+        th = Equipment(name='TH SALIDA', tag='THP', line_id=linea.id,
+                       include_in_kpi=True, in_service=True)
+        db.session.add_all([sec, th])
+        db.session.flush()
+        # El secador no paro; el TH de salida si, 24 h por averia
+        ot = WorkOrder(
+            code='OT-TH-PRUEBA', status='Cerrada', equipment_id=th.id,
+            maintenance_type='Correctivo', caused_downtime=True,
+            downtime_hours=24.0, downtime_planned=False,
+            real_end_date='2026-07-10', scheduled_date='2026-07-10')
+        db.session.add(ot)
+        db.session.commit()
+        area_id, linea_id = area.id, linea.id
+        eq_ids, ot_id, tag_th = [sec.id, th.id], ot.id, th.tag
+
+    try:
+        d = auth_admin.get('/api/presentacion/data'
+                           '?month=2026-07&vista=mes&meses=1&modo=inherente').json
+        prueba = next((a for a in d['areas'] if a['area'] == 'SECADO PRUEBA'), None)
+        assert prueba is not None, 'el area de prueba no entro al informe'
+
+        # 24 h de paro sobre 744 del mes: la linea baja, no se queda en 100 %
+        esperado = (1 - 24.0 / 744.0) * 100
+        assert abs(prueba['actual']['disponibilidad'] - esperado) < 0.05, (
+            f"un auxiliar detiene la linea pero la disponibilidad quedo en "
+            f"{prueba['actual']['disponibilidad']} %")
+        assert prueba['actual']['horas_paro'] == 24.0
+
+        # Y el drill-down lo explica: la linea, y quien la detuvo
+        det = auth_admin.get(f'/api/presentacion/detalle?area_id={area_id}'
+                             '&desde=2026-07-01&hasta=2026-07-31&modo=inherente').json
+        lineas = det['lineas']
+        assert lineas, 'el detalle no trae las lineas'
+        ln = lineas[0]
+        assert ln['pesa'] and ln['equipos'] == 2
+        assert abs(ln['disponibilidad'] - esperado) < 0.05
+        culpables = {c['equipo']: c for c in ln['detuvieron']}
+        assert tag_th in culpables, 'no se identifica al equipo que detuvo la linea'
+        assert culpables[tag_th]['auxiliar'] is True
+        assert culpables[tag_th]['horas'] == 24.0
+
+        # La metodologia tiene que ponderar por linea, no por equipo
+        m = auth_admin.get('/api/metodologia/data?month=2026-07&modo=inherente').json
+        if 'error' not in m:
+            for f in m['ponderacion']['filas']:
+                assert 'linea' in f, 'la metodologia sigue ponderando por equipo'
+    finally:
+        with app.app_context():
+            WorkOrder.query.filter_by(id=ot_id).delete()
+            Equipment.query.filter(Equipment.id.in_(eq_ids)).delete(
+                synchronize_session=False)
+            Line.query.filter_by(id=linea_id).delete()
+            Area.query.filter_by(id=area_id).delete()
+            db.session.commit()
+
+
 def test_produccion_usa_la_capacidad_real_y_no_el_rendimiento_manual(auth_admin):
     """Produccion vs Mantenimiento calculaba la disponibilidad requerida con
     el rendimiento y las horas cargados a mano en la meta.

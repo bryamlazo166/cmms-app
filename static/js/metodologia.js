@@ -138,10 +138,14 @@ function ponderacion() {
     el('r6').innerHTML = `Disponibilidad del area ${esc(p.area)} = ${nf(p.resultado)} %`;
 
     el('t6').innerHTML =
-        `<tr><th>Equipo</th><th class="num">Capacidad TM/dia</th><th class="num">Disponibilidad</th>
-         <th class="num">Aporte (disp × cap)</th></tr>`
+        `<tr><th>Línea (sus equipos van en serie)</th><th class="num">Capacidad TM/dia</th>
+         <th class="num">Disponibilidad</th><th class="num">Aporte (disp × cap)</th></tr>`
         + p.filas.map(f => `<tr class="${f.pesa ? '' : 'apagado'}">
-            <td><b>${esc(f.equipo)}</b></td>
+            <td><b>${esc(f.linea)}</b> <span class="hint">${f.equipos} equipo${f.equipos === 1 ? '' : 's'}</span>
+                ${f.culpables && f.culpables.length
+                    ? `<div class="hint">La detuvo: ${f.culpables.map(c =>
+                        `${esc(c.equipo)} ${nf(c.horas)} h${c.produce ? '' : ' (auxiliar)'}`).join(' · ')}</div>`
+                    : ''}</td>
             <td class="num">${f.pesa ? nf(f.capacidad) : '0 — no pesa'}</td>
             <td class="num">${nf(f.disponibilidad)} %</td>
             <td class="num">${f.pesa ? nf(f.aporte) : '—'}</td></tr>`).join('')

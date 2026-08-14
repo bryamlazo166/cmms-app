@@ -199,8 +199,8 @@ def register_presentacion_routes(app, db, logger):
         # Capacidad de harina por equipo y por area (solo lo que produce y
         # esta en servicio). Es el peso de la ponderacion y la base de la
         # disponibilidad requerida.
-        cap_eq, cap_area = {}, {}
-        eq_de_area, nombre_eq = {}, {}
+        cap_eq, cap_area, cap_linea = {}, {}, {}
+        eq_de_area, nombre_eq, linea_de_eq = {}, {}, {}
         for e in equipos:
             nombre_eq[e.id] = {'nombre': e.name or '', 'tag': e.tag or ''}
             if not e.include_in_kpi or e.line_id not in lines:
@@ -210,7 +210,9 @@ def register_presentacion_routes(app, db, logger):
             cap_eq[e.id] = cap
             aid = lines[e.line_id].area_id
             cap_area[aid] = cap_area.get(aid, 0.0) + cap
+            cap_linea[e.line_id] = cap_linea.get(e.line_id, 0.0) + cap
             eq_de_area.setdefault(aid, []).append(e.id)
+            linea_de_eq[e.id] = e.line_id
 
         # UNA sola pasada por las ordenes: de ahi salen las cerradas (para
         # los indicadores) y las programadas (para el cumplimiento).
@@ -284,6 +286,7 @@ def register_presentacion_routes(app, db, logger):
 
         return {'areas': areas, 'lines': lines, 'equipos': equipos,
                 'rendimiento': rend, 'cap_eq': cap_eq, 'cap_area': cap_area,
+                'cap_linea': cap_linea, 'linea_de_eq': linea_de_eq,
                 'eq_de_area': eq_de_area, 'ots': cerradas,
                 'programadas': programadas, 'metas': metas,
                 'rutinas': rutinas_prev}
@@ -308,36 +311,71 @@ def register_presentacion_routes(app, db, logger):
                 idx.setdefault(o['equipment_id'], []).append(o)
         return idx
 
+    def _ots_de_linea(base, eq_ids, idx, lid):
+        """OTs de todos los equipos de la linea, vistas como si fueran de UNA
+        sola maquina.
+
+        Renombrar el equipo no es un truco de conveniencia: dentro de una
+        linea los equipos van EN SERIE. Si para el TH de salida del secador
+        #1, esa linea de secado para completa, igual que si parara el
+        secador. Al presentarlas con el mismo equipment_id, _calc_indicators
+        las suma como paros de la linea y consolida en uno solo los trabajos
+        que compartieron parada, que es justo lo que ocurre en planta.
+        """
+        salida = []
+        for eid in eq_ids:
+            if base['linea_de_eq'].get(eid) != lid:
+                continue
+            for o in idx.get(eid, []):
+                copia = dict(o)
+                copia['equipment_id'] = -1000000 - lid
+                salida.append(copia)
+        return salida
+
     def _ponderar(base, eq_ids, idx, tep, modo, horizonte):
         """Indicadores de un conjunto de equipos, PONDERADOS POR CAPACIDAD.
 
-        Se calcula equipo por equipo y se pesa por lo que cada uno aporta a
-        la planta. Sumar las horas de paro de equipos en paralelo (los 9
-        digestores) como si estuvieran en serie es lo que antes devolvia
-        disponibilidades imposibles.
+        Dos niveles, porque la planta tiene dos topologias:
+
+          · DENTRO de una linea los equipos van EN SERIE. La linea SECADOR #1
+            son el secador y 7 auxiliares (TH alimentador, TH de salida, TH
+            fino, ciclon de finos...): si cualquiera para, esa linea de
+            secado para. Por eso la linea se mide como una sola maquina y no
+            solo por su secador.
+          · ENTRE lineas van EN PARALELO, asi que se ponderan por capacidad.
+            Sumar las horas de paro de los 9 digestores como si estuvieran en
+            serie es lo que antes devolvia disponibilidades imposibles.
         """
         from routes.indicators_routes import _calc_indicators
         num = {'disponibilidad': 0.0, 'mtbf': 0.0, 'confiabilidad': 0.0}
         peso = 0.0
         paro_total, fallas, n_ots = 0.0, 0, 0
+
+        # Totales crudos: horas-equipo y averias, equipo a equipo
         for eid in eq_ids:
-            cap = base['cap_eq'].get(eid, 0.0)
             ind = _calc_indicators(idx.get(eid, []), tep, mode=modo,
                                    reliability_hours=horizonte)
             paro_total += ind['downtime_hours']
             fallas += ind['failure_count']
             n_ots += ind['total_ots']
+
+        # Disponibilidad, MTBF y confiabilidad: una medicion por LINEA
+        for lid in {base['linea_de_eq'].get(e) for e in eq_ids} - {None}:
+            cap = base['cap_linea'].get(lid, 0.0)
             if cap <= 0:
-                continue
+                continue                    # linea auxiliar: no pondera
+            ind = _calc_indicators(_ots_de_linea(base, eq_ids, idx, lid), tep,
+                                   mode=modo, reliability_hours=horizonte)
             num['disponibilidad'] += ind['availability'] * cap
             num['mtbf'] += ind['mtbf'] * cap
             num['confiabilidad'] += ind['reliability'] * cap
             peso += cap
+
         if peso > 0:
             res = {k: round(v / peso, 2) for k, v in num.items()}
             res['ponderado'] = True
         else:
-            # Sin equipos con capacidad: se mide el conjunto directamente
+            # Sin lineas con capacidad: se mide el conjunto directamente
             todas = [o for eid in eq_ids for o in idx.get(eid, [])]
             ind = _calc_indicators(todas, tep, mode=modo,
                                    reliability_hours=horizonte)
@@ -676,6 +714,43 @@ def register_presentacion_routes(app, db, logger):
 
             nombres = {e.id: (e.tag or e.name or f'EQ-{e.id}')
                        for e in base['equipos']}
+
+            # Las lineas primero: son la unidad de medida de la
+            # disponibilidad, porque dentro de ellas los equipos van en serie.
+            lineas = []
+            for lid in {base['linea_de_eq'].get(e) for e in eq_ids} - {None}:
+                cap = base['cap_linea'].get(lid, 0.0)
+                miembros = [e for e in eq_ids if base['linea_de_eq'].get(e) == lid]
+                ind = _calc_indicators(_ots_de_linea(base, eq_ids, idx, lid), tep,
+                                       mode=modo, reliability_hours=horizonte)
+                detuvieron = []
+                for eid in miembros:
+                    ie = _calc_indicators(idx.get(eid, []), tep, mode=modo,
+                                          reliability_hours=horizonte)
+                    if ie['downtime_hours'] > 0:
+                        detuvieron.append({
+                            'equipo': nombres.get(eid, f'EQ-{eid}'),
+                            'horas': ie['downtime_hours'],
+                            'fallas': ie['failure_count'],
+                            'auxiliar': base['cap_eq'].get(eid, 0.0) <= 0,
+                        })
+                detuvieron.sort(key=lambda x: -x['horas'])
+                if cap <= 0 and not detuvieron:
+                    continue
+                lineas.append({
+                    'linea': (base['lines'][lid].name if lid in base['lines']
+                              else f'LINEA {lid}'),
+                    'equipos': len(miembros),
+                    'capacidad': round(cap, 2),
+                    'pesa': cap > 0,
+                    'disponibilidad': ind['availability'],
+                    'mtbf': ind['mtbf'],
+                    'horas_paro': ind['downtime_hours'],
+                    'fallas': ind['failure_count'],
+                    'detuvieron': detuvieron,
+                })
+            lineas.sort(key=lambda x: (-x['capacidad'], x['disponibilidad']))
+
             equipos, ots = [], []
             for eid in eq_ids:
                 de_eq = idx.get(eid, [])
@@ -716,6 +791,7 @@ def register_presentacion_routes(app, db, logger):
                 'periodo': f'{desde} a {hasta}',
                 'dias': dias, 'tep': tep, 'modo': modo,
                 'resumen': resumen,
+                'lineas': lineas,
                 'equipos': equipos,
                 'ots': ots,
             })

@@ -455,13 +455,47 @@ Una OT se asigna a un periodo por su **fecha de cierre real**
 (`real_end_date` → `real_start_date` → `scheduled_date`), la misma regla que
 usa la vista mensual. Por eso las semanas cuadran con el mes sin prorrateo.
 
-### Agregación
+### Agregación: la línea en serie, las líneas en paralelo
 
-Todo se calcula **equipo por equipo** con `_calc_indicators` y se **pondera por
-capacidad** al subir a línea, área y planta — disponibilidad, MTBF y
-confiabilidad. El MTTR no se pondera: es `horas de paro ÷ averías`, el tiempo
-medio de reparación. El indicador **PLANTA** es la ponderación de todos los
-equipos de las áreas de proceso (cocción, secado, molienda).
+La planta tiene **dos topologías** y el cálculo respeta las dos.
+
+**Dentro de una línea los equipos van EN SERIE.** La línea SECADOR #1 son el
+secador y siete auxiliares (TH alimentador, TH de salida, TH fino, TH reproceso,
+TH2 alimentador enfriador, ciclón de finos); la #2 son el secador y once. Si
+cualquiera de ellos para, esa línea de secado para completa. Por eso la línea se
+mide **como una sola máquina**: todas las OTs de sus equipos se presentan a
+`_calc_indicators` con el mismo `equipment_id`, de modo que los paros se suman y
+los trabajos que compartieron una parada se consolidan en uno solo.
+
+Midiendo solo el equipo productivo, julio 2026 reportaba SECADO al **99,96 %**
+con la línea #1 detenida 11,5 h por sus auxiliares. Con el modelo en serie da
+**98,81 %**, y el MTBF del área baja de 743 h a 279 h — el tren de secado se
+detiene más seguido que el secador solo.
+
+**Entre líneas van EN PARALELO**, así que se ponderan por capacidad:
+
+```
+Disponibilidad de la línea = (T − paro de CUALQUIERA de sus equipos) / T
+Indicador del área = Σ (indicador de la línea × capacidad de la línea)
+                     ─────────────────────────────────────────────
+                              Σ capacidad de las líneas
+```
+
+Se ponderan disponibilidad, MTBF y confiabilidad. El MTTR no se pondera: es
+`horas de paro ÷ averías`, el tiempo medio de reparación, y se mide equipo a
+equipo. El indicador **PLANTA** es la ponderación de todas las líneas con
+capacidad de las áreas de proceso (cocción, secado, molienda).
+
+En *Producción vs Mantenimiento*, el paro de un auxiliar dentro de una línea con
+capacidad se valora con la **capacidad de su línea** (`_paro_tph`), no en cero:
+antes un TH detenido 8 h decía que la planta no había perdido nada mientras el
+secado estaba parado.
+
+> **Pendiente de decidir**: las **líneas auxiliares sin capacidad** (percolador,
+> purificador, enfriador, zaranda, faja transportadora, ciclones de llegada y
+> ensaque) no ponderan. Sus horas aparecen como horas-equipo pero no bajan la
+> disponibilidad. Si son comunes a toda el área y su parada detiene la etapa,
+> deberían entrar en serie con el área.
 
 ### Disponibilidad requerida
 
