@@ -848,10 +848,11 @@ async function abrirDetalle(areaId, i) {
         el('detLineas').innerHTML = (d.lineas || []).length
             ? `<tr><th>Línea</th><th class="num">Capacidad</th><th class="num">Disponibilidad</th>
                <th class="num">Horas de parada</th><th>Qué la detuvo</th></tr>`
-              + d.lineas.map(l => `<tr class="${l.pesa ? '' : 'apagado'}">
-                <td><b>${esc(l.linea)}</b> <span class="hint">${l.equipos} equipos en serie</span></td>
+              + d.lineas.map(l => `<tr class="${l.pesa || l.critica ? '' : 'apagado'}">
+                <td><b>${esc(l.linea)}</b> <span class="hint">${l.equipos} equipos en serie</span>
+                    ${l.critica ? '<span class="tag aver">detiene el área</span>' : ''}</td>
                 <td class="num">${l.pesa ? nf(l.capacidad) + ' TM/día' : '—'}</td>
-                <td class="num ${l.pesa ? clase('disponibilidad', l.disponibilidad) : ''}">${l.pesa ? nf(l.disponibilidad) + ' %' : 'no pondera'}</td>
+                <td class="num ${l.pesa || l.critica ? clase('disponibilidad', l.disponibilidad) : ''}">${l.pesa || l.critica ? nf(l.disponibilidad) + ' %' : 'no pondera'}</td>
                 <td class="num">${nf(l.horas_paro)} h</td>
                 <td>${l.detuvieron.length
                     ? l.detuvieron.map(x => `${esc(x.equipo)} <span class="hint">${nf(x.horas)} h`

@@ -232,12 +232,21 @@ class Line(db.Model):
     name: Mapped[str] = mapped_column(String(100), nullable=False)
     description: Mapped[str] = mapped_column(Text, nullable=True)
     area_id: Mapped[int] = mapped_column(ForeignKey('areas.id'), nullable=False)
-    
+
+    # True = si esta linea para, PARA TODA EL AREA (va en serie con ella).
+    # Es para lineas auxiliares sin equipo productivo pero por las que pasa
+    # todo el flujo: la zaranda y el ciclon de ensaque detienen la molienda
+    # porque despues de ellos se ensaca. En cambio los percoladores, el
+    # purificador o la faja transportadora pueden fallar sin detener su etapa
+    # (hay by-pass o no estan en el camino critico), y esos van en False.
+    stops_area: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
+
     area = relationship("Area", back_populates="lines")
     equipments = relationship("Equipment", back_populates="line", cascade="all, delete-orphan")
 
     def to_dict(self):
-        return {"id": self.id, "name": self.name, "description": self.description, "area_id": self.area_id}
+        return {"id": self.id, "name": self.name, "description": self.description,
+                "area_id": self.area_id, "stops_area": bool(self.stops_area)}
 
 class Equipment(db.Model):
     __tablename__ = 'equipments'

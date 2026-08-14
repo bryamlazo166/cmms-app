@@ -284,9 +284,13 @@ def register_presentacion_routes(app, db, logger):
                            MonitoringReading.reading_date),
         }
 
+        linea_critica = {lid: bool(getattr(l, 'stops_area', False))
+                         for lid, l in lines.items()}
+
         return {'areas': areas, 'lines': lines, 'equipos': equipos,
                 'rendimiento': rend, 'cap_eq': cap_eq, 'cap_area': cap_area,
                 'cap_linea': cap_linea, 'linea_de_eq': linea_de_eq,
+                'linea_critica': linea_critica,
                 'eq_de_area': eq_de_area, 'ots': cerradas,
                 'programadas': programadas, 'metas': metas,
                 'rutinas': rutinas_prev}
@@ -381,6 +385,37 @@ def register_presentacion_routes(app, db, logger):
                                    reliability_hours=horizonte)
             res = {'disponibilidad': ind['availability'], 'mtbf': ind['mtbf'],
                    'confiabilidad': ind['reliability'], 'ponderado': False}
+
+        # Lineas auxiliares CRITICAS: no tienen equipo productivo, pero por
+        # ellas pasa todo el flujo del area, asi que van EN SERIE con ella.
+        # La zaranda y el ciclon de ensaque detienen la molienda porque
+        # despues de ellos se ensaca; los percoladores o el purificador no,
+        # porque hay by-pass. Se marca linea por linea en Alcance de
+        # Indicadores, no se adivina.
+        criticas = [lid for lid in {base['linea_de_eq'].get(e) for e in eq_ids} - {None}
+                    if base['cap_linea'].get(lid, 0.0) <= 0
+                    and base['linea_critica'].get(lid)]
+        res['lineas_criticas'] = len(criticas)
+        if criticas and peso > 0:
+            ots_crit = []
+            for lid in criticas:
+                for o in _ots_de_linea(base, eq_ids, idx, lid):
+                    copia = dict(o)
+                    copia['equipment_id'] = -2000000   # todas, una sola maquina
+                    ots_crit.append(copia)
+            ind_c = _calc_indicators(ots_crit, tep, mode=modo,
+                                     reliability_hours=horizonte)
+            res['disp_criticas'] = ind_c['availability']
+            res['horas_criticas'] = ind_c['downtime_hours']
+            # Composicion en serie: el area produce solo si el bloque en
+            # paralelo Y las lineas criticas estan operando.
+            res['disponibilidad'] = round(
+                res['disponibilidad'] * ind_c['availability'] / 100, 2)
+            res['confiabilidad'] = round(
+                res['confiabilidad'] * ind_c['reliability'] / 100, 2)
+            # En serie las tasas de falla se suman: 1/MTBF = Σ 1/MTBFi
+            if res['mtbf'] > 0 and ind_c['mtbf'] > 0:
+                res['mtbf'] = round(1 / (1 / res['mtbf'] + 1 / ind_c['mtbf']), 2)
         # MTTR: cuanto cuesta reparar una averia, no se pondera
         res['mttr'] = round(paro_total / fallas, 2) if fallas else 0.0
         res['fallas'] = fallas
@@ -735,7 +770,8 @@ def register_presentacion_routes(app, db, logger):
                             'auxiliar': base['cap_eq'].get(eid, 0.0) <= 0,
                         })
                 detuvieron.sort(key=lambda x: -x['horas'])
-                if cap <= 0 and not detuvieron:
+                critica = cap <= 0 and base['linea_critica'].get(lid)
+                if cap <= 0 and not detuvieron and not critica:
                     continue
                 lineas.append({
                     'linea': (base['lines'][lid].name if lid in base['lines']
@@ -743,6 +779,7 @@ def register_presentacion_routes(app, db, logger):
                     'equipos': len(miembros),
                     'capacidad': round(cap, 2),
                     'pesa': cap > 0,
+                    'critica': bool(critica),
                     'disponibilidad': ind['availability'],
                     'mtbf': ind['mtbf'],
                     'horas_paro': ind['downtime_hours'],

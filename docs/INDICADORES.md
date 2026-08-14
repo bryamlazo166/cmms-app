@@ -491,11 +491,34 @@ capacidad se valora con la **capacidad de su línea** (`_paro_tph`), no en cero:
 antes un TH detenido 8 h decía que la planta no había perdido nada mientras el
 secado estaba parado.
 
-> **Pendiente de decidir**: las **líneas auxiliares sin capacidad** (percolador,
-> purificador, enfriador, zaranda, faja transportadora, ciclones de llegada y
-> ensaque) no ponderan. Sus horas aparecen como horas-equipo pero no bajan la
-> disponibilidad. Si son comunes a toda el área y su parada detiene la etapa,
-> deberían entrar en serie con el área.
+### Tercera topología: las líneas críticas
+
+Hay líneas auxiliares **sin equipo productivo** por las que pasa *todo* el flujo
+del área. La **zaranda** y el **ciclón de ensaque** detienen la molienda, porque
+después de ellos se ensaca. En cambio los **percoladores**, el **purificador** y
+su TH, o la **faja transportadora** pueden fallar sin detener su etapa: hay
+by-pass o no están en el camino crítico.
+
+Esto **no se deduce del dato** — una línea parada se ve igual sea crítica o no.
+Lo declara quien conoce el proceso, línea por línea, en *Alcance de Indicadores →
+Líneas que detienen su área* (`Line.stops_area`), y ahí se cambia si mañana
+cambia el proceso. Solo se ofrecen las líneas sin capacidad propia: las que ya
+producen ponderan por capacidad.
+
+Una línea marcada va **en serie con el área entera**, así que se compone:
+
+```
+Disponibilidad del área = bloque en paralelo × disponibilidad de las líneas críticas
+Confiabilidad           = R_paralelo × R_críticas
+1 / MTBF                = 1/MTBF_paralelo + 1/MTBF_críticas   (las tasas de falla se suman)
+```
+
+En *Producción vs Mantenimiento*, el paro de un equipo en una línea crítica se
+valora con la **capacidad del área entera** (`_paro_tph`, tercer caso).
+
+Estado al 2026-08-14: marcadas **LINEA ZARANDA** y **CICLON DE ENSAQUE** en
+MOLINO. Sin marcar quedan enfriador #2, ciclón de llegada y lanzaharina, a la
+espera de confirmación.
 
 ### Disponibilidad requerida
 

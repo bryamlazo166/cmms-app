@@ -402,6 +402,67 @@ def register_admin_routes(app, db, logger):
 
     # ── CAPACIDAD REAL DE PLANTA (base de las TM no producidas) ──────────
 
+    @app.route('/api/admin/kpi-scope/lineas-criticas', methods=['GET', 'POST'])
+    @login_required
+    def kpi_scope_lineas_criticas():
+        """Lineas auxiliares que, si paran, detienen TODA su area.
+
+        Son las que no tienen equipo productivo pero por las que pasa todo el
+        flujo: la zaranda y el ciclon de ensaque detienen la molienda porque
+        despues de ellos se ensaca. En cambio los percoladores, el purificador
+        o la faja transportadora pueden fallar sin detener su etapa, porque
+        hay by-pass o no estan en el camino critico. No se puede deducir del
+        dato: lo declara quien conoce el proceso.
+        """
+        try:
+            from models import Area, Equipment, Line
+            from utils.kpi_helpers import (eq_harina_tm_day, eq_produces,
+                                           plant_yield_factor)
+            if request.method == 'POST':
+                datos = request.get_json(silent=True) or {}
+                marcadas = datos.get('lineas')
+                if not isinstance(marcadas, list):
+                    return jsonify({'error': 'Se espera una lista de lineas'}), 400
+                ids = {int(x) for x in marcadas if str(x).lstrip('-').isdigit()}
+                for l in Line.query.all():
+                    l.stops_area = (l.id in ids)
+                db.session.commit()
+                logger.info('kpi-scope: lineas que detienen su area = %s', sorted(ids))
+
+            equipos = Equipment.query.all()
+            rend = plant_yield_factor(equipos)
+            areas = {a.id: a for a in Area.query.all()}
+            cap, miembros = {}, {}
+            for e in equipos:
+                if not e.include_in_kpi:
+                    continue
+                c = (eq_harina_tm_day(e, rend)
+                     if eq_produces(e) and e.in_service else 0.0)
+                cap[e.line_id] = cap.get(e.line_id, 0.0) + c
+                miembros.setdefault(e.line_id, []).append(e.tag or e.name or '')
+
+            filas = []
+            for l in Line.query.all():
+                area = areas.get(l.area_id)
+                if not area or not getattr(area, 'include_in_kpi', True):
+                    continue
+                c = round(cap.get(l.id, 0.0), 2)
+                filas.append({
+                    'id': l.id, 'linea': l.name, 'area': area.name,
+                    'capacidad_dia': c,
+                    # Solo tiene sentido marcar las que NO tienen produccion
+                    # propia: las que si la tienen ya ponderan por capacidad.
+                    'auxiliar': c <= 0,
+                    'equipos': sorted(miembros.get(l.id, [])),
+                    'detiene_area': bool(getattr(l, 'stops_area', False)),
+                })
+            filas.sort(key=lambda x: (x['area'], not x['auxiliar'], x['linea']))
+            return jsonify({'lineas': filas})
+        except Exception as e:
+            db.session.rollback()
+            logger.exception('kpi_scope_lineas_criticas error')
+            return jsonify({'error': str(e)}), 500
+
     @app.route('/api/admin/kpi-scope/capacidad', methods=['GET'])
     @login_required
     def kpi_scope_capacidad():

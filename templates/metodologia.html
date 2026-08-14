@@ -253,20 +253,32 @@ Disponibilidad inherente  =  (T − Pp − Pn) / (T − Pp)</div>
                 <div class="f">Disponibilidad de la línea = (T − paro de CUALQUIERA de sus equipos) / T
                              (en serie: basta que pare uno)
 
-Indicador del área = Σ (indicador de la línea × capacidad de la línea)
-                    ─────────────────────────────────────────────
-                              Σ capacidad de las líneas</div>
+Bloque en paralelo   = Σ (indicador de la línea × capacidad de la línea)
+                       ─────────────────────────────────────────────
+                                Σ capacidad de las líneas
+
+Indicador del área   = bloque en paralelo × disponibilidad de las líneas críticas
+                       (en serie: por ellas pasa todo el flujo)
+   confiabilidad     = R_paralelo × R_críticas
+   1 / MTBF          = 1/MTBF_paralelo + 1/MTBF_críticas   (las tasas de falla se suman)</div>
                 <div class="sub" id="s6"></div>
                 <div class="res" id="r6"></div>
             </div>
             <div class="twrap"><table class="met" id="t6"></table></div>
             <div class="nota" id="n6"></div>
+            <div class="nota"><b>Tercera topología: las líneas críticas.</b> Hay líneas auxiliares sin equipo
+                productivo por las que pasa <i>todo</i> el flujo del área: la <b>zaranda</b> y el
+                <b>ciclón de ensaque</b> detienen la molienda, porque después de ellos se ensaca. Van
+                <b>en serie con el área entera</b>. En cambio los <b>percoladores</b>, el <b>purificador</b>
+                y su TH, o la <b>faja transportadora</b> pueden fallar sin detener su etapa — hay by-pass o
+                no están en el camino crítico. Esto no se deduce del dato: se declara línea por línea en
+                <b>Alcance de Indicadores → Líneas que detienen su área</b>, y ahí se cambia si mañana cambia
+                el proceso.</div>
             <div class="hint" style="margin-top:10px">El <b>MTTR no se pondera</b>: es horas de parada entre
                 averías del conjunto. Ponderarlo mezclaría reparaciones de equipos distintos sin sentido físico.
-                Un auxiliar <b>dentro de una línea con capacidad</b> sí la detiene y por eso entra; una
-                <b>línea entera sin capacidad</b> (percolador, purificador, enfriador, zaranda, faja, ciclones)
-                no pondera hoy: sus OTs se cuentan en las horas de paro del área pero no bajan la
-                disponibilidad. <b>Esa es una decisión pendiente</b> — ver la ficha 11.</div>
+                Las líneas auxiliares <b>no marcadas como críticas</b> tampoco ponderan: sus OTs se cuentan en
+                las horas-equipo del área pero no bajan la disponibilidad, porque su parada no detiene la
+                etapa.</div>
         </div>
 
         <!-- 07 Capacidad -->
@@ -394,9 +406,9 @@ Cumplimiento = ejecutadas / programadas × 100   (por fuente y total)</div>
                 <tr><td><b>Separar espera de reparación en el MTTR</b></td>
                     <td>Registrar la hora de inicio de la intervención además del paro, para partir el MTTR en espera + reparación efectiva.</td>
                     <td>El MTTR incluye toda la espera.</td></tr>
-                <tr><td><b>Las líneas auxiliares sin capacidad</b><div class="hint">Percolador, purificador, enfriador, zaranda, faja transportadora, ciclones de llegada y ensaque.</div></td>
-                    <td>Si son comunes a toda el área y su parada detiene la etapa, deberían entrar en serie con el área. Si el proceso puede seguir sin ellas (o hay by-pass), quedan como hoy.</td>
-                    <td>No pesan en la disponibilidad; sus horas sí aparecen como horas-equipo.</td></tr>
+                <tr><td><b>Las líneas auxiliares sin capacidad</b><div class="hint">Enfriador #2, ciclón de llegada, lanzaharina — las que no se han declarado todavía.</div></td>
+                    <td>Marcar en <b>Alcance de Indicadores</b> las que detienen su área.</td>
+                    <td><b>Resuelto en parte</b>: zaranda y ciclón de ensaque detienen la molienda; percoladores, purificador + TH y faja transportadora no. Faltan las tres de arriba.</td></tr>
                 <tr><td><b>Backlog sin técnico asignado</b><div class="hint">No cambia la fórmula, pero sí la calidad del dato.</div></td>
                     <td>Exigir técnico al programar, para poder medir carga por persona.</td>
                     <td>58 OTs en backlog, solo 1 con técnico.</td></tr>

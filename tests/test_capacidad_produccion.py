@@ -681,6 +681,86 @@ def test_la_linea_va_en_serie_y_un_auxiliar_la_detiene(auth_admin, app):
             db.session.commit()
 
 
+def test_linea_critica_detiene_toda_el_area(auth_admin, app):
+    """Hay lineas auxiliares por las que pasa TODO el flujo del area.
+
+    La zaranda y el ciclon de ensaque detienen la molienda porque despues de
+    ellos se ensaca; los percoladores, el purificador o la faja pueden fallar
+    sin detener su etapa. No se deduce del dato: se declara linea por linea.
+    """
+    from models import Area, Equipment, Line, WorkOrder, db
+
+    with app.app_context():
+        area = Area(name='MOLIENDA PRUEBA', include_in_kpi=True)
+        db.session.add(area)
+        db.session.flush()
+        l_prod = Line(name='LINEA MOLINO PRUEBA', area_id=area.id)
+        l_crit = Line(name='ZARANDA PRUEBA', area_id=area.id, stops_area=False)
+        db.session.add_all([l_prod, l_crit])
+        db.session.flush()
+        mol = Equipment(name='MOLINO', tag='MOLP', line_id=l_prod.id,
+                        is_production_unit=True, capacity_tm_day=60.0,
+                        include_in_kpi=True, in_service=True)
+        zar = Equipment(name='ZARANDA', tag='ZARP', line_id=l_crit.id,
+                        include_in_kpi=True, in_service=True)
+        db.session.add_all([mol, zar])
+        db.session.flush()
+        ot = WorkOrder(code='OT-ZAR-PRUEBA', status='Cerrada',
+                       equipment_id=zar.id, maintenance_type='Correctivo',
+                       caused_downtime=True, downtime_hours=74.4,
+                       downtime_planned=False, real_end_date='2026-07-10',
+                       scheduled_date='2026-07-10')
+        db.session.add(ot)
+        db.session.commit()
+        ids = dict(area=area.id, l_prod=l_prod.id, l_crit=l_crit.id,
+                   eq=[mol.id, zar.id], ot=ot.id)
+
+    def disponibilidad():
+        d = auth_admin.get('/api/presentacion/data'
+                           '?month=2026-07&vista=mes&meses=1&modo=inherente').json
+        a = next((x for x in d['areas'] if x['area'] == 'MOLIENDA PRUEBA'), None)
+        return a['actual'] if a else None
+
+    try:
+        # Sin declararla critica, la zaranda no toca la disponibilidad
+        antes = disponibilidad()
+        assert antes is not None
+        assert antes['disponibilidad'] == 100.0, (
+            'una linea no declarada critica no deberia bajar el area')
+        assert antes['horas_paro'] == 74.4     # pero sus horas si se ven
+
+        # Se declara: 74,4 h sobre 744 = 10 % del mes
+        r = auth_admin.post('/api/admin/kpi-scope/lineas-criticas',
+                            json={'lineas': [ids['l_crit']]})
+        assert r.status_code == 200
+        marcadas = {x['id']: x for x in r.json['lineas']}
+        assert marcadas[ids['l_crit']]['detiene_area'] is True
+        assert marcadas[ids['l_crit']]['auxiliar'] is True
+        # La linea con capacidad propia no se ofrece como critica
+        assert marcadas[ids['l_prod']]['auxiliar'] is False
+
+        despues = disponibilidad()
+        assert despues['lineas_criticas'] == 1
+        assert abs(despues['disponibilidad'] - 90.0) < 0.05, (
+            f"la zaranda detiene el area pero quedo en {despues['disponibilidad']} %")
+        # En serie tambien se compone la confiabilidad y se suman las tasas
+        assert despues['confiabilidad'] < antes['confiabilidad']
+        assert despues['mtbf'] < antes['mtbf']
+
+        # Y se puede desmarcar: la decision es reversible
+        auth_admin.post('/api/admin/kpi-scope/lineas-criticas', json={'lineas': []})
+        assert disponibilidad()['disponibilidad'] == 100.0
+    finally:
+        with app.app_context():
+            WorkOrder.query.filter_by(id=ids['ot']).delete()
+            Equipment.query.filter(Equipment.id.in_(ids['eq'])).delete(
+                synchronize_session=False)
+            Line.query.filter(Line.id.in_([ids['l_prod'], ids['l_crit']])).delete(
+                synchronize_session=False)
+            Area.query.filter_by(id=ids['area']).delete()
+            db.session.commit()
+
+
 def test_produccion_usa_la_capacidad_real_y_no_el_rendimiento_manual(auth_admin):
     """Produccion vs Mantenimiento calculaba la disponibilidad requerida con
     el rendimiento y las horas cargados a mano en la meta.

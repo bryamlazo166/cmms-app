@@ -1316,6 +1316,9 @@ _ENSURE_INDEXES_SQL = [
     "ALTER TABLE equipments ADD COLUMN IF NOT EXISTS batch_capacity_kg DOUBLE PRECISION",
     "ALTER TABLE equipments ADD COLUMN IF NOT EXISTS fill_pct          DOUBLE PRECISION",
     "ALTER TABLE equipments ADD COLUMN IF NOT EXISTS batches_per_day   DOUBLE PRECISION",
+    # Linea auxiliar por la que pasa TODO el flujo de su area: si para, para
+    # el area entera (la zaranda y el ciclon de ensaque detienen la molienda).
+    "ALTER TABLE lines ADD COLUMN IF NOT EXISTS stops_area BOOLEAN NOT NULL DEFAULT FALSE",
     # Jornada operativa por equipo (para calculo de produccion teorica)
     "ALTER TABLE equipments ADD COLUMN IF NOT EXISTS shift_hours_per_day DOUBLE PRECISION NOT NULL DEFAULT 24.0",
     "ALTER TABLE equipments ADD COLUMN IF NOT EXISTS work_days_per_week  INTEGER NOT NULL DEFAULT 7",

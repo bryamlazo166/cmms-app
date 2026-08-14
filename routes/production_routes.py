@@ -153,19 +153,27 @@ def register_production_routes(app, db, logger, ProductionGoal, WorkOrder, Area,
                 return 0.0
             return eq_harina_tm_day(eq, _plant_yield)
 
-        # Capacidad de cada linea: la suma de sus equipos productivos.
-        _cap_linea = {}
+        # Capacidad de cada linea y de cada area
+        _cap_linea, _cap_area = {}, {}
         for e in equips:
             if e.line_id in line_map:
-                _cap_linea[e.line_id] = _cap_linea.get(e.line_id, 0.0) + _eq_harina_dia(e.id)
+                d = _eq_harina_dia(e.id)
+                _cap_linea[e.line_id] = _cap_linea.get(e.line_id, 0.0) + d
+                aid_e = line_map[e.line_id].area_id
+                _cap_area[aid_e] = _cap_area.get(aid_e, 0.0) + d
 
         def _paro_tph(eq_id):
             """TM de harina por hora que se pierden cuando ESTE equipo para.
 
-            Dentro de una linea los equipos van EN SERIE: si para el TH de
-            salida del secador #1, esa linea de secado para completa, no solo
-            el auxiliar. Valorar su parada en cero decia que la planta no
-            perdio nada mientras el secado estaba detenido.
+            Tres casos, segun donde este el equipo en el flujo:
+              1. Produce: pierde lo suyo.
+              2. Auxiliar dentro de una linea con capacidad: van EN SERIE, asi
+                 que si para el TH de salida del secador #1 esa linea de secado
+                 para completa. Pierde la capacidad de SU LINEA.
+              3. Auxiliar de una linea marcada como critica: por ella pasa todo
+                 el flujo del area (la zaranda y el ciclon de ensaque detienen
+                 la molienda porque despues se ensaca). Pierde la capacidad del
+                 AREA entera.
             """
             eq = equip_map.get(eq_id)
             if not eq or not getattr(eq, 'include_in_kpi', True):
@@ -174,7 +182,12 @@ def register_production_routes(app, db, logger, ProductionGoal, WorkOrder, Area,
             if propio > 0:
                 return propio
             cap_linea = _cap_linea.get(eq.line_id, 0.0)
-            return cap_linea / 24.0 if cap_linea > 0 else 0.0
+            if cap_linea > 0:
+                return cap_linea / 24.0
+            ln = line_map.get(eq.line_id)
+            if ln is not None and getattr(ln, 'stops_area', False):
+                return _cap_area.get(ln.area_id, 0.0) / 24.0
+            return 0.0
 
         area_results = []
         total_tons_lost = 0.0

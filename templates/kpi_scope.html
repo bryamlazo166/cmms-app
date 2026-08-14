@@ -91,6 +91,24 @@
                 </div>
             </div>
 
+            <div class="panel">
+                <h3><i class="fas fa-diagram-project"></i> Líneas que detienen su área</h3>
+                <div class="info" style="margin-bottom:12px;">
+                    Dentro de una línea los equipos ya van <strong>en serie</strong>: si para el TH de salida
+                    del secador #1, esa línea de secado para completa. Eso es automático.
+                    <br><br>
+                    Lo que hay que declarar aquí son las <strong>líneas auxiliares sin equipo productivo</strong>
+                    por las que pasa <em>todo</em> el flujo del área. Ejemplo: la zaranda y el ciclón de ensaque
+                    detienen la molienda, porque después de ellos se ensaca. En cambio los percoladores, el
+                    purificador o la faja transportadora pueden fallar sin detener su etapa, porque hay by-pass
+                    o no están en el camino crítico.
+                    <br><br>
+                    <strong>No se puede deducir del dato</strong> — lo declara quien conoce el proceso. Marcar
+                    una línea hace que su parada baje la disponibilidad de toda el área.
+                </div>
+                <div id="lineasCriticas">Cargando...</div>
+            </div>
+
             <div class="info">
                 <strong><i class="fas fa-magic"></i> Aplicar exclusiones por defecto:</strong>
                 excluye automaticamente <code>BAJA / FUERA DE SERVICIO</code>, <code>UTILITIES</code>, <code>RMP</code> y la <code>HIDROLAVADORA #4</code> en COCCION (las que pediste). Es seguro: idempotente.
@@ -136,6 +154,53 @@
             _equips.sort((a, b) => (a.tag || a.name || '').localeCompare(b.tag || b.name || '', 'es', nat));
             render();
             loadCapacidad();
+            loadLineasCriticas();
+        }
+
+        // ── Lineas auxiliares que detienen su area ─────────────────────
+        async function loadLineasCriticas() {
+            const box = document.getElementById('lineasCriticas');
+            try {
+                const d = await jget('/api/admin/kpi-scope/lineas-criticas');
+                const aux = (d.lineas || []).filter(l => l.auxiliar);
+                if (!aux.length) { box.innerHTML = '<p class="muted">No hay líneas auxiliares.</p>'; return; }
+                let area = '';
+                box.innerHTML = '<div class="twrap"><table><tr>'
+                    + '<th style="width:70px">¿Detiene<br>el área?</th><th>Línea</th><th>Equipos</th></tr>'
+                    + aux.map(l => {
+                        const cab = l.area !== area
+                            ? `<tr><td colspan="3" style="background:#1b2230;font-weight:700">${l.area}</td></tr>` : '';
+                        area = l.area;
+                        return cab + `<tr>
+                            <td style="text-align:center"><input type="checkbox" data-linea="${l.id}"
+                                ${l.detiene_area ? 'checked' : ''} onchange="guardarLineasCriticas()"></td>
+                            <td><b>${l.linea}</b></td>
+                            <td class="muted">${l.equipos.join(', ') || '—'}</td></tr>`;
+                    }).join('')
+                    + '</table></div><p class="muted" id="lcMsg" style="margin-top:8px"></p>';
+            } catch (e) {
+                box.innerHTML = `<p class="muted">No se pudo cargar: ${e.message}</p>`;
+            }
+        }
+
+        async function guardarLineasCriticas() {
+            const marcadas = Array.from(document.querySelectorAll('#lineasCriticas input[data-linea]'))
+                .filter(i => i.checked).map(i => Number(i.getAttribute('data-linea')));
+            const msg = document.getElementById('lcMsg');
+            if (msg) msg.textContent = 'Guardando...';
+            try {
+                const r = await fetch('/api/admin/kpi-scope/lineas-criticas', {
+                    method: 'POST', headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ lineas: marcadas }),
+                });
+                const d = await r.json();
+                if (d.error) { if (msg) msg.textContent = 'No se pudo guardar: ' + d.error; return; }
+                if (msg) msg.textContent = marcadas.length
+                    ? `Guardado. ${marcadas.length} línea(s) detienen su área.`
+                    : 'Guardado. Ninguna línea auxiliar detiene su área.';
+            } catch (e) {
+                if (msg) msg.textContent = 'No se pudo guardar: ' + e.message;
+            }
         }
 
         // ── Resumen de capacidad instalada ─────────────────────────────
