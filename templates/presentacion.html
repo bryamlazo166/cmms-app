@@ -229,7 +229,8 @@
                 <div class="it"><b>04</b><span>MTTR (Tiempo Medio de Reparacion)</span></div>
                 <div class="it"><b>05</b><span>Cumplimiento del Programa Preventivo (OTs, lubricacion, inspeccion y monitoreo)</span></div>
                 <div class="it"><b>06</b><span>Cumplimiento de Mantenimiento Correctivo Programado</span></div>
-                <div class="it"><b>07</b><span>Confiabilidad</span></div>
+                <div class="it"><b>07</b><span>Carga de trabajo — proyectos e infraestructura vs mantenimiento</span></div>
+                <div class="it"><b>08</b><span>Confiabilidad</span></div>
             </div>
         </div>
 
@@ -310,9 +311,29 @@
             <div class="chart-box" id="cumpCorrChart" style="height:380px;"></div>
         </div>
 
-        <!-- 07 Confiabilidad -->
+        <!-- 07 Carga de trabajo -->
         <div class="slide" data-slide>
-            <h2><span class="idx">07</span> Confiabilidad
+            <h2><span class="idx">07</span> Carga de trabajo — en qué se va el recurso
+                <span class="peri-chip" data-peri>—</span></h2>
+            <div class="method">Los <b>proyectos</b> y la <b>obra de infraestructura</b> consumen al mismo
+                técnico que tendría que estar haciendo el preventivo, pero no son mantenimiento del activo:
+                no entran al cumplimiento preventivo ni cuentan como falla en MTBF/MTTR. Lo que sí hacen es
+                competir por horas, y eso es lo que mide esta lámina.
+                <span class="hint">Las horas-hombre salen de «Personal que ejecutó» al cerrar la OT
+                (horas reales por técnico), no de la duración de la orden: esa es tiempo transcurrido, no
+                trabajado.</span></div>
+            <div id="cargaAviso"></div>
+            <div class="kpi-strip" id="cargaKpis"></div>
+            <div class="grid2">
+                <div class="chart-box" id="cargaOts" style="height:320px;"></div>
+                <div class="chart-box" id="cargaHoras" style="height:320px;"></div>
+            </div>
+            <div class="twrap" style="margin-top:12px;"><table class="pres" id="cargaTabla"></table></div>
+        </div>
+
+        <!-- 08 Confiabilidad -->
+        <div class="slide" data-slide>
+            <h2><span class="idx">08</span> Confiabilidad
                 <span class="peri-chip" data-peri>—</span></h2>
             <div class="method" id="confMetodo">—</div>
             <div class="kpi-strip" id="confKpis"></div>

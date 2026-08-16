@@ -582,6 +582,37 @@ indicador. Las OTs siempre entran.
 El ajuste se lee **en cada petición**, sin cachear, para que al cambiarlo el
 número se corrija de inmediato aunque responda otro worker de gunicorn.
 
+### Carga de trabajo: clases y horas-hombre
+
+La **clase de trabajo** responde una pregunta distinta al tipo de mantenimiento:
+*¿en qué se va el personal?* Un proyecto o una obra consumen al mismo técnico que
+tendría que estar haciendo el preventivo, pero no son mantenimiento del activo.
+
+| Clase | Tipos de OT | Entra en cumplimiento / MTBF / MTTR | Horas-hombre |
+|---|---|---|---|
+| Mantenimiento del activo | Preventivo, Predictivo, Correctivo, Ronda Diaria | sí | sí |
+| Mejoras | Mejora | no | sí |
+| Proyectos | Proyecto | no | sí |
+| Infraestructura | Infraestructura, Obra civil | no | sí |
+
+Se deriva de `maintenance_type` (`clase_de_trabajo()`); lo no reconocido cae en
+**mantenimiento**, que es lo conservador — no infla los proyectos. Un proyecto no
+baja la disponibilidad porque su paro es planificado y no es una falla del
+equipo; lo que sí hace es competir por horas.
+
+**Las horas-hombre salen de `ot_personnel.hours_worked`** — lo que se carga al
+cerrar la OT en *«Personal que ejecutó» → H. Reales*.
+
+> **No se usa `real_duration × tech_count`.** Se verificó que `real_duration` es
+> exactamente `(real_end_date − real_start_date)` en las **361 OTs cerradas con
+> fechas**: es tiempo *transcurrido*, no trabajado. Un traslado de equipos con la
+> OT abierta 42 días daría 1 010 horas-hombre de una sola persona.
+
+Se informa **siempre la cobertura** (`ots_con_horas / ots_total`). Con cobertura
+cero el gráfico de horas se reemplaza por un aviso: un cero se leería como «los
+proyectos no consumieron nada», que es falso. Cobertura al 2026-08-14: abril
+29 %, mayo 33 %, junio 4 %, julio **0 %**.
+
 ### Detalle bajo demanda
 
 En pantalla van solo los indicadores globales (planta y área). Al hacer click

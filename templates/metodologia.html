@@ -135,6 +135,7 @@
             <a href="#f7"><b>07</b>Capacidad del equipo y de la planta</a>
             <a href="#f8"><b>08</b>Disponibilidad requerida para cumplir la meta</a>
             <a href="#f9"><b>09</b>Cumplimiento del programa preventivo</a>
+            <a href="#f9b"><b>09b</b>Carga de trabajo — proyectos, mejoras e infraestructura</a>
             <a href="#f10"><b>10</b>Reglas que evitan los errores clásicos</a>
             <a href="#f11"><b>11</b>Decisiones pendientes de acordar</a>
         </div>
@@ -369,6 +370,37 @@ Cumplimiento = ejecutadas / programadas × 100   (por fuente y total)</div>
                 indicador. Las OTs siempre entran.</div>
         </div>
 
+        <!-- 09 bis Carga de trabajo -->
+        <div class="ficha" id="f9b">
+            <h2><span class="n">09b</span> Carga de trabajo — clases y horas-hombre</h2>
+            <div class="que">La <b>clase de trabajo</b> responde una pregunta distinta al tipo de
+                mantenimiento: <i>¿en qué se me va el personal?</i> Un proyecto o una obra consumen al mismo
+                técnico que tendría que estar haciendo el preventivo, pero no son mantenimiento del activo.</div>
+            <div class="formula">
+                <div class="f">Clase              Entra en                              Horas-hombre
+─────────────────  ────────────────────────────────────  ────────────
+Mantenimiento      cumplimiento · MTBF · MTTR · disponib.     sí
+Mejoras            —                                          sí
+Proyectos          —                                          sí
+Infraestructura    —                                          sí
+
+Horas-hombre = Σ ot_personnel.hours_worked   (por técnico, al cerrar la OT)</div>
+            </div>
+            <div class="nota rojo"><b>No se usa <code>real_duration × tech_count</code>.</b> Se verificó que
+                <code>real_duration</code> es exactamente <code>(fin − inicio)</code> en las <b>361 OTs
+                cerradas con fechas</b>: es tiempo <b>transcurrido</b>, no trabajado. Un traslado de equipos
+                con la OT abierta 42 días daría 1 010 horas-hombre de una sola persona. Por eso las horas
+                salen de «Personal que ejecutó», que sí registra lo que cada técnico trabajó.</div>
+            <div class="nota"><b>Se informa siempre la cobertura.</b> Si solo una parte de las OTs tiene
+                horas cargadas, el número es una muestra y la lámina lo dice en vez de presentarlo como
+                total. Con cobertura cero, el gráfico de horas se reemplaza por el aviso: un cero se leería
+                como «los proyectos no consumieron nada», que es falso.</div>
+            <div class="hint" style="margin-top:10px">Un proyecto <b>no baja la disponibilidad</b> porque su
+                paro es planificado y no es una falla del equipo — eso ya lo resuelve la clasificación de
+                paro (ficha 01). Lo que sí hace es competir por horas, y eso es lo que mide la lámina 07 de
+                la presentación.</div>
+        </div>
+
         <!-- 10 Reglas -->
         <div class="ficha" id="f10">
             <h2><span class="n">10</span> Reglas que evitan los errores clásicos</h2>
@@ -394,9 +426,9 @@ Cumplimiento = ejecutadas / programadas × 100   (por fuente y total)</div>
                 decisión de la jefatura. Cada una cambia el número que se presenta.</div>
             <div class="twrap"><table class="met">
                 <tr><th>Decisión</th><th>Opciones</th><th>Hoy</th></tr>
-                <tr><td><b>Los trabajos de proyectos</b><div class="hint">Consumen personal de mantenimiento y desplazan preventivos, pero no son mantenimiento del activo.</div></td>
-                    <td>Contarlos como una clase aparte, fuera del % proactivo y del MTBF/MTTR, pero dentro de horas-hombre y capacidad.</td>
-                    <td>Las 37 OTs de «Mejora» quedan como <b>mejora</b> — no son proyectos. La gestión de proyectos se está implantando; cuando arranque hay que decidir cómo se registran.</td></tr>
+                <tr><td><b>Registrar las horas reales por técnico</b><div class="hint">Es el único dato que falta para responder «¿en qué se me va el recurso?».</div></td>
+                    <td>Al cerrar la OT, llenar <b>«Personal que ejecutó» → H. Reales</b>. Ya existe el campo y el cálculo; solo falta el hábito.</td>
+                    <td><b>Cobertura hoy: 0 % en julio</b> (abril 29 %, mayo 33 %, junio 4 %). Sin eso, la lámina 07 solo puede contar órdenes, no horas.</td></tr>
                 <tr><td><b>Meta por área o por planta</b><div class="hint">Hoy la misma meta está cargada tres veces, una por área.</div></td>
                     <td>Una meta de planta y repartirla por etapa, o mantener una meta por área con su propia capacidad.</td>
                     <td>La misma cifra en cocción, secado y molienda.</td></tr>

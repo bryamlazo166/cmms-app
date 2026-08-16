@@ -74,6 +74,32 @@ FUENTES_PREVENTIVAS = [
 # declara que fuentes entran, y se ve en pantalla.
 SETTING_FUENTES = 'preventivo_fuentes'
 FUENTES_POR_DEFECTO = 'OT,LUB'
+
+# Clase de trabajo: en que se va el personal de mantenimiento.
+#
+# Se separa del tipo de mantenimiento porque responden a preguntas distintas.
+# Un proyecto o una obra de infraestructura consumen al mismo tecnico que
+# tendria que estar haciendo el preventivo, pero NO son mantenimiento del
+# activo: no entran al cumplimiento preventivo ni cuentan como falla en el
+# MTBF/MTTR (su paro es planificado). Lo que si hacen es competir por horas,
+# y esa competencia es la que hay que poder mostrar.
+CLASES_TRABAJO = [
+    ('MANTENIMIENTO', 'Mantenimiento del activo',
+     ('preventivo', 'predictivo', 'correctivo', 'correctiva', 'corrective',
+      'ronda diaria')),
+    ('MEJORA', 'Mejoras', ('mejora',)),
+    ('PROYECTO', 'Proyectos', ('proyecto', 'proyectos')),
+    ('INFRAESTRUCTURA', 'Infraestructura', ('infraestructura', 'obra civil')),
+]
+_CLASE_DE_TIPO = {t: c for c, _n, tipos in CLASES_TRABAJO for t in tipos}
+NOMBRE_CLASE = {c: n for c, n, _t in CLASES_TRABAJO}
+
+
+def clase_de_trabajo(maintenance_type):
+    """Clase a la que pertenece una OT segun su tipo. Lo no reconocido cae en
+    mantenimiento, que es lo conservador: no infla los proyectos."""
+    return _CLASE_DE_TIPO.get((maintenance_type or '').strip().lower(),
+                              'MANTENIMIENTO')
 MESES_CORTO = ['', 'ENE', 'FEB', 'MAR', 'ABR', 'MAY', 'JUN',
                'JUL', 'AGO', 'SET', 'OCT', 'NOV', 'DIC']
 
@@ -92,7 +118,7 @@ def register_presentacion_routes(app, db, logger):
     from models import (AppSetting, Area, Equipment, InspectionExecution,
                         InspectionRoute, Line, LubricationExecution,
                         LubricationPoint, MonitoringPoint, MonitoringReading,
-                        ProductionGoal, WorkOrder)
+                        OTPersonnel, ProductionGoal, Technician, WorkOrder)
 
     def _fuentes_en_vigor():
         """Fuentes que la jefatura declara en vigor. Se lee en cada peticion
@@ -275,6 +301,24 @@ def register_presentacion_routes(app, db, logger):
             return {'puntos': puntos, 'fechas': fechas,
                     'desde': fechas[0] if fechas else None}
 
+        # Horas-hombre REALES: salen de ot_personnel.hours_worked, que es lo
+        # que se carga en "Personal que ejecuto" al cerrar la OT.
+        #
+        # NO se usa real_duration x tech_count: se verifico que real_duration
+        # es exactamente (fin - inicio) en las 361 OTs cerradas con fechas, o
+        # sea tiempo TRANSCURRIDO, no trabajado. Un traslado de equipos que
+        # tuvo la OT abierta 42 dias daria 1 010 horas-hombre de una persona.
+        hh_ot, esp_ot = {}, {}
+        filas_p = (OTPersonnel.query
+                   .with_entities(OTPersonnel.work_order_id,
+                                  OTPersonnel.hours_worked,
+                                  OTPersonnel.specialty).all())
+        for wo_id, horas, esp in filas_p:
+            if horas and horas > 0:
+                hh_ot[wo_id] = hh_ot.get(wo_id, 0.0) + float(horas)
+                clave = (wo_id, (esp or 'SIN ESPECIALIDAD').upper())
+                esp_ot[clave] = esp_ot.get(clave, 0.0) + float(horas)
+
         rutinas_prev = {
             'LUB': rutinas(LubricationPoint, LubricationExecution,
                            LubricationExecution.execution_date),
@@ -293,7 +337,8 @@ def register_presentacion_routes(app, db, logger):
                 'linea_critica': linea_critica,
                 'eq_de_area': eq_de_area, 'ots': cerradas,
                 'programadas': programadas, 'metas': metas,
-                'rutinas': rutinas_prev}
+                'rutinas': rutinas_prev, 'hh_ot': hh_ot, 'esp_ot': esp_ot,
+                'tecnicos': Technician.query.count()}
 
     def _base():
         ahora = time.monotonic()
@@ -523,6 +568,71 @@ def register_presentacion_routes(app, db, logger):
                            'pct': round(corr_term / corr_prog * 100, 1) if corr_prog else None},
         }
 
+    # ── Carga de trabajo: en que se va el personal ───────────────────────
+
+    def _carga(base, per):
+        """Horas-hombre por clase de trabajo en el periodo.
+
+        Responde "¿en que se me va el recurso?": cuanto se fue en mantener el
+        activo y cuanto en proyectos y obra, que consumen al mismo tecnico que
+        deberia estar haciendo el preventivo.
+
+        La fuente es ot_personnel.hours_worked — las horas que se cargan al
+        cerrar la OT en "Personal que ejecuto". Se informa siempre la
+        COBERTURA: si solo el 12 % de las OTs tiene personal cargado, el
+        numero es una muestra y hay que decirlo, no presentarlo como total.
+        """
+        ini, fin = per['desde'], per['hasta']
+        por_clase = {c: {'clase': c, 'nombre': n, 'ots': 0, 'ots_con_horas': 0,
+                         'horas': 0.0}
+                     for c, n, _t in CLASES_TRABAJO}
+        por_esp = {}
+        for o in base['ots']:
+            if not (o['fecha'] and ini <= o['fecha'] <= fin):
+                continue
+            c = clase_de_trabajo(o.get('maintenance_type'))
+            d = por_clase[c]
+            d['ots'] += 1
+            h = base['hh_ot'].get(o['id'])
+            if h:
+                d['ots_con_horas'] += 1
+                d['horas'] += h
+                for (wo, esp), v in base['esp_ot'].items():
+                    if wo == o['id']:
+                        por_esp[esp] = por_esp.get(esp, 0.0) + v
+
+        clases = []
+        for c, _n, _t in CLASES_TRABAJO:
+            d = por_clase[c]
+            if not d['ots']:
+                continue
+            d['horas'] = round(d['horas'], 1)
+            d['cobertura_pct'] = (round(d['ots_con_horas'] / d['ots'] * 100, 1)
+                                  if d['ots'] else None)
+            clases.append(d)
+
+        tot_h = round(sum(c['horas'] for c in clases), 1)
+        tot_ots = sum(c['ots'] for c in clases)
+        tot_con = sum(c['ots_con_horas'] for c in clases)
+        for c in clases:
+            c['pct_horas'] = round(c['horas'] / tot_h * 100, 1) if tot_h else None
+
+        # Cuanto del recurso NO fue a mantener el activo
+        fuera = sum(c['horas'] for c in clases if c['clase'] != 'MANTENIMIENTO')
+        return {
+            'clases': clases,
+            'horas_total': tot_h,
+            'ots_total': tot_ots,
+            'ots_con_horas': tot_con,
+            'cobertura_pct': round(tot_con / tot_ots * 100, 1) if tot_ots else None,
+            'horas_fuera_mantenimiento': round(fuera, 1),
+            'pct_fuera_mantenimiento': round(fuera / tot_h * 100, 1) if tot_h else None,
+            'especialidades': sorted(
+                ({'especialidad': k, 'horas': round(v, 1)} for k, v in por_esp.items()),
+                key=lambda x: -x['horas']),
+            'tecnicos': base['tecnicos'],
+        }
+
     # ── Disponibilidad requerida ─────────────────────────────────────────
 
     def _requerida(base, per, indicadores):
@@ -670,6 +780,8 @@ def register_presentacion_routes(app, db, logger):
                 'planta': planta,
                 'areas': areas_out,
                 'requerida': _requerida(base, actual, indic_actual),
+                'carga': [dict(key=p['key'], label=p['label'], nombre=p['nombre'],
+                               **_carga(base, p)) for p in periodos],
                 'cumplimiento': {
                     'preventivo': [dict(key=c['key'], label=c['label'],
                                         nombre=c['nombre'], **c['preventivo'])

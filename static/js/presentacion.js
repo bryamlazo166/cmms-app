@@ -126,6 +126,7 @@ async function cargar(refrescar) {
         renderRequerida();
         Object.keys(IND).forEach(campo => renderIndicador(campo));
         renderCumplimiento();
+        renderCarga();
     } catch (e) { alert('No se pudo cargar: ' + e.message); }
 }
 window.cargar = cargar;
@@ -554,6 +555,111 @@ function barrasCumplimiento(id, datos, kProg, kEjec, lProg, lEjec, titulo, meta,
     }, true);
 }
 
+// ── 07 Carga de trabajo: en que se va el recurso ─────────────────────────
+const COLOR_CLASE = { MANTENIMIENTO: AZUL, MEJORA: '#3AA6A0',
+                      PROYECTO: NARANJA, INFRAESTRUCTURA: '#8A6FD1' };
+
+function renderCarga() {
+    const serie = PRES.carga || [];
+    if (!serie.length) return;
+    const u = serie[serie.length - 1];
+    const cob = u.cobertura_pct || 0;
+
+    // La cobertura manda: sin horas cargadas el grafico de h-h seria un cero
+    // que se lee como "los proyectos no consumieron nada", que es falso.
+    el('cargaAviso').innerHTML = cob >= 70 ? '' :
+        `<div class="aviso ${cob < 30 ? 'rojo' : ''}">
+            <b>Solo ${nf(cob)} % de las OTs del periodo tiene horas cargadas</b>
+            (${u.ots_con_horas} de ${u.ots_total}), asi que las horas-hombre de abajo
+            ${cob === 0 ? '<b>no se pueden calcular</b>' : 'son una muestra, no el total'}.
+            El conteo de ordenes por clase si es completo.<br>
+            Para medirlo: al cerrar la OT, llenar <b>«Personal que ejecutó» → H. Reales</b>.
+            Es el unico dato que falta; el resto ya se calcula solo.</div>`;
+
+    const mant = u.clases.find(c => c.clase === 'MANTENIMIENTO') || {};
+    el('cargaKpis').innerHTML = [
+        ['Ordenes del periodo', nf(u.ots_total, 0), ''],
+        ['Horas-hombre registradas', cob ? nf(u.horas_total) + ' h' : '—', ''],
+        ['Fuera de mantenimiento', u.pct_fuera_mantenimiento != null
+            ? nf(u.pct_fuera_mantenimiento) + ' %' : '—',
+            u.pct_fuera_mantenimiento > 25 ? 'v-crit' : ''],
+        ['Cobertura del dato', nf(cob) + ' %', cob >= 70 ? 'v-good' : cob >= 30 ? 'v-warn' : 'v-crit'],
+        ['Tecnicos en el maestro', nf(u.tecnicos, 0), ''],
+    ].map(([l, v, cl]) => `<div class="kpi-item"><div class="label">${l}</div>
+        <div class="value ${cl}">${v}</div></div>`).join('');
+
+    // Ordenes por clase: siempre fiable
+    const clases = u.clases.map(c => c.clase);
+    barrasClase('cargaOts', serie, clases, 'ots',
+        'Ordenes por clase de trabajo', ' OT');
+    // Horas-hombre: solo si hay algo cargado
+    const c2 = chart('cargaHoras');
+    if (c2) {
+        if (u.horas_total > 0 || serie.some(s => s.horas_total > 0)) {
+            barrasClase('cargaHoras', serie, clases, 'horas',
+                'Horas-hombre reales por clase', ' h');
+        } else {
+            c2.clear();
+            c2.setOption({
+                backgroundColor: 'transparent',
+                title: { text: 'Horas-hombre reales por clase', left: 'center',
+                         textStyle: { color: TINTA, fontSize: 13, fontWeight: 700 } },
+                graphic: { type: 'text', left: 'center', top: 'middle',
+                    style: { text: 'Sin horas cargadas en el periodo.\nSe llenan al cerrar la OT,\nen «Personal que ejecutó».',
+                             fill: TENUE, fontSize: 13, lineHeight: 22, align: 'center' } },
+            }, true);
+        }
+    }
+
+    el('cargaTabla').innerHTML =
+        `<tr><th>Clase de trabajo</th><th class="num">Ordenes</th><th class="num">Con horas</th>
+         <th class="num">Horas-hombre</th><th class="num">% del total</th><th>Entra en…</th></tr>`
+        + u.clases.map(c => `<tr>
+            <td><span style="color:${COLOR_CLASE[c.clase] || AZUL};font-weight:800">●</span>
+                <b>${esc(c.nombre)}</b></td>
+            <td class="num">${c.ots}</td>
+            <td class="num">${c.ots_con_horas} <span class="hint">(${nf(c.cobertura_pct)} %)</span></td>
+            <td class="num">${c.horas ? nf(c.horas) + ' h' : '—'}</td>
+            <td class="num">${c.pct_horas != null ? nf(c.pct_horas) + ' %' : '—'}</td>
+            <td class="hint">${c.clase === 'MANTENIMIENTO'
+                ? 'cumplimiento preventivo · MTBF · MTTR · disponibilidad'
+                : 'solo carga de trabajo — no toca los indicadores del activo'}</td>
+         </tr>`).join('')
+        + (u.especialidades.length
+            ? `<tr><td colspan="6" class="hint">Por especialidad: `
+              + u.especialidades.map(e => `${esc(e.especialidad)} ${nf(e.horas)} h`).join(' · ')
+              + `</td></tr>` : '');
+}
+
+function barrasClase(id, serie, clases, campo, titulo, unidad) {
+    const c = chart(id);
+    if (!c) return;
+    c.setOption({
+        backgroundColor: 'transparent',
+        title: { text: titulo, left: 'center',
+                 textStyle: { color: TINTA, fontSize: 13, fontWeight: 700 } },
+        tooltip: { trigger: 'axis', axisPointer: { type: 'shadow' },
+                   backgroundColor: 'rgba(10,25,38,.95)', borderColor: REJILLA,
+                   textStyle: { color: TINTA } },
+        legend: { textStyle: { color: TENUE, fontSize: 11 }, top: 24, itemWidth: 15 },
+        grid: { left: 52, right: 20, top: 62, bottom: 30 },
+        xAxis: { type: 'category', data: serie.map(s => s.label),
+                 axisLine: { lineStyle: { color: REJILLA } },
+                 axisLabel: { color: TINTA, fontWeight: 700 } },
+        yAxis: { type: 'value', axisLabel: { color: TENUE },
+                 splitLine: { lineStyle: { color: REJILLA, type: 'dashed' } } },
+        series: clases.map(k => ({
+            name: (serie[serie.length - 1].clases.find(x => x.clase === k) || {}).nombre || k,
+            type: 'bar', stack: 'total', barMaxWidth: 54,
+            itemStyle: { color: degradado(COLOR_CLASE[k] || AZUL) },
+            data: serie.map(s => {
+                const f = (s.clases || []).find(x => x.clase === k);
+                return f ? f[campo] : 0;
+            }),
+        })),
+    }, true);
+}
+
 // ── Guion: que decir en cada lamina ──────────────────────────────────────
 // Se arma con reglas fijas sobre los numeros que ya estan en pantalla, sin
 // IA: la lectura de estos indicadores es determinista (si la real esta bajo
@@ -762,9 +868,41 @@ function generarGuion() {
          que pude planificar en vez de atender de emergencia. Que suba este numero es bueno: significa
          que estoy planificando en vez de apagando incendios."</span>`);
 
-    // ── 07 Confiabilidad ────────────────────────────────────────────────
+    // ── 07 Carga de trabajo ─────────────────────────────────────────────
+    const cg = (PRES.carga || [])[(PRES.carga || []).length - 1];
+    if (cg) {
+        const cob = cg.cobertura_pct || 0;
+        const fuera = cg.clases.filter(c => c.clase !== 'MANTENIMIENTO');
+        h += sec('07', 'Carga de trabajo — en que se va el recurso',
+            `Barras apiladas por clase. La izquierda son ordenes (dato completo); la derecha,
+             horas-hombre reales (depende de que se hayan cargado al cerrar).`,
+            `"En el periodo se cerraron <b>${cg.ots_total} ordenes</b>: `
+            + cg.clases.map(c => `${c.ots} de ${esc(c.nombre.toLowerCase())}`).join(', ')
+            + `.<br><br>${fuera.length
+                ? `Los proyectos, mejoras y obra no son mantenimiento del activo —no entran al
+                   cumplimiento preventivo ni cuentan como falla— pero <b>consumen al mismo tecnico</b>
+                   que deberia estar haciendo el preventivo.`
+                : `Todo el trabajo del periodo fue mantenimiento del activo.`}
+             ${cob >= 70 && cg.pct_fuera_mantenimiento != null
+                ? `Este periodo se fue un <b>${nf(cg.pct_fuera_mantenimiento)} %</b> de las horas
+                   fuera de mantenimiento.` : ''}"`,
+            cob < 70
+                ? `<div class="gav"><b>No presentes horas todavia.</b> Solo ${nf(cob)} % de las OTs
+                   (${cg.ots_con_horas} de ${cg.ots_total}) tiene horas cargadas.
+                   ${cob === 0 ? 'Con cero cobertura, el grafico de horas diria que los proyectos no '
+                     + 'consumieron nada, que es falso.' : 'Lo que se ve es una muestra.'}
+                   Di esto: <span class="q">"El conteo de ordenes es completo; las horas todavia no,
+                   porque no se estan cargando al cerrar la OT. Con eso resuelto, el proximo mes traigo
+                   cuanto me cuesta cada proyecto en horas de mi gente."</span></div>`
+                : `<b>Si preguntan por que los proyectos no bajan la disponibilidad:</b>
+                   <span class="q">"Porque su parada es planificada y no es una falla del equipo.
+                   Lo que si hacen es competir por las horas de mi personal, y eso es lo que muestra
+                   esta lamina."</span>`);
+    }
+
+    // ── 08 Confiabilidad ────────────────────────────────────────────────
     const peorC = peorPor(areas, 'confiabilidad', true);
-    h += sec('07', 'Confiabilidad',
+    h += sec('08', 'Confiabilidad',
         `Probabilidad de operar ${m.horizonte_h} horas seguidas sin fallar. Un equipo sin averias da 100 %.`,
         `"La confiabilidad de planta es <b>${nf(pl.confiabilidad)} %</b>: esa es la probabilidad de
          aguantar <b>${nf(m.horizonte_h, 0)} horas seguidas</b> — una semana de operacion continua —
@@ -784,7 +922,10 @@ function generarGuion() {
         (${nf(peorR.actual.mttr)} h) revisando repuestos y tiempos de espera`);
     if (floja && floja.pct != null && floja.pct < 90)
         compromisos.push(`cerrar la brecha de <b>${esc(floja.nombre)}</b> en el programa preventivo`);
-    h += sec('08', 'Como cerrar',
+    if (cg && (cg.cobertura_pct || 0) < 70)
+        compromisos.push(`empezar a cargar las <b>horas reales por tecnico</b> al cerrar la OT,
+            para poder medir cuanto se lleva cada proyecto`);
+    h += sec('09', 'Como cerrar',
         `Tres compromisos concretos, sacados de los mismos numeros. No prometas mas de tres.`,
         `"Me llevo tres cosas de este periodo: ${compromisos.map((c, i) =>
             `${i + 1}) ${c}`).join('; ')}.

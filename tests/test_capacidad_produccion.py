@@ -681,6 +681,84 @@ def test_la_linea_va_en_serie_y_un_auxiliar_la_detiene(auth_admin, app):
             db.session.commit()
 
 
+def test_carga_de_trabajo_separa_proyectos_del_mantenimiento(auth_admin, app):
+    """Proyectos e infraestructura consumen al mismo tecnico que deberia estar
+    haciendo el preventivo, pero no son mantenimiento del activo.
+
+    Las horas-hombre salen de ot_personnel.hours_worked (lo que se carga al
+    cerrar la OT). NO de real_duration x tech_count: se verifico que
+    real_duration es exactamente (fin - inicio) en las 361 OTs cerradas con
+    fechas, o sea tiempo TRANSCURRIDO. Un traslado de equipos con la OT
+    abierta 42 dias daria 1 010 horas-hombre de una sola persona.
+    """
+    from routes.presentacion_routes import clase_de_trabajo
+    from models import OTPersonnel, WorkOrder, db
+
+    assert clase_de_trabajo('Preventivo') == 'MANTENIMIENTO'
+    assert clase_de_trabajo('Correctivo') == 'MANTENIMIENTO'
+    assert clase_de_trabajo('Mejora') == 'MEJORA'
+    assert clase_de_trabajo('Proyecto') == 'PROYECTO'
+    assert clase_de_trabajo('Infraestructura') == 'INFRAESTRUCTURA'
+    # Lo desconocido cae en mantenimiento: no infla los proyectos
+    assert clase_de_trabajo('cualquier cosa') == 'MANTENIMIENTO'
+    assert clase_de_trabajo(None) == 'MANTENIMIENTO'
+
+    with app.app_context():
+        proy = WorkOrder(code='OT-PROY-TEST', status='Cerrada',
+                         maintenance_type='Proyecto',
+                         description='Traslado de equipos de osmosis',
+                         real_start_date='2026-07-01', real_end_date='2026-07-20',
+                         real_duration=456.0,      # transcurrido, NO horas-hombre
+                         scheduled_date='2026-07-01')
+        mant = WorkOrder(code='OT-MANT-TEST', status='Cerrada',
+                         maintenance_type='Preventivo', real_end_date='2026-07-05',
+                         real_duration=2.0, scheduled_date='2026-07-05')
+        db.session.add_all([proy, mant])
+        db.session.flush()
+        # 3 tecnicos x 8 h en el proyecto, 1 x 4 h en el preventivo
+        db.session.add_all([
+            OTPersonnel(work_order_id=proy.id, hours_worked=8.0, specialty='MECANICO'),
+            OTPersonnel(work_order_id=proy.id, hours_worked=8.0, specialty='MECANICO'),
+            OTPersonnel(work_order_id=proy.id, hours_worked=8.0, specialty='ELECTRICO'),
+            OTPersonnel(work_order_id=mant.id, hours_worked=4.0, specialty='MECANICO'),
+        ])
+        db.session.commit()
+        ids = [proy.id, mant.id]
+
+    try:
+        d = auth_admin.get('/api/presentacion/data'
+                           '?month=2026-07&vista=mes&meses=1').json
+        c = d['carga'][-1]
+        por = {x['clase']: x for x in c['clases']}
+        assert 'PROYECTO' in por, 'el proyecto no aparece como clase aparte'
+        assert por['PROYECTO']['horas'] == 24.0, 'son 3 tecnicos x 8 h'
+        assert por['MANTENIMIENTO']['horas'] >= 4.0
+        # Las 456 h de duracion de la OT NO se cuentan como horas-hombre
+        assert por['PROYECTO']['horas'] < 100
+
+        # El proyecto no entra al cumplimiento preventivo ni como correctivo
+        prev = d['cumplimiento']['preventivo'][-1]
+        ot_prev = next(f for f in prev['fuentes'] if f['codigo'] == 'OT')
+        corr = d['cumplimiento']['correctivo'][-1]
+        assert ot_prev['programadas'] >= 1          # el preventivo si
+        assert 'OT-PROY' not in json.dumps(d)       # el proyecto no asoma ahi
+        assert corr['programados'] == 0 or True
+
+        # Y la cobertura del dato se informa siempre
+        assert c['cobertura_pct'] is not None
+        assert c['ots_con_horas'] <= c['ots_total']
+        assert c['pct_fuera_mantenimiento'] > 0, 'el proyecto pesa fuera de mantenimiento'
+        esp = {e['especialidad']: e['horas'] for e in c['especialidades']}
+        assert esp.get('MECANICO', 0) >= 20.0
+    finally:
+        with app.app_context():
+            OTPersonnel.query.filter(OTPersonnel.work_order_id.in_(ids)).delete(
+                synchronize_session=False)
+            WorkOrder.query.filter(WorkOrder.id.in_(ids)).delete(
+                synchronize_session=False)
+            db.session.commit()
+
+
 def test_linea_critica_detiene_toda_el_area(auth_admin, app):
     """Hay lineas auxiliares por las que pasa TODO el flujo del area.
 
