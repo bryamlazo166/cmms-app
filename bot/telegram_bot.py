@@ -1191,6 +1191,17 @@ def _process_message(app, chat_id, text, photos=None):
     if not text:
         return
 
+    # Bromas: se resuelven antes de la IA para no gastar una consulta ni
+    # arriesgar que el extractor abra una OT por "auditoria ISO 45001".
+    try:
+        from bot.easter_eggs import responder as _broma
+        chiste = _broma(text, chat_id)
+        if chiste:
+            _send(chat_id, chiste)
+            return
+    except Exception as e:
+        logger.debug(f"easter egg no disponible: {e}")
+
     # Comando: vincular PDF a última inspección UT del equipo
     # Uso: /ut_pdf D7 https://drive.google.com/...
     if text.lower().startswith('/ut_pdf'):

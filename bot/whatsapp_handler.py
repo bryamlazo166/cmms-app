@@ -847,6 +847,16 @@ def handle_incoming(app, payload):
             "Luego te pedire confirmacion y una foto o video (opcional)."
         ]}
 
+    # Bromas: se resuelven antes de la IA para no gastar una consulta ni
+    # arriesgar que el extractor abra un aviso por "auditoria ISO 45001".
+    try:
+        from bot.easter_eggs import responder as _broma
+        chiste = _broma(text, phone)
+        if chiste:
+            return {"replies": [chiste]}
+    except Exception as e:
+        logger.debug(f"easter egg no disponible: {e}")
+
     # Reporte nuevo → extraccion IA
     extraction = _call_deepseek_extraction(app, user, text)
     if not extraction:
