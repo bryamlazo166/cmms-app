@@ -150,14 +150,21 @@
         body.presenting{overflow:hidden;}
         body.presenting .wrap{max-width:none;padding:0;}
         body.presenting .slide{display:none;position:fixed;inset:0;margin:0;border-radius:0;
-            border:none;padding:32px 52px;overflow-y:auto;z-index:60;}
+            border:none;padding:26px 44px 54px;overflow:hidden;z-index:60;
+            transform-origin:top left;}
         body.presenting .slide.active{display:block;}
-        body.presenting .slide h2{font-size:1.75rem;}
-        body.presenting .chart-box{height:56vh;}
-        body.presenting .chart-box.glob{height:34vh;}
-        body.presenting .area-card .chart-box{height:27vh;}
-        body.presenting .kpi-item .value{font-size:2.2rem;}
+        body.presenting .slide h2{font-size:1.6rem;}
+        body.presenting .slide .method{font-size:.82rem;margin:6px 0 10px;}
+        body.presenting .chart-box{height:46vh;}
+        body.presenting .chart-box.glob{height:32vh;}
+        body.presenting .area-card .chart-box{height:24vh;}
+        body.presenting .kpi-strip{margin:4px 0 10px;}
+        body.presenting .kpi-item{padding:10px;}
+        body.presenting .kpi-item .value{font-size:2rem;}
+        body.presenting .sep{margin:12px 0 8px;}
         body.presenting .portada h1{font-size:4rem;}
+        /* Las tablas largas no estiran la lamina: se leen en el detalle */
+        body.presenting .twrap{max-height:26vh;overflow:auto;}
         #presentNav{display:none;position:fixed;bottom:18px;right:24px;z-index:70;gap:10px;align-items:center;}
         body.presenting #presentNav{display:flex;}
         #presentNav button{background:#12293d;color:var(--tinta);border:1px solid var(--linea);
@@ -231,6 +238,7 @@
                 <div class="it"><b>06</b><span>Cumplimiento de Mantenimiento Correctivo Programado</span></div>
                 <div class="it"><b>07</b><span>Carga de trabajo — proyectos e infraestructura vs mantenimiento</span></div>
                 <div class="it"><b>08</b><span>Confiabilidad</span></div>
+                <div class="it"><b>09</b><span>Modos de falla y equipos que concentran las paradas</span></div>
             </div>
         </div>
 
@@ -329,6 +337,16 @@
                 <div class="chart-box" id="cargaHoras" style="height:320px;"></div>
             </div>
             <div class="twrap" style="margin-top:12px;"><table class="pres" id="cargaTabla"></table></div>
+            <div class="sep">Backlog — trabajo comprometido que todavia no se ejecuta</div>
+            <div class="method" style="margin-top:0;">Las ordenes abiertas divididas entre las horas que
+                puede dar la cuadrilla que ejecuta (mecanicos y electricistas de alta, a
+                <b id="blJornada">48</b> h por semana). Referencia SMRP: entre <b>2 y 4 semanas</b> es sano.
+                Por debajo sobra capacidad; por encima el preventivo se empieza a desplazar solo.</div>
+            <div id="blAviso"></div>
+            <div class="grid2">
+                <div class="chart-box" id="backlogChart" style="height:270px;"></div>
+                <div class="twrap"><table class="pres" id="backlogTabla"></table></div>
+            </div>
         </div>
 
         <!-- 08 Confiabilidad -->
@@ -346,6 +364,37 @@
                 mejoras de diseño · monitoreo en tiempo real (temperatura, torque, corriente) ·
                 analisis de laboratorio de las fallas.
             </div>
+        </div>
+
+        <!-- 09 Pareto de modos de falla y equipos criticos -->
+        <div class="slide" data-slide>
+            <h2><span class="idx">09</span> Modos de falla y equipos que concentran las paradas
+                <span class="peri-chip" data-peri>—</span></h2>
+            <div class="method">Donde se concentran las horas de parada, por <b>modo de falla</b>
+                (que fue lo que fallo) y por <b>equipo</b>. Cada indicador se muestra dos veces:
+                el <b>mes que se presenta</b>, que es lo que hay que explicar hoy, y el
+                <b>consolidado de los ultimos 6 meses</b>, que es donde se ve si fue un evento
+                aislado o el problema de fondo. Lo que aparece arriba en las dos ventanas ya no
+                es mala suerte: es diseño, operacion o plan de mantenimiento.
+                <span class="hint">La linea naranja es el acumulado: donde cruza el 80 % estan los
+                pocos modos que explican casi toda la parada. Las horas son de averia (paro no
+                planificado), el mismo criterio de la lamina 02; los eventos incluyen los
+                correctivos que no llegaron a detener la linea.</span></div>
+            <div id="parAviso"></div>
+            <div class="kpi-strip" id="parKpis"></div>
+            <div class="sep">Modos de falla</div>
+            <div class="grid2">
+                <div class="chart-box" id="parModosMes" style="height:330px;"></div>
+                <div class="chart-box" id="parModosHist" style="height:330px;"></div>
+            </div>
+            <div class="sep">Equipos que concentran las paradas</div>
+            <div class="grid2">
+                <div class="chart-box" id="parEqMes" style="height:330px;"></div>
+                <div class="chart-box" id="parEqHist" style="height:330px;"></div>
+            </div>
+            <div class="twrap" style="margin-top:12px;"><table class="pres" id="parTabla"></table></div>
+            <div class="clickhint no-present"><i class="fas fa-hand-pointer"></i>
+                Pasa el mouse o haz click en cualquier barra para ver el detalle de ese modo de falla.</div>
         </div>
     </div>
 </section>

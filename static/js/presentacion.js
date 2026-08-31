@@ -31,7 +31,8 @@ document.addEventListener('DOMContentLoaded', () => {
     const ant = new Date(hoy.getFullYear(), hoy.getMonth() - 1, 1);
     el('presMonth').value = `${ant.getFullYear()}-${String(ant.getMonth() + 1).padStart(2, '0')}`;
     cambioMes();
-    window.addEventListener('resize', () => Object.values(CH).forEach(c => c && c.resize()));
+    window.addEventListener('resize', () => setTimeout(ajustarLamina, 80));
+    document.addEventListener('fullscreenchange', () => setTimeout(ajustarLamina, 260));
     document.addEventListener('keydown', teclas);
 });
 
@@ -127,6 +128,7 @@ async function cargar(refrescar) {
         Object.keys(IND).forEach(campo => renderIndicador(campo));
         renderCumplimiento();
         renderCarga();
+        cargarPareto(refrescar);
     } catch (e) { alert('No se pudo cargar: ' + e.message); }
 }
 window.cargar = cargar;
@@ -360,8 +362,13 @@ function pintar(id, campo, bloque, titulo, opt) {
                           textStyle: { color: TINTA, fontSize: 13, fontWeight: 700 } } : undefined,
         tooltip: {
             trigger: 'axis',
-            backgroundColor: 'rgba(10,25,38,.95)', borderColor: REJILLA,
-            textStyle: { color: TINTA },
+            confine: true, enterable: false, triggerOn: 'mousemove|click',
+            axisPointer: { type: 'line', lineStyle: { color: NARANJA, width: 1, type: 'dashed' } },
+            backgroundColor: 'rgba(10,25,38,.97)', borderColor: REJILLA,
+            textStyle: { color: TINTA, fontSize: opt.barras ? 13 : 12 },
+            // las tarjetas por area son angostas: un tooltip ancho no cabria dentro
+            extraCssText: `max-width:${opt.barras ? 340 : 230}px;white-space:normal;`
+                + 'box-shadow:0 6px 22px rgba(0,0,0,.55);line-height:1.45',
             formatter: ps => {
                 const s = serie[ps[0].dataIndex] || {};
                 return `<b>${esc(s.nombre || s.label)}</b><br/>`
@@ -385,7 +392,10 @@ function pintar(id, campo, bloque, titulo, opt) {
     }, true);
 
     c.off('click');
-    c.on('click', p => abrirDetalle(opt.area_id, p.dataIndex));
+    c.on('click', p => {
+        c.dispatchAction({ type: 'showTip', seriesIndex: 0, dataIndex: p.dataIndex });
+        abrirDetalle(opt.area_id, p.dataIndex);
+    });
     c.getZr().off('click');
     c.getZr().on('click', ev => { if (!ev.target) abrirDetalle(opt.area_id, serie.length - 1); });
 }
@@ -576,17 +586,24 @@ function renderCarga() {
             Para medirlo: al cerrar la OT, llenar <b>«Personal que ejecutó» → H. Reales</b>.
             Es el unico dato que falta; el resto ya se calcula solo.</div>`;
 
-    const mant = u.clases.find(c => c.clase === 'MANTENIMIENTO') || {};
+    const cua = u.cuadrilla || {}, bl = u.backlog || {};
+    // Backlog sano segun SMRP: entre 2 y 4 semanas de trabajo por delante.
+    const semClase = bl.semanas == null ? ''
+        : bl.semanas > 4 ? 'v-crit' : bl.semanas >= 2 ? 'v-good' : 'v-warn';
     el('cargaKpis').innerHTML = [
-        ['Ordenes del periodo', nf(u.ots_total, 0), ''],
-        ['Horas-hombre registradas', cob ? nf(u.horas_total) + ' h' : '—', ''],
+        ['Ordenes del periodo', nf(u.ots_total, 0), '', ''],
+        ['Horas-hombre registradas', cob ? nf(u.horas_total) + ' h' : '—', '', ''],
         ['Fuera de mantenimiento', u.pct_fuera_mantenimiento != null
             ? nf(u.pct_fuera_mantenimiento) + ' %' : '—',
-            u.pct_fuera_mantenimiento > 25 ? 'v-crit' : ''],
-        ['Cobertura del dato', nf(cob) + ' %', cob >= 70 ? 'v-good' : cob >= 30 ? 'v-warn' : 'v-crit'],
-        ['Tecnicos en el maestro', nf(u.tecnicos, 0), ''],
-    ].map(([l, v, cl]) => `<div class="kpi-item"><div class="label">${l}</div>
-        <div class="value ${cl}">${v}</div></div>`).join('');
+            u.pct_fuera_mantenimiento > 25 ? 'v-crit' : '', ''],
+        ['Cuadrilla que ejecuta', nf(cua.ejecutores, 0), '',
+         (cua.detalle || []).map(d => `${nf(d.tecnicos, 0)} ${esc(d.especialidad.toLowerCase())}`).join(' · ')
+         + ` · ${nf(cua.horas_semana, 0)} h/semana`],
+        ['Backlog', bl.semanas != null ? nf(bl.semanas) + ' semanas' : '—', semClase,
+         `${nf(bl.ots, 0)} ordenes abiertas · ${nf(bl.horas_estimadas)} h`],
+    ].map(([l, v, cl, sub]) => `<div class="kpi-item"><div class="label">${l}</div>
+        <div class="value ${cl}">${v}</div>
+        ${sub ? `<div class="delta">${sub}</div>` : ''}</div>`).join('');
 
     // Ordenes por clase: siempre fiable
     const clases = u.clases.map(c => c.clase);
@@ -629,6 +646,77 @@ function renderCarga() {
             ? `<tr><td colspan="6" class="hint">Por especialidad: `
               + u.especialidades.map(e => `${esc(e.especialidad)} ${nf(e.horas)} h`).join(' · ')
               + `</td></tr>` : '');
+
+    renderBacklog(u.backlog);
+}
+
+// ── 07b Backlog: cuanto trabajo tiene la cuadrilla por delante ───────────
+function renderBacklog(bl) {
+    if (!bl || !el('backlogTabla')) return;
+    el('blJornada').textContent = nf(bl.horas_semana, 0);
+
+    // Sin duracion estimada en la orden el backlog se subestima. Se rellena
+    // con el promedio de las que si la tienen, pero hay que decirlo.
+    const cob = bl.cobertura_pct || 0;
+    el('blAviso').innerHTML = cob >= 80 ? '' :
+        `<div class="aviso ${cob < 40 ? 'rojo' : ''}">
+            <b>Solo ${nf(cob)} % de las ordenes abiertas tiene duracion estimada</b>
+            (${bl.ots_con_estimado} de ${bl.ots}). Las ${bl.ots - bl.ots_con_estimado} restantes
+            se valorizaron con el promedio de las demas (${nf(bl.horas_promedio_ot)} h cada una),
+            asi que el backlog es una estimacion, no una medicion.<br>
+            Para medirlo: llenar <b>«Duracion estimada»</b> al crear la orden.</div>`;
+
+    const c = chart('backlogChart');
+    if (c) {
+        const clases = bl.por_clase || [];
+        c.setOption({
+            backgroundColor: 'transparent',
+            title: { text: `Backlog: ${nf(bl.semanas)} semanas de trabajo`,
+                     subtext: `${nf(bl.horas_estimadas)} h pendientes ÷ ${bl.tecnicos} tecnicos `
+                              + `× ${nf(bl.horas_semana, 0)} h = ${nf(bl.capacidad_semana_h, 0)} h/semana`,
+                     left: 'center', textStyle: { color: TINTA, fontSize: 13, fontWeight: 700 },
+                     subtextStyle: { color: TENUE, fontSize: 11 } },
+            tooltip: { trigger: 'item', confine: true,
+                       backgroundColor: 'rgba(10,25,38,.97)', borderColor: REJILLA,
+                       textStyle: { color: TINTA },
+                       formatter: pt => `<b>${esc(pt.name)}</b><br/>${nf(pt.value)} h`
+                           + ` · ${(clases[pt.dataIndex] || {}).ots || 0} ordenes`
+                           + `<br/><span style="opacity:.7">${nf(pt.percent)} % del backlog</span>` },
+            legend: { bottom: 0, textStyle: { color: TENUE, fontSize: 11 } },
+            series: [{
+                type: 'pie', radius: ['42%', '66%'], center: ['50%', '52%'],
+                avoidLabelOverlap: true,
+                itemStyle: { borderColor: '#0e2032', borderWidth: 2 },
+                label: { color: TINTA, fontSize: 11,
+                         formatter: pt => `${pt.name}\n${nf(pt.value)} h` },
+                data: clases.map(k => ({ name: k.nombre, value: k.horas,
+                    itemStyle: { color: COLOR_CLASE[k.clase] || AZUL } })),
+            }],
+        }, true);
+    }
+
+    el('backlogTabla').innerHTML =
+        `<tr><th>Estado del backlog</th><th class="num">Valor</th><th>Lectura</th></tr>`
+        + [
+            ['Ordenes abiertas', nf(bl.ots, 0),
+             'todo lo que no esta cerrado ni anulado'],
+            ['Horas estimadas', nf(bl.horas_estimadas) + ' h',
+             `${nf(bl.horas_registradas)} h cargadas + el resto al promedio`],
+            ['Capacidad de la cuadrilla', nf(bl.capacidad_semana_h, 0) + ' h/semana',
+             `${bl.tecnicos} tecnicos que ejecutan × ${nf(bl.horas_semana, 0)} h`],
+            ['Backlog', `<b>${nf(bl.semanas)} semanas</b>`,
+             bl.semanas > 4 ? 'por encima de lo sano: el preventivo se va a desplazar'
+             : bl.semanas >= 2 ? 'dentro del rango sano (2 a 4 semanas)'
+             : 'por debajo de 2 semanas: hay capacidad ociosa o falta cargar trabajo'],
+            ['Ordenes con fecha vencida', nf(bl.vencidas, 0),
+             'se programaron y todavia no se cerraron'],
+        ].map(([l, v, d]) => `<tr><td><b>${l}</b></td><td class="num">${v}</td>
+            <td class="hint">${d}</td></tr>`).join('')
+        + ((bl.mas_antiguas || []).length
+            ? `<tr><td colspan="3" class="hint">Las mas antiguas sin cerrar: `
+              + bl.mas_antiguas.slice(0, 5).map(o =>
+                  `${esc(o.code)} (${esc(o.equipo)}, programada ${esc(o.programada)})`).join(' · ')
+              + `</td></tr>` : '');
 }
 
 function barrasClase(id, serie, clases, campo, titulo, unidad) {
@@ -658,6 +746,255 @@ function barrasClase(id, serie, clases, campo, titulo, unidad) {
             }),
         })),
     }, true);
+}
+
+// ── 09 Pareto de modos de falla y equipos que concentran las paradas ─────
+// Dos ventanas sobre lo mismo: el mes que se presenta y los ultimos 6 meses.
+// Un modo de falla que aparece arriba en las dos ya no es mala suerte.
+let PAR = null;
+
+async function cargarPareto(refrescar) {
+    if (!el('parKpis')) return;
+    const q = new URLSearchParams({
+        month: el('presMonth').value, meses: 6,
+        modo: el('presModo').value, top: 10,
+    });
+    if (refrescar) q.set('refrescar', '1');
+    try {
+        const r = await fetch(`/api/presentacion/pareto?${q}`);
+        PAR = await r.json();
+        if (PAR.error) { el('parAviso').innerHTML =
+            `<div class="aviso rojo">No se pudo calcular el pareto: ${esc(PAR.error)}</div>`; return; }
+        renderPareto();
+    } catch (e) {
+        el('parAviso').innerHTML = `<div class="aviso rojo">No se pudo cargar el pareto: ${esc(e.message)}</div>`;
+    }
+}
+
+// Los pocos modos que explican el 80 % de la parada: es el corte de Pareto y
+// lo unico accionable de la lamina — sobre esos se arma el plan.
+function vitales(modos) {
+    const tot = modos.reduce((a, m) => a + m.horas, 0);
+    let acum = 0, n = 0;
+    for (const m of modos) {
+        if (acum >= tot * 0.8) break;
+        acum += m.horas; n++;
+    }
+    return { n, total: tot, pct: tot ? Math.round(acum / tot * 100) : 0 };
+}
+
+function renderPareto() {
+    const mes = PAR.mes, his = PAR.historico;
+    const vm = vitales(mes.modos), vh = vitales(his.modos);
+    const peorMes = mes.equipos[0] || {}, peorHis = his.equipos[0] || {};
+    const conc = mes.horas_total ? Math.round(
+        (mes.equipos.slice(0, 3).reduce((a, e) => a + e.horas, 0)) / mes.horas_total * 100) : 0;
+
+    el('parKpis').innerHTML = [
+        ['Horas de averia del mes', nf(mes.modos_total_horas) + ' h',
+         '', `${mes.modos_total_eventos} eventos registrados`],
+        ['Modos que explican el 80 %', nf(vm.n, 0), '',
+         `de ${mes.modos.length} modos distintos en el mes`],
+        ['Equipo que mas paro', peorMes.equipo ? peorMes.equipo : '—', '',
+         peorMes.horas != null ? `${nf(peorMes.horas)} h en ${peorMes.paradas} parada(s)` : ''],
+        ['Los 3 primeros concentran', conc + ' %', conc >= 70 ? 'v-warn' : '',
+         'de las horas de parada del mes'],
+        ['Modo de falla sin registrar', nf(mes.sin_registrar_pct) + ' %',
+         mes.sin_registrar_pct > 15 ? 'v-crit' : mes.sin_registrar_pct > 5 ? 'v-warn' : 'v-good',
+         'de los eventos del mes'],
+    ].map(([l, v, cl, sub]) => `<div class="kpi-item"><div class="label">${l}</div>
+        <div class="value ${cl}" style="font-size:${String(v).length > 12 ? '1.05rem' : '1.7rem'}">${esc(v)}</div>
+        ${sub ? `<div class="delta">${esc(sub)}</div>` : ''}</div>`).join('');
+
+    el('parAviso').innerHTML = mes.sin_registrar_pct > 15
+        ? `<div class="aviso"><b>${nf(mes.sin_registrar_pct)} % de los eventos del mes no tiene
+           modo de falla registrado.</b> Sin ese dato el pareto se arma sobre una parte de la
+           realidad: el modo que falta puede ser justamente el primero.
+           Se llena al cerrar la orden, en <b>«Modo de falla»</b>.</div>`
+        : '';
+
+    paretoModos('parModosMes', mes, `Modos de falla — ${mes.etiqueta}`, vm);
+    paretoModos('parModosHist', his, `Modos de falla — ${his.etiqueta}`, vh);
+    rankingEquipos('parEqMes', mes, `Equipos con mas horas de parada — ${mes.etiqueta}`);
+    rankingEquipos('parEqHist', his, `Equipos con mas horas de parada — ${his.etiqueta}`);
+    tablaPareto(mes, his);
+}
+
+// Pareto en un solo eje: las barras son las horas de cada modo y la linea es
+// la MISMA magnitud acumulada, no un porcentaje en un segundo eje. La linea
+// de corte marca el 80 % del total: donde la curva la cruza terminan los
+// pocos modos que hay que atacar.
+function paretoModos(id, bloque, titulo, vit) {
+    const c = chart(id);
+    if (!c) return;
+    const TOPE = 8;
+    let datos = bloque.modos.slice(0, TOPE);
+    const resto = bloque.modos.slice(TOPE);
+    if (resto.length) {
+        datos = datos.concat([{
+            modo: `OTROS (${resto.length})`,
+            horas: Math.round(resto.reduce((a, m) => a + m.horas, 0) * 10) / 10,
+            eventos: resto.reduce((a, m) => a + m.eventos, 0),
+            equipos: 0, sin_dato: false, otros: true,
+        }]);
+    }
+    if (!datos.length) {
+        c.clear();
+        c.setOption({ backgroundColor: 'transparent',
+            title: { text: titulo, left: 'center',
+                     textStyle: { color: TINTA, fontSize: 13, fontWeight: 700 } },
+            graphic: { type: 'text', left: 'center', top: 'middle',
+                style: { text: 'Sin averias registradas en el periodo.',
+                         fill: TENUE, fontSize: 13, align: 'center' } } }, true);
+        return;
+    }
+    let a = 0;
+    const acum = datos.map(m => (a += m.horas, Math.round(a * 10) / 10));
+    const total = vit.total || acum[acum.length - 1];
+
+    c.setOption({
+        backgroundColor: 'transparent',
+        title: { text: titulo, subtext: `${vit.n} modo(s) explican el 80 % de las horas`,
+                 left: 'center', textStyle: { color: TINTA, fontSize: 13, fontWeight: 700 },
+                 subtextStyle: { color: TENUE, fontSize: 11 } },
+        tooltip: {
+            trigger: 'axis', confine: true, triggerOn: 'mousemove|click',
+            axisPointer: { type: 'shadow' },
+            backgroundColor: 'rgba(10,25,38,.97)', borderColor: REJILLA,
+            textStyle: { color: TINTA },
+            extraCssText: 'max-width:280px;white-space:normal',
+            formatter: ps => {
+                const m = datos[ps[0].dataIndex];
+                const pct = total ? Math.round(acum[ps[0].dataIndex] / total * 100) : 0;
+                return `<b>${esc(m.modo)}</b><br/>`
+                    + `${nf(m.horas)} h de averia · ${m.eventos} evento(s)`
+                    + (m.equipos ? ` en ${m.equipos} equipo(s)` : '')
+                    + `<br/><span style="opacity:.7">acumulado hasta aqui: ${nf(acum[ps[0].dataIndex])} h`
+                    + ` (${pct} % del total)</span>`
+                    + (m.sin_dato ? `<br/><span style="opacity:.7">ordenes sin modo de falla cargado</span>` : '');
+            },
+        },
+        legend: { textStyle: { color: TENUE, fontSize: 11 }, bottom: 0, itemWidth: 16 },
+        grid: { left: 56, right: 20, top: 58, bottom: 72 },
+        xAxis: {
+            type: 'category', data: datos.map(m => m.modo),
+            axisLine: { lineStyle: { color: REJILLA } },
+            axisLabel: { color: TINTA, fontSize: 10, interval: 0, rotate: 32,
+                         width: 88, overflow: 'truncate' },
+        },
+        yAxis: {
+            type: 'value', name: 'horas de averia', nameTextStyle: { color: TENUE, fontSize: 10 },
+            axisLabel: { color: TENUE, formatter: '{value} h' },
+            splitLine: { lineStyle: { color: REJILLA, type: 'dashed' } },
+        },
+        series: [
+            {
+                name: 'Horas de averia', type: 'bar', data: datos.map(m => m.horas),
+                barMaxWidth: 42, z: 2,
+                itemStyle: {
+                    borderRadius: [4, 4, 0, 0],
+                    color: pt => degradado(datos[pt.dataIndex].otros ? TENUE
+                        : datos[pt.dataIndex].sin_dato ? REGULAR : AZUL_CLARO),
+                },
+                label: { show: true, position: 'top', color: TINTA, fontSize: 10,
+                         formatter: pt => pt.value > 0 ? nf(pt.value) : '' },
+            },
+            {
+                name: 'Acumulado', type: 'line', data: acum, smooth: false, z: 3,
+                symbolSize: 8, itemStyle: { color: NARANJA },
+                lineStyle: { width: 2, color: NARANJA },
+                markLine: {
+                    silent: true, symbol: 'none',
+                    label: { formatter: '80 % de las horas', color: TENUE, fontSize: 10,
+                             position: 'insideEndTop' },
+                    lineStyle: { color: TENUE, type: 'dashed', width: 1 },
+                    data: [{ yAxis: Math.round(total * 0.8 * 10) / 10 }],
+                },
+            },
+        ],
+    }, true);
+}
+
+function rankingEquipos(id, bloque, titulo) {
+    const c = chart(id);
+    if (!c) return;
+    const datos = bloque.equipos.slice(0, 8).slice().reverse();   // ECharts pinta de abajo hacia arriba
+    if (!datos.length) {
+        c.clear();
+        c.setOption({ backgroundColor: 'transparent',
+            title: { text: titulo, left: 'center',
+                     textStyle: { color: TINTA, fontSize: 13, fontWeight: 700 } },
+            graphic: { type: 'text', left: 'center', top: 'middle',
+                style: { text: 'Ningun equipo registro paradas en el periodo.',
+                         fill: TENUE, fontSize: 13, align: 'center' } } }, true);
+        return;
+    }
+    c.setOption({
+        backgroundColor: 'transparent',
+        title: { text: titulo,
+                 subtext: `${bloque.equipos_total} equipo(s) con parada · los de arriba concentran `
+                          + `${nf(bloque.horas_top)} de ${nf(bloque.horas_total)} h`,
+                 left: 'center', textStyle: { color: TINTA, fontSize: 13, fontWeight: 700 },
+                 subtextStyle: { color: TENUE, fontSize: 11 } },
+        tooltip: {
+            trigger: 'item', confine: true, triggerOn: 'mousemove|click',
+            backgroundColor: 'rgba(10,25,38,.97)', borderColor: REJILLA,
+            textStyle: { color: TINTA }, extraCssText: 'max-width:280px;white-space:normal',
+            formatter: pt => {
+                const e = datos[pt.dataIndex];
+                return `<b>${esc(e.equipo)}</b><br/>${nf(e.horas)} h detenido`
+                    + `<br/>${e.paradas} parada(s) · MTTR ${nf(e.mttr)} h`
+                    + `<br/><span style="opacity:.7">disponibilidad del equipo: ${nf(e.disponibilidad)} %</span>`;
+            },
+        },
+        grid: { left: 8, right: 78, top: 58, bottom: 18, containLabel: true },
+        xAxis: { type: 'value', axisLabel: { color: TENUE, formatter: '{value} h' },
+                 splitLine: { lineStyle: { color: REJILLA, type: 'dashed' } } },
+        yAxis: { type: 'category', data: datos.map(e => e.equipo),
+                 axisLine: { lineStyle: { color: REJILLA } },
+                 axisLabel: { color: TINTA, fontSize: 10, width: 150, overflow: 'truncate' } },
+        series: [{
+            type: 'bar', data: datos.map(e => e.horas), barMaxWidth: 18,
+            itemStyle: { borderRadius: [0, 4, 4, 0], color: pt => degradado(
+                pt.dataIndex === datos.length - 1 ? NARANJA_SUAVE : AZUL_CLARO) },
+            label: { show: true, position: 'right', color: TINTA, fontSize: 10,
+                     formatter: pt => `${nf(pt.value)} h · ${datos[pt.dataIndex].paradas} par.` },
+        }],
+    }, true);
+}
+
+// La tabla es la que contesta "¿esto ya pasaba antes?": mismo modo de falla
+// en las dos ventanas, uno al lado del otro.
+function tablaPareto(mes, his) {
+    const t = el('parTabla');
+    if (!t) return;
+    const enHis = {};
+    his.modos.forEach((m, i) => enHis[m.modo] = { ...m, pos: i + 1 });
+    const filas = mes.modos.slice(0, 10);
+    if (!filas.length) {
+        t.innerHTML = `<tr><td class="hint">Sin averias registradas en el mes.</td></tr>`;
+        return;
+    }
+    t.innerHTML =
+        `<tr><th>Modo de falla</th><th class="num">Horas del mes</th><th class="num">Eventos</th>
+         <th class="num">Equipos</th><th class="num">Horas en 6 meses</th>
+         <th class="num">Eventos en 6 meses</th><th>Lectura</th></tr>`
+        + filas.map((m, i) => {
+            const h = enHis[m.modo] || { horas: 0, eventos: 0, pos: null };
+            const recurrente = h.pos && h.pos <= 5;
+            return `<tr>
+                <td><b>${esc(m.modo)}</b>${m.sin_dato
+                    ? ' <span class="hint">(ordenes sin el dato)</span>' : ''}</td>
+                <td class="num">${nf(m.horas)} h</td>
+                <td class="num">${m.eventos}</td>
+                <td class="num">${m.equipos || '—'}</td>
+                <td class="num">${nf(h.horas)} h</td>
+                <td class="num">${h.eventos || '—'}</td>
+                <td class="hint">${recurrente
+                    ? `viene repitiendose — puesto ${h.pos} en los 6 meses`
+                    : (i === 0 ? 'el que mas costo este mes' : 'aparece este mes')}</td>
+            </tr>`;
+        }).join('');
 }
 
 // ── Guion: que decir en cada lamina ──────────────────────────────────────
@@ -885,7 +1222,17 @@ function generarGuion() {
                 : `Todo el trabajo del periodo fue mantenimiento del activo.`}
              ${cob >= 70 && cg.pct_fuera_mantenimiento != null
                 ? `Este periodo se fue un <b>${nf(cg.pct_fuera_mantenimiento)} %</b> de las horas
-                   fuera de mantenimiento.` : ''}"`,
+                   fuera de mantenimiento.` : ''}
+             ${cg.backlog && cg.backlog.semanas != null
+                ? `<br><br>Y el trabajo que viene: hay <b>${cg.backlog.ots} ordenes abiertas</b> que
+                   suman <b>${nf(cg.backlog.horas_estimadas)} horas</b>. Con los
+                   <b>${cg.backlog.tecnicos} tecnicos que ejecutan</b> —mecanicos y electricistas—
+                   eso es un backlog de <b>${nf(cg.backlog.semanas)} semanas</b>
+                   ${cg.backlog.semanas > 4
+                     ? 'por encima del rango sano de 2 a 4 semanas: a este ritmo el preventivo se desplaza solo.'
+                     : cg.backlog.semanas >= 2
+                       ? 'dentro del rango sano de 2 a 4 semanas.'
+                       : 'por debajo de 2 semanas.'}` : ''}"`,
             cob < 70
                 ? `<div class="gav"><b>No presentes horas todavia.</b> Solo ${nf(cob)} % de las OTs
                    (${cg.ots_con_horas} de ${cg.ots_total}) tiene horas cargadas.
@@ -915,6 +1262,40 @@ function generarGuion() {
          menos t sobre MTBF, con t de una semana. Sale del MTBF, no es una opinion. Esta la formula
          resuelta con estos mismos numeros en el modulo Como se calculan."</span>`);
 
+    // ── 09 Modos de falla y equipos criticos ────────────────────────────
+    if (PAR && PAR.mes) {
+        const pm = PAR.mes, ph = PAR.historico, vm = vitales(pm.modos);
+        const top1 = pm.modos[0], eq1 = pm.equipos[0];
+        const enHis = {};
+        (ph.modos || []).forEach((x, i) => enHis[x.modo] = i + 1);
+        const repetido = (pm.modos || []).find(x => enHis[x.modo] && enHis[x.modo] <= 3);
+        h += sec('09', 'Modos de falla y equipos que concentran las paradas',
+            `Pareto: barras con las horas de cada modo de falla y la curva acumulada. Donde la
+             curva cruza la linea del 80 % terminan los pocos modos que hay que atacar. A la
+             izquierda el mes; a la derecha los ultimos 6 meses.`,
+            `"Las <b>${nf(pm.modos_total_horas)} horas de averia</b> del mes no estan repartidas:
+             ${vm.n === 1 ? '<b>un solo modo de falla</b> explica' : `<b>${vm.n} modos de falla</b> explican`}
+             el 80 %.
+             ${top1 ? `El primero es <b>${esc(top1.modo.toLowerCase())}</b>, con
+                       ${nf(top1.horas)} horas en ${top1.eventos} evento(s).` : ''}
+             ${eq1 ? `<br><br>Por equipo, el que mas nos detuvo fue <b>${esc(eq1.equipo)}</b>:
+                      ${nf(eq1.horas)} horas en ${eq1.paradas} parada(s).` : ''}
+             ${repetido ? `<br><br>Y esto no es de este mes: <b>${esc(repetido.modo.toLowerCase())}</b>
+                           tambien esta entre los primeros de los ultimos seis meses. Ahi no hay mala
+                           suerte, hay una causa que no hemos resuelto."`
+                        : `<br><br>En los ultimos seis meses el cuadro cambia, asi que este mes se
+                           explica por eventos puntuales y no por un problema de fondo."`}`,
+            pm.sin_registrar_pct > 15
+                ? `<div class="gav"><b>Cuidado con este pareto.</b> ${nf(pm.sin_registrar_pct)} % de
+                   los eventos del mes no tiene modo de falla cargado, asi que el orden puede cambiar
+                   cuando se complete. Di esto: <span class="q">"Este es el cuadro con lo que
+                   tenemos registrado; estamos cerrando la brecha del dato para que el proximo mes
+                   sea completo."</span></div>`
+                : `<b>Si preguntan que se hace con esto:</b> <span class="q">"Los primeros modos son
+                   los que entran al analisis causa raiz y al plan del proximo mes. No se atacan los
+                   ${pm.modos.length} modos: se atacan los ${vm.n} que explican el 80 %."</span>`);
+    }
+
     // ── Cierre ──────────────────────────────────────────────────────────
     const compromisos = [];
     if (peorD) compromisos.push(`atacar <b>${esc(peorD.area)}</b>, que es la que baja la disponibilidad`);
@@ -925,7 +1306,7 @@ function generarGuion() {
     if (cg && (cg.cobertura_pct || 0) < 70)
         compromisos.push(`empezar a cargar las <b>horas reales por tecnico</b> al cerrar la OT,
             para poder medir cuanto se lleva cada proyecto`);
-    h += sec('09', 'Como cerrar',
+    h += sec('10', 'Como cerrar',
         `Tres compromisos concretos, sacados de los mismos numeros. No prometas mas de tres.`,
         `"Me llevo tres cosas de este periodo: ${compromisos.map((c, i) =>
             `${i + 1}) ${c}`).join('; ')}.
@@ -1013,10 +1394,13 @@ async function abrirDetalle(areaId, i) {
             : `<tr><td class="hint">Sin movimiento de equipos en el periodo.</td></tr>`;
 
         el('detOts').innerHTML = d.ots.length
-            ? `<tr><th>OT</th><th>Equipo</th><th>Tipo</th><th>Descripcion</th>
-               <th>Fecha</th><th class="num">Horas de paro</th><th>Paro</th></tr>`
-              + d.ots.map(o => `<tr><td><b>${esc(o.code)}</b></td><td>${esc(o.equipo)}</td>
-                <td>${esc(o.tipo)}</td><td>${esc(o.descripcion)}</td><td>${esc(o.fecha)}</td>
+            ? `<tr><th>Orden</th><th>Equipo</th><th>Tipo</th><th>Trabajo realizado</th>
+               <th>Modo de falla</th><th>Fecha</th><th class="num">Horas de paro</th><th>Paro</th></tr>`
+              + d.ots.map(o => `<tr><td><b>${esc(o.code)}</b></td>
+                <td><b>${esc(o.equipo)}</b></td>
+                <td>${esc(o.tipo)}</td><td>${esc(o.descripcion)}</td>
+                <td>${o.modo_falla ? esc(o.modo_falla) : '<span class="hint">sin registrar</span>'}</td>
+                <td>${esc(o.fecha)}</td>
                 <td class="num">${o.horas_paro ? nf(o.horas_paro) + ' h' : '—'}</td>
                 <td>${o.horas_paro ? `<span class="tag ${o.planificado ? 'plan' : 'aver'}">`
                     + `${o.planificado ? 'planificado' : 'averia'}</span>` : '—'}</td></tr>`).join('')
@@ -1032,24 +1416,61 @@ window.cerrarDetalle = cerrarDetalle;
 // ── Modo presentacion ────────────────────────────────────────────────────
 let idx = 0;
 function slides() { return Array.from(document.querySelectorAll('[data-slide]')); }
+function redimensionar() { Object.values(CH).forEach(c => c && c.resize()); }
+
+// La lamina entera tiene que entrar en la pantalla.
+//
+// Antes cada lamina era una caja con scroll: proyectada, la mitad de abajo
+// quedaba fuera y habia que arrastrar delante de la gerencia — en la lamina
+// de disponibilidad se perdian justo los graficos por area. Ahora se mide el
+// contenido y, si no entra, la lamina se reduce a escala hasta que entra.
+// Se itera porque al reducir la escala la lamina gana ancho util y el
+// contenido vuelve a fluir, con lo que su altura cambia.
+function ajustarLamina() {
+    const s = slides()[idx];
+    if (!s) return;
+    s.style.transform = ''; s.style.width = ''; s.style.height = '';
+    if (!document.body.classList.contains('presenting')) { redimensionar(); return; }
+    redimensionar();
+    let k = 1;
+    for (let paso = 0; paso < 3; paso++) {
+        const alto = s.scrollHeight;              // contenido, sin escalar
+        const disponible = window.innerHeight / k; // pantalla, en la misma escala
+        if (alto <= disponible + 1) break;
+        k = Math.max(0.5, k * (disponible / alto));
+        s.style.width = (100 / k) + '%';
+        s.style.height = (100 / k) + '%';
+        s.style.transform = `scale(${k})`;
+        redimensionar();
+    }
+}
+
 function showSlide(i) {
     const ss = slides();
     idx = Math.max(0, Math.min(i, ss.length - 1));
-    ss.forEach((s, j) => s.classList.toggle('active', j === idx));
+    ss.forEach((s, j) => {
+        s.classList.toggle('active', j === idx);
+        if (j !== idx) { s.style.transform = ''; s.style.width = ''; s.style.height = ''; }
+    });
     el('slideCnt').textContent = `${idx + 1}/${ss.length}`;
-    setTimeout(() => Object.values(CH).forEach(c => c && c.resize()), 60);
+    setTimeout(ajustarLamina, 60);
 }
 function togglePresent() {
     const on = document.body.classList.toggle('presenting');
     if (on) {
         showSlide(0);
         if (document.documentElement.requestFullscreen) {
-            document.documentElement.requestFullscreen().catch(() => {});
+            document.documentElement.requestFullscreen()
+                .then(() => setTimeout(ajustarLamina, 260))
+                .catch(() => {});
         }
     } else {
-        slides().forEach(s => s.classList.remove('active'));
+        slides().forEach(s => {
+            s.classList.remove('active');
+            s.style.transform = ''; s.style.width = ''; s.style.height = '';
+        });
         if (document.fullscreenElement) document.exitFullscreen().catch(() => {});
-        setTimeout(() => Object.values(CH).forEach(c => c && c.resize()), 60);
+        setTimeout(redimensionar, 60);
     }
 }
 function nextSlide() { showSlide(idx + 1); }

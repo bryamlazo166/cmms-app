@@ -638,7 +638,11 @@ def test_la_linea_va_en_serie_y_un_auxiliar_la_detiene(auth_admin, app):
         db.session.add(ot)
         db.session.commit()
         area_id, linea_id = area.id, linea.id
-        eq_ids, ot_id, tag_th = [sec.id, th.id], ot.id, th.tag
+        eq_ids, ot_id = [sec.id, th.id], ot.id
+        # La presentacion nombra los equipos como los lee la gerencia: el
+        # nombre, no el tag, y con la linea cuando el nombre solo no distingue
+        # ("TH SALIDA" existe en varias lineas).
+        nombre_th = 'TH SALIDA — SECADOR PRUEBA'
 
     try:
         d = auth_admin.get('/api/presentacion/data'
@@ -662,9 +666,10 @@ def test_la_linea_va_en_serie_y_un_auxiliar_la_detiene(auth_admin, app):
         assert ln['pesa'] and ln['equipos'] == 2
         assert abs(ln['disponibilidad'] - esperado) < 0.05
         culpables = {c['equipo']: c for c in ln['detuvieron']}
-        assert tag_th in culpables, 'no se identifica al equipo que detuvo la linea'
-        assert culpables[tag_th]['auxiliar'] is True
-        assert culpables[tag_th]['horas'] == 24.0
+        assert nombre_th in culpables, (
+            f'no se identifica al equipo que detuvo la linea: {list(culpables)}')
+        assert culpables[nombre_th]['auxiliar'] is True
+        assert culpables[nombre_th]['horas'] == 24.0
 
         # La metodologia tiene que ponderar por linea, no por equipo
         m = auth_admin.get('/api/metodologia/data?month=2026-07&modo=inherente').json

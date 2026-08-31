@@ -103,6 +103,121 @@ def clase_de_trabajo(maintenance_type):
 MESES_CORTO = ['', 'ENE', 'FEB', 'MAR', 'ABR', 'MAY', 'JUN',
                'JUL', 'AGO', 'SET', 'OCT', 'NOV', 'DIC']
 
+# Quien ejecuta el trabajo. El maestro de tecnicos tiene tambien gente dada de
+# baja y perfiles que no van a campo; medir la capacidad contra los 23 nombres
+# registrados infla la cuadrilla y hace ver el backlog mucho mas sano de lo
+# que es. Los que toman una herramienta son los mecanicos y los electricistas.
+ESPECIALIDADES_EJECUTORAS = ('MECANIC', 'ELECTRIC')
+
+# Jornada legal en Peru: 6 dias x 8 h. Es lo que convierte el backlog de horas
+# a semanas de trabajo, que es como se lee (SMRP: sano entre 2 y 4 semanas).
+HORAS_SEMANA_TECNICO = 48.0
+
+# Estados que sacan a la orden del backlog sin haberse ejecutado.
+ANULADAS = ('anulada', 'anulado', 'cancelada', 'cancelado', 'rechazada')
+
+
+def es_ejecutor(especialidad):
+    """Si esa especialidad ejecuta trabajo en campo."""
+    e = (especialidad or '').strip().upper()
+    return any(e.startswith(x) for x in ESPECIALIDADES_EJECUTORAS)
+
+
+def _kpi(base, ots, tep, modo, horizonte):
+    """Indicadores de un conjunto de OTs, con el catalogo de paradas.
+
+    El mapa de paradas NO es opcional: sin el, toda orden ejecutada dentro de
+    una parada se asume planificada, y las paradas que la jefatura marco como
+    AVERIA (is_planned = False) se descontaban de la disponibilidad inherente
+    como si fueran mantenimiento programado. La pagina de Indicadores ya lo
+    pasaba y esta presentacion no, asi que los dos tableros no daban lo mismo
+    para el mismo mes.
+    """
+    from routes.indicators_routes import _calc_indicators
+    return _calc_indicators(ots, tep, base['shutdowns'], mode=modo,
+                            unplanned_shutdown_ids=base['sh_no_plan'],
+                            reliability_hours=horizonte)
+
+
+def _duracion_parada(sh):
+    """Horas que duro una parada, segun el motor de indicadores."""
+    from routes.indicators_routes import _shutdown_duration
+    return _shutdown_duration(sh) if sh is not None else 0.0
+
+
+def _paro_h(ot):
+    """Horas que la orden tuvo el equipo detenido. Mismo criterio que el motor
+    de indicadores: si no se cargo el downtime se usa la duracion real, y solo
+    cuenta si la OT declara que causo paro."""
+    if not ot.get('caused_downtime'):
+        return 0.0
+    return float(ot.get('downtime_hours') or ot.get('real_duration') or 0)
+
+
+def _planificado(base, ot):
+    """Si el paro de esa orden se considera planificado.
+
+    Manda la parada: una orden ejecutada dentro de una parada hereda su
+    clasificacion, igual que en el motor de indicadores. Fuera de una parada
+    decide la propia orden (correctivo = averia).
+    """
+    from routes.indicators_routes import _ot_downtime_planned
+    sid = ot.get('shutdown_id')
+    if sid:
+        return sid not in base['sh_no_plan']
+    return _ot_downtime_planned(ot)
+
+
+def _descripcion(texto):
+    """La descripcion como se lee en la reunion.
+
+    Las OTs traen pegado al final el metadato del formulario
+    ("| [Modo de falla: Rotura] | [Tipo: Mecanica]"), que en pantalla solo hace
+    ruido: el modo de falla se muestra en su propia columna.
+    """
+    t = (texto or '').split('|')[0].strip()
+    return t[:200] if t else '—'
+
+
+def _modo(ot):
+    """Modo de falla de la orden. Si el campo no se lleno, se rescata del
+    metadato que quedo escrito en la descripcion."""
+    m = (ot.get('failure_mode') or '').strip()
+    if not m:
+        d = ot.get('description') or ''
+        marca = 'Modo de falla:'
+        if marca in d:
+            m = d.split(marca, 1)[1].split(']')[0].strip()
+    return m.upper() if m else ''
+
+
+def _legible(nombre, linea, tag):
+    """Nombre del equipo como lo entiende quien no vive en el CMMS.
+
+    El tag (D6, SECA-SECA2, TH1-ENF2) no dice nada en una reunion de gerencia,
+    pero el nombre solo tampoco alcanza: hay siete equipos que se llaman
+    "SECADOR" o "TH1" y solo la linea los distingue. Se compone nombre + linea,
+    salvo cuando uno ya contiene al otro.
+    """
+    n = (nombre or '').strip()
+    l = (linea or '').strip()
+    # "LINEA DIGESTOR #6" es la linea; el equipo es el "DIGESTOR #6" que hay
+    # dentro. Sin quitar el prefijo, el digestor se presentaria como su propia
+    # linea y el nombre saldria mas largo sin decir nada nuevo.
+    if l.upper().startswith('LINEA '):
+        l = l[6:].strip()
+    if not n:
+        return l or (tag or '').strip() or 'Equipo sin nombre'
+    if not l:
+        return n
+    if n.upper() == l.upper():
+        return n
+    if n.upper() in l.upper():
+        return l                      # "SECADOR" dentro de "SECADOR #2"
+    if l.upper() in n.upper():
+        return n
+    return n + ' — ' + l         # "TH1" del "ENFRIADOR #2"
+
 # La lectura de catalogo + ordenes es lo unico que toca la BD y no cambia
 # entre un cambio de mes, de modo o de vista. Se cachea unos segundos para
 # que mover los selectores de la presentacion sea instantaneo.
@@ -118,7 +233,33 @@ def register_presentacion_routes(app, db, logger):
     from models import (AppSetting, Area, Equipment, InspectionExecution,
                         InspectionRoute, Line, LubricationExecution,
                         LubricationPoint, MonitoringPoint, MonitoringReading,
-                        OTPersonnel, ProductionGoal, Technician, WorkOrder)
+                        OTPersonnel, ProductionGoal, Shutdown, Technician,
+                        WorkOrder)
+
+    def _cuadrilla():
+        """La cuadrilla que realmente ejecuta: mecanicos y electricistas de
+        alta. Es el divisor de la capacidad y del backlog."""
+        filas = (Technician.query
+                 .with_entities(Technician.specialty, Technician.is_active)
+                 .all())
+        por_esp, ejecutores = {}, 0
+        for esp, activo in filas:
+            if not activo:
+                continue
+            nombre = (esp or 'SIN ESPECIALIDAD').strip().upper()
+            if es_ejecutor(nombre):
+                ejecutores += 1
+                por_esp[nombre] = por_esp.get(nombre, 0) + 1
+        return {
+            'registrados': len(filas),
+            'activos': sum(1 for _e, a in filas if a),
+            'ejecutores': ejecutores,
+            'detalle': sorted(({'especialidad': k, 'tecnicos': v}
+                               for k, v in por_esp.items()),
+                              key=lambda x: -x['tecnicos']),
+            'horas_semana': HORAS_SEMANA_TECNICO,
+            'capacidad_semana_h': round(ejecutores * HORAS_SEMANA_TECNICO, 1),
+        }
 
     def _fuentes_en_vigor():
         """Fuentes que la jefatura declara en vigor. Se lee en cada peticion
@@ -228,7 +369,9 @@ def register_presentacion_routes(app, db, logger):
         cap_eq, cap_area, cap_linea = {}, {}, {}
         eq_de_area, nombre_eq, linea_de_eq = {}, {}, {}
         for e in equipos:
-            nombre_eq[e.id] = {'nombre': e.name or '', 'tag': e.tag or ''}
+            linea_nom = lines[e.line_id].name if e.line_id in lines else ''
+            nombre_eq[e.id] = {'nombre': e.name or '', 'tag': e.tag or '',
+                               'legible': _legible(e.name, linea_nom, e.tag)}
             if not e.include_in_kpi or e.line_id not in lines:
                 continue
             cap = (eq_harina_tm_day(e, rend)
@@ -248,15 +391,29 @@ def register_presentacion_routes(app, db, logger):
             WorkOrder.shutdown_id, WorkOrder.caused_downtime,
             WorkOrder.downtime_hours, WorkOrder.downtime_planned,
             WorkOrder.real_duration, WorkOrder.scheduled_date,
-            WorkOrder.real_start_date, WorkOrder.real_end_date).all()
+            WorkOrder.real_start_date, WorkOrder.real_end_date,
+            WorkOrder.failure_mode, WorkOrder.estimated_duration).all()
 
-        cerradas, programadas = [], []
+        cerradas, programadas, pendientes = [], [], []
         for f in filas:
             if f.scheduled_date:
                 programadas.append({'fecha': str(f.scheduled_date)[:10],
                                     'maintenance_type': f.maintenance_type,
                                     'status': f.status})
             if f.status != 'Cerrada':
+                # Lo que queda abierto es el backlog: trabajo ya comprometido
+                # que sigue compitiendo por las horas de la cuadrilla.
+                if (f.status or '').strip().lower() not in ANULADAS:
+                    eqp = nombre_eq.get(f.equipment_id, {})
+                    pendientes.append({
+                        'id': f.id, 'code': f.code, 'status': f.status,
+                        'maintenance_type': f.maintenance_type,
+                        'equipo': eqp.get('legible', ''),
+                        'estimado_h': (float(f.estimated_duration)
+                                       if f.estimated_duration else None),
+                        'scheduled_date': (str(f.scheduled_date)[:10]
+                                           if f.scheduled_date else None),
+                    })
                 continue
             eq = nombre_eq.get(f.equipment_id, {})
             cerradas.append({
@@ -270,6 +427,8 @@ def register_presentacion_routes(app, db, logger):
                 'scheduled_date': f.scheduled_date,
                 'equipment_name': eq.get('nombre', ''),
                 'equipment_tag': eq.get('tag', ''),
+                'equipo_legible': eq.get('legible', ''),
+                'failure_mode': f.failure_mode,
                 'fecha': str(f.real_end_date or f.real_start_date
                              or f.scheduled_date or '')[:10],
             })
@@ -331,6 +490,12 @@ def register_presentacion_routes(app, db, logger):
         linea_critica = {lid: bool(getattr(l, 'stops_area', False))
                          for lid, l in lines.items()}
 
+        # Catalogo de paradas: cuanto duro cada una y si fue programada o una
+        # averia. Son pocas filas y hacen falta en cada calculo.
+        paradas = {sh.id: sh for sh in Shutdown.query.all()}
+        no_plan = {i for i, sh in paradas.items()
+                   if getattr(sh, 'is_planned', True) is False}
+
         return {'areas': areas, 'lines': lines, 'equipos': equipos,
                 'rendimiento': rend, 'cap_eq': cap_eq, 'cap_area': cap_area,
                 'cap_linea': cap_linea, 'linea_de_eq': linea_de_eq,
@@ -338,7 +503,9 @@ def register_presentacion_routes(app, db, logger):
                 'eq_de_area': eq_de_area, 'ots': cerradas,
                 'programadas': programadas, 'metas': metas,
                 'rutinas': rutinas_prev, 'hh_ot': hh_ot, 'esp_ot': esp_ot,
-                'tecnicos': Technician.query.count()}
+                'pendientes': pendientes, 'nombre_eq': nombre_eq,
+                'shutdowns': paradas, 'sh_no_plan': no_plan,
+                'cuadrilla': _cuadrilla()}
 
     def _base():
         ahora = time.monotonic()
@@ -395,15 +562,13 @@ def register_presentacion_routes(app, db, logger):
             Sumar las horas de paro de los 9 digestores como si estuvieran en
             serie es lo que antes devolvia disponibilidades imposibles.
         """
-        from routes.indicators_routes import _calc_indicators
         num = {'disponibilidad': 0.0, 'mtbf': 0.0, 'confiabilidad': 0.0}
         peso = 0.0
         paro_total, fallas, n_ots = 0.0, 0, 0
 
         # Totales crudos: horas-equipo y averias, equipo a equipo
         for eid in eq_ids:
-            ind = _calc_indicators(idx.get(eid, []), tep, mode=modo,
-                                   reliability_hours=horizonte)
+            ind = _kpi(base, idx.get(eid, []), tep, modo, horizonte)
             paro_total += ind['downtime_hours']
             fallas += ind['failure_count']
             n_ots += ind['total_ots']
@@ -413,8 +578,8 @@ def register_presentacion_routes(app, db, logger):
             cap = base['cap_linea'].get(lid, 0.0)
             if cap <= 0:
                 continue                    # linea auxiliar: no pondera
-            ind = _calc_indicators(_ots_de_linea(base, eq_ids, idx, lid), tep,
-                                   mode=modo, reliability_hours=horizonte)
+            ind = _kpi(base, _ots_de_linea(base, eq_ids, idx, lid), tep,
+                       modo, horizonte)
             num['disponibilidad'] += ind['availability'] * cap
             num['mtbf'] += ind['mtbf'] * cap
             num['confiabilidad'] += ind['reliability'] * cap
@@ -426,8 +591,7 @@ def register_presentacion_routes(app, db, logger):
         else:
             # Sin lineas con capacidad: se mide el conjunto directamente
             todas = [o for eid in eq_ids for o in idx.get(eid, [])]
-            ind = _calc_indicators(todas, tep, mode=modo,
-                                   reliability_hours=horizonte)
+            ind = _kpi(base, todas, tep, modo, horizonte)
             res = {'disponibilidad': ind['availability'], 'mtbf': ind['mtbf'],
                    'confiabilidad': ind['reliability'], 'ponderado': False}
 
@@ -448,8 +612,7 @@ def register_presentacion_routes(app, db, logger):
                     copia = dict(o)
                     copia['equipment_id'] = -2000000   # todas, una sola maquina
                     ots_crit.append(copia)
-            ind_c = _calc_indicators(ots_crit, tep, mode=modo,
-                                     reliability_hours=horizonte)
+            ind_c = _kpi(base, ots_crit, tep, modo, horizonte)
             res['disp_criticas'] = ind_c['availability']
             res['horas_criticas'] = ind_c['downtime_hours']
             # Composicion en serie: el area produce solo si el bloque en
@@ -568,6 +731,68 @@ def register_presentacion_routes(app, db, logger):
                            'pct': round(corr_term / corr_prog * 100, 1) if corr_prog else None},
         }
 
+    # ── Backlog: trabajo comprometido que todavia no se ejecuta ──────────
+
+    def _backlog(base):
+        """Cuantas semanas de trabajo tiene la cuadrilla por delante.
+
+            backlog (semanas) = horas pendientes / (tecnicos x 48 h)
+
+        El divisor son los mecanicos y electricistas de alta, no el maestro
+        completo: contra los 23 nombres registrados el backlog sale cuatro
+        veces mas sano de lo que es. Referencia SMRP: entre 2 y 4 semanas es
+        sano; por debajo sobra capacidad, por encima el preventivo se empieza
+        a desplazar solo.
+
+        No todas las ordenes abiertas tienen duracion estimada. Las que no la
+        tienen se valorizan con el promedio de las que si —es preferible a
+        contarlas como cero, que seria decir que no cuestan nada— y la
+        cobertura del dato se informa siempre.
+        """
+        pend = base['pendientes']
+        cuad = base['cuadrilla']
+        con_est = [o for o in pend if o['estimado_h']]
+        horas_reg = sum(o['estimado_h'] for o in con_est)
+        prom = (horas_reg / len(con_est)) if con_est else 0.0
+        sin_est = len(pend) - len(con_est)
+        horas_tot = horas_reg + prom * sin_est
+        cap = cuad['capacidad_semana_h']
+
+        por_clase = {}
+        for o in pend:
+            c = clase_de_trabajo(o.get('maintenance_type'))
+            d = por_clase.setdefault(c, {'clase': c, 'nombre': NOMBRE_CLASE[c],
+                                         'ots': 0, 'horas': 0.0})
+            d['ots'] += 1
+            d['horas'] += o['estimado_h'] or prom
+        for d in por_clase.values():
+            d['horas'] = round(d['horas'], 1)
+
+        # Lo mas viejo primero: una orden programada hace meses que sigue
+        # abierta explica el backlog mejor que cualquier promedio.
+        hoy = dt.date.today().isoformat()
+        atrasadas = sorted((o for o in pend if o['scheduled_date']),
+                           key=lambda o: o['scheduled_date'])[:8]
+        return {
+            'ots': len(pend),
+            'ots_con_estimado': len(con_est),
+            'cobertura_pct': (round(len(con_est) / len(pend) * 100, 1)
+                              if pend else None),
+            'horas_registradas': round(horas_reg, 1),
+            'horas_estimadas': round(horas_tot, 1),
+            'horas_promedio_ot': round(prom, 1),
+            'semanas': round(horas_tot / cap, 1) if cap else None,
+            'tecnicos': cuad['ejecutores'],
+            'capacidad_semana_h': cap,
+            'horas_semana': cuad['horas_semana'],
+            'por_clase': sorted(por_clase.values(), key=lambda d: -d['horas']),
+            'vencidas': sum(1 for o in pend if o['scheduled_date']
+                            and o['scheduled_date'] < hoy),
+            'mas_antiguas': [{'code': o['code'], 'equipo': o['equipo'],
+                              'programada': o['scheduled_date'],
+                              'estado': o['status']} for o in atrasadas],
+        }
+
     # ── Carga de trabajo: en que se va el personal ───────────────────────
 
     def _carga(base, per):
@@ -630,7 +855,8 @@ def register_presentacion_routes(app, db, logger):
             'especialidades': sorted(
                 ({'especialidad': k, 'horas': round(v, 1)} for k, v in por_esp.items()),
                 key=lambda x: -x['horas']),
-            'tecnicos': base['tecnicos'],
+            'cuadrilla': base['cuadrilla'],
+            'backlog': _backlog(base),
         }
 
     # ── Disponibilidad requerida ─────────────────────────────────────────
@@ -828,13 +1054,148 @@ def register_presentacion_routes(app, db, logger):
             logger.exception('presentacion_fuentes error')
             return jsonify({'error': str(e)}), 500
 
+    @app.route('/api/presentacion/pareto', methods=['GET'])
+    def presentacion_pareto():
+        """Pareto de modos de falla y equipos que concentran las paradas.
+
+        Dos ventanas sobre los mismos datos: el mes que se esta presentando
+        —lo que hay que explicar hoy— y los ultimos seis meses, que es donde
+        se ve si un modo de falla fue un evento aislado o el problema de
+        fondo. Un modo que aparece arriba en las dos ventanas ya no es mala
+        suerte: es diseño, operacion o plan de mantenimiento.
+
+        El ranking de equipos usa el mismo motor que la lamina de
+        disponibilidad —misma consolidacion por parada, misma clasificacion
+        de averia— para que las horas coincidan con el detalle que se abre al
+        hacer click en el grafico.
+        """
+        try:
+            hoy = dt.date.today()
+            month = (request.args.get('month')
+                     or _mes_anterior(hoy.strftime('%Y-%m')))[:7]
+            meses = max(2, min(request.args.get('meses', default=6, type=int), 12))
+            modo = (request.args.get('modo') or 'inherente').lower()
+            horizonte = request.args.get('horizonte', default=168, type=float)
+            top = max(5, min(request.args.get('top', default=10, type=int), 25))
+            base = _base()
+
+            def bloque(desde, hasta, etiqueta):
+                dias = ((dt.date.fromisoformat(hasta)
+                         - dt.date.fromisoformat(desde)).days + 1)
+                tep = dias * 24
+                idx = _por_equipo(base['ots'], desde, hasta)
+                del_periodo = [o for o in base['ots']
+                               if o['fecha'] and desde <= o['fecha'] <= hasta]
+
+                # Cuando varias ordenes se ejecutan en la misma parada, sus
+                # horas NO se suman: es la misma hora de planta detenida. El
+                # motor la cuenta una sola vez, asi que aqui esa hora se
+                # reparte entre las ordenes de la parada en proporcion a lo
+                # que cada una declaro. Sin esto, una parada con cinco
+                # trabajos dentro multiplicaria por cinco su paro.
+                grupos = {}
+                for o in del_periodo:
+                    if o.get('shutdown_id') and _paro_h(o) > 0:
+                        grupos.setdefault((o['shutdown_id'],
+                                           o.get('equipment_id') or 0),
+                                          []).append(o)
+                reparto = {}
+                for miembros in grupos.values():
+                    horas = [_paro_h(x) for x in miembros]
+                    sh = base['shutdowns'].get(miembros[0]['shutdown_id'])
+                    dur = _duracion_parada(sh)
+                    consolidada = dur if dur > 0 else max(horas)
+                    suma = sum(horas)
+                    for x, h in zip(miembros, horas):
+                        reparto[x['id']] = (consolidada * h / suma) if suma else 0.0
+
+                # Dos magnitudes, y las dos importan: EVENTOS cuenta cuantas
+                # veces aparecio el modo de falla —uno que se repite doce
+                # veces sin detener la linea igual consume cuadrilla y
+                # anuncia la rotura que viene— y HORAS suma solo el paro no
+                # planificado, para hablar del mismo universo que la
+                # disponibilidad inherente de la lamina 02.
+                modos = {}
+                for o in del_periodo:
+                    paro = reparto.get(o['id'], _paro_h(o))
+                    correctivo = (o.get('maintenance_type') or '').strip() \
+                        .lower().startswith('correctiv')
+                    plan = _planificado(base, o)
+                    if not correctivo and (paro <= 0 or plan):
+                        continue
+                    m = _modo(o) or 'SIN REGISTRAR'
+                    d = modos.setdefault(m, {'modo': m, 'eventos': 0,
+                                             'horas': 0.0, 'horas_plan': 0.0,
+                                             'equipos': set()})
+                    d['eventos'] += 1
+                    if plan:
+                        d['horas_plan'] += paro
+                    else:
+                        d['horas'] += paro
+                    if o.get('equipment_id'):
+                        d['equipos'].add(o['equipment_id'])
+                lista = sorted(
+                    ({'modo': d['modo'], 'eventos': d['eventos'],
+                      'horas': round(d['horas'], 1),
+                      'horas_planificadas': round(d['horas_plan'], 1),
+                      'equipos': len(d['equipos']),
+                      'sin_dato': d['modo'] == 'SIN REGISTRAR'}
+                     for d in modos.values()),
+                    key=lambda d: (-d['horas'], -d['eventos']))
+
+                equipos = []
+                for eid, ots_eq in idx.items():
+                    ind = _kpi(base, ots_eq, tep, modo, horizonte)
+                    if ind['downtime_hours'] <= 0:
+                        continue
+                    equipos.append({
+                        'equipo': (base['nombre_eq'].get(eid, {}).get('legible')
+                                   or f'Equipo {eid}'),
+                        'paradas': ind['failure_count'],
+                        'horas': round(ind['downtime_hours'], 1),
+                        'mttr': ind['mttr'],
+                        'disponibilidad': ind['availability'],
+                    })
+                equipos.sort(key=lambda e: (-e['horas'], -e['paradas']))
+                ev = sum(d['eventos'] for d in lista)
+
+                return {
+                    'etiqueta': etiqueta, 'desde': desde, 'hasta': hasta,
+                    'dias': dias,
+                    'modos': lista,
+                    'modos_total_eventos': ev,
+                    'modos_total_horas': round(sum(d['horas'] for d in lista), 1),
+                    'sin_registrar_pct': (
+                        round(sum(d['eventos'] for d in lista if d['sin_dato'])
+                              / ev * 100, 1) if ev else None),
+                    'equipos': equipos[:top],
+                    'equipos_total': len(equipos),
+                    'horas_total': round(sum(e['horas'] for e in equipos), 1),
+                    'horas_top': round(sum(e['horas'] for e in equipos[:top]), 1),
+                }
+
+            ini, fin = _limites(month)
+            historico = _meses_atras(month, meses)
+            desde_hist = _limites(historico[0])[0]
+
+            return jsonify({
+                'meta': {'month': month, 'label': _label(month),
+                         'meses': meses, 'modo': modo, 'top': top},
+                'mes': bloque(ini.isoformat(), fin.isoformat(), _label(month)),
+                'historico': bloque(
+                    desde_hist.isoformat(), fin.isoformat(),
+                    _label(historico[0]) + ' a ' + _label(month)),
+            })
+        except Exception as e:
+            logger.exception('presentacion_pareto error')
+            return jsonify({'error': str(e)}), 500
+
     @app.route('/api/presentacion/detalle', methods=['GET'])
     def presentacion_detalle():
         """Drill-down de una barra del grafico: equipo por equipo y las
         ordenes que generaron el paro. Es lo que se abre cuando en la
         reunion preguntan "¿y por que bajo esa area?"."""
         try:
-            from routes.indicators_routes import _calc_indicators
             aid = request.args.get('area_id', default=0, type=int)
             desde = (request.args.get('desde') or '')[:10]
             hasta = (request.args.get('hasta') or '')[:10]
@@ -859,8 +1220,8 @@ def register_presentacion_routes(app, db, logger):
             idx = _por_equipo(base['ots'], desde, hasta)
             resumen = _ponderar(base, eq_ids, idx, tep, modo, horizonte)
 
-            nombres = {e.id: (e.tag or e.name or f'EQ-{e.id}')
-                       for e in base['equipos']}
+            nombres = {eid: (v.get('legible') or f'Equipo {eid}')
+                       for eid, v in base['nombre_eq'].items()}
 
             # Las lineas primero: son la unidad de medida de la
             # disponibilidad, porque dentro de ellas los equipos van en serie.
@@ -868,12 +1229,11 @@ def register_presentacion_routes(app, db, logger):
             for lid in {base['linea_de_eq'].get(e) for e in eq_ids} - {None}:
                 cap = base['cap_linea'].get(lid, 0.0)
                 miembros = [e for e in eq_ids if base['linea_de_eq'].get(e) == lid]
-                ind = _calc_indicators(_ots_de_linea(base, eq_ids, idx, lid), tep,
-                                       mode=modo, reliability_hours=horizonte)
+                ind = _kpi(base, _ots_de_linea(base, eq_ids, idx, lid), tep,
+                           modo, horizonte)
                 detuvieron = []
                 for eid in miembros:
-                    ie = _calc_indicators(idx.get(eid, []), tep, mode=modo,
-                                          reliability_hours=horizonte)
+                    ie = _kpi(base, idx.get(eid, []), tep, modo, horizonte)
                     if ie['downtime_hours'] > 0:
                         detuvieron.append({
                             'equipo': nombres.get(eid, f'EQ-{eid}'),
@@ -903,8 +1263,7 @@ def register_presentacion_routes(app, db, logger):
             equipos, ots = [], []
             for eid in eq_ids:
                 de_eq = idx.get(eid, [])
-                ind = _calc_indicators(de_eq, tep, mode=modo,
-                                       reliability_hours=horizonte)
+                ind = _kpi(base, de_eq, tep, modo, horizonte)
                 if ind['total_ots'] == 0 and ind['downtime_hours'] == 0:
                     continue
                 equipos.append({
@@ -926,7 +1285,8 @@ def register_presentacion_routes(app, db, logger):
                         'code': o.get('code') or f"OT-{o['id']}",
                         'equipo': nombres.get(eid, ''),
                         'tipo': o.get('maintenance_type') or '—',
-                        'descripcion': (o.get('description') or '')[:180],
+                        'descripcion': _descripcion(o.get('description')),
+                        'modo_falla': _modo(o),
                         'fecha': o.get('fecha'),
                         'horas_paro': round(paro, 2),
                         'planificado': bool(o.get('downtime_planned')) if o.get('downtime_planned') is not None
