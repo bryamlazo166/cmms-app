@@ -11,6 +11,7 @@
     <link rel="stylesheet" href="/static/css/sidebar.css?v={{ v }}">
     <link href="https://fonts.googleapis.com/css2?family=Roboto:wght@300;400;500;700&display=swap" rel="stylesheet">
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css">
+    <script src="https://cdn.jsdelivr.net/npm/echarts@5.5.0/dist/echarts.min.js"></script>
     <style>
         body{background:#0a0e14;}
         .wrap{max-width:1600px;margin:0 auto;padding:16px;}
@@ -75,7 +76,19 @@
         .chip.MEGADO{background:rgba(90,200,250,.15);color:#5AC8FA;}
         .chip.CORRIENTE{background:rgba(255,214,10,.15);color:#FFD60A;}
         .chip.TEMPERATURA{background:rgba(255,69,58,.15);color:#ff6b61;}
-        @media(max-width:900px){ .summary-row{grid-template-columns:repeat(2,1fr);} .dlg-body .row{grid-template-columns:1fr;} }
+
+        /* Historial con gráficos de tendencia */
+        #histModal{max-width:1100px;}
+        .hist-tabs{display:flex;gap:4px;border-bottom:1px solid #2a3a50;margin-bottom:4px;}
+        .htab{background:transparent;color:#9ab0cb;border:none;padding:8px 13px;cursor:pointer;font-size:.82rem;font-weight:600;border-bottom:2px solid transparent;}
+        .htab.active{color:#5AC8FA;border-bottom-color:#5AC8FA;}
+        .charts-grid{display:grid;grid-template-columns:1fr 1fr;gap:12px;}
+        .chart-box{background:#121821;border:1px solid #2a3a50;border-radius:10px;padding:10px 12px;}
+        .chart-box.wide{grid-column:1 / -1;}
+        .chart-title{font-size:.72rem;color:#9ab3d0;text-transform:uppercase;letter-spacing:.4px;font-weight:700;margin-bottom:6px;}
+        .chart{height:250px;width:100%;}
+        .chart-empty{display:flex;align-items:center;justify-content:center;height:100%;color:#7e93ad;font-size:.8rem;}
+        @media(max-width:900px){ .summary-row{grid-template-columns:repeat(2,1fr);} .dlg-body .row{grid-template-columns:1fr;} .charts-grid{grid-template-columns:1fr;} }
     </style>
 </head>
 <body>
@@ -221,11 +234,39 @@
     </form>
 </dialog>
 
-<!-- MODAL: historial -->
+<!-- MODAL: historial + tendencias -->
 <dialog id="histModal">
-    <div class="dlg-head"><span id="histTitle">Historial</span><button type="button" class="x" onclick="document.getElementById('histModal').close()">✕</button></div>
-    <div class="dlg-body" id="histBody" style="max-height:60vh;overflow:auto;"></div>
-    <div class="dlg-foot"><button type="button" class="btn" onclick="document.getElementById('histModal').close()">Cerrar</button></div>
+    <div class="dlg-head"><span id="histTitle">Historial</span><button type="button" class="x" onclick="closeHistory()">✕</button></div>
+    <div class="dlg-body" style="max-height:74vh;overflow:auto;gap:8px;">
+        <div class="hist-tabs">
+            <button type="button" class="htab active" data-view="graficos" onclick="setHistView('graficos')"><i class="fas fa-chart-line"></i> Tendencias</button>
+            <button type="button" class="htab" data-view="registros" onclick="setHistView('registros')"><i class="fas fa-list"></i> Registros</button>
+        </div>
+        <div id="histLoading" class="muted">Cargando…</div>
+        <div id="histCharts" class="charts-grid" style="display:none;">
+            <div class="chart-box">
+                <div class="chart-title">Aislamiento — megado (MΩ)</div>
+                <div class="chart" id="chMegado"></div>
+            </div>
+            <div class="chart-box">
+                <div class="chart-title">Corriente por fase (A)</div>
+                <div class="chart" id="chCorriente"></div>
+            </div>
+            <div class="chart-box">
+                <div class="chart-title">Desbalance de corriente y tensión (%)</div>
+                <div class="chart" id="chDesbalance"></div>
+            </div>
+            <div class="chart-box">
+                <div class="chart-title">Temperatura por punto (°C)</div>
+                <div class="chart" id="chTemp"></div>
+            </div>
+        </div>
+        <div id="histBody" style="display:none;"></div>
+    </div>
+    <div class="dlg-foot">
+        <button type="button" class="btn" onclick="exportHistoryCSV()"><i class="fas fa-file-csv"></i> Exportar historial</button>
+        <button type="button" class="btn" onclick="closeHistory()">Cerrar</button>
+    </div>
 </dialog>
 
 <!-- MODAL: gestionar motores -->
@@ -468,15 +509,47 @@ async function submitTest() {
 }
 
 // ── Historial ────────────────────────────────────────────────────────
+let _histTests = [], _histMotor = null, _histView = 'graficos';
+let _histCharts = [];
+
+function _disposeHistCharts() {
+    _histCharts.forEach(c => { try { c.dispose(); } catch (e) {} });
+    _histCharts = [];
+}
+function closeHistory() { _disposeHistCharts(); document.getElementById('histModal').close(); }
+function setHistView(v) {
+    _histView = v;
+    document.querySelectorAll('.htab').forEach(t => t.classList.toggle('active', t.dataset.view === v));
+    document.getElementById('histCharts').style.display = v === 'graficos' ? 'grid' : 'none';
+    document.getElementById('histBody').style.display = v === 'registros' ? 'block' : 'none';
+    if (v === 'graficos') _histCharts.forEach(c => { try { c.resize(); } catch (e) {} });
+}
+window.addEventListener('resize', () => _histCharts.forEach(c => { try { c.resize(); } catch (e) {} }));
+
 async function openHistory(id) {
     const m = _allRows.find(r => r.id === id);
-    document.getElementById('histTitle').textContent = 'Historial · ' + (m ? m.code : '');
-    document.getElementById('histBody').innerHTML = '<div class="muted">Cargando…</div>';
+    _histMotor = m || null;
+    document.getElementById('histTitle').textContent = 'Historial · ' + (m ? m.code + ' ' + (m.name || '') : '');
+    _disposeHistCharts();
+    document.getElementById('histLoading').style.display = 'block';
+    document.getElementById('histLoading').textContent = 'Cargando…';
+    document.getElementById('histCharts').style.display = 'none';
+    document.getElementById('histBody').style.display = 'none';
+    document.getElementById('histBody').innerHTML = '';
     document.getElementById('histModal').showModal();
     try {
         const r = await fetch(`/api/motors/${id}/tests`);
         const tests = await r.json();
-        if (!tests.length) { document.getElementById('histBody').innerHTML = '<div class="muted">Sin registros.</div>'; return; }
+        _histTests = Array.isArray(tests) ? tests : [];
+        if (!_histTests.length) {
+            document.getElementById('histLoading').textContent = 'Sin registros para este motor.';
+            return;
+        }
+        document.getElementById('histLoading').style.display = 'none';
+        // visible antes de inicializar: ECharts necesita el contenedor con tamaño
+        document.getElementById('histCharts').style.display = 'grid';
+        renderHistCharts();
+        setHistView(_histView);
         document.getElementById('histBody').innerHTML = tests.map(t => {
             let val = '';
             if (t.test_type === 'MEGADO') {
@@ -506,7 +579,174 @@ async function openHistory(id) {
                 ${t.photo_url ? `<a href="${t.photo_url}" target="_blank" style="color:#5AC8FA;">Ver foto/informe</a>` : ''}
             </div>`;
         }).join('');
-    } catch (e) { document.getElementById('histBody').innerHTML = '<div class="muted">Error cargando historial.</div>'; }
+    } catch (e) {
+        document.getElementById('histLoading').style.display = 'block';
+        document.getElementById('histLoading').textContent = 'Error cargando historial.';
+    }
+}
+
+// ── Tendencias del motor (ECharts) ───────────────────────────────────
+const AXIS = '#9ab0cb';
+const SPLIT = { lineStyle: { color: 'rgba(255,255,255,.06)' } };
+
+function _baseOption(yName) {
+    return {
+        backgroundColor: 'transparent',
+        tooltip: { trigger: 'axis' },
+        legend: { type: 'scroll', top: 0, textStyle: { color: '#bfd2ec', fontSize: 10 }, itemWidth: 14, itemHeight: 8 },
+        grid: { top: 34, right: 16, bottom: 34, left: 52 },
+        xAxis: { type: 'category', boundaryGap: false, axisLabel: { color: AXIS, fontSize: 9, rotate: 30 }, axisLine: { lineStyle: { color: '#2a3a50' } } },
+        yAxis: { type: 'value', name: yName, nameTextStyle: { color: AXIS, fontSize: 10 }, axisLabel: { color: AXIS, fontSize: 10 }, splitLine: SPLIT },
+    };
+}
+function _emptyChart(elId, msg) {
+    const el = document.getElementById(elId);
+    if (el) el.innerHTML = `<div class="chart-empty">${msg}</div>`;
+}
+function _mkChart(elId, option) {
+    const el = document.getElementById(elId);
+    if (!el) return;
+    el.innerHTML = '';
+    const c = echarts.init(el, 'dark');
+    c.setOption(option);
+    _histCharts.push(c);
+}
+/** Desbalance NEMA: máxima desviación respecto al promedio, en % del promedio. */
+function _unbalance(vals) {
+    const v = vals.filter(x => x !== null && x !== undefined && !isNaN(x)).map(Number);
+    if (v.length < 3) return null;
+    const avg = v.reduce((a, b) => a + b, 0) / v.length;
+    if (!avg) return null;
+    const dev = Math.max(...v.map(x => Math.abs(x - avg)));
+    return +(dev / avg * 100).toFixed(1);
+}
+
+function renderHistCharts() {
+    _disposeHistCharts();
+    const asc = [..._histTests].sort((a, b) => (a.test_date || '').localeCompare(b.test_date || '') || (a.id - b.id));
+    const m = _histMotor || {};
+    const meg = asc.filter(t => t.test_type === 'MEGADO');
+    const cur = asc.filter(t => t.test_type === 'CORRIENTE');
+    const tem = asc.filter(t => t.test_type === 'TEMPERATURA');
+
+    // 1) Aislamiento — peor valor + cada combinación, con el mínimo admisible
+    if (!meg.length) _emptyChart('chMegado', 'Sin megados registrados');
+    else {
+        const dates = meg.map(t => t.test_date);
+        const COMBOS = [
+            ['R-S', 'meg_rs_mohm', '#5AC8FA'], ['S-T', 'meg_st_mohm', '#7A5AF8'], ['T-R', 'meg_tr_mohm', '#0FB9B1'],
+            ['R-Tierra', 'meg_rg_mohm', '#FF6B61'], ['S-Tierra', 'meg_sg_mohm', '#FFD60A'], ['T-Tierra', 'meg_tg_mohm', '#30D158'],
+        ];
+        const min = m.megado_min_mohm != null ? Number(m.megado_min_mohm) : null;
+        const series = [{
+            name: 'Peor valor', type: 'line', data: meg.map(t => t.insulation_mohm),
+            lineStyle: { color: '#eff6ff', width: 3 }, itemStyle: { color: '#eff6ff' }, symbolSize: 8, z: 5, connectNulls: true,
+            markLine: min != null ? {
+                silent: true, symbol: 'none',
+                data: [{ yAxis: min, label: { formatter: `Mínimo ${min} MΩ`, color: '#ff8a80', fontSize: 10, position: 'insideEndTop' }, lineStyle: { color: '#FF453A', type: 'dashed', width: 2 } }],
+            } : undefined,
+        }];
+        COMBOS.forEach(([lbl, key, color]) => {
+            if (meg.some(t => t[key] != null)) series.push({
+                name: lbl, type: 'line', data: meg.map(t => t[key]), connectNulls: true,
+                lineStyle: { color, width: 1.5, type: 'dotted' }, itemStyle: { color }, symbolSize: 5,
+            });
+        });
+        const vals = [].concat(...series.map(s => s.data)).filter(v => v != null && v > 0);
+        const useLog = vals.length > 0 && Math.max(...vals) / Math.min(...vals) >= 20;
+        const opt = _baseOption('MΩ');
+        opt.xAxis.data = dates;
+        if (useLog) { opt.yAxis.type = 'log'; opt.yAxis.name = 'MΩ (log)'; }
+        opt.tooltip.valueFormatter = v => (v == null ? '—' : v + ' MΩ');
+        opt.series = series;
+        _mkChart('chMegado', opt);
+    }
+
+    // 2) Corriente por fase, contra la nominal de placa y el umbral de sobrecarga
+    if (!cur.some(t => t.current_r != null || t.current_s != null || t.current_t != null)) _emptyChart('chCorriente', 'Sin corrientes registradas');
+    else {
+        const nom = m.rated_current_a != null ? Number(m.rated_current_a) : null;
+        const alarmPct = Number(m.current_alarm_pct || 110);
+        const ml = [];
+        if (nom) {
+            ml.push({ yAxis: nom, label: { formatter: `In ${nom} A${m.rated_current_estimated ? ' (est.)' : ''}`, color: '#9ab0cb', fontSize: 10 }, lineStyle: { color: '#8e8e93', type: 'dashed' } });
+            ml.push({ yAxis: +(nom * alarmPct / 100).toFixed(1), label: { formatter: `Sobrecarga ${alarmPct}%`, color: '#ff8a80', fontSize: 10 }, lineStyle: { color: '#FF453A', type: 'dashed', width: 2 } });
+        }
+        const opt = _baseOption('A');
+        opt.xAxis.data = cur.map(t => t.test_date);
+        opt.tooltip.valueFormatter = v => (v == null ? '—' : v + ' A');
+        opt.series = [
+            ['R', 'current_r', '#FF6B61'], ['S', 'current_s', '#FFD60A'], ['T', 'current_t', '#5AC8FA'],
+        ].map(([lbl, key, color], i) => ({
+            name: 'Fase ' + lbl, type: 'line', data: cur.map(t => t[key]), connectNulls: true,
+            lineStyle: { color, width: 2.5 }, itemStyle: { color }, symbolSize: 7,
+            markLine: i === 0 && ml.length ? { silent: true, symbol: 'none', data: ml } : undefined,
+        }));
+        _mkChart('chCorriente', opt);
+    }
+
+    // 3) Desbalance de corriente (NEMA ≤10%) y de tensión (≤2%)
+    const unb = cur.map(t => ({
+        date: t.test_date,
+        i: _unbalance([t.current_r, t.current_s, t.current_t]),
+        v: _unbalance([t.voltage_rs, t.voltage_st, t.voltage_tr]),
+    })).filter(x => x.i != null || x.v != null);
+    if (!unb.length) _emptyChart('chDesbalance', 'Requiere las 3 fases medidas en una misma ronda');
+    else {
+        const opt = _baseOption('%');
+        opt.xAxis.data = unb.map(x => x.date);
+        opt.xAxis.boundaryGap = true;
+        opt.tooltip.valueFormatter = v => (v == null ? '—' : v + ' %');
+        opt.series = [
+            {
+                name: 'Desbalance corriente', type: 'bar', data: unb.map(x => x.i), barMaxWidth: 22,
+                itemStyle: { color: p => (p.value >= 10 ? '#FF453A' : p.value >= 5 ? '#FF9F0A' : '#30D158') },
+                markLine: { silent: true, symbol: 'none', data: [{ yAxis: 10, label: { formatter: 'Límite corriente 10%', color: '#ff8a80', fontSize: 10 }, lineStyle: { color: '#FF453A', type: 'dashed' } }] },
+            },
+            {
+                name: 'Desbalance tensión', type: 'bar', data: unb.map(x => x.v), barMaxWidth: 22,
+                itemStyle: { color: p => (p.value >= 2 ? '#FF9F0A' : '#5AC8FA') },
+                markLine: { silent: true, symbol: 'none', data: [{ yAxis: 2, label: { formatter: 'Límite tensión 2%', color: '#FFA834', fontSize: 10 }, lineStyle: { color: '#FF9F0A', type: 'dotted' } }] },
+            },
+        ];
+        _mkChart('chDesbalance', opt);
+    }
+
+    // 4) Temperatura: una serie por punto de medición
+    if (!tem.some(t => t.temperature_c != null)) _emptyChart('chTemp', 'Sin temperaturas registradas');
+    else {
+        const dates = [...new Set(tem.map(t => t.test_date))].sort();
+        const points = [...new Set(tem.map(t => t.temp_point || 'SIN PUNTO'))];
+        const PAL = ['#FF6B61', '#FF9F0A', '#FFD60A', '#30D158', '#5AC8FA', '#7A5AF8', '#0FB9B1'];
+        const opt = _baseOption('°C');
+        opt.xAxis.data = dates;
+        opt.tooltip.valueFormatter = v => (v == null ? '—' : v + ' °C');
+        opt.series = points.map((p, i) => ({
+            name: p, type: 'line', connectNulls: true,
+            data: dates.map(d => {
+                const hit = tem.find(t => t.test_date === d && (t.temp_point || 'SIN PUNTO') === p && t.temperature_c != null);
+                return hit ? hit.temperature_c : null;
+            }),
+            lineStyle: { color: PAL[i % PAL.length], width: 2.5 }, itemStyle: { color: PAL[i % PAL.length] }, symbolSize: 7,
+        }));
+        _mkChart('chTemp', opt);
+    }
+}
+
+function exportHistoryCSV() {
+    if (!_histTests.length) { alert('Sin registros.'); return; }
+    const m = _histMotor || {};
+    const headers = ['Motor', 'Tipo', 'Fecha', 'Contexto', 'MOhm_peor', 'R-S', 'S-T', 'T-R', 'R-Tierra', 'S-Tierra', 'T-Tierra', 'V_prueba',
+        'Corriente_R', 'Corriente_S', 'Corriente_T', 'Tension_RS', 'Tension_ST', 'Tension_TR', 'Temperatura_C', 'Punto', 'Estado', 'Ejecuto', 'Notas'];
+    const esc = v => '"' + String(v == null ? '' : v).replace(/"/g, '""') + '"';
+    const lines = [headers.map(esc).join(',')];
+    _histTests.forEach(t => lines.push([m.code, t.test_type, t.test_date, t.context, t.insulation_mohm,
+        t.meg_rs_mohm, t.meg_st_mohm, t.meg_tr_mohm, t.meg_rg_mohm, t.meg_sg_mohm, t.meg_tg_mohm, t.test_voltage_v,
+        t.current_r, t.current_s, t.current_t, t.voltage_rs, t.voltage_st, t.voltage_tr,
+        t.temperature_c, t.temp_point, t.status, t.executed_by, t.notes].map(esc).join(',')));
+    const blob = new Blob(['﻿' + lines.join('\r\n')], { type: 'text/csv;charset=utf-8;' });
+    const a = document.createElement('a'); a.href = URL.createObjectURL(blob);
+    a.download = `historial_motor_${m.code || ''}.csv`; a.click(); URL.revokeObjectURL(a.href);
 }
 
 // ── Gestionar motores ────────────────────────────────────────────────
@@ -581,9 +821,13 @@ async function saveConfig() {
 
 window.loadMotors = loadMotors; window.setTab = setTab; window.setRoute = setRoute; window.onCascadeChange = onCascadeChange; window.clearFilters = clearFilters;
 window.openTest = openTest; window.submitTest = submitTest; window.openHistory = openHistory;
+window.closeHistory = closeHistory; window.setHistView = setHistView; window.exportHistoryCSV = exportHistoryCSV;
 window.openManage = openManage; window.renderManage = renderManage; window.saveManage = saveManage; window.exportCSV = exportCSV;
 window.openConfig = openConfig; window.saveConfig = saveConfig;
-document.addEventListener('DOMContentLoaded', loadMotors);
+document.addEventListener('DOMContentLoaded', () => {
+    loadMotors();
+    document.getElementById('histModal').addEventListener('close', _disposeHistCharts);  // también al cerrar con ESC
+});
 </script>
 </body>
 </html>

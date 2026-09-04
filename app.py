@@ -136,6 +136,13 @@ elif len(_SECRET_KEY) < 32:
 
 app.config['SECRET_KEY'] = _SECRET_KEY
 
+# Fuera de produccion recargamos las plantillas desde disco en cada request.
+# Sin esto, Jinja cachea la plantilla compilada al primer render y el servidor
+# local sigue sirviendo el HTML viejo hasta que se reinicia el proceso.
+if not _IS_PROD:
+    app.config['TEMPLATES_AUTO_RELOAD'] = True
+    app.jinja_env.auto_reload = True
+
 
 def _normalize_db_url(raw_url):
     if not raw_url:
