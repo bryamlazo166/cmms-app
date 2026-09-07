@@ -19,3 +19,10 @@ _*.log
 docs/Diagnostico_*.html
 docs/Diagnostico_*.pdf
 docs/backfill_modos_falla_*.csv
+
+# Sesion de WhatsApp del gateway: son CREDENCIALES. Con estos archivos
+# cualquiera abre la sesion del bot, y este repo es publico.
+whatsapp-gateway/auth_info*/
+
+# Entregable generado desde la presentacion (se rehace con un boton)
+entregable/
