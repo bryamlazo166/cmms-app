@@ -522,8 +522,12 @@ def _call_deepseek_extraction(app, user, message):
 
 # ── Resolucion contra el arbol real ───────────────────────────────────────
 
-def _resolve_display(app, extraction):
+def _resolve_display(app, extraction, user_text=None):
     """Resuelve la extraccion contra el arbol y devuelve nombres legibles.
+
+    `user_text` es el mensaje tal cual lo escribio la persona; se pasa al
+    resolvedor porque las reglas de taxonomia por lenguaje de taller (los TH,
+    ver bot.resolvers.th_component_override) se evaluan sobre el original.
 
     Retorna dict {equipment_id, component_id, ..., path: 'Area > Linea > Equipo > Componente'}
     """
@@ -532,8 +536,11 @@ def _resolve_display(app, extraction):
     try:
         from sqlalchemy import text
         from database import db as _db
+        payload = dict(extraction)
+        if user_text:
+            payload.setdefault('_user_text', user_text)
         with app.app_context():
-            eq_id, ln_id, ar_id, sys_id, comp_id, ra_id = resolve_equipment(_db, text, dict(extraction))
+            eq_id, ln_id, ar_id, sys_id, comp_id, ra_id = resolve_equipment(_db, text, payload)
             out.update({"equipment_id": eq_id, "line_id": ln_id, "area_id": ar_id,
                         "system_id": sys_id, "component_id": comp_id})
             if eq_id:
@@ -867,7 +874,7 @@ def handle_incoming(app, payload):
             "Solo registro reportes de falla. Escribeme que equipo esta fallando y que observas.")
         return {"replies": [reply]}
 
-    resolved = _resolve_display(app, extraction)
+    resolved = _resolve_display(app, extraction, text)
 
     # Hora real del reporte (Lima): se sella con el PRIMER mensaje, no al
     # confirmar — es lo que alimenta reported_at del aviso.
@@ -921,7 +928,7 @@ def _handle_confirm_state(app, phone, user, session, text, lower, media):
     new_extraction = _call_deepseek_extraction(app, user, combined)
     if not new_extraction or not new_extraction.get('es_reporte'):
         return {"replies": ["⚠️ No entendi la correccion. Intenta de nuevo o escribe *cancelar*."]}
-    new_resolved = _resolve_display(app, new_extraction)
+    new_resolved = _resolve_display(app, new_extraction, combined)
     _set_session(phone, {**session, "extraction": new_extraction, "resolved": new_resolved,
                          "original_text": f"{session.get('original_text', '')} / {correction}"})
     return {"replies": [_confirm_message(new_extraction, new_resolved, _dry_run())]}

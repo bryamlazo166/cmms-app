@@ -42,11 +42,17 @@ COMPONENT_SYNONYMS = {
     'pinon': ['pinon', 'piñon', 'engranaje', 'gear'],
     'eje': ['eje', 'flecha', 'shaft'],
     'rodillo': ['rodillo', 'polin', 'roller'],
-    # En los TH (transportadores helicoidales) el personal dice "espira",
-    # "disco" o "tornillo" para referirse al componente HELICE del arbol.
-    'helice': ['helice', 'hélice', 'espira', 'espiral', 'disco helicoidal',
-               'discos del tornillo', 'disco del tornillo', 'tornillo helicoidal',
-               'tornillo sin fin', 'sinfin', 'sin fin', 'gusano'],
+    # En los TH (transportadores helicoidales) "espira", "disco" y "paleta"
+    # son la HELICE: los alabes soldados al tubo. OJO: "tornillo helicoidal"
+    # NO es la helice, es el conjunto del sinfin -> ver 'tubo central'.
+    'helice': ['helice', 'hélice', 'espira', 'espiras', 'espiral', 'disco helicoidal',
+               'discos del tornillo', 'disco del tornillo', 'disco', 'discos',
+               'paleta', 'paletas', 'alabe', 'alabes'],
+    # El cuerpo del sinfin. Cuando el personal dice "se rompio el tornillo
+    # helicoidal" habla del tubo que lo forma, no de los discos.
+    'tubo central': ['tubo central', 'tubo del tornillo', 'tornillo helicoidal',
+                     'tornillo sin fin', 'tornillo sinfin', 'sinfin', 'sin fin',
+                     'gusano', 'helicoidal'],
     'transportador': ['transportador', 'faja transportadora', 'banda transportadora', 'conveyor'],
     'bomba': ['bomba', 'pump', 'bba'],
     'compresor': ['compresor', 'compressor'],
@@ -189,6 +195,80 @@ def score_fuzzy_candidates(tokens, candidates, blob_fn):
     best = scored[0]
     second = scored[1][0] if len(scored) > 1 else 0
     return best[1] if best[0] > 0 else None, second
+
+
+# ── Reglas de planta para transportadores helicoidales (TH) ─────────────────
+#
+# En los TH el lenguaje de taller no coincide con el arbol de taxonomia y el
+# matcher generico se equivoca de componente. Estas reglas son deterministas y
+# mandan sobre lo que proponga el modelo:
+#
+#   "se rompio el tornillo helicoidal del TH1"  -> TUBO CENTRAL (el cuerpo)
+#   "se rompio el disco / la helice del TH1"    -> HELICE (los alabes)
+#   "el TH1 se bloqueo"                         -> RELE TERMICO (lo que actua)
+#
+# Solo aplican si el equipo es un TH (tiene el sistema TORNILLO SINFIN) y si el
+# mensaje no nombra otro componente del equipo; en ese caso manda lo que dijo
+# el usuario y resuelve el matcher normal.
+
+TH_SYSTEM_MARKER = 'tornillo sinfin'
+
+# Orden = prioridad. El primero que aparezca en el mensaje gana.
+TH_RULES = [
+    ('helice', re.compile(
+        r'\b(h[eé]lice[s]?|espira[s]?|espiral|disco[s]?|paleta[s]?|[aá]labe[s]?)\b', re.I)),
+    ('rele termico', re.compile(
+        r'\b(bloque\w*|atasc\w*|atoro|atorad\w*|trab\w*|obstru\w*|'
+        r'sobrecarga|dispar\w*\s+(el\s+)?(t[eé]rmico|rele))\b', re.I)),
+    ('tubo central', re.compile(
+        r'\b(tubo\s+central|tornillo\s+(helicoidal|sin\s*fin|sinfin)|'
+        r'sinfin|sin\s+fin|gusano|helicoidal)\b', re.I)),
+]
+
+# Componentes del TH que el usuario puede nombrar directamente. Si aparece
+# alguno, las reglas no intervienen.
+TH_EXPLICIT_OTHERS = re.compile(
+    r'\b(chumacera\w*|rodamiento\w*|motorreductor\w*|motor\b|reductor\w*|cadena\w*|'
+    r'sprocket\w*|pi[nñ]on\w*|chaveta\w*|eje\s+(motriz|de\s+cola|central)|puente\w*|'
+    r'tina\b|chute\w*|tapa[s]?\b|guarda\w*|patin\w*|variador\w*|contactor\w*|'
+    r'arrancador\w*|botonera\w*|breaker\w*|interruptor\w*|sensor\w*|tablero\w*|'
+    r'cableado\w*|puesta\s+a\s+tierra|rele\s+auxiliar)\b', re.I)
+
+
+def th_component_override(db, text_module, equipment_id, user_text):
+    """Componente del TH segun el lenguaje de taller, o None si no aplica.
+
+    Retorna (component_id, system_id) o None.
+    """
+    if not equipment_id or not user_text:
+        return None
+
+    rows = db.session.execute(text_module("""
+        SELECT c.id, c.name, c.system_id, s.name
+        FROM components c JOIN systems s ON c.system_id = s.id
+        WHERE s.equipment_id = :eid
+    """), {"eid": equipment_id}).fetchall()
+    if not rows:
+        return None
+
+    # ¿Es un TH? Se decide por el arbol, no por el tag, para que valga tambien
+    # en los equipos donde el sinfin es solo una parte.
+    if not any(TH_SYSTEM_MARKER in (sname or '').lower() for _, _, _, sname in rows):
+        return None
+
+    if TH_EXPLICIT_OTHERS.search(user_text):
+        return None
+
+    for target, pattern in TH_RULES:
+        if not pattern.search(user_text):
+            continue
+        for cid, cname, sid, _sname in rows:
+            if (cname or '').strip().lower() == target:
+                logger.info(
+                    "TH rule: '%s' -> componente %s (id %s) del equipo %s",
+                    pattern.pattern[:28], cname, cid, equipment_id)
+                return cid, sid
+    return None
 
 
 def smart_component_match(db, text_module, equipment_id, raw_name, system_hint=None):
@@ -347,6 +427,15 @@ def resolve_equipment(db, text_module, data):
     # 7) Componente fuzzy fallback. Si vino system_name (ej: 'exhaustor'),
     # se pasa como hint para desambiguar componentes homonimos en sistemas
     # distintos del mismo equipo.
+    if equipment_id and not component_id:
+        # Las reglas de TH mandan sobre lo que propuso el modelo: se evaluan
+        # contra el mensaje original del usuario, no contra component_name.
+        th_hit = th_component_override(
+            db, text_module, equipment_id,
+            data.get('_user_text') or data.get('description') or '')
+        if th_hit:
+            component_id, system_id = th_hit
+
     if equipment_id and not component_id and data.get('component_name'):
         component_id, system_id = smart_component_match(
             db, text_module, equipment_id, data['component_name'],

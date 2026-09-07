@@ -103,6 +103,14 @@ REGLAS CRITICAS PARA IDENTIFICAR equipo Y componente:
    - "rodamiento del motor del TH2" → component_name: "motor electrico" (porque el rodamiento vive dentro del motor)
    - "valvula de la reductora" → component_name: "reductor" (la valvula vive dentro)
    - "rodillo de salida del transportador 2" → component_name: "rodillo"
+2b. TRANSPORTADORES HELICOIDALES (TH). En los TH la jerga del taller NO coincide con el arbol:
+   - "se rompio el tornillo helicoidal / el sinfin / el gusano del TH1" → component_name: "tubo central"
+     (el tornillo es el conjunto; lo que se raja es el tubo que lo forma, NO la helice)
+   - "se rompio el disco / la helice / la espira del TH1" → component_name: "helice"
+     (solo cuando el usuario nombra el disco, la helice, la espira o las paletas)
+   - "el TH1 se bloqueo / se atasco / se trabo / disparo por sobrecarga" → component_name: "rele termico"
+     (es lo que actua ante el bloqueo; failure_mode sigue siendo "Atascamiento")
+   - Si nombra otro componente del TH (chumacera, motorreductor, cadena, sprocket, eje motriz...) usalo tal cual.
 3. Si el usuario menciona un activo rotativo especifico por codigo (ej: "MTR-D8", "RED-TH2-01") busca ese codigo en la lista ACTIVOS ROTATIVOS y usa rotative_asset_id con el asset_id correspondiente. El sistema deducira solo el equipo y componente desde ese asset.
 4. Si NO mencionas un asset por codigo, NO pongas rotative_asset_id — el codigo lo deducira automaticamente del componente si hay un asset instalado.
 5. Si no hay equipo claro, omite equipment_tag y usa free_location.
@@ -112,6 +120,9 @@ Ejemplos:
 - "rodamiento de la caja reductora del TH2 hace ruido" → {"action":"create_notice","data":{"description":"Ruido anormal en rodamiento de caja reductora del TH2","failure_mode":"Ruido anormal","failure_category":"Mecanica","equipment_tag":"TH2","component_name":"reductor","criticality":"Media"}}
 - "se rompio la chumacera conducida del D3" → {"action":"create_notice","data":{"description":"Rotura de chumacera lado conducido del Digestor #3","failure_mode":"Rotura","failure_category":"Mecanica","equipment_tag":"D3","component_name":"chumacera conducida","criticality":"Alta"}}
 - "fuga de aceite en el motorreductor del TH1" → component_name:"motorreductor"
+- "se rompio el tornillo helicoidal del TH1 del secador 2" → {"action":"create_notice","data":{"description":"Rotura del tornillo sinfin (tubo central) del TH1 del Secador #2","failure_mode":"Rotura","failure_category":"Mecanica","equipment_tag":"SEC2-TH1","component_name":"tubo central","criticality":"Alta"}}
+- "se rompio el disco del tornillo helicoidal del TH1 del secador 2" → {"action":"create_notice","data":{"description":"Rotura de la helice del tornillo sinfin del TH1 del Secador #2","failure_mode":"Rotura","failure_category":"Mecanica","equipment_tag":"SEC2-TH1","component_name":"helice","criticality":"Alta"}}
+- "el TH1 del secador 2 se bloqueo" → {"action":"create_notice","data":{"description":"Bloqueo del TH1 del Secador #2 - disparo el rele termico","failure_mode":"Atascamiento","failure_category":"Mecanica","equipment_tag":"SEC2-TH1","component_name":"rele termico","criticality":"Alta"}}
 - "el D9 se bloqueo por una cadena que ingreso con la materia prima" → {"action":"create_notice","data":{"description":"Bloqueo del Digestor #9 por cadena ingresada con materia prima - revisar tripode interno","failure_mode":"Atascamiento","failure_category":"Mecanica","blockage_object":"Cadena","equipment_tag":"D9","component_name":"tripode interno","criticality":"Alta"}}
 - "D5 se trabo por piedra" → failure_mode:"Atascamiento", blockage_object:"Piedra"
 - "encontramos un fierro dentro del D3" → failure_mode:"Atascamiento", blockage_object:"Metal"

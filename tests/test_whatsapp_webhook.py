@@ -72,14 +72,19 @@ def wa_env(app, monkeypatch):
             db.session.add(sys)
             db.session.flush()
             db.session.add(Component(name='MOTOR ELECTRICO', system_id=sys.id))
-            # TH con HELICE para validar el sinonimo espira/disco -> HELICE
+            # TH con el arbol real: el conjunto (TUBO CENTRAL), los alabes
+            # (HELICE) y el RELE TERMICO que actua ante un bloqueo.
             th = Equipment(name='TH ALIMENTADOR TEST', tag='THTEST', line_id=line.id)
             db.session.add(th)
             db.session.flush()
-            th_sys = System(name='SISTEMA MECANICO', equipment_id=th.id)
+            th_sys = System(name='TORNILLO SINFIN', equipment_id=th.id)
             db.session.add(th_sys)
+            th_elec = System(name='SISTEMA ELECTRICO', equipment_id=th.id)
+            db.session.add(th_elec)
             db.session.flush()
             db.session.add(Component(name='HELICE', system_id=th_sys.id))
+            db.session.add(Component(name='TUBO CENTRAL', system_id=th_sys.id))
+            db.session.add(Component(name='RELE TERMICO', system_id=th_elec.id))
         u = db.session.execute(text(
             "SELECT id FROM bot_whatsapp_users WHERE phone_number = :p"), {"p": PHONE}).fetchone()
         if not u:
@@ -392,13 +397,47 @@ def test_audio_no_soportado(client, wa_env):
 
 
 def test_sinonimo_espira_resuelve_helice(app, wa_env):
-    """'espira'/'disco del tornillo' en un TH debe resolver al componente HELICE."""
+    """En un TH, 'espira'/'disco' son los alabes; el 'tornillo' es el conjunto."""
     from bot import whatsapp_handler as wh
-    for termino in ('espira', 'disco del tornillo', 'tornillo helicoidal'):
+    for termino in ('espira', 'disco del tornillo', 'helice'):
         resolved = wh._resolve_display(app, {
             'equipment_tag': 'THTEST', 'component_name': termino})
         assert resolved['component_id'] is not None, f"'{termino}' no resolvio componente"
         assert 'HELICE' in (resolved['path'] or ''), f"'{termino}' no llego a HELICE"
+
+    # "tornillo helicoidal" nombra el conjunto del sinfin: es el TUBO CENTRAL,
+    # no los discos. Era el error que reportaba el area de mantenimiento.
+    for termino in ('tornillo helicoidal', 'tornillo sin fin', 'sinfin'):
+        resolved = wh._resolve_display(app, {
+            'equipment_tag': 'THTEST', 'component_name': termino})
+        assert 'TUBO CENTRAL' in (resolved['path'] or ''), f"'{termino}' no llego a TUBO CENTRAL"
+
+
+def test_reglas_th_desde_el_mensaje_del_usuario(app, wa_env):
+    """Las reglas de TH se evaluan sobre el mensaje original, no sobre lo que
+    el modelo haya puesto en component_name."""
+    from bot import whatsapp_handler as wh
+
+    # El modelo dice "helice" (lo que hacia antes), pero la persona hablo del
+    # tornillo: manda el mensaje.
+    r = wh._resolve_display(app, {'equipment_tag': 'THTEST', 'component_name': 'helice'},
+                            'se rompio el tornillo helicoidal del THTEST')
+    assert 'TUBO CENTRAL' in (r['path'] or '')
+
+    # Si la persona nombra el disco, es la helice.
+    r = wh._resolve_display(app, {'equipment_tag': 'THTEST'},
+                            'se rompio el disco del tornillo helicoidal del THTEST')
+    assert 'HELICE' in (r['path'] or '')
+
+    # Un bloqueo se anota contra el rele termico.
+    r = wh._resolve_display(app, {'equipment_tag': 'THTEST'},
+                            'el THTEST se ha bloqueado')
+    assert 'RELE TERMICO' in (r['path'] or '')
+
+    # Si nombra otro componente, la regla no interviene.
+    r = wh._resolve_display(app, {'equipment_tag': 'THTEST', 'component_name': 'helice'},
+                            'la helice del THTEST esta desgastada')
+    assert 'HELICE' in (r['path'] or '')
 
 
 # ── Panel admin de numeros ────────────────────────────────────────────────
