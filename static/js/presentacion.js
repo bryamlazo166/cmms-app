@@ -129,6 +129,7 @@ async function cargar(refrescar) {
         renderCumplimiento();
         renderCarga();
         cargarPareto(refrescar);
+        aplicarLaminas(PRES.meta.laminas);
     } catch (e) { alert('No se pudo cargar: ' + e.message); }
 }
 window.cargar = cargar;
@@ -396,8 +397,21 @@ function pintar(id, campo, bloque, titulo, opt) {
         c.dispatchAction({ type: 'showTip', seriesIndex: 0, dataIndex: p.dataIndex });
         abrirDetalle(opt.area_id, p.dataIndex);
     });
+    // Click fuera del punto o la barra: en la reunion nadie acierta al simbolo,
+    // y el tooltip —que justamente invita a hacer click— tapa media grafica.
+    // Se abre el periodo que esta BAJO EL CURSOR; antes se abria siempre el
+    // ultimo, asi que preguntabas por la semana 2 y se abrian las ordenes de
+    // la ultima semana del mes.
     c.getZr().off('click');
-    c.getZr().on('click', ev => { if (!ev.target) abrirDetalle(opt.area_id, serie.length - 1); });
+    c.getZr().on('click', ev => {
+        if (ev.target) return;                     // ya lo atendio el handler de arriba
+        const px = [ev.offsetX, ev.offsetY];
+        if (!c.containPixel({ gridIndex: 0 }, px)) return;
+        const i = Math.round(c.convertFromPixel({ seriesIndex: 0 }, px)[0]);
+        if (!(i >= 0 && i < serie.length)) return;
+        c.dispatchAction({ type: 'showTip', seriesIndex: 0, dataIndex: i });
+        abrirDetalle(opt.area_id, i);
+    });
 }
 
 // ── 05 y 06 Cumplimiento ─────────────────────────────────────────────────
@@ -1351,7 +1365,10 @@ async function abrirDetalle(areaId, i) {
         const r = await fetch(`/api/presentacion/detalle?${q}`);
         const d = await r.json();
         if (d.error) { el('detTitulo').textContent = 'Error: ' + d.error; return; }
-        el('detTitulo').textContent = d.titulo;
+        // El periodo va en el titulo, no solo en el subtitulo: cuando en la
+        // reunion se abre el detalle hay que ver de un vistazo de que semana
+        // se esta hablando.
+        el('detTitulo').textContent = `${d.titulo} — ${per.nombre}`;
         el('detSub').textContent = `${per.nombre} · ${per.desde} a ${per.hasta} · `
             + `${d.dias} dias (TEP ${nf(d.tep, 0)} h) · disponibilidad ${d.modo}`;
         const s = d.resumen;
@@ -1413,9 +1430,96 @@ function cerrarDetalle() { el('modalDet').classList.remove('open'); }
 window.abrirDetalle = abrirDetalle;
 window.cerrarDetalle = cerrarDetalle;
 
+// ── Que laminas se presentan ─────────────────────────────────────────────
+//
+// Una lamina cuyo dato no esta listo resta mas de lo que aporta proyectada a
+// medias. Se apaga desde el boton "Laminas" y desaparece de todo: del modo
+// presentacion, del scroll, del indice de la portada y del PDF. Las que
+// quedan se renumeran para que no haya huecos en la numeracion.
+
+let LAMINAS = [];
+
+function aplicarLaminas(cfg) {
+    if (Array.isArray(cfg)) LAMINAS = cfg;
+    const off = new Set(LAMINAS.filter(l => !l.visible).map(l => l.clave));
+
+    document.querySelectorAll('[data-slide]').forEach(s => {
+        s.classList.toggle('oculta', off.has(s.dataset.slide));
+    });
+    document.querySelectorAll('.indice .it[data-idx]').forEach(it => {
+        it.classList.toggle('oculta', off.has(it.dataset.idx));
+    });
+
+    // Renumerar: el numero que se ve en la lamina y en el indice de la portada
+    let n = 0;
+    slides().forEach(s => {
+        const num = s.querySelector('h2 .idx');
+        if (!num) return;                       // la portada no lleva numero
+        num.textContent = String(++n).padStart(2, '0');
+    });
+    let m = 0;
+    document.querySelectorAll('.indice .it[data-idx]').forEach(it => {
+        if (it.classList.contains('oculta')) return;
+        const b = it.querySelector('b');
+        if (b) b.textContent = String(++m).padStart(2, '0');
+    });
+
+    if (idx >= slides().length) showSlide(slides().length - 1);
+    const cnt = el('slideCnt');
+    if (cnt) cnt.textContent = `${Math.min(idx + 1, slides().length)}/${slides().length}`;
+}
+
+function abrirLaminas() {
+    const cont = el('lamLista');
+    cont.innerHTML = LAMINAS.map((l, i) => `
+        <label class="${l.visible ? '' : 'off'}">
+            <input type="checkbox" data-clave="${l.clave}" ${l.visible ? 'checked' : ''}
+                   onchange="this.parentElement.classList.toggle('off', !this.checked)">
+            <span class="num">${String(i + 1).padStart(2, '0')}</span>
+            <span class="nom">${esc(l.nombre)}</span>
+        </label>`).join('');
+    el('lamMsg').textContent = '';
+    el('modalLam').classList.add('open');
+}
+function cerrarLaminas() { el('modalLam').classList.remove('open'); }
+function marcarLaminas(on) {
+    document.querySelectorAll('#lamLista input').forEach(c => {
+        c.checked = on;
+        c.parentElement.classList.toggle('off', !on);
+    });
+}
+async function guardarLaminas() {
+    const visibles = Array.from(document.querySelectorAll('#lamLista input'))
+        .filter(c => c.checked).map(c => c.dataset.clave);
+    el('lamMsg').textContent = 'Guardando...';
+    try {
+        const r = await fetch('/api/presentacion/laminas', {
+            method: 'POST', headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ visibles }),
+        });
+        const d = await r.json();
+        if (d.error) throw new Error(d.error);
+        aplicarLaminas(d.laminas);
+        el('lamMsg').textContent = `Se presentan ${visibles.length} de ${LAMINAS.length}.`;
+        setTimeout(cerrarLaminas, 700);
+    } catch (e) {
+        el('lamMsg').textContent = 'No se pudo guardar: ' + e.message;
+    }
+}
+window.aplicarLaminas = aplicarLaminas;
+window.abrirLaminas = abrirLaminas;
+window.cerrarLaminas = cerrarLaminas;
+window.marcarLaminas = marcarLaminas;
+window.guardarLaminas = guardarLaminas;
+
 // ── Modo presentacion ────────────────────────────────────────────────────
 let idx = 0;
-function slides() { return Array.from(document.querySelectorAll('[data-slide]')); }
+// Solo las laminas encendidas: la navegacion, el contador y el PDF cuentan
+// sobre esta lista, no sobre todas las del HTML.
+function slides() {
+    return Array.from(document.querySelectorAll('[data-slide]'))
+        .filter(s => !s.classList.contains('oculta'));
+}
 function redimensionar() { Object.values(CH).forEach(c => c && c.resize()); }
 
 // La lamina entera tiene que entrar en la pantalla.

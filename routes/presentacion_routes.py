@@ -75,6 +75,27 @@ FUENTES_PREVENTIVAS = [
 SETTING_FUENTES = 'preventivo_fuentes'
 FUENTES_POR_DEFECTO = 'OT,LUB'
 
+# Que laminas se presentan.
+#
+# No todas sirven todos los meses: una lamina cuyo dato todavia no se termina
+# de cargar —la carga de trabajo necesita la asignacion de personal— resta mas
+# de lo que aporta si se proyecta a medias. Se elige antes de presentar y la
+# decision se guarda en la BD, no en el navegador, para que valga igual desde
+# la laptop de la sala de reuniones. Las laminas ocultas desaparecen tambien
+# del indice de la portada y las visibles se renumeran, para no dejar huecos.
+LAMINAS = [
+    ('requerida', 'Disponibilidad requerida para cumplir la meta'),
+    ('disponibilidad', 'Disponibilidad'),
+    ('mtbf', 'MTBF — Tiempo Medio Entre Fallas'),
+    ('mttr', 'MTTR — Tiempo Medio de Reparacion'),
+    ('preventivo', 'Cumplimiento del Programa Preventivo'),
+    ('correctivo', 'Cumplimiento de Mantenimiento Correctivo Programado'),
+    ('carga', 'Carga de trabajo — en que se va el recurso'),
+    ('confiabilidad', 'Confiabilidad'),
+    ('pareto', 'Modos de falla y equipos que concentran las paradas'),
+]
+SETTING_LAMINAS = 'presentacion_laminas_ocultas'
+
 # Clase de trabajo: en que se va el personal de mantenimiento.
 #
 # Se separa del tipo de mantenimiento porque responden a preguntas distintas.
@@ -274,6 +295,17 @@ def register_presentacion_routes(app, db, logger):
         sel = {c.strip().upper() for c in crudo.split(',') if c.strip()} & validos
         sel.add('OT')                # las ordenes siempre entran al indicador
         return sel
+
+    def _laminas_ocultas():
+        """Laminas que quien presenta decidio no mostrar. Se lee en cada
+        peticion, igual que las fuentes."""
+        validas = {c for c, _ in LAMINAS}
+        try:
+            fila = db.session.get(AppSetting, SETTING_LAMINAS)
+            crudo = (fila.value if fila and fila.value else '')
+        except Exception:
+            crudo = ''
+        return {c.strip() for c in crudo.split(',') if c.strip()} & validas
 
     # ── Utilidades de periodo ────────────────────────────────────────────
 
@@ -1002,6 +1034,9 @@ def register_presentacion_routes(app, db, logger):
                     'fuentes_disponibles': [{'codigo': c, 'nombre': n,
                                              'en_vigor': c in en_vigor}
                                             for c, n in FUENTES_PREVENTIVAS],
+                    'laminas': [{'clave': c, 'nombre': n,
+                                 'visible': c not in _laminas_ocultas()}
+                                for c, n in LAMINAS],
                 },
                 'planta': planta,
                 'areas': areas_out,
@@ -1052,6 +1087,41 @@ def register_presentacion_routes(app, db, logger):
         except Exception as e:
             db.session.rollback()
             logger.exception('presentacion_fuentes error')
+            return jsonify({'error': str(e)}), 500
+
+    @app.route('/api/presentacion/laminas', methods=['POST'])
+    def presentacion_laminas():
+        """Guarda que laminas se presentan.
+
+        Se recibe la lista de las VISIBLES y se persiste el complemento: asi,
+        si manana se agrega una lamina nueva, aparece por defecto en vez de
+        quedar escondida sin que nadie lo note.
+        """
+        try:
+            datos = request.get_json(silent=True) or {}
+            pedidas = datos.get('visibles')
+            if not isinstance(pedidas, list):
+                return jsonify({'error': 'Se espera una lista de laminas'}), 400
+            validas = [c for c, _ in LAMINAS]
+            vis = {str(c).strip() for c in pedidas} & set(validas)
+            if not vis:
+                return jsonify({'error': 'Deja al menos una lamina encendida'}), 400
+            ocultas = [c for c in validas if c not in vis]
+
+            fila = db.session.get(AppSetting, SETTING_LAMINAS)
+            if fila is None:
+                fila = AppSetting(key=SETTING_LAMINAS)
+                db.session.add(fila)
+            fila.value = ','.join(ocultas)
+            db.session.commit()
+            logger.info('presentacion: laminas ocultas = %s', fila.value or '(ninguna)')
+            return jsonify({'ok': True, 'ocultas': ocultas,
+                            'laminas': [{'clave': c, 'nombre': n,
+                                         'visible': c not in ocultas}
+                                        for c, n in LAMINAS]})
+        except Exception as e:
+            db.session.rollback()
+            logger.exception('presentacion_laminas error')
             return jsonify({'error': str(e)}), 500
 
     @app.route('/api/presentacion/pareto', methods=['GET'])

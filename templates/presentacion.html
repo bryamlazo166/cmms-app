@@ -111,16 +111,29 @@
         .indice .it span{color:var(--tinta);font-size:1rem;border-left:2px solid var(--linea);padding-left:14px;}
 
         /* Detalle de ordenes (drill-down al hacer click en el grafico) */
-        #modalDet,#modalGuion{display:none;position:fixed;inset:0;z-index:200;background:rgba(4,12,20,.75);
+        #modalDet,#modalGuion,#modalLam{display:none;position:fixed;inset:0;z-index:200;background:rgba(4,12,20,.75);
             backdrop-filter:blur(3px);padding:26px;overflow-y:auto;}
-        #modalDet.open,#modalGuion.open{display:block;}
-        #modalDet .box,#modalGuion .box{max-width:1180px;margin:0 auto;background:#102638;
+        #modalDet.open,#modalGuion.open,#modalLam.open{display:block;}
+        #modalDet .box,#modalGuion .box,#modalLam .box{max-width:1180px;margin:0 auto;background:#102638;
             border:1px solid var(--linea);border-radius:14px;padding:20px 24px;}
         #modalGuion .box.guion{max-width:900px;}
-        #modalDet .top,#modalGuion .top{display:flex;align-items:flex-start;gap:14px;margin-bottom:12px;}
-        #modalDet h3,#modalGuion h3{margin:0;color:#fff;font-size:1.15rem;}
-        #modalDet .top .sub,#modalGuion .top .sub{color:var(--tenue);font-size:.8rem;margin-top:3px;}
-        #modalDet .x,#modalGuion .x{background:#1b3348;border:1px solid var(--linea);color:var(--tinta);
+        #modalLam .box{max-width:640px;}
+        #modalLam .x{margin-left:auto;}
+        .lam-list{display:grid;gap:2px;margin:6px 0 14px;}
+        .lam-list label{display:flex;align-items:center;gap:10px;padding:9px 10px;border-radius:9px;
+            color:var(--tinta);font-size:.9rem;cursor:pointer;border:1px solid transparent;}
+        .lam-list label:hover{background:#16334a;border-color:var(--linea);}
+        .lam-list input{accent-color:var(--naranja-fuerte);width:16px;height:16px;cursor:pointer;flex:none;}
+        .lam-list .num{color:var(--tenue);font-variant-numeric:tabular-nums;font-size:.78rem;min-width:22px;}
+        .lam-list label.off .nom{color:var(--tenue);text-decoration:line-through;}
+        .lam-pie{display:flex;align-items:center;gap:10px;border-top:1px solid var(--linea);padding-top:12px;}
+        .lam-pie .msg{color:var(--tenue);font-size:.8rem;margin-right:auto;}
+        /* Una lamina apagada no se presenta ni aparece al hacer scroll. */
+        .slide.oculta,.indice .it.oculta{display:none!important;}
+        #modalDet .top,#modalGuion .top,#modalLam .top{display:flex;align-items:flex-start;gap:14px;margin-bottom:12px;}
+        #modalDet h3,#modalGuion h3,#modalLam h3{margin:0;color:#fff;font-size:1.15rem;}
+        #modalDet .top .sub,#modalGuion .top .sub,#modalLam .top .sub{color:var(--tenue);font-size:.8rem;margin-top:3px;}
+        #modalDet .x,#modalGuion .x,#modalLam .x{background:#1b3348;border:1px solid var(--linea);color:var(--tinta);
             border-radius:8px;width:34px;height:34px;cursor:pointer;font-size:1rem;flex:none;}
         #modalDet .x{margin-left:auto;}
         #modalGuion .top .x:first-of-type{margin-left:auto;}
@@ -218,32 +231,33 @@
                 </select>
                 <button class="btn primary" onclick="cargar(true)"><i class="fas fa-sync"></i> Actualizar</button>
                 <button class="btn ghost" onclick="abrirGuion()" title="Que decir en cada lamina, con los numeros de este periodo"><i class="fas fa-comment-dots"></i> Guion</button>
+                <button class="btn ghost" onclick="abrirLaminas()" title="Elegir que laminas se presentan"><i class="fas fa-layer-group"></i> Laminas</button>
                 <button class="btn present" onclick="togglePresent()" title="Pantalla completa, avanza con las flechas"><i class="fas fa-display"></i> Presentar</button>
                 <button class="btn ghost" onclick="window.print()"><i class="fas fa-file-pdf"></i> PDF</button>
             </div>
         </div>
 
         <!-- Portada -->
-        <div class="slide portada" data-slide>
+        <div class="slide portada" data-slide="portada">
             <div class="marca">Operaciones · Mantenimiento</div>
             <h1>Indicadores de Mantenimiento</h1>
             <div class="peri" id="portPeriodo">—</div>
             <div class="area-lbl" id="portAreas">—</div>
             <div class="indice">
-                <div class="it"><b>01</b><span>Disponibilidad requerida para cumplir la meta</span></div>
-                <div class="it"><b>02</b><span>Disponibilidad</span></div>
-                <div class="it"><b>03</b><span>MTBF (Tiempo Medio Entre Fallas)</span></div>
-                <div class="it"><b>04</b><span>MTTR (Tiempo Medio de Reparacion)</span></div>
-                <div class="it"><b>05</b><span>Cumplimiento del Programa Preventivo (OTs, lubricacion, inspeccion y monitoreo)</span></div>
-                <div class="it"><b>06</b><span>Cumplimiento de Mantenimiento Correctivo Programado</span></div>
-                <div class="it"><b>07</b><span>Carga de trabajo — proyectos e infraestructura vs mantenimiento</span></div>
-                <div class="it"><b>08</b><span>Confiabilidad</span></div>
-                <div class="it"><b>09</b><span>Modos de falla y equipos que concentran las paradas</span></div>
+                <div class="it" data-idx="requerida"><b>01</b><span>Disponibilidad requerida para cumplir la meta</span></div>
+                <div class="it" data-idx="disponibilidad"><b>02</b><span>Disponibilidad</span></div>
+                <div class="it" data-idx="mtbf"><b>03</b><span>MTBF (Tiempo Medio Entre Fallas)</span></div>
+                <div class="it" data-idx="mttr"><b>04</b><span>MTTR (Tiempo Medio de Reparacion)</span></div>
+                <div class="it" data-idx="preventivo"><b>05</b><span>Cumplimiento del Programa Preventivo (OTs, lubricacion, inspeccion y monitoreo)</span></div>
+                <div class="it" data-idx="correctivo"><b>06</b><span>Cumplimiento de Mantenimiento Correctivo Programado</span></div>
+                <div class="it" data-idx="carga"><b>07</b><span>Carga de trabajo — proyectos e infraestructura vs mantenimiento</span></div>
+                <div class="it" data-idx="confiabilidad"><b>08</b><span>Confiabilidad</span></div>
+                <div class="it" data-idx="pareto"><b>09</b><span>Modos de falla y equipos que concentran las paradas</span></div>
             </div>
         </div>
 
         <!-- 01 Disponibilidad requerida -->
-        <div class="slide" data-slide>
+        <div class="slide" data-slide="requerida">
             <h2><span class="idx">01</span> Disponibilidad requerida para cumplir la meta
                 <span class="peri-chip" data-peri>—</span></h2>
             <div class="method">Cuanta disponibilidad necesita cada area, segun la capacidad teorica de sus equipos:
@@ -256,7 +270,7 @@
         </div>
 
         <!-- 02 Disponibilidad -->
-        <div class="slide" data-slide>
+        <div class="slide" data-slide="disponibilidad">
             <h2><span class="idx">02</span> <span id="dispTitulo">Disponibilidad</span>
                 <span class="peri-chip" data-peri>—</span></h2>
             <div class="method" id="dispMetodo">—</div>
@@ -268,7 +282,7 @@
         </div>
 
         <!-- 03 MTBF -->
-        <div class="slide" data-slide>
+        <div class="slide" data-slide="mtbf">
             <h2><span class="idx">03</span> MTBF — Tiempo Medio Entre Fallas
                 <span class="peri-chip" data-peri>—</span></h2>
             <div class="method">Horas de operacion entre una falla y la siguiente, comparado con el <b>TEP</b>
@@ -282,7 +296,7 @@
         </div>
 
         <!-- 04 MTTR -->
-        <div class="slide" data-slide>
+        <div class="slide" data-slide="mttr">
             <h2><span class="idx">04</span> MTTR — Tiempo Medio de Reparacion
                 <span class="peri-chip" data-peri>—</span></h2>
             <div class="method">Horas que el equipo estuvo <b>detenido</b> por cada averia: horas de parada
@@ -296,7 +310,7 @@
         </div>
 
         <!-- 05 Cumplimiento preventivo -->
-        <div class="slide" data-slide>
+        <div class="slide" data-slide="preventivo">
             <h2><span class="idx">05</span> Cumplimiento del Programa Preventivo
                 <span class="peri-chip" data-peri>—</span></h2>
             <div class="method">Todo el trabajo preventivo del periodo, no solo las ordenes: la
@@ -312,7 +326,7 @@
         </div>
 
         <!-- 06 Cumplimiento correctivo programado -->
-        <div class="slide" data-slide>
+        <div class="slide" data-slide="correctivo">
             <h2><span class="idx">06</span> Cumplimiento de Mantenimiento Correctivo Programado
                 <span class="peri-chip" data-peri>—</span></h2>
             <div class="method">Correctivos con fecha programada contra los que se terminaron dentro del periodo.</div>
@@ -320,7 +334,7 @@
         </div>
 
         <!-- 07 Carga de trabajo -->
-        <div class="slide" data-slide>
+        <div class="slide" data-slide="carga">
             <h2><span class="idx">07</span> Carga de trabajo — en qué se va el recurso
                 <span class="peri-chip" data-peri>—</span></h2>
             <div class="method">Los <b>proyectos</b> y la <b>obra de infraestructura</b> consumen al mismo
@@ -350,7 +364,7 @@
         </div>
 
         <!-- 08 Confiabilidad -->
-        <div class="slide" data-slide>
+        <div class="slide" data-slide="confiabilidad">
             <h2><span class="idx">08</span> Confiabilidad
                 <span class="peri-chip" data-peri>—</span></h2>
             <div class="method" id="confMetodo">—</div>
@@ -367,7 +381,7 @@
         </div>
 
         <!-- 09 Pareto de modos de falla y equipos criticos -->
-        <div class="slide" data-slide>
+        <div class="slide" data-slide="pareto">
             <h2><span class="idx">09</span> Modos de falla y equipos que concentran las paradas
                 <span class="peri-chip" data-peri>—</span></h2>
             <div class="method">Donde se concentran las horas de parada, por <b>modo de falla</b>
@@ -407,6 +421,26 @@
 </div>
 
 <!-- Guion: que decir en cada lamina, con los numeros de este periodo -->
+<div id="modalLam" onclick="if(event.target===this)cerrarLaminas()">
+    <div class="box">
+        <div class="top">
+            <div>
+                <h3>Que laminas se presentan</h3>
+                <div class="sub">Las que apagues no se muestran ni al presentar ni al hacer scroll,
+                    salen del indice de la portada y las demas se renumeran. Se guarda en el CMMS,
+                    asi que vale tambien desde la laptop de la sala.</div>
+            </div>
+            <button class="x" onclick="cerrarLaminas()"><i class="fas fa-xmark"></i></button>
+        </div>
+        <div class="lam-list" id="lamLista"></div>
+        <div class="lam-pie">
+            <span class="msg" id="lamMsg"></span>
+            <button class="btn ghost" onclick="marcarLaminas(true)">Todas</button>
+            <button class="btn primary" onclick="guardarLaminas()"><i class="fas fa-check"></i> Guardar</button>
+        </div>
+    </div>
+</div>
+
 <div id="modalGuion" onclick="if(event.target===this)cerrarGuion()">
     <div class="box guion">
         <div class="top">
