@@ -1112,21 +1112,25 @@ def register_presentacion_routes(app, db, logger):
             idx = _por_equipo(base['ots'], per['desde'], per['hasta'])
             for a in areas:
                 eq_ids = base['eq_de_area'].get(a['id'], [])
-                pp = pn = 0.0
-                fallas = n_ots = 0
-                for eid in eq_ids:
-                    ind = _kpi(base, idx.get(eid, []), per['tep'], 'inherente', horizonte)
-                    pp += ind['downtime_planned_hours']
-                    pn += ind['downtime_unplanned_hours']
-                    fallas += ind['failure_count']
-                    n_ots += ind['total_ots']
-                filas.append({
-                    'mes': per['key'], 'periodo': per['nombre'], 'area': a['nombre'],
-                    'dias': per['dias'], 'tep': per['tep'],
-                    'capacidad': round(base['cap_area'].get(a['id'], 0.0), 2),
-                    'paro_plan': round(pp, 2), 'paro_no_plan': round(pn, 2),
-                    'averias': fallas, 'ots': n_ots,
-                })
+                # Una fila por LINEA, no por area: dentro de la linea los
+                # equipos van en serie (si para el TH de salida, para la linea
+                # de secado), pero las lineas entre si van en PARALELO. Sumar
+                # las horas de los 9 digestores hundiria el area por una sola
+                # maquina detenida — que es justo lo que no pasa en planta.
+                for lid in sorted({base['linea_de_eq'].get(e) for e in eq_ids} - {None}):
+                    ots_linea = _ots_de_linea(base, eq_ids, idx, lid)
+                    ind = _kpi(base, ots_linea, per['tep'], 'inherente', horizonte)
+                    filas.append({
+                        'mes': per['key'], 'periodo': per['nombre'], 'area': a['nombre'],
+                        'linea': (base['lines'][lid].name if lid in base['lines']
+                                  else f'Linea {lid}'),
+                        'dias': per['dias'], 'tep': per['tep'],
+                        'capacidad': round(base['cap_linea'].get(lid, 0.0), 2),
+                        'detiene_area': bool(base['linea_critica'].get(lid)),
+                        'paro_plan': round(ind['downtime_planned_hours'], 2),
+                        'paro_no_plan': round(ind['downtime_unplanned_hours'], 2),
+                        'averias': ind['failure_count'], 'ots': ind['total_ots'],
+                    })
             c = _cumplimiento(base, per, en_vigor)
             cumplimiento.append({
                 'periodo': per['nombre'],

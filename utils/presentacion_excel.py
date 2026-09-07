@@ -52,7 +52,9 @@ BORDE = Border(*[Side(style='thin', color='D6DEE8')] * 4)
 COLUMNAS = [
     ('Mes',                     10, 'pegar'),
     ('Periodo',                 12, 'pegar'),
-    ('Area',                    22, 'pegar'),
+    ('Area',                    18, 'pegar'),
+    ('Linea',                   24, 'pegar'),
+    ('Detiene el area',         14, 'pegar'),
     ('Dias',                     7, 'pegar'),
     ('TEP h',                   10, 'pegar'),
     ('Capacidad TM/dia',        16, 'pegar'),
@@ -75,11 +77,14 @@ FILA_MAX = 2000
 MESES_FUTUROS = 12                           # filas ya preparadas en cada lamina
 
 # Laminas de indicadores: (titulo, columna origen en DATOS, formato, decimales)
+# (titulo, columna de DATOS, formato, subtitulo, modo de agregacion)
+#   'ponderado' = promedio por capacidad de linea (asi lo hace el CMMS)
+#   'razon'     = suma de horas / suma de averias (un promedio no aplica)
 LAMINAS = [
-    ('01 Disponibilidad', 'Disp. inherente %', '0.0', 'Disponibilidad inherente (%)'),
-    ('02 MTBF', 'MTBF h', '0.0', 'Tiempo medio entre fallas (h)'),
-    ('03 MTTR', 'MTTR h', '0.00', 'Tiempo medio de reparacion (h)'),
-    ('04 Confiabilidad', 'Confiabilidad %', '0.0', 'Confiabilidad a 168 h (%)'),
+    ('01 Disponibilidad', 'Disp. inherente %', '0.0', 'Disponibilidad inherente (%)', 'ponderado'),
+    ('02 MTBF', 'MTBF h', '0.0', 'Tiempo medio entre fallas (h)', 'ponderado'),
+    ('03 MTTR', 'MTTR h', '0.00', 'Tiempo medio de reparacion (h)', 'razon'),
+    ('04 Confiabilidad', 'Confiabilidad %', '0.0', 'Confiabilidad a 168 h (%)', 'ponderado'),
 ]
 
 
@@ -119,13 +124,28 @@ def _hoja_leeme(wb, meta):
               f"historico {meta.get('desde', '')} a {meta.get('hasta', '')}"),
         ('b', ''),
         ('h', 'Como se usa cada mes'),
-        ('p', '1. Abre la hoja DATOS. Cada fila es un mes y un area.'),
-        ('p', '2. Copia debajo de la ultima fila una linea por cada area del mes que cierras, '
-              'y llena SOLO las columnas ambar (Mes, Periodo, Area, Dias, TEP, Capacidad, '
-              'Paro planificado, Paro no planificado, Averias, OT cerradas).'),
+        ('p', '1. Abre la hoja DATOS. Cada fila es un mes y una LINEA de produccion '
+              '(LINEA DIGESTOR #6, SECADOR #2...), no un area.'),
+        ('p', '2. Copia debajo de la ultima fila una linea por cada linea de produccion del mes '
+              'que cierras, y llena SOLO las columnas ambar (Mes, Periodo, Area, Linea, Detiene '
+              'el area, Dias, TEP, Capacidad, Paro planificado, Paro no planificado, Averias, '
+              'OT cerradas).'),
         ('p', '3. Arrastra hacia abajo las columnas grises (Uptime, Disponibilidad, MTBF, MTTR, '
               'Confiabilidad): son formulas y se calculan solas.'),
         ('p', '4. Las laminas 01 a 05 y sus graficos se actualizan solos. No se toca nada mas.'),
+        ('b', ''),
+        ('h', 'Por que la fila es una LINEA y no un area'),
+        ('p', 'Dentro de una linea los equipos van EN SERIE: si para el TH de salida del secador 1, '
+              'esa linea de secado para. Pero las lineas entre si van EN PARALELO: que el Digestor '
+              '#6 este 22 dias fuera no detiene la coccion, porque los otros ocho siguen molienda. '
+              'Por eso se mide linea por linea y el area es el promedio PONDERADO POR CAPACIDAD de '
+              'sus lineas — que es exactamente como lo calcula el CMMS.'),
+        ('p', 'Sumar las horas de paro de todas las lineas de un area como si fueran una sola '
+              'maquina da disponibilidades imposibles: en julio 2026 la coccion habria salido '
+              '18,9% en vez del 87,5% real.'),
+        ('p', 'Detiene el area = SI en las lineas auxiliares sin capacidad propia que, si paran, '
+              'detienen toda el area igual (un percolador, un transportador comun). El CMMS las '
+              'compone en serie; en este libro quedan a la vista para que se puedan mirar aparte.'),
         ('b', ''),
         ('h', 'De donde sale cada dato de la hoja DATOS'),
         ('p', 'TEP h = dias del mes x 24. Es el tiempo calendario del periodo.'),
@@ -136,8 +156,8 @@ def _hoja_leeme(wb, meta):
               'parada, esa hora se cuenta UNA sola vez.'),
         ('p', 'Averias = cuantos eventos de paro no planificado hubo (no cuantas OT: una parada con '
               'cinco trabajos es UNA averia).'),
-        ('p', 'Capacidad TM/dia = capacidad de produccion del area. Solo se usa para ponderar la '
-              'planta; si no la tienes, deja 1 en todas y la planta sera el promedio simple.'),
+        ('p', 'Capacidad TM/dia = capacidad de produccion de la linea. Es el peso con el que entra '
+              'al area y a la planta; si no la tienes, deja 1 en todas y sera el promedio simple.'),
         ('b', ''),
         ('h', 'Formulas (las mismas del CMMS, ISO 14224)'),
         ('p', 'Uptime          = TEP - paro planificado - paro no planificado'),
@@ -149,11 +169,15 @@ def _hoja_leeme(wb, meta):
         ('p', 'Confiabilidad   = EXP(-168 / MTBF) x 100             -> probabilidad de operar una '
               'semana sin fallar'),
         ('b', ''),
-        ('h', 'Una diferencia que conviene saber'),
-        ('p', 'El CMMS calcula la disponibilidad del area ponderando por capacidad las lineas que van '
-              'en paralelo y componiendo en serie las que detienen toda el area. Este libro usa la '
-              'formula directa sobre las horas del area, que es la que se puede sostener a mano. '
-              'Los numeros quedan muy proximos, pero pueden no ser identicos al decimal.'),
+        ('h', 'Lo unico en lo que este libro se aparta del CMMS'),
+        ('p', 'DISPONIBILIDAD y MTTR: identicos. Se comprobo mes a mes contra el sistema y la '
+              'diferencia mayor fue de 0,3 puntos.'),
+        ('p', 'MTBF y CONFIABILIDAD: en las areas que tienen lineas marcadas "Detiene el area = SI" '
+              '(auxiliares sin capacidad propia que, si paran, detienen todo) el CMMS suma las tasas '
+              'de falla en serie y su MTBF sale MENOR que el de este libro. Ejemplo real: MOLINO en '
+              'agosto 2026, 92 h en el CMMS contra 245 h aqui. Donde no hay lineas de ese tipo los '
+              'numeros coinciden. Si vas a presentar el MTBF de un area asi, dilo o miralo por linea '
+              'en la hoja DATOS, que ahi el dato es exacto.'),
         ('b', ''),
         ('h', 'Que hay en cada hoja'),
         ('p', 'DATOS            unica hoja que se escribe. Ambar = se pega; gris = formula.'),
@@ -194,15 +218,16 @@ def _hoja_datos(wb, filas):
 
     for i, f in enumerate(filas):
         r = FILA1 + i
-        valores = [f['mes'], f['periodo'], f['area'], f['dias'], f['tep'],
-                   f['capacidad'], f['paro_plan'], f['paro_no_plan'],
-                   f['averias'], f['ots']]
+        valores = [f['mes'], f['periodo'], f['area'], f.get('linea', f['area']),
+                   'SI' if f.get('detiene_area') else 'NO',
+                   f['dias'], f['tep'], f['capacidad'], f['paro_plan'],
+                   f['paro_no_plan'], f['averias'], f['ots']]
         for c, v in enumerate(valores, start=1):
             cell = ws.cell(row=r, column=c, value=v)
             cell.fill = PEGAR_FILL
             cell.border = BORDE
-            if c >= 4:
-                cell.number_format = '0.0' if c in (5, 6, 7, 8) else '0'
+            if isinstance(v, (int, float)):
+                cell.number_format = '0.0' if isinstance(v, float) else '0'
         _formulas_fila(ws, r)
 
     ws.freeze_panes = 'D4'
@@ -234,6 +259,27 @@ def _formulas_fila(ws, r):
 
 # ── Laminas de indicador ────────────────────────────────────────────────────
 
+def _celda_area(modo, mes, area, col_mes, col_area, col_val, cap, col_paro, col_aver):
+    """Como se agrega un indicador de varias lineas a nivel area o planta.
+
+    Un promedio de porcentajes no serviria: las lineas pesan distinto. La
+    disponibilidad, el MTBF y la confiabilidad se ponderan por capacidad —una
+    linea de 20 TM/dia pesa el doble que una de 10—, y si nadie cargo
+    capacidades se cae al promedio simple. El MTTR no es un promedio de
+    promedios: es el total de horas de averia dividido entre el total de
+    averias, igual que en el CMMS.
+    """
+    filtro_area = f',{col_area},"{area}"' if area else ''
+    cond_area = f'*({col_area}="{area}")' if area else ''
+    if modo == 'razon':
+        return (f'=IFERROR(SUMIFS({col_paro},{col_mes},"{mes}"{filtro_area})'
+                f'/SUMIFS({col_aver},{col_mes},"{mes}"{filtro_area}),"")')
+    return (f'=IFERROR(IF(SUMIFS({cap},{col_mes},"{mes}"{filtro_area})=0,'
+            f'AVERAGEIFS({col_val},{col_mes},"{mes}"{filtro_area}),'
+            f'SUMPRODUCT(({col_mes}="{mes}"){cond_area}*{col_val}*{cap})'
+            f'/SUMPRODUCT(({col_mes}="{mes}"){cond_area}*{cap})),"")')
+
+
 def _con_futuros(meses):
     """El historico mas MESES_FUTUROS periodos por delante, ya preparados.
 
@@ -257,7 +303,7 @@ MES_NOMBRE = {1: 'Enero', 2: 'Febrero', 3: 'Marzo', 4: 'Abril', 5: 'Mayo', 6: 'J
               12: 'Diciembre'}
 
 
-def _hoja_indicador(wb, titulo, columna, formato, subtitulo, meses, areas, n_filas):
+def _hoja_indicador(wb, titulo, columna, formato, subtitulo, modo, meses, areas, n_filas):
     """Tabla mes x area con AVERAGEIFS sobre DATOS, mas el grafico.
 
     Los rangos llegan hasta FILA_MAX y la tabla trae 12 meses por delante ya
@@ -276,6 +322,8 @@ def _hoja_indicador(wb, titulo, columna, formato, subtitulo, meses, areas, n_fil
     _encabezado(ws, 4, cabecera, [16] + [15] * (len(areas) + 1))
 
     cap = f"DATOS!${COL['Capacidad TM/dia']}${FILA1}:${COL['Capacidad TM/dia']}${FILA_MAX}"
+    col_paro = f"DATOS!${COL['Paro no planificado h']}${FILA1}:${COL['Paro no planificado h']}${FILA_MAX}"
+    col_aver = f"DATOS!${COL['Averias']}${FILA1}:${COL['Averias']}${FILA_MAX}"
     for i, (mes, etiqueta) in enumerate(_con_futuros(meses)):
         r = 5 + i
         futuro = i >= len(meses)
@@ -284,18 +332,15 @@ def _hoja_indicador(wb, titulo, columna, formato, subtitulo, meses, areas, n_fil
         celda_mes.border = BORDE
         for j, area in enumerate(areas):
             cell = ws.cell(row=r, column=2 + j)
-            cell.value = (f'=IFERROR(AVERAGEIFS({col_val},{col_mes},"{mes}",'
-                          f'{col_area},"{area}"),"")')
+            cell.value = _celda_area(modo, mes, area, col_mes, col_area, col_val, cap,
+                                     col_paro, col_aver)
             cell.number_format = formato
             cell.border = BORDE
         # Planta: promedio ponderado por capacidad, como el CMMS entre lineas.
         # Si no hay capacidades cargadas cae al promedio simple.
         planta = ws.cell(row=r, column=2 + len(areas))
-        planta.value = (
-            f'=IFERROR(IF(SUMIFS({cap},{col_mes},"{mes}")=0,'
-            f'AVERAGEIFS({col_val},{col_mes},"{mes}"),'
-            f'SUMPRODUCT(({col_mes}="{mes}")*{col_val}*{cap})'
-            f'/SUMPRODUCT(({col_mes}="{mes}")*{cap})),"")')
+        planta.value = _celda_area(modo, mes, None, col_mes, col_area, col_val, cap,
+                                   col_paro, col_aver)
         planta.number_format = formato
         planta.font = NEGRITA
         planta.border = BORDE
@@ -404,8 +449,8 @@ def build_presentation_workbook(datos):
 
     meses = datos.get('meses', [])
     areas = datos.get('areas', [])
-    for titulo, columna, formato, sub in LAMINAS:
-        _hoja_indicador(wb, titulo, columna, formato, sub, meses, areas, len(filas))
+    for titulo, columna, formato, sub, modo in LAMINAS:
+        _hoja_indicador(wb, titulo, columna, formato, sub, modo, meses, areas, len(filas))
 
     _hoja_cumplimiento(wb, datos.get('cumplimiento', []))
     _hoja_ordenes(wb, datos.get('ordenes', []))

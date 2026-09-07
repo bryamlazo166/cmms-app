@@ -141,7 +141,7 @@ function abrir(file) {
       document.getElementById('barra').classList.remove('oculto');
       document.getElementById('nav').classList.remove('oculto');
       document.getElementById('sub').textContent =
-        `${file.name} · ${MESES.length} meses · ${AREAS.length} areas`;
+        `${file.name} · ${MESES.length} meses · ${AREAS.length} areas · ${FILAS.length} filas de linea`;
       pintar();
     } catch (err) {
       alert('No pude leer el libro: ' + err.message
@@ -167,7 +167,8 @@ function cargarDatos(wb) {
     const mtbf = av === 0 ? (tep - pp) : up / av;
     return {
       mes: String(r['Mes']).trim(), periodo: String(r['Periodo'] || r['Mes']).trim(),
-      area: String(r['Area']).trim(), dias: num(r['Dias']), tep, cap: num(r['Capacidad TM/dia']),
+      area: String(r['Area']).trim(), linea: String(r['Linea'] || r['Area']).trim(),
+      dias: num(r['Dias']), tep, cap: num(r['Capacidad TM/dia']),
       pp, pn, averias: av, ots: num(r['OT cerradas']), uptime: up,
       dispOp: tep ? up / tep * 100 : null,
       dispInh: (tep - pp) ? up / (tep - pp) * 100 : null,
@@ -201,21 +202,42 @@ function cargarDatos(wb) {
 // ── Calculos de planta ───────────────────────────────────────────────────
 function delMes(mes) { return FILAS.filter(f => f.mes === mes); }
 
-function planta(mes, campo) {
-  // Ponderado por capacidad, como el CMMS entre lineas en paralelo.
-  const fs = delMes(mes).filter(f => f[campo] !== null && !isNaN(f[campo]));
+// Cada fila de DATOS es una LINEA. Dentro de la linea los equipos van en
+// serie; entre lineas van en paralelo, asi que el area y la planta son el
+// promedio PONDERADO POR CAPACIDAD de sus lineas — igual que el CMMS. Sumarlas
+// como si fueran una sola maquina hundiria el area por un solo equipo parado.
+function ponderado(filas, campo) {
+  const fs = filas.filter(f => f[campo] !== null && f[campo] !== undefined && !isNaN(f[campo]));
   if (!fs.length) return null;
   const peso = fs.reduce((a, f) => a + (f.cap || 0), 0);
   if (!peso) return fs.reduce((a, f) => a + f[campo], 0) / fs.length;
   return fs.reduce((a, f) => a + f[campo] * (f.cap || 0), 0) / peso;
 }
 
+function porArea(mes, area, campo) {
+  return agrega(FILAS.filter(f => f.mes === mes && f.area === area), campo);
+}
+function planta(mes, campo) { return agrega(delMes(mes), campo); }
+
+// El MTTR no se promedia: es el total de horas de averia entre el total de
+// averias. Los demas se ponderan por capacidad.
+function agrega(filas, campo) {
+  if (campo !== 'mttr') return ponderado(filas, campo);
+  const av = filas.reduce((a, f) => a + (f.averias || 0), 0);
+  if (!av) return 0;
+  return filas.reduce((a, f) => a + (f.pn || 0), 0) / av;
+}
+
+// Los conteos (averias, OT, horas) SI se suman: son eventos, no porcentajes.
+function sumaArea(mes, area, campo) {
+  return FILAS.filter(f => f.mes === mes && f.area === area)
+              .reduce((a, f) => a + (f[campo] || 0), 0);
+}
+
 function serie(area, campo) {
-  return MESES.map(m => {
-    if (area === '__PLANTA__') return planta(m.mes, campo);
-    const f = FILAS.find(x => x.mes === m.mes && x.area === area);
-    return f ? f[campo] : null;
-  });
+  return MESES.map(m => (area === '__PLANTA__')
+    ? planta(m.mes, campo)
+    : porArea(m.mes, area, campo));
 }
 
 // ── Laminas ──────────────────────────────────────────────────────────────
@@ -277,11 +299,12 @@ function pintar() {
         <div class="val ${clase(vPlanta, L.meta, L.mayorMejor)}">${nf(vPlanta, L.dec)}${L.unidad}</div>
         <div class="pie">ponderado por capacidad</div></div>`]
       .concat(AREAS.map(a => {
-        const f = FILAS.find(x => x.mes === (mes || {}).mes && x.area === a);
-        const v = f ? f[L.campo] : null;
+        const m2 = (mes || {}).mes;
+        const v = porArea(m2, a, L.campo);
+        const av = sumaArea(m2, a, 'averias'), h = sumaArea(m2, a, 'pn');
         return `<div class="kpi"><div class="lbl">${a}</div>
           <div class="val ${clase(v, L.meta, L.mayorMejor)}">${nf(v, L.dec)}${L.unidad}</div>
-          <div class="pie">${f ? nf(f.averias, 0) + ' averias · ' + nf(f.pn, 1) + ' h de paro' : ''}</div></div>`;
+          <div class="pie">${nf(av, 0)} averias · ${nf(h, 1)} h de paro</div></div>`;
       })).join('');
     return `<div class="lam ${i === lam ? 'on' : ''}" data-lam>
       <h2><span class="n">0${i}</span>${L.titulo}</h2>
@@ -304,10 +327,8 @@ function clase(v, meta, mayorMejor) {
 
 function tabla(L, mes) {
   const filas = MESES.map(m => {
-    const celdas = AREAS.map(a => {
-      const f = FILAS.find(x => x.mes === m.mes && x.area === a);
-      return `<td>${f ? nf(f[L.campo], L.dec) : '—'}</td>`;
-    }).join('');
+    const celdas = AREAS.map(a =>
+      `<td>${nf(porArea(m.mes, a, L.campo), L.dec)}</td>`).join('');
     const esActual = mes && m.mes === mes.mes;
     return `<tr${esActual ? ' style="background:#16334a"' : ''}>
       <td>${m.periodo}</td>${celdas}<td><b>${nf(planta(m.mes, L.campo), L.dec)}</b></td></tr>`;

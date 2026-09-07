@@ -26,16 +26,26 @@ def datos():
         'meses': [('2026-07', 'Julio 2026'), ('2026-08', 'Agosto 2026')],
         'areas': ['COCCION', 'SECADO'],
         'filas': [
-            {'mes': '2026-07', 'periodo': 'Julio 2026', 'area': 'COCCION', 'dias': 31,
-             'tep': 744, 'capacidad': 117.8, 'paro_plan': 12.0, 'paro_no_plan': 24.0,
-             'averias': 4, 'ots': 9},
-            {'mes': '2026-07', 'periodo': 'Julio 2026', 'area': 'SECADO', 'dias': 31,
+            # Dos lineas de COCCION: una parada larga y otra intacta. Es el caso
+            # que obliga a ponderar en vez de sumar horas — sumadas darian 18,9%.
+            {'mes': '2026-07', 'periodo': 'Julio 2026', 'area': 'COCCION',
+             'linea': 'LINEA DIGESTOR #6', 'detiene_area': False, 'dias': 31,
+             'tep': 744, 'capacidad': 20.2, 'paro_plan': 0.0, 'paro_no_plan': 530.0,
+             'averias': 1, 'ots': 2},
+            {'mes': '2026-07', 'periodo': 'Julio 2026', 'area': 'COCCION',
+             'linea': 'LINEA DIGESTOR #7', 'detiene_area': False, 'dias': 31,
+             'tep': 744, 'capacidad': 20.2, 'paro_plan': 12.0, 'paro_no_plan': 24.0,
+             'averias': 3, 'ots': 7},
+            {'mes': '2026-07', 'periodo': 'Julio 2026', 'area': 'SECADO',
+             'linea': 'SECADOR #2', 'detiene_area': False, 'dias': 31,
              'tep': 744, 'capacidad': 144.0, 'paro_plan': 0.0, 'paro_no_plan': 30.0,
              'averias': 6, 'ots': 11},
-            {'mes': '2026-08', 'periodo': 'Agosto 2026', 'area': 'COCCION', 'dias': 31,
-             'tep': 744, 'capacidad': 117.8, 'paro_plan': 0.0, 'paro_no_plan': 18.4,
+            {'mes': '2026-08', 'periodo': 'Agosto 2026', 'area': 'COCCION',
+             'linea': 'LINEA DIGESTOR #6', 'detiene_area': False, 'dias': 31,
+             'tep': 744, 'capacidad': 20.2, 'paro_plan': 0.0, 'paro_no_plan': 18.4,
              'averias': 5, 'ots': 12},
-            {'mes': '2026-08', 'periodo': 'Agosto 2026', 'area': 'SECADO', 'dias': 31,
+            {'mes': '2026-08', 'periodo': 'Agosto 2026', 'area': 'SECADO',
+             'linea': 'SECADOR #2', 'detiene_area': True, 'dias': 31,
              'tep': 744, 'capacidad': 144.0, 'paro_plan': 0.0, 'paro_no_plan': 56.7,
              'averias': 14, 'ots': 24},
         ],
@@ -67,10 +77,11 @@ def test_los_datos_crudos_se_escriben_tal_cual(libro):
     ws = libro['DATOS']
     assert ws['A4'].value == '2026-07'
     assert ws['C4'].value == 'COCCION'
-    assert ws['E4'].value == 744          # TEP
-    assert ws['G4'].value == 12.0         # paro planificado
-    assert ws['H4'].value == 24.0         # paro no planificado
-    assert ws['I4'].value == 4            # averias
+    assert ws['D4'].value == 'LINEA DIGESTOR #6'    # la fila es una LINEA
+    assert ws['E4'].value == 'NO'                   # no detiene el area
+    assert ws[f'{COL["TEP h"]}4'].value == 744
+    assert ws[f'{COL["Paro no planificado h"]}4'].value == 530.0
+    assert ws[f'{COL["Averias"]}4'].value == 1
 
 
 def test_los_indicadores_son_formulas_no_valores(libro):
@@ -85,35 +96,40 @@ def test_los_indicadores_son_formulas_no_valores(libro):
 
 def test_las_formulas_usan_las_columnas_correctas(libro):
     ws = libro['DATOS']
-    assert ws[f'{COL["Uptime h"]}4'].value == '=MAX(0,E4-G4-H4)'
-    assert ws[f'{COL["Disp. inherente %"]}4'].value == '=IFERROR(K4/(E4-G4)*100,"")'
-    assert ws[f'{COL["MTTR h"]}4'].value == '=IFERROR(IF(I4=0,0,H4/I4),"")'
+    tep, pp, pn = COL['TEP h'], COL['Paro planificado h'], COL['Paro no planificado h']
+    av, up, mtbf = COL['Averias'], COL['Uptime h'], COL['MTBF h']
+    assert ws[f'{up}4'].value == f'=MAX(0,{tep}4-{pp}4-{pn}4)'
+    assert ws[f'{COL["Disp. inherente %"]}4'].value == f'=IFERROR({up}4/({tep}4-{pp}4)*100,"")'
+    assert ws[f'{COL["MTTR h"]}4'].value == f'=IFERROR(IF({av}4=0,0,{pn}4/{av}4),"")'
     # La confiabilidad se apoya en el MTBF ya calculado, no lo recalcula
-    assert 'EXP(-168/N4)' in ws[f'{COL["Confiabilidad %"]}4'].value
+    assert f'EXP(-168/{mtbf}4)' in ws[f'{COL["Confiabilidad %"]}4'].value
 
 
 def test_division_por_cero_no_rompe_la_lamina(libro):
     """Un area sin averias es lo normal en un mes bueno: MTBF cae al tiempo
     disponible y la confiabilidad a 100, sin #DIV/0."""
     ws = libro['DATOS']
+    av = COL['Averias']
     assert 'IFERROR' in ws[f'{COL["MTBF h"]}4'].value
-    assert 'IF(I4=0' in ws[f'{COL["MTBF h"]}4'].value
-    assert 'IF(I4=0,100' in ws[f'{COL["Confiabilidad %"]}4'].value
+    assert f'IF({av}4=0' in ws[f'{COL["MTBF h"]}4'].value
+    assert f'IF({av}4=0,100' in ws[f'{COL["Confiabilidad %"]}4'].value
 
 
 def test_las_laminas_leen_de_datos_y_alcanzan_meses_futuros(libro):
     ws = libro['01 Disponibilidad']
     formula = ws['B5'].value
-    assert 'AVERAGEIFS' in formula
-    assert f'DATOS!$M${FILA1}:$M${FILA_MAX}' in formula   # M = Disp. inherente
+    col = COL['Disp. inherente %']
+    assert 'SUMPRODUCT' in formula                       # ponderado, no promedio
+    assert f'DATOS!${col}${FILA1}:${col}${FILA_MAX}' in formula
     assert '"2026-07"' in formula and '"COCCION"' in formula
 
 
 def test_la_planta_se_pondera_por_capacidad(libro):
     ws = libro['01 Disponibilidad']
     planta = ws.cell(row=5, column=4).value        # tras las 2 areas
+    cap = COL['Capacidad TM/dia']
     assert 'SUMPRODUCT' in planta
-    assert f'DATOS!$F${FILA1}:$F${FILA_MAX}' in planta   # F = capacidad
+    assert f'DATOS!${cap}${FILA1}:${cap}${FILA_MAX}' in planta
     # y si nadie cargo capacidades, promedio simple en vez de division por cero
     assert 'AVERAGEIFS' in planta
 
@@ -127,7 +143,9 @@ def test_cada_lamina_trae_meses_preparados_por_delante(libro):
     assert etiquetas[2] == 'Setiembre 2026'
     assert etiquetas[3] == 'Octubre 2026'
     assert etiquetas[-1] == 'Agosto 2027'          # 12 meses por delante
-    assert ws.cell(row=7, column=2).value.startswith('=IFERROR(AVERAGEIFS')
+    # y la fila del mes que aun no llego ya trae su formula puesta
+    futura = ws.cell(row=7, column=2).value
+    assert futura.startswith('=IFERROR(') and '"2026-09"' in futura
 
 
 def test_con_futuros_cruza_el_fin_de_anio():
@@ -138,7 +156,7 @@ def test_con_futuros_cruza_el_fin_de_anio():
 
 
 def test_cada_lamina_tiene_su_grafico(libro):
-    for titulo, _col, _fmt, _sub in LAMINAS:
+    for titulo, _col, _fmt, _sub, _modo in LAMINAS:
         assert len(libro[titulo]._charts) == 1, f'{titulo} sin grafico'
     assert len(libro['05 Cumplimiento']._charts) == 1
 
@@ -162,10 +180,10 @@ def test_los_encabezados_son_los_que_busca_el_visor_html(libro):
     """El HTML lee las columnas por NOMBRE. Si alguien las renombra aqui, el
     visor deja de encontrarlas: este test lo caza."""
     ws = libro['DATOS']
-    encabezados = [ws.cell(row=3, column=c).value for c in range(1, 11)]
-    assert encabezados == ['Mes', 'Periodo', 'Area', 'Dias', 'TEP h', 'Capacidad TM/dia',
-                           'Paro planificado h', 'Paro no planificado h', 'Averias',
-                           'OT cerradas']
+    encabezados = [ws.cell(row=3, column=c).value for c in range(1, 13)]
+    assert encabezados == ['Mes', 'Periodo', 'Area', 'Linea', 'Detiene el area', 'Dias',
+                           'TEP h', 'Capacidad TM/dia', 'Paro planificado h',
+                           'Paro no planificado h', 'Averias', 'OT cerradas']
     cump = [libro['05 Cumplimiento'].cell(row=4, column=c).value for c in range(1, 8)]
     assert cump == ['Periodo', 'Prev. programado', 'Prev. ejecutado', 'Prev. %',
                     'Corr. programado', 'Corr. ejecutado', 'Corr. %']
@@ -206,8 +224,9 @@ def test_endpoint_json_trae_magnitudes_crudas(auth_admin):
     assert set(d) == {'meta', 'meses', 'areas', 'filas', 'cumplimiento', 'ordenes'}
     if d['filas']:
         fila = d['filas'][0]
-        assert set(fila) == {'mes', 'periodo', 'area', 'dias', 'tep', 'capacidad',
-                             'paro_plan', 'paro_no_plan', 'averias', 'ots'}
+        assert set(fila) == {'mes', 'periodo', 'area', 'linea', 'detiene_area', 'dias',
+                             'tep', 'capacidad', 'paro_plan', 'paro_no_plan',
+                             'averias', 'ots'}
         assert 'disponibilidad' not in fila
 
 
@@ -216,3 +235,34 @@ def test_el_visor_html_existe_y_se_sirve(client):
     assert r.status_code == 200
     html = r.data.decode('utf-8')
     assert 'DATOS' in html and 'xlsx' in html and 'echarts' in html
+
+
+def test_una_linea_parada_no_hunde_el_area(libro):
+    """El Digestor #6 estuvo 530 h fuera en julio, pero los otros digestores
+    siguieron. Sumar sus horas daria 18,9% de disponibilidad para COCCION; el
+    ponderado por capacidad da 87%, que es lo que muestra el CMMS y lo que
+    realmente paso en planta."""
+    ws = libro['01 Disponibilidad']
+    formula = ws['B5'].value                       # julio, COCCION
+    assert 'SUMPRODUCT' in formula
+    assert COL['Capacidad TM/dia'] in formula      # pondera por capacidad
+    # y no es una suma de horas disfrazada
+    assert 'SUMIFS(DATOS!$' + COL['Paro no planificado h'] not in formula
+
+
+def test_el_mttr_del_area_es_horas_entre_averias(libro):
+    """Un promedio de MTTR de lineas no significa nada: el MTTR de un area es
+    el total de horas de averia dividido entre el total de averias."""
+    ws = libro['03 MTTR']
+    formula = ws['B5'].value
+    assert 'SUMIFS' in formula and 'SUMPRODUCT' not in formula
+    assert COL['Paro no planificado h'] in formula
+    assert COL['Averias'] in formula
+
+
+def test_las_lineas_que_detienen_el_area_quedan_marcadas(libro):
+    """El CMMS las compone en serie; el libro no puede, asi que al menos tienen
+    que poder filtrarse."""
+    ws = libro['DATOS']
+    assert ws['E4'].value == 'NO'
+    assert ws['E8'].value == 'SI'         # SECADOR #2 en agosto
