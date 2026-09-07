@@ -36,7 +36,7 @@ import calendar
 import datetime as dt
 import time
 
-from flask import jsonify, render_template, request
+from flask import jsonify, render_template, request, send_file
 
 
 # Areas del proceso productivo, en el orden del flujo. Las demas areas
@@ -1087,6 +1087,124 @@ def register_presentacion_routes(app, db, logger):
         except Exception as e:
             db.session.rollback()
             logger.exception('presentacion_fuentes error')
+            return jsonify({'error': str(e)}), 500
+
+    # ── Entregable: la presentacion en Excel, amarrada a sus datos ───────
+
+    def _export_historico(hasta_ym, n_meses, horizonte):
+        """Historico mes a mes y area por area, en magnitudes crudas.
+
+        El Excel recalcula los indicadores con formulas sobre estas columnas,
+        asi que aqui NO se exportan disponibilidades ya calculadas: se
+        exportan las horas y los eventos de los que salen. Es lo que permite
+        que el libro siga vivo cuando el CMMS ya no este.
+        """
+        base = _base()
+        areas = [a for a in _areas_kpi(base) if a['orden'] < 99]
+        periodos = []
+        for ym in _meses_atras(hasta_ym, n_meses):
+            ini, fin = _limites(ym)
+            periodos.append(_periodo(ini, fin, ym, _corto(ym), _label(ym)))
+
+        en_vigor = _fuentes_en_vigor()
+        filas, cumplimiento = [], []
+        for per in periodos:
+            idx = _por_equipo(base['ots'], per['desde'], per['hasta'])
+            for a in areas:
+                eq_ids = base['eq_de_area'].get(a['id'], [])
+                pp = pn = 0.0
+                fallas = n_ots = 0
+                for eid in eq_ids:
+                    ind = _kpi(base, idx.get(eid, []), per['tep'], 'inherente', horizonte)
+                    pp += ind['downtime_planned_hours']
+                    pn += ind['downtime_unplanned_hours']
+                    fallas += ind['failure_count']
+                    n_ots += ind['total_ots']
+                filas.append({
+                    'mes': per['key'], 'periodo': per['nombre'], 'area': a['nombre'],
+                    'dias': per['dias'], 'tep': per['tep'],
+                    'capacidad': round(base['cap_area'].get(a['id'], 0.0), 2),
+                    'paro_plan': round(pp, 2), 'paro_no_plan': round(pn, 2),
+                    'averias': fallas, 'ots': n_ots,
+                })
+            c = _cumplimiento(base, per, en_vigor)
+            cumplimiento.append({
+                'periodo': per['nombre'],
+                'prev_plan': c['preventivo']['programadas'],
+                'prev_ejec': c['preventivo']['ejecutadas'],
+                'corr_plan': c['correctivo']['programados'],
+                'corr_ejec': c['correctivo']['terminados'],
+            })
+
+        # Detalle de ordenes del historico: el respaldo de cada cifra
+        desde, hasta = periodos[0]['desde'], periodos[-1]['hasta']
+        area_de_eq = {}
+        for aid, eids in base['eq_de_area'].items():
+            nombre = base['areas'][aid].name if aid in base['areas'] else ''
+            for eid in eids:
+                area_de_eq[eid] = nombre
+        ordenes = []
+        for o in base['ots']:
+            if not (o['fecha'] and desde <= o['fecha'] <= hasta):
+                continue
+            if o['equipment_id'] not in area_de_eq:
+                continue
+            ordenes.append({
+                'code': o.get('code') or f"OT-{o['id']}",
+                'fecha': o['fecha'], 'mes': o['fecha'][:7],
+                'area': area_de_eq.get(o['equipment_id'], ''),
+                'equipo': (base['nombre_eq'].get(o['equipment_id'], {}) or {}).get('legible', ''),
+                'tipo': o.get('maintenance_type') or '',
+                'modo': _modo(o),
+                'paro': bool(o.get('caused_downtime')),
+                'horas': round(_paro_h(o), 2),
+                'planificado': _planificado(base, o),
+                'descripcion': _descripcion(o.get('description')),
+            })
+        ordenes.sort(key=lambda x: (x['fecha'], x['code']))
+
+        return {
+            'meta': {'generado': dt.datetime.now().strftime('%Y-%m-%d %H:%M'),
+                     'desde': periodos[0]['nombre'], 'hasta': periodos[-1]['nombre']},
+            'meses': [(p['key'], p['nombre']) for p in periodos],
+            'areas': [a['nombre'] for a in areas],
+            'filas': filas,
+            'cumplimiento': cumplimiento,
+            'ordenes': ordenes,
+        }
+
+    @app.route('/api/presentacion/export-excel', methods=['GET'])
+    def presentacion_export_excel():
+        """Descarga la presentacion mensual como libro de Excel autonomo."""
+        try:
+            from utils.presentacion_excel import build_presentation_workbook
+            hoy = dt.date.today()
+            month = (request.args.get('month')
+                     or _mes_anterior(hoy.strftime('%Y-%m')))[:7]
+            meses = max(1, min(request.args.get('meses', default=24, type=int), 60))
+            horizonte = request.args.get('horizonte', default=168, type=float)
+            datos = _export_historico(month, meses, horizonte)
+            bio = build_presentation_workbook(datos)
+            nombre = f'Indicadores_Mantenimiento_{month}.xlsx'
+            return send_file(
+                bio, as_attachment=True, download_name=nombre,
+                mimetype='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet')
+        except Exception as e:
+            logger.exception('presentacion_export_excel error')
+            return jsonify({'error': str(e)}), 500
+
+    @app.route('/api/presentacion/export-datos', methods=['GET'])
+    def presentacion_export_datos():
+        """El mismo historico en JSON: lo consume la version en navegador."""
+        try:
+            hoy = dt.date.today()
+            month = (request.args.get('month')
+                     or _mes_anterior(hoy.strftime('%Y-%m')))[:7]
+            meses = max(1, min(request.args.get('meses', default=24, type=int), 60))
+            horizonte = request.args.get('horizonte', default=168, type=float)
+            return jsonify(_export_historico(month, meses, horizonte))
+        except Exception as e:
+            logger.exception('presentacion_export_datos error')
             return jsonify({'error': str(e)}), 500
 
     @app.route('/api/presentacion/laminas', methods=['POST'])

@@ -1430,6 +1430,30 @@ function cerrarDetalle() { el('modalDet').classList.remove('open'); }
 window.abrirDetalle = abrirDetalle;
 window.cerrarDetalle = cerrarDetalle;
 
+// ── Entregable: la presentacion fuera del CMMS ───────────────────────────
+//
+// Un libro de Excel con el historico cargado, las formulas de cada indicador
+// y una lamina por grafico. Cada mes se pega una fila por area y todo se
+// recalcula: sirve aunque el CMMS ya no este. Junto con el va un HTML que
+// abre ese mismo libro y lo proyecta.
+
+function descargarEntregable() {
+    const month = el('presMonth').value || (PRES.meta && PRES.meta.month) || '';
+    const q = new URLSearchParams({ month, meses: 24 });
+    window.location = `/api/presentacion/export-excel?${q}`;
+    setTimeout(() => {
+        if (confirm('Se esta descargando el libro de Excel.\n\n'
+                  + '¿Descargo tambien el visor HTML? Se abre con doble click, '
+                  + 'lee ese mismo libro y proyecta las laminas sin necesidad del CMMS.')) {
+            const a = document.createElement('a');
+            a.href = '/static/presentacion_offline.html';
+            a.download = 'presentacion_indicadores.html';
+            document.body.appendChild(a); a.click(); a.remove();
+        }
+    }, 900);
+}
+window.descargarEntregable = descargarEntregable;
+
 // ── Que laminas se presentan ─────────────────────────────────────────────
 //
 // Una lamina cuyo dato no esta listo resta mas de lo que aporta proyectada a

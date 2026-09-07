@@ -1,0 +1,394 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Indicadores de Mantenimiento — presentacion</title>
+<!--
+  Presentacion mensual de indicadores, sin CMMS y sin servidor.
+
+  Se abre con doble click, se elige el libro Indicadores_Mantenimiento.xlsx y
+  proyecta las mismas laminas que el sistema. Lee la hoja DATOS y calcula los
+  indicadores aqui mismo (no depende de que Excel haya guardado el resultado
+  de sus formulas), asi que funciona con el libro recien exportado o con uno
+  que ya lleva anios de datos agregados a mano.
+
+  Solo necesita internet la primera vez, para traer las dos librerias.
+-->
+<script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/echarts/5.5.0/echarts.min.js"></script>
+<style>
+  :root{
+    --fondo:#0a1622; --panel:#102638; --linea:#1d3f5c; --tinta:#dbe7f3;
+    --tenue:#8fa8c0; --cian:#63a6d8; --naranja:#e8963c; --verde:#4cb782;
+    --rojo:#e05b4d; --blanco:#fff;
+  }
+  *{box-sizing:border-box;}
+  body{margin:0;background:var(--fondo);color:var(--tinta);
+       font-family:'Segoe UI',Roboto,Arial,sans-serif;}
+  header{display:flex;align-items:center;gap:14px;padding:12px 20px;
+         border-bottom:1px solid var(--linea);background:#0d1e2e;flex-wrap:wrap;}
+  header h1{margin:0;font-size:1.05rem;color:#fff;font-weight:600;}
+  header .sub{color:var(--tenue);font-size:.78rem;}
+  header .sp{margin-left:auto;}
+  button,select{background:#1b3348;border:1px solid var(--linea);color:var(--tinta);
+    border-radius:8px;padding:7px 13px;font-size:.82rem;cursor:pointer;}
+  button:hover{background:#24455f;}
+  button.pri{background:var(--cian);border-color:var(--cian);color:#04121d;font-weight:600;}
+
+  .drop{max-width:720px;margin:9vh auto;padding:44px;text-align:center;
+        border:2px dashed var(--linea);border-radius:18px;background:var(--panel);}
+  .drop.hover{border-color:var(--cian);background:#143047;}
+  .drop h2{margin:0 0 8px;color:#fff;font-size:1.25rem;}
+  .drop p{color:var(--tenue);font-size:.9rem;line-height:1.6;margin:6px 0;}
+  .drop .big{font-size:2.6rem;margin-bottom:10px;}
+
+  .wrap{max-width:1500px;margin:0 auto;padding:16px 20px 40px;}
+  .lam{display:none;}
+  .lam.on{display:block;}
+  .lam h2{margin:0 0 2px;color:#fff;font-size:1.3rem;font-weight:600;}
+  .lam h2 .n{color:var(--cian);font-weight:700;margin-right:8px;}
+  .lam .cap{color:var(--tenue);font-size:.84rem;margin-bottom:14px;}
+  .kpis{display:grid;grid-template-columns:repeat(auto-fit,minmax(165px,1fr));gap:12px;margin-bottom:16px;}
+  .kpi{background:var(--panel);border:1px solid var(--linea);border-radius:12px;padding:13px 15px;}
+  .kpi .lbl{font-size:.68rem;text-transform:uppercase;letter-spacing:.06em;color:var(--tenue);font-weight:700;}
+  .kpi .val{font-size:1.75rem;font-weight:700;color:#fff;line-height:1.25;}
+  .kpi .val.bien{color:var(--verde);} .kpi .val.mal{color:var(--rojo);} .kpi .val.reg{color:var(--naranja);}
+  .kpi .pie{font-size:.72rem;color:var(--tenue);}
+  .box{background:var(--panel);border:1px solid var(--linea);border-radius:12px;padding:12px;}
+  .ch{height:420px;width:100%;}
+  table{width:100%;border-collapse:collapse;font-size:.84rem;margin-top:14px;}
+  th,td{padding:8px 10px;border-bottom:1px solid var(--linea);text-align:right;}
+  th:first-child,td:first-child{text-align:left;}
+  th{color:var(--tenue);font-size:.7rem;text-transform:uppercase;letter-spacing:.05em;}
+  tfoot td{font-weight:700;color:#fff;border-top:2px solid var(--linea);}
+
+  .portada{text-align:center;padding:6vh 0;}
+  .portada h1{font-size:2.5rem;margin:0 0 6px;color:#fff;}
+  .portada .peri{font-size:1.25rem;color:var(--cian);margin-bottom:26px;}
+  .indice{max-width:640px;margin:0 auto;text-align:left;}
+  .indice div{padding:9px 0;border-bottom:1px solid var(--linea);color:var(--tinta);font-size:.95rem;}
+  .indice b{color:var(--cian);margin-right:12px;}
+
+  .nav{position:fixed;bottom:16px;left:50%;transform:translateX(-50%);display:flex;gap:8px;
+       align-items:center;background:rgba(13,30,46,.94);border:1px solid var(--linea);
+       border-radius:999px;padding:7px 12px;z-index:50;}
+  .nav .cnt{color:var(--tenue);font-size:.78rem;min-width:44px;text-align:center;}
+  .oculto{display:none!important;}
+  @media print{ .nav,header{display:none;} .lam{display:block!important;page-break-after:always;} }
+</style>
+</head>
+<body>
+
+<header id="barra" class="oculto">
+  <h1>Indicadores de Mantenimiento</h1>
+  <div class="sub" id="sub">—</div>
+  <div class="sp"></div>
+  <select id="selMes" onchange="pintar()"></select>
+  <button onclick="document.getElementById('file').click()">Cambiar archivo</button>
+  <button onclick="pantallaCompleta()">Pantalla completa</button>
+  <button onclick="window.print()">PDF</button>
+</header>
+
+<div id="zona" class="drop" ondragover="event.preventDefault();this.classList.add('hover')"
+     ondragleave="this.classList.remove('hover')" ondrop="soltar(event)">
+  <div class="big">📊</div>
+  <h2>Presentacion mensual de indicadores</h2>
+  <p>Arrastra aqui el archivo <b>Indicadores_Mantenimiento.xlsx</b><br>o pulsa el boton para buscarlo.</p>
+  <p style="margin-top:18px"><button class="pri" onclick="document.getElementById('file').click()">Elegir el archivo</button></p>
+  <p style="font-size:.8rem;margin-top:22px">Lee la hoja <b>DATOS</b> del libro y arma las laminas.
+     Nada sale de esta computadora: el archivo se abre en el navegador.</p>
+</div>
+<input type="file" id="file" accept=".xlsx,.xlsm,.xls" class="oculto" onchange="abrir(this.files[0])">
+
+<div class="wrap" id="cuerpo"></div>
+
+<div class="nav oculto" id="nav">
+  <button onclick="ir(-1)">◀</button>
+  <span class="cnt" id="cnt">1/6</span>
+  <button onclick="ir(1)">▶</button>
+</div>
+
+<script>
+// ── Estado ───────────────────────────────────────────────────────────────
+let FILAS = [];        // {mes, periodo, area, dias, tep, cap, pp, pn, averias, ots, ...}
+let CUMPL = [];        // {periodo, prevPlan, prevEjec, corrPlan, corrEjec}
+let MESES = [];        // [{mes, periodo}] ordenados
+let AREAS = [];
+let lam = 0;
+const CH = {};
+const HORIZONTE = 168;  // horas para la confiabilidad, igual que el CMMS
+
+const COLORES = ['#63a6d8', '#e8963c', '#4cb782', '#b07fd8', '#e0c14d', '#5fc9c9'];
+const nf = (v, d = 1) => (v === null || v === undefined || isNaN(v)) ? '—' : Number(v).toFixed(d);
+
+// ── Lectura del libro ────────────────────────────────────────────────────
+function soltar(ev) {
+  ev.preventDefault();
+  ev.currentTarget.classList.remove('hover');
+  const f = ev.dataTransfer.files[0];
+  if (f) abrir(f);
+}
+
+function abrir(file) {
+  if (!file) return;
+  const lector = new FileReader();
+  lector.onload = e => {
+    try {
+      const wb = XLSX.read(new Uint8Array(e.target.result), { type: 'array' });
+      cargarDatos(wb);
+      document.getElementById('zona').classList.add('oculto');
+      document.getElementById('barra').classList.remove('oculto');
+      document.getElementById('nav').classList.remove('oculto');
+      document.getElementById('sub').textContent =
+        `${file.name} · ${MESES.length} meses · ${AREAS.length} areas`;
+      pintar();
+    } catch (err) {
+      alert('No pude leer el libro: ' + err.message
+            + '\n\nDebe ser el archivo Indicadores_Mantenimiento.xlsx exportado del CMMS.');
+    }
+  };
+  lector.readAsArrayBuffer(file);
+}
+
+function cargarDatos(wb) {
+  const hoja = wb.Sheets['DATOS'];
+  if (!hoja) throw new Error('el libro no tiene la hoja DATOS');
+  // La fila 3 son los encabezados; se leen por nombre para no depender del orden.
+  const filas = XLSX.utils.sheet_to_json(hoja, { range: 2, defval: null });
+  const num = v => (v === null || v === '' || isNaN(Number(v))) ? 0 : Number(v);
+
+  FILAS = filas.filter(r => r['Mes'] && r['Area']).map(r => {
+    const tep = num(r['TEP h']), pp = num(r['Paro planificado h']);
+    const pn = num(r['Paro no planificado h']), av = num(r['Averias']);
+    const up = Math.max(0, tep - pp - pn);
+    // Se recalcula aqui: el libro recien exportado trae formulas sin resultado
+    // guardado, y asi da igual si se abrio en Excel o no.
+    const mtbf = av === 0 ? (tep - pp) : up / av;
+    return {
+      mes: String(r['Mes']).trim(), periodo: String(r['Periodo'] || r['Mes']).trim(),
+      area: String(r['Area']).trim(), dias: num(r['Dias']), tep, cap: num(r['Capacidad TM/dia']),
+      pp, pn, averias: av, ots: num(r['OT cerradas']), uptime: up,
+      dispOp: tep ? up / tep * 100 : null,
+      dispInh: (tep - pp) ? up / (tep - pp) * 100 : null,
+      mtbf, mttr: av === 0 ? 0 : pn / av,
+      conf: av === 0 ? 100 : Math.exp(-HORIZONTE / mtbf) * 100,
+    };
+  });
+
+  MESES = [];
+  const vistos = new Set();
+  FILAS.forEach(f => { if (!vistos.has(f.mes)) { vistos.add(f.mes); MESES.push({ mes: f.mes, periodo: f.periodo }); } });
+  MESES.sort((a, b) => a.mes.localeCompare(b.mes));
+  AREAS = [...new Set(FILAS.map(f => f.area))];
+
+  CUMPL = [];
+  const hc = wb.Sheets['05 Cumplimiento'];
+  if (hc) {
+    XLSX.utils.sheet_to_json(hc, { range: 3, defval: null }).forEach(r => {
+      if (!r['Periodo']) return;
+      CUMPL.push({ periodo: String(r['Periodo']).trim(),
+                   prevPlan: num(r['Prev. programado']), prevEjec: num(r['Prev. ejecutado']),
+                   corrPlan: num(r['Corr. programado']), corrEjec: num(r['Corr. ejecutado']) });
+    });
+  }
+
+  const sel = document.getElementById('selMes');
+  sel.innerHTML = MESES.map((m, i) =>
+    `<option value="${i}" ${i === MESES.length - 1 ? 'selected' : ''}>${m.periodo}</option>`).join('');
+}
+
+// ── Calculos de planta ───────────────────────────────────────────────────
+function delMes(mes) { return FILAS.filter(f => f.mes === mes); }
+
+function planta(mes, campo) {
+  // Ponderado por capacidad, como el CMMS entre lineas en paralelo.
+  const fs = delMes(mes).filter(f => f[campo] !== null && !isNaN(f[campo]));
+  if (!fs.length) return null;
+  const peso = fs.reduce((a, f) => a + (f.cap || 0), 0);
+  if (!peso) return fs.reduce((a, f) => a + f[campo], 0) / fs.length;
+  return fs.reduce((a, f) => a + f[campo] * (f.cap || 0), 0) / peso;
+}
+
+function serie(area, campo) {
+  return MESES.map(m => {
+    if (area === '__PLANTA__') return planta(m.mes, campo);
+    const f = FILAS.find(x => x.mes === m.mes && x.area === area);
+    return f ? f[campo] : null;
+  });
+}
+
+// ── Laminas ──────────────────────────────────────────────────────────────
+const LAMINAS = [
+  { id: 'portada', titulo: 'Portada' },
+  { id: 'disp', titulo: 'Disponibilidad', campo: 'dispInh', unidad: '%', dec: 1,
+    cap: 'Disponibilidad inherente: el mantenimiento programado sale de la base de tiempo, '
+       + 'asi que mide la salud del activo. uptime / (TEP - paro planificado).',
+    meta: 95, mayorMejor: true },
+  { id: 'mtbf', titulo: 'MTBF', campo: 'mtbf', unidad: ' h', dec: 1,
+    cap: 'Tiempo medio entre fallas: horas de operacion por cada averia. uptime / averias.',
+    mayorMejor: true },
+  { id: 'mttr', titulo: 'MTTR', campo: 'mttr', unidad: ' h', dec: 2,
+    cap: 'Tiempo medio de reparacion: cuanto cuesta devolver el equipo a operacion. '
+       + 'paro no planificado / averias.', mayorMejor: false },
+  { id: 'conf', titulo: 'Confiabilidad', campo: 'conf', unidad: '%', dec: 1,
+    cap: 'Probabilidad de operar una semana (168 h) sin fallar. EXP(-168 / MTBF).',
+    mayorMejor: true },
+  { id: 'cumpl', titulo: 'Cumplimiento del programa' },
+];
+
+function pintar() {
+  const iMes = Number(document.getElementById('selMes').value || MESES.length - 1);
+  const mes = MESES[iMes];
+  const cuerpo = document.getElementById('cuerpo');
+
+  cuerpo.innerHTML = LAMINAS.map((L, i) => {
+    if (L.id === 'portada') {
+      return `<div class="lam ${i === lam ? 'on' : ''}" data-lam>
+        <div class="portada">
+          <h1>Indicadores de Mantenimiento</h1>
+          <div class="peri">${mes ? mes.periodo : ''}</div>
+          <div class="indice">
+            ${LAMINAS.slice(1).map((x, j) => `<div><b>0${j + 1}</b>${x.titulo}</div>`).join('')}
+          </div>
+        </div></div>`;
+    }
+    if (L.id === 'cumpl') {
+      const c = CUMPL.find(x => x.periodo === (mes || {}).periodo) || {};
+      const pp = c.prevPlan ? c.prevEjec / c.prevPlan * 100 : null;
+      const pc = c.corrPlan ? c.corrEjec / c.corrPlan * 100 : null;
+      return `<div class="lam ${i === lam ? 'on' : ''}" data-lam>
+        <h2><span class="n">05</span>Cumplimiento del programa</h2>
+        <div class="cap">Preventivo: lo que el programa exigia frente a lo ejecutado.
+             Correctivo programado: ordenes planificadas que se cerraron.</div>
+        <div class="kpis">
+          <div class="kpi"><div class="lbl">Preventivo</div>
+            <div class="val ${clase(pp, 90, true)}">${nf(pp)}%</div>
+            <div class="pie">${nf(c.prevEjec, 0)} de ${nf(c.prevPlan, 0)}</div></div>
+          <div class="kpi"><div class="lbl">Correctivo programado</div>
+            <div class="val ${clase(pc, 90, true)}">${nf(pc)}%</div>
+            <div class="pie">${nf(c.corrEjec, 0)} de ${nf(c.corrPlan, 0)}</div></div>
+        </div>
+        <div class="box"><div class="ch" id="ch_cumpl"></div></div></div>`;
+    }
+    // Laminas de indicador
+    const vPlanta = planta(mes ? mes.mes : '', L.campo);
+    const tarjetas = [`<div class="kpi"><div class="lbl">Planta</div>
+        <div class="val ${clase(vPlanta, L.meta, L.mayorMejor)}">${nf(vPlanta, L.dec)}${L.unidad}</div>
+        <div class="pie">ponderado por capacidad</div></div>`]
+      .concat(AREAS.map(a => {
+        const f = FILAS.find(x => x.mes === (mes || {}).mes && x.area === a);
+        const v = f ? f[L.campo] : null;
+        return `<div class="kpi"><div class="lbl">${a}</div>
+          <div class="val ${clase(v, L.meta, L.mayorMejor)}">${nf(v, L.dec)}${L.unidad}</div>
+          <div class="pie">${f ? nf(f.averias, 0) + ' averias · ' + nf(f.pn, 1) + ' h de paro' : ''}</div></div>`;
+      })).join('');
+    return `<div class="lam ${i === lam ? 'on' : ''}" data-lam>
+      <h2><span class="n">0${i}</span>${L.titulo}</h2>
+      <div class="cap">${L.cap}</div>
+      <div class="kpis">${tarjetas}</div>
+      <div class="box"><div class="ch" id="ch_${L.id}"></div></div>
+      ${tabla(L, mes)}</div>`;
+  }).join('');
+
+  LAMINAS.forEach(L => { if (L.campo) grafico(L); });
+  graficoCumplimiento();
+  document.getElementById('cnt').textContent = `${lam + 1}/${LAMINAS.length}`;
+}
+
+function clase(v, meta, mayorMejor) {
+  if (v === null || v === undefined || isNaN(v) || !meta) return '';
+  if (mayorMejor) return v >= meta ? 'bien' : (v >= meta * 0.95 ? 'reg' : 'mal');
+  return v <= meta ? 'bien' : 'mal';
+}
+
+function tabla(L, mes) {
+  const filas = MESES.map(m => {
+    const celdas = AREAS.map(a => {
+      const f = FILAS.find(x => x.mes === m.mes && x.area === a);
+      return `<td>${f ? nf(f[L.campo], L.dec) : '—'}</td>`;
+    }).join('');
+    const esActual = mes && m.mes === mes.mes;
+    return `<tr${esActual ? ' style="background:#16334a"' : ''}>
+      <td>${m.periodo}</td>${celdas}<td><b>${nf(planta(m.mes, L.campo), L.dec)}</b></td></tr>`;
+  }).join('');
+  return `<table><thead><tr><th>Periodo</th>${AREAS.map(a => `<th>${a}</th>`).join('')}
+    <th>Planta</th></tr></thead><tbody>${filas}</tbody></table>`;
+}
+
+function grafico(L) {
+  const el = document.getElementById('ch_' + L.id);
+  if (!el) return;
+  if (CH[L.id]) CH[L.id].dispose();
+  const c = echarts.init(el, 'dark');
+  CH[L.id] = c;
+  const series = AREAS.map((a, i) => ({
+    name: a, type: 'line', data: serie(a, L.campo), smooth: true, symbolSize: 7,
+    lineStyle: { width: 2.5, color: COLORES[i % COLORES.length] },
+    itemStyle: { color: COLORES[i % COLORES.length] }, connectNulls: true,
+  }));
+  series.push({
+    name: 'PLANTA', type: 'line', data: serie('__PLANTA__', L.campo), smooth: true,
+    symbolSize: 9, z: 5, lineStyle: { width: 4, color: '#fff' }, itemStyle: { color: '#fff' },
+    connectNulls: true,
+  });
+  c.setOption({
+    backgroundColor: 'transparent',
+    tooltip: { trigger: 'axis', valueFormatter: v => nf(v, L.dec) + L.unidad },
+    legend: { type: 'scroll', top: 0, textStyle: { color: '#bfd2ec', fontSize: 11 } },
+    grid: { top: 42, right: 24, bottom: 40, left: 58 },
+    xAxis: { type: 'category', data: MESES.map(m => m.periodo),
+             axisLabel: { color: '#9ab0cb', rotate: 25, fontSize: 10 } },
+    yAxis: { type: 'value', name: L.unidad.trim() || '%',
+             axisLabel: { color: '#9ab0cb' },
+             splitLine: { lineStyle: { color: 'rgba(255,255,255,.07)' } } },
+    series,
+  });
+}
+
+function graficoCumplimiento() {
+  const el = document.getElementById('ch_cumpl');
+  if (!el || !CUMPL.length) return;
+  if (CH.cumpl) CH.cumpl.dispose();
+  const c = echarts.init(el, 'dark');
+  CH.cumpl = c;
+  const pct = (a, b) => CUMPL.map(x => x[b] ? +(x[a] / x[b] * 100).toFixed(1) : null);
+  c.setOption({
+    backgroundColor: 'transparent',
+    tooltip: { trigger: 'axis', valueFormatter: v => nf(v) + '%' },
+    legend: { top: 0, textStyle: { color: '#bfd2ec', fontSize: 11 } },
+    grid: { top: 42, right: 24, bottom: 40, left: 58 },
+    xAxis: { type: 'category', data: CUMPL.map(x => x.periodo),
+             axisLabel: { color: '#9ab0cb', rotate: 25, fontSize: 10 } },
+    yAxis: { type: 'value', name: '%', axisLabel: { color: '#9ab0cb' },
+             splitLine: { lineStyle: { color: 'rgba(255,255,255,.07)' } } },
+    series: [
+      { name: 'Preventivo', type: 'bar', data: pct('prevEjec', 'prevPlan'),
+        itemStyle: { color: '#63a6d8', borderRadius: [4, 4, 0, 0] }, barMaxWidth: 38 },
+      { name: 'Correctivo programado', type: 'bar', data: pct('corrEjec', 'corrPlan'),
+        itemStyle: { color: '#e8963c', borderRadius: [4, 4, 0, 0] }, barMaxWidth: 38 },
+    ],
+  });
+}
+
+// ── Navegacion ───────────────────────────────────────────────────────────
+function ir(d) {
+  const n = document.querySelectorAll('[data-lam]').length;
+  lam = Math.max(0, Math.min(lam + d, n - 1));
+  document.querySelectorAll('[data-lam]').forEach((s, i) => s.classList.toggle('on', i === lam));
+  document.getElementById('cnt').textContent = `${lam + 1}/${n}`;
+  Object.values(CH).forEach(c => c && c.resize());
+}
+function pantallaCompleta() {
+  if (document.fullscreenElement) document.exitFullscreen();
+  else document.documentElement.requestFullscreen().catch(() => {});
+}
+document.addEventListener('keydown', e => {
+  if (e.key === 'ArrowRight' || e.key === 'PageDown') ir(1);
+  if (e.key === 'ArrowLeft' || e.key === 'PageUp') ir(-1);
+  if (e.key === 'f') pantallaCompleta();
+});
+window.addEventListener('resize', () => Object.values(CH).forEach(c => c && c.resize()));
+</script>
+</body>
+</html>
