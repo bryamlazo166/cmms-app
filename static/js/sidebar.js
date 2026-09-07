@@ -497,6 +497,7 @@
 
         { group: G_TRABAJO, href: '/avisos', icon: 'fas fa-bell', label: 'Avisos', tip: 'Avisos' },
         { group: G_TRABAJO, href: '/ordenes', icon: 'fas fa-tools', label: 'Ordenes', tip: 'Ordenes' },
+        { group: G_TRABAJO, href: '/pendientes', icon: 'fas fa-thumbtack', label: 'Pendientes', tip: 'Lo que hay que hacer y aun no es una orden de trabajo' },
         { group: G_TRABAJO, href: '/requerimientos', icon: 'fas fa-clipboard-check', label: 'Requerimientos', tip: 'Backlog tecnico: compras especiales, fabricaciones, mejoras' },
         { group: G_TRABAJO, href: '/calendario', icon: 'fas fa-calendar-alt', label: 'Calendario', tip: 'Plan Mtto' },
         { group: G_TRABAJO, href: '/seguimiento', icon: 'fas fa-tasks', label: 'Seguimiento', tip: 'Seguimiento' },
@@ -886,6 +887,7 @@
             hrefToModule['/optimizacion-preventivos'] = 'insights';
             hrefToModule['/cumplimiento-preventivos'] = 'insights';
             hrefToModule['/motores-electricos'] = 'motores';
+            hrefToModule['/pendientes'] = 'pendientes';
 
             const navList = sidebar.querySelector('.nav-list');
             const extra = user.role === 'admin' ? ADMIN_MENU_ITEMS : [];

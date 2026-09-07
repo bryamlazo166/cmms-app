@@ -1,0 +1,402 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <link rel="icon" type="image/svg+xml" href="/static/favicon.svg">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Pendientes - CMMS</title>
+    <!-- CMMS_THEME_INIT -->
+    <script>(function(){try{var t=localStorage.getItem('cmms.theme');if(t=='management'||t=='developer'){document.documentElement.setAttribute('data-theme',t);}}catch(e){}})();</script>
+    <link rel="stylesheet" href="/static/css/style.css?v={{ v }}">
+    <link rel="stylesheet" href="/static/css/sidebar.css?v={{ v }}">
+    <link href="https://fonts.googleapis.com/css2?family=Roboto:wght@300;400;500;700&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css">
+    <style>
+        body{background:#0a0e14;}
+        .wrap{max-width:1500px;margin:0 auto;padding:16px;}
+        .header{background:linear-gradient(120deg,#1e2430,#151b24);border:1px solid #2d3f56;border-radius:14px;padding:16px 20px;margin-bottom:14px;}
+        .header h1{margin:0;color:#FFD60A;font-size:1.3rem;display:flex;align-items:center;gap:10px;}
+        .header p{margin:4px 0 12px;color:#9ab0cb;font-size:.82rem;}
+        .tools{display:flex;gap:10px;align-items:center;flex-wrap:wrap;}
+        .tools select,.tools input{height:34px;background:#0f1319;color:#d5e2f5;border:1px solid #344964;border-radius:7px;padding:5px 10px;font-size:.82rem;}
+        .btn{height:34px;border:1px solid #385273;border-radius:7px;background:#193451;color:#d7e9ff;padding:0 14px;font-weight:600;cursor:pointer;font-size:.82rem;display:inline-flex;align-items:center;gap:6px;}
+        .btn.primary{background:#FFD60A;border-color:#FFD60A;color:#221a00;}
+        .btn.primary:hover{background:#ffe14d;}
+        .btn.sm{height:28px;padding:0 9px;font-size:.74rem;}
+        .btn:disabled{opacity:.45;cursor:not-allowed;}
+
+        .summary-row{display:grid;grid-template-columns:repeat(4,1fr);gap:10px;margin-bottom:14px;}
+        .summary-card{background:linear-gradient(135deg,#1b212b,#151a23);border:1px solid #31455f;border-radius:10px;padding:12px;position:relative;overflow:hidden;}
+        .summary-card::before{content:'';position:absolute;top:0;left:0;right:0;height:3px;background:var(--c,#30D158);}
+        .summary-card.rojo{--c:#FF453A;} .summary-card.amar{--c:#FF9F0A;}
+        .summary-card.azul{--c:#5AC8FA;} .summary-card.gris{--c:#8e8e93;}
+        .summary-card .lbl{font-size:.66rem;color:#9ab3d0;text-transform:uppercase;letter-spacing:.4px;font-weight:600;margin-bottom:5px;}
+        .summary-card .val{font-size:1.6rem;font-weight:700;color:#eff6ff;line-height:1;}
+        .summary-card .sub{font-size:.7rem;color:#9ab0cb;margin-top:3px;}
+
+        .tabs{display:flex;gap:4px;margin-bottom:12px;border-bottom:1px solid #2a3a50;flex-wrap:wrap;}
+        .tab{background:transparent;color:#9ab0cb;border:none;padding:10px 14px;cursor:pointer;font-size:.86rem;font-weight:600;border-bottom:2px solid transparent;}
+        .tab.active{color:#FFD60A;border-bottom-color:#FFD60A;}
+        .tab .count{background:rgba(255,255,255,.08);padding:1px 7px;border-radius:8px;margin-left:4px;font-size:.7rem;}
+
+        .panel{background:#181d24;border:1px solid #2f4257;border-radius:12px;padding:14px;overflow-x:auto;}
+        .rec-table{width:100%;border-collapse:collapse;font-size:.84rem;}
+        .rec-table th,.rec-table td{padding:9px 10px;border-bottom:1px solid #2a3a50;color:#d5e2f5;text-align:left;vertical-align:top;}
+        .rec-table th{color:#9ab0cb;font-weight:600;font-size:.72rem;text-transform:uppercase;background:#121821;}
+        .rec-table tr:hover{background:rgba(255,214,10,.04);}
+        .rec-table tr.done td{opacity:.72;}
+
+        .sev{display:inline-block;padding:2px 8px;border-radius:8px;font-size:.7rem;font-weight:700;white-space:nowrap;}
+        .sev.VENCIDO{background:rgba(255,69,58,.18);color:#ff6b61;border:1px solid rgba(255,69,58,.4);}
+        .sev.HOY{background:rgba(255,159,10,.18);color:#FFA834;border:1px solid rgba(255,159,10,.4);}
+        .sev.PROXIMO{background:rgba(90,200,250,.15);color:#5AC8FA;border:1px solid rgba(90,200,250,.35);}
+        .sev.SINFECHA{background:rgba(142,142,147,.18);color:#aeb6c2;border:1px solid rgba(142,142,147,.35);}
+        .sev.Alta{background:rgba(255,69,58,.18);color:#ff6b61;}
+        .sev.Normal{background:rgba(90,200,250,.13);color:#8fd3f7;}
+        .sev.Baja{background:rgba(142,142,147,.15);color:#aeb6c2;}
+        .src{font-size:.66rem;color:#7e93ad;text-transform:uppercase;letter-spacing:.3px;}
+        .muted{color:#9ab0cb;font-size:.75rem;}
+        .code{color:#FFD60A;font-weight:700;}
+        .bitacora{background:rgba(48,209,88,.06);border-left:2px solid #30D158;padding:4px 8px;margin-top:5px;border-radius:0 6px 6px 0;font-size:.76rem;color:#9fd8b0;}
+        .bitacora.anulado{background:rgba(255,69,58,.06);border-left-color:#FF453A;color:#e0a8a3;}
+        .loading{text-align:center;padding:40px;color:#9ab0cb;}
+        .loading i{font-size:2rem;color:#FFD60A;}
+
+        dialog{background:#10151c;color:#d5e2f5;border:1px solid #2f4257;border-radius:12px;padding:0;max-width:580px;width:94%;}
+        dialog::backdrop{background:rgba(0,0,0,.55);}
+        .dlg-head{padding:14px 18px;border-bottom:1px solid #263545;font-weight:700;color:#FFD60A;display:flex;justify-content:space-between;align-items:center;}
+        .dlg-body{padding:16px 18px;display:grid;gap:10px;}
+        .dlg-body .row{display:grid;grid-template-columns:1fr 1fr;gap:10px;}
+        .dlg-body label{font-size:.72rem;color:#9ab3d0;display:block;margin-bottom:3px;}
+        .dlg-body input,.dlg-body select,.dlg-body textarea{width:100%;background:#0f1319;color:#d5e2f5;border:1px solid #344964;border-radius:7px;padding:7px 9px;font-size:.84rem;}
+        .dlg-foot{padding:12px 18px;border-top:1px solid #263545;display:flex;justify-content:flex-end;gap:8px;}
+        .x{cursor:pointer;color:#9ab0cb;background:none;border:none;font-size:1.1rem;}
+        .hint{font-size:.72rem;color:#7e93ad;}
+        @media(max-width:900px){ .summary-row{grid-template-columns:repeat(2,1fr);} .dlg-body .row{grid-template-columns:1fr;} }
+    </style>
+</head>
+<body>
+<nav class="sidebar">
+    <div class="logo-details"><i class="fas fa-industry icon"></i><div class="logo_name">CMMS Pro</div><i class="fas fa-bars" id="btn_toggle"></i></div>
+    <ul class="nav-list"></ul>
+</nav>
+
+<section class="home-section">
+    <div class="wrap">
+        <div class="header">
+            <h1><i class="fas fa-thumbtack"></i> Pendientes</h1>
+            <p>Lo que hay que hacer y todavía no es una orden de trabajo. Se anota desde Telegram con <b>/p</b> o desde aquí. Al terminarlo no se borra: queda en la bitácora con quién lo cerró y cómo.</p>
+            <div class="tools">
+                <button class="btn primary" onclick="openNew()"><i class="fas fa-plus"></i> Nuevo pendiente</button>
+                <input type="text" id="search" placeholder="Buscar texto, equipo, código…" style="width:240px;" oninput="renderTable()">
+                <select id="fArea" onchange="renderTable()"><option value="">Todas las áreas</option></select>
+                <select id="fEquip" onchange="renderTable()"><option value="">Todos los equipos</option></select>
+                <button class="btn" onclick="loadTasks()"><i class="fas fa-sync"></i> Actualizar</button>
+                <button class="btn" onclick="exportCSV()"><i class="fas fa-file-csv"></i> Exportar</button>
+            </div>
+        </div>
+
+        <div id="loading" class="loading"><i class="fas fa-spinner fa-spin"></i><p>Cargando pendientes…</p></div>
+
+        <div id="content" style="display:none;">
+            <div class="summary-row">
+                <div class="summary-card rojo"><div class="lbl"><i class="fas fa-exclamation-triangle"></i> Vencidos</div><div class="val" id="cVenc">—</div><div class="sub">Pasó la fecha y siguen abiertos</div></div>
+                <div class="summary-card amar"><div class="lbl"><i class="fas fa-hourglass-half"></i> Vencen hoy</div><div class="val" id="cHoy">—</div><div class="sub">Para hoy</div></div>
+                <div class="summary-card azul"><div class="lbl"><i class="fas fa-list-check"></i> Abiertos</div><div class="val" id="cAbi">—</div><div class="sub">Total sin cerrar</div></div>
+                <div class="summary-card gris"><div class="lbl"><i class="fas fa-clock"></i> Sin fecha</div><div class="val" id="cSin">—</div><div class="sub">No vencen, pero están ahí</div></div>
+            </div>
+
+            <div class="tabs">
+                <button class="tab active" data-st="Pendiente" onclick="setTab('Pendiente')">📌 Abiertos <span class="count" id="tabAbi">0</span></button>
+                <button class="tab" data-st="Hecho" onclick="setTab('Hecho')">✅ Hechos <span class="count" id="tabHec">0</span></button>
+                <button class="tab" data-st="Anulado" onclick="setTab('Anulado')">🚫 Anulados <span class="count" id="tabAnu">0</span></button>
+                <button class="tab" data-st="todos" onclick="setTab('todos')">📋 Todos <span class="count" id="tabTod">0</span></button>
+            </div>
+
+            <div class="panel">
+                <table class="rec-table">
+                    <thead>
+                        <tr>
+                            <th>Código</th>
+                            <th>Qué hay que hacer</th>
+                            <th>Equipo / ubicación</th>
+                            <th>Fecha</th>
+                            <th>Prioridad</th>
+                            <th>Origen</th>
+                            <th>Acciones</th>
+                        </tr>
+                    </thead>
+                    <tbody id="recBody"></tbody>
+                </table>
+            </div>
+        </div>
+    </div>
+</section>
+
+<!-- MODAL: nuevo / editar -->
+<dialog id="taskModal">
+    <div class="dlg-head"><span id="taskTitle">Nuevo pendiente</span><button type="button" class="x" onclick="document.getElementById('taskModal').close()">✕</button></div>
+    <div class="dlg-body">
+        <div>
+            <label>¿Qué hay que hacer?</label>
+            <textarea id="tDesc" rows="3" placeholder="Fabricar tripode para el D3"></textarea>
+            <div class="hint">Si escribes el plazo dentro del texto (“en 2 semanas”, “el viernes”) se toma solo.</div>
+        </div>
+        <div class="row">
+            <div><label>Fecha límite (opcional)</label><input type="date" id="tDue"></div>
+            <div><label>Prioridad</label><select id="tPrio"><option value="Normal">Normal</option><option value="Alta">Alta</option><option value="Baja">Baja</option></select></div>
+        </div>
+        <div class="row">
+            <div><label>Equipo (tag)</label><input type="text" id="tEquip" placeholder="D3, SEC2-TH1…" list="equipDL"><datalist id="equipDL"></datalist></div>
+            <div><label>Componente (opcional)</label><input type="text" id="tComp" placeholder="chumacera motriz"></div>
+        </div>
+        <div><label>Ligar a una OT (opcional)</label><input type="text" id="tOt" placeholder="OT-0034"></div>
+    </div>
+    <div class="dlg-foot">
+        <button type="button" class="btn" onclick="document.getElementById('taskModal').close()">Cancelar</button>
+        <button type="button" class="btn primary" onclick="submitTask()"><i class="fas fa-save"></i> Guardar</button>
+    </div>
+</dialog>
+
+<!-- MODAL: cerrar -->
+<dialog id="doneModal">
+    <div class="dlg-head"><span id="doneTitle">Marcar como hecho</span><button type="button" class="x" onclick="document.getElementById('doneModal').close()">✕</button></div>
+    <div class="dlg-body">
+        <div class="muted" id="doneDesc"></div>
+        <div><label>¿Cómo quedó? (queda en la bitácora)</label><textarea id="dComment" rows="3" placeholder="Se fabricó e instaló el tripode"></textarea></div>
+        <div class="row">
+            <div><label>Fecha</label><input type="date" id="dDate"></div>
+            <div><label>Quién</label><input type="text" id="dBy" placeholder="Nombre"></div>
+        </div>
+        <div class="hint">El pendiente no se borra: sale de la lista y queda registrado.</div>
+    </div>
+    <div class="dlg-foot">
+        <button type="button" class="btn" onclick="document.getElementById('doneModal').close()">Cancelar</button>
+        <button type="button" class="btn primary" id="doneBtn" onclick="submitDone()"><i class="fas fa-check"></i> Confirmar</button>
+    </div>
+</dialog>
+
+<script src="/static/js/sidebar.js?v={{ v }}"></script>
+<script>
+let _all = [], _tab = 'Pendiente', _editId = null, _doneId = null, _doneCancel = false;
+const todayISO = () => new Date().toISOString().slice(0, 10);
+
+async function loadTasks() {
+    document.getElementById('loading').style.display = 'block';
+    try {
+        const r = await fetch('/api/pending-tasks?status=todos');
+        const j = await r.json();
+        if (!r.ok) throw new Error(j.error || 'Error');
+        _all = j.rows || [];
+        paintSummary(j.summary || {});
+        fillFilters();
+        renderTable();
+        document.getElementById('loading').style.display = 'none';
+        document.getElementById('content').style.display = 'block';
+    } catch (e) {
+        document.getElementById('loading').style.display = 'none';
+        alert('Error: ' + e.message);
+    }
+}
+
+function paintSummary(s) {
+    document.getElementById('cVenc').textContent = s.vencidos || 0;
+    document.getElementById('cHoy').textContent = s.hoy || 0;
+    document.getElementById('cAbi').textContent = s.abiertos || 0;
+    document.getElementById('cSin').textContent = s.sin_fecha || 0;
+    document.getElementById('tabAbi').textContent = s.abiertos || 0;
+    document.getElementById('tabHec').textContent = s.hechos || 0;
+    document.getElementById('tabAnu').textContent = s.anulados || 0;
+    document.getElementById('tabTod').textContent = _all.length;
+}
+
+function fillFilters() {
+    const areas = [...new Set(_all.map(r => r.area_name).filter(Boolean))].sort();
+    const equipos = [...new Set(_all.map(r => r.equipment_tag).filter(Boolean))].sort();
+    const fa = document.getElementById('fArea'), fe = document.getElementById('fEquip');
+    const keepA = fa.value, keepE = fe.value;
+    fa.innerHTML = '<option value="">Todas las áreas</option>' + areas.map(a => `<option>${a}</option>`).join('');
+    fe.innerHTML = '<option value="">Todos los equipos</option>' + equipos.map(a => `<option>${a}</option>`).join('');
+    fa.value = keepA; fe.value = keepE;
+    document.getElementById('equipDL').innerHTML = equipos.map(t => `<option value="${t}">`).join('');
+}
+
+function setTab(st) {
+    _tab = st;
+    document.querySelectorAll('.tab').forEach(t => t.classList.toggle('active', t.dataset.st === st));
+    renderTable();
+}
+
+function _filtered() {
+    const q = (document.getElementById('search').value || '').toLowerCase().trim();
+    const ar = document.getElementById('fArea').value, eq = document.getElementById('fEquip').value;
+    let rows = _tab === 'todos' ? _all : _all.filter(r => r.status === _tab);
+    if (ar) rows = rows.filter(r => r.area_name === ar);
+    if (eq) rows = rows.filter(r => r.equipment_tag === eq);
+    if (q) rows = rows.filter(r => [r.code, r.description, r.equipment_tag, r.equipment_name,
+                                   r.component_name, r.created_by, r.done_by]
+                                   .some(x => (x || '').toLowerCase().includes(q)));
+    const rank = { VENCIDO: 0, HOY: 1, PROXIMO: 2 };
+    return rows.sort((a, b) => (rank[a.due_status] ?? 3) - (rank[b.due_status] ?? 3) || b.id - a.id);
+}
+
+function fechaCell(r) {
+    if (!r.due_date) return '<span class="sev SINFECHA">sin fecha</span>';
+    const od = r.overdue_days;
+    const txt = od > 0 ? `vencido ${od}d` : od === 0 ? 'hoy' : `en ${-od}d`;
+    return `<span class="sev ${r.due_status}">${txt}</span><div class="muted">${r.due_date}</div>`;
+}
+
+function renderTable() {
+    const rows = _filtered();
+    const tb = document.getElementById('recBody');
+    if (!rows.length) {
+        tb.innerHTML = `<tr><td colspan="7" style="text-align:center;color:#9ab0cb;padding:30px;">Nada por aquí</td></tr>`;
+        return;
+    }
+    tb.innerHTML = rows.map(r => {
+        const abierto = r.status === 'Pendiente';
+        const loc = r.location_path
+            ? `<b style="color:#FF9F0A;">${r.equipment_tag || ''}</b> ${r.equipment_name || ''}<div class="muted">${r.component_name ? r.component_name + ' · ' : ''}${r.area_name || ''}</div>`
+            : '<span class="muted">sin equipo</span>';
+        let bitacora = '';
+        if (!abierto) {
+            bitacora = `<div class="bitacora ${r.status === 'Anulado' ? 'anulado' : ''}">`
+                + `${r.status === 'Anulado' ? '🚫 Anulado' : '✅ Hecho'} por ${r.done_by || '—'} el ${r.done_date || '—'}`
+                + (r.done_comment ? `<br>${r.done_comment}` : '') + '</div>';
+        }
+        const links = [r.work_order_code ? `🔧 ${r.work_order_code}` : '', r.notice_code ? `📋 ${r.notice_code}` : '']
+            .filter(Boolean).join(' · ');
+        const acciones = abierto ? `
+            <button class="btn sm" onclick="openDone(${r.id}, false)" title="Marcar como hecho">✅</button>
+            <button class="btn sm" onclick="openEdit(${r.id})" title="Editar"><i class="fas fa-pen"></i></button>
+            <button class="btn sm" onclick="toNotice(${r.id})" title="Convertir en aviso">📋</button>
+            <button class="btn sm" onclick="openDone(${r.id}, true)" title="Anular">🚫</button>`
+            : `<button class="btn sm" onclick="reopen(${r.id})" title="Reabrir">↩️ Reabrir</button>`;
+        return `<tr class="${abierto ? '' : 'done'}">
+            <td><span class="code">${r.code || ''}</span></td>
+            <td>${r.description || ''}${links ? `<div class="muted">${links}</div>` : ''}${bitacora}</td>
+            <td>${loc}</td>
+            <td>${abierto ? fechaCell(r) : `<span class="muted">${r.due_date || '—'}</span>`}</td>
+            <td><span class="sev ${r.priority}">${r.priority}</span></td>
+            <td><span class="src">${r.source}</span><div class="muted">${r.created_by || ''}</div></td>
+            <td style="white-space:nowrap;">${acciones}</td>
+        </tr>`;
+    }).join('');
+}
+
+// ── Crear / editar ───────────────────────────────────────────────────
+function openNew() {
+    _editId = null;
+    document.getElementById('taskTitle').textContent = 'Nuevo pendiente';
+    ['tDesc', 'tDue', 'tEquip', 'tComp', 'tOt'].forEach(i => document.getElementById(i).value = '');
+    document.getElementById('tPrio').value = 'Normal';
+    document.getElementById('taskModal').showModal();
+}
+function openEdit(id) {
+    const r = _all.find(x => x.id === id);
+    if (!r) return;
+    _editId = id;
+    document.getElementById('taskTitle').textContent = 'Editar ' + (r.code || '');
+    document.getElementById('tDesc').value = r.description || '';
+    document.getElementById('tDue').value = r.due_date || '';
+    document.getElementById('tPrio').value = r.priority || 'Normal';
+    document.getElementById('tEquip').value = r.equipment_tag || '';
+    document.getElementById('tComp').value = r.component_name || '';
+    document.getElementById('tOt').value = r.work_order_code || '';
+    document.getElementById('taskModal').showModal();
+}
+async function submitTask() {
+    const body = {
+        description: document.getElementById('tDesc').value.trim(),
+        due_date: document.getElementById('tDue').value || null,
+        priority: document.getElementById('tPrio').value,
+        equipment_tag: document.getElementById('tEquip').value.trim() || null,
+        component_name: document.getElementById('tComp').value.trim() || null,
+        work_order_code: document.getElementById('tOt').value.trim() || null,
+    };
+    if (!body.description) { alert('Escribe qué hay que hacer.'); return; }
+    try {
+        const url = _editId ? `/api/pending-tasks/${_editId}` : '/api/pending-tasks';
+        const r = await fetch(url, { method: _editId ? 'PUT' : 'POST',
+            headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
+        const j = await r.json();
+        if (!r.ok) throw new Error(j.error || 'Error');
+        document.getElementById('taskModal').close();
+        loadTasks();
+    } catch (e) { alert('Error: ' + e.message); }
+}
+
+// ── Cerrar / anular / reabrir ────────────────────────────────────────
+function openDone(id, cancel) {
+    const r = _all.find(x => x.id === id);
+    _doneId = id; _doneCancel = cancel;
+    document.getElementById('doneTitle').textContent = cancel ? 'Anular pendiente' : 'Marcar como hecho';
+    document.getElementById('doneDesc').textContent = r ? `${r.code} · ${r.description}` : '';
+    document.getElementById('dComment').value = '';
+    document.getElementById('dComment').placeholder = cancel ? '¿Por qué se anula?' : 'Se fabricó e instaló el tripode';
+    document.getElementById('dDate').value = todayISO();
+    document.getElementById('dBy').value = '';
+    document.getElementById('doneBtn').innerHTML = cancel
+        ? '<i class="fas fa-ban"></i> Anular' : '<i class="fas fa-check"></i> Confirmar';
+    document.getElementById('doneModal').showModal();
+}
+async function submitDone() {
+    try {
+        const r = await fetch(`/api/pending-tasks/${_doneId}/${_doneCancel ? 'cancel' : 'done'}`, {
+            method: 'POST', headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                comment: document.getElementById('dComment').value.trim() || null,
+                done_date: document.getElementById('dDate').value || null,
+                done_by: document.getElementById('dBy').value.trim() || null,
+            })
+        });
+        const j = await r.json();
+        if (!r.ok) throw new Error(j.error || 'Error');
+        document.getElementById('doneModal').close();
+        loadTasks();
+    } catch (e) { alert('Error: ' + e.message); }
+}
+async function reopen(id) {
+    try {
+        const r = await fetch(`/api/pending-tasks/${id}/reopen`, { method: 'POST' });
+        if (!r.ok) throw new Error((await r.json()).error || 'Error');
+        loadTasks();
+    } catch (e) { alert('Error: ' + e.message); }
+}
+async function toNotice(id) {
+    const r0 = _all.find(x => x.id === id);
+    if (!confirm(`¿Crear un aviso de mantenimiento a partir de ${r0.code}?`)) return;
+    try {
+        const r = await fetch(`/api/pending-tasks/${id}/to-notice`, {
+            method: 'POST', headers: { 'Content-Type': 'application/json' }, body: '{}' });
+        const j = await r.json();
+        if (!r.ok) throw new Error(j.error || 'Error');
+        alert(`Aviso ${j.notice_code} creado y vinculado al pendiente.`);
+        loadTasks();
+    } catch (e) { alert('Error: ' + e.message); }
+}
+
+function exportCSV() {
+    const rows = _filtered();
+    if (!rows.length) { alert('Sin datos.'); return; }
+    const headers = ['Codigo', 'Descripcion', 'Estado', 'Fecha_limite', 'Prioridad', 'Equipo', 'Componente',
+        'Area', 'OT', 'Aviso', 'Origen', 'Creado_por', 'Creado', 'Cerrado_el', 'Cerrado_por', 'Comentario_cierre'];
+    const esc = v => '"' + String(v == null ? '' : v).replace(/"/g, '""') + '"';
+    const lines = [headers.map(esc).join(',')];
+    rows.forEach(r => lines.push([r.code, r.description, r.status, r.due_date, r.priority, r.equipment_tag,
+        r.component_name, r.area_name, r.work_order_code, r.notice_code, r.source, r.created_by,
+        (r.created_at || '').slice(0, 10), r.done_date, r.done_by, r.done_comment].map(esc).join(',')));
+    const blob = new Blob(['﻿' + lines.join('\r\n')], { type: 'text/csv;charset=utf-8;' });
+    const a = document.createElement('a');
+    a.href = URL.createObjectURL(blob); a.download = 'pendientes.csv'; a.click(); URL.revokeObjectURL(a.href);
+}
+
+window.loadTasks = loadTasks; window.setTab = setTab; window.renderTable = renderTable;
+window.openNew = openNew; window.openEdit = openEdit; window.submitTask = submitTask;
+window.openDone = openDone; window.submitDone = submitDone; window.reopen = reopen;
+window.toNotice = toNotice; window.exportCSV = exportCSV;
+document.addEventListener('DOMContentLoaded', loadTasks);
+</script>
+</body>
+</html>

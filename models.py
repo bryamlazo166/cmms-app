@@ -2670,3 +2670,98 @@ class RentalFailure(db.Model):
             "created_by": self.created_by,
             "created_at": self.created_at.isoformat() if self.created_at else None,
         }
+
+
+class PendingTask(db.Model):
+    """Pendiente anotado al vuelo: lo que hay que hacer y todavia no es una OT.
+
+    Nace del bot (`/p fabricar tripode para el D3 en 2 semanas`) o de la web, y
+    se ancla al arbol de equipos cuando el texto lo permite, para que el
+    pendiente aparezca en la ficha del equipo y se pueda contar por area.
+
+    No se borra nunca: al terminarlo pasa a HECHO con fecha, autor y comentario
+    y sale de la lista activa, quedando como bitacora. Lo mismo con ANULADO.
+    Si termina convirtiendose en OT o aviso, se guarda el vinculo.
+    """
+    __tablename__ = 'pending_tasks'
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    code: Mapped[str | None] = mapped_column(String(20), nullable=True)   # PEND-0001
+    description: Mapped[str] = mapped_column(Text, nullable=False)
+    due_date: Mapped[str | None] = mapped_column(String(20), nullable=True)   # opcional
+    priority: Mapped[str] = mapped_column(String(10), nullable=False, default='Normal')  # Alta|Normal|Baja
+    status: Mapped[str] = mapped_column(String(15), nullable=False, default='Pendiente')  # Pendiente|Hecho|Anulado
+
+    # Taxonomia (toda opcional: un pendiente puede no tener equipo)
+    area_id: Mapped[int | None] = mapped_column(ForeignKey('areas.id'), nullable=True)
+    line_id: Mapped[int | None] = mapped_column(ForeignKey('lines.id'), nullable=True)
+    equipment_id: Mapped[int | None] = mapped_column(ForeignKey('equipments.id'), nullable=True)
+    system_id: Mapped[int | None] = mapped_column(ForeignKey('systems.id'), nullable=True)
+    component_id: Mapped[int | None] = mapped_column(ForeignKey('components.id'), nullable=True)
+    rotative_asset_id: Mapped[int | None] = mapped_column(ForeignKey('rotative_assets.id'), nullable=True)
+
+    # Vinculos con el trabajo formal
+    work_order_id: Mapped[int | None] = mapped_column(ForeignKey('work_orders.id'), nullable=True)
+    notice_id: Mapped[int | None] = mapped_column(ForeignKey('maintenance_notices.id'), nullable=True)
+
+    # Origen
+    created_by: Mapped[str | None] = mapped_column(String(120), nullable=True)
+    source: Mapped[str] = mapped_column(String(20), nullable=False, default='web')  # telegram|whatsapp|web
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+
+    # Cierre — la bitacora de como termino
+    done_date: Mapped[str | None] = mapped_column(String(20), nullable=True)
+    done_by: Mapped[str | None] = mapped_column(String(120), nullable=True)
+    done_comment: Mapped[str | None] = mapped_column(Text, nullable=True)
+    done_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+
+    area = relationship("Area")
+    line = relationship("Line")
+    equipment = relationship("Equipment")
+    system = relationship("System")
+    component = relationship("Component")
+    work_order = relationship("WorkOrder")
+    notice = relationship("MaintenanceNotice")
+
+    def location_path(self):
+        """'Area > Linea > Equipo > Sistema > Componente' con lo que haya."""
+        parts = [self.area.name if self.area else None,
+                 self.line.name if self.line else None,
+                 f"{self.equipment.tag} {self.equipment.name}".strip() if self.equipment else None,
+                 self.system.name if self.system else None,
+                 self.component.name if self.component else None]
+        return " > ".join([p for p in parts if p]) or None
+
+    def to_dict(self):
+        return {
+            "id": self.id,
+            "code": self.code,
+            "description": self.description,
+            "due_date": self.due_date,
+            "priority": self.priority,
+            "status": self.status,
+            "area_id": self.area_id,
+            "line_id": self.line_id,
+            "equipment_id": self.equipment_id,
+            "system_id": self.system_id,
+            "component_id": self.component_id,
+            "rotative_asset_id": self.rotative_asset_id,
+            "work_order_id": self.work_order_id,
+            "work_order_code": self.work_order.code if self.work_order else None,
+            "notice_id": self.notice_id,
+            "notice_code": self.notice.code if self.notice else None,
+            "area_name": self.area.name if self.area else None,
+            "line_name": self.line.name if self.line else None,
+            "equipment_tag": self.equipment.tag if self.equipment else None,
+            "equipment_name": self.equipment.name if self.equipment else None,
+            "system_name": self.system.name if self.system else None,
+            "component_name": self.component.name if self.component else None,
+            "location_path": self.location_path(),
+            "created_by": self.created_by,
+            "source": self.source,
+            "created_at": self.created_at.isoformat() if self.created_at else None,
+            "done_date": self.done_date,
+            "done_by": self.done_by,
+            "done_comment": self.done_comment,
+            "done_at": self.done_at.isoformat() if self.done_at else None,
+        }

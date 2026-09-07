@@ -322,6 +322,11 @@ from bot.actions.lubrication import (  # noqa: E402
 # Se reexponen aca con prefijo _ para no romper el dispatcher.
 from bot.actions.specs import replicate_specs as _replicate_specs  # noqa: E402
 from bot.actions.inspection import register_inspection as _register_inspection  # noqa: E402
+from bot.actions.pending import (  # noqa: E402
+    create_pending as _create_pending,
+    close_pending as _close_pending,
+    list_pending as _list_pending,
+)
 
 # ── Hammer batches / cambio de martillos FAPMETAL ─────────────────────────
 # Las funciones reales viven en bot/actions/hammer_batches.py; las
@@ -888,6 +893,14 @@ def _generate_daily_summary(app):
     if not _admin_chats:
         return
 
+    # Pendientes sueltos vencidos (los de `/p`). Se piden antes del bloque de
+    # abajo porque list_pending abre su propio contexto de aplicacion.
+    try:
+        tareas_due, _total_pend = _list_pending(app, limit=15, only_overdue=True)
+    except Exception as e:
+        logger.warning(f"pendientes vencidos fetch error: {e}")
+        tareas_due = []
+
     with app.app_context():
         from database import db as _db
         from sqlalchemy import text
@@ -986,8 +999,17 @@ def _generate_daily_summary(app):
                 if low_stock > 15:
                     msg += f"\n  _...y {low_stock - 15} items más_"
 
+            if tareas_due:
+                msg += f"\n\n📌 *Pendientes vencidos ({len(tareas_due)}):*"
+                for t in tareas_due:
+                    od = t.get('overdue_days')
+                    when = 'HOY' if od == 0 else f"vencio hace {od}d"
+                    eq = f" [{t['equipment_tag']}]" if t.get('equipment_tag') else ''
+                    msg += f"\n  {'🔴' if od == 0 else '⚠️'} {t['code']}{eq} ({when}): {(t['description'] or '')[:80]}"
+                msg += "\n  _Cierra con_ `/listo PEND-XXXX <como quedo>`"
+
             if pendientes_due:
-                msg += f"\n\n⏰ *Recordatorios / Pendientes ({len(pendientes_due)}):*"
+                msg += f"\n\n⏰ *Recordatorios de OT ({len(pendientes_due)}):*"
                 today_iso = date.today().isoformat()
                 for p in pendientes_due:
                     icon = '⚠️' if p[1] < today_iso else '📅'
@@ -1326,6 +1348,87 @@ def _process_message(app, chat_id, text, photos=None):
             _send(chat_id, f"❌ Error: {e}")
         return
 
+    # Comando: anotar un pendiente al vuelo (no es un aviso ni una OT).
+    #   /p fabricar tripode para el D3 en 2 semanas
+    #   /p urgente comprar el reten del TH1 del secador 2
+    #   /p revisar filtros el viernes
+    # El plazo, la prioridad y el equipo salen del mismo texto, sin pasar por
+    # el modelo: anotar tiene que ser instantaneo.
+    _low = text.lower()
+    if _low == '/p' or _low.startswith('/p '):
+        body = text[2:].strip()
+        if not body:
+            _send(chat_id,
+                  "📌 *Anotar un pendiente*\n"
+                  "`/p <que hay que hacer>`\n\n"
+                  "El plazo y el equipo salen del mismo texto:\n"
+                  "• `/p fabricar tripode para el D3 en 2 semanas`\n"
+                  "• `/p urgente comprar el reten del TH1 del secador 2`\n"
+                  "• `/p revisar los filtros el viernes`\n"
+                  "• `/p pintar barandas de coccion` (sin plazo, no vence)\n\n"
+                  "Despues: `/pendientes` para verlos y "
+                  "`/listo PEND-0007 <como quedo>` para cerrarlo.")
+            return
+        author = _get_registered_name(app, chat_id) or f"Telegram:{chat_id}"
+        task, ambiguos, err = _create_pending(app, body, author, chat_id=chat_id)
+        if err or not task:
+            _send(chat_id, f"❌ No pude guardar el pendiente: {err}")
+            return
+        msg = f"📌 *Pendiente anotado* — `{task['code']}`\n_{task['description']}_\n"
+        if task.get('due_date'):
+            dias = (date.fromisoformat(task['due_date']) - date.today()).days
+            cuando = ("vence hoy" if dias == 0 else
+                      f"vencido hace {-dias}d" if dias < 0 else f"en {dias} dia{'s' if dias != 1 else ''}")
+            msg += f"\n📅 Para el *{task['due_date']}* ({cuando})"
+        else:
+            msg += "\n📅 Sin fecha — no vence"
+        if task.get('priority') == 'Alta':
+            msg += "\n🔴 Prioridad alta"
+        if task.get('location_path'):
+            msg += f"\n⚙️ {task['location_path']}"
+        if task.get('work_order_code'):
+            msg += f"\n🔧 Ligado a {task['work_order_code']}"
+        if ambiguos:
+            opciones = ', '.join(f"`{t}`" for _i, t, _n in ambiguos)
+            msg += ("\n\n⚠️ No lo ancle a ningun equipo: hay varios que coinciden "
+                    f"({opciones}). Puedes reescribirlo con el tag exacto o asignarlo "
+                    "desde el modulo Pendientes del CMMS.")
+        elif not task.get('equipment_tag'):
+            msg += "\n\n_Sin equipo: si quieres anclarlo, incluye el tag (ej: D3, SEC2-TH1)._"
+        _send(chat_id, msg)
+        return
+
+    # Comando: cerrar un pendiente. No se borra — queda como bitacora.
+    #   /listo PEND-0007 se fabrico y se instalo el 12/09
+    if _low.startswith('/listo') or _low.startswith('/anular'):
+        es_anular = _low.startswith('/anular')
+        parts = text.split(maxsplit=2)
+        if len(parts) < 2:
+            rows, total = _list_pending(app, limit=10)
+            if not rows:
+                _send(chat_id, "✅ No tienes pendientes abiertos.")
+                return
+            listado = '\n'.join(f"• `{r['code']}` — {r['description'][:60]}" for r in rows)
+            verbo = 'anular' if es_anular else 'cerrar'
+            _send(chat_id, f"¿Cual quieres {verbo}?\n{listado}\n\n"
+                           f"Uso: `/{'anular' if es_anular else 'listo'} PEND-0007 <comentario>`")
+            return
+        author = _get_registered_name(app, chat_id) or f"Telegram:{chat_id}"
+        comentario = parts[2].strip() if len(parts) > 2 else None
+        task, err = _close_pending(app, parts[1], author, comentario, cancel=es_anular)
+        if err or not task:
+            _send(chat_id, f"❌ {err}")
+            return
+        icono = '🚫' if es_anular else '✅'
+        estado = 'Anulado' if es_anular else 'Hecho'
+        msg = (f"{icono} *{task['code']} — {estado}*\n_{task['description']}_\n"
+               f"\nCerrado por {task['done_by']} el {task['done_date']}")
+        if task.get('done_comment'):
+            msg += f"\n💬 _{task['done_comment']}_"
+        msg += "\n\nSale de la lista y queda en la bitacora del CMMS."
+        _send(chat_id, msg)
+        return
+
     # Comando: crear recordatorio en la bitacora de una OT.
     # Sintaxis: /recordar OT-XXXX <duracion|fecha> <mensaje>
     # Ejemplos:
@@ -1421,10 +1524,32 @@ def _process_message(app, chat_id, text, photos=None):
                     ORDER BY le.log_date ASC LIMIT 30
                 """), {"w": week_iso}).fetchall()
                 _db.session.remove()
+            # Pendientes sueltos (los de /p): van primero porque son los que
+            # no tienen OT que los sostenga.
+            pend_rows, pend_total = _list_pending(app, limit=15)
+            pend_msg = ''
+            if pend_rows:
+                pend_msg = f"📌 *Pendientes abiertos* ({pend_total})\n"
+                for r in pend_rows:
+                    od = r.get('overdue_days')
+                    if od is None:
+                        icon, cuando = '▫️', 'sin fecha'
+                    elif od > 0:
+                        icon, cuando = '⚠️', f"vencio hace {od}d"
+                    elif od == 0:
+                        icon, cuando = '🔴', 'HOY'
+                    else:
+                        icon, cuando = '📅', f"en {-od}d"
+                    donde = f" [{r['equipment_tag']}]" if r.get('equipment_tag') else ''
+                    pend_msg += (f"\n{icon} `{r['code']}`{donde} ({cuando})"
+                                 f"\n   _{(r['description'] or '')[:110]}_")
+                pend_msg += "\n\n_Cierra con_ `/listo PEND-XXXX <como quedo>`\n\n"
+
             if not rows:
-                _send(chat_id, "✅ Sin recordatorios vencidos ni proximos 7 dias.")
+                _send(chat_id, pend_msg + "✅ Sin recordatorios de OT vencidos ni proximos 7 dias."
+                      if pend_msg else "✅ Sin pendientes ni recordatorios vencidos o proximos 7 dias.")
                 return
-            msg = "⏰ *Recordatorios — vencidos + proximos 7 dias*\n"
+            msg = pend_msg + "⏰ *Recordatorios de OT — vencidos + proximos 7 dias*\n"
             for r in rows:
                 d = r[0]
                 if d < today_iso:
@@ -1517,10 +1642,16 @@ def _process_message(app, chat_id, text, photos=None):
 • `/reporte_contratista FAPMETAL` — solo un contratista
 • _Items con stock bajo?_ — lista de repuestos bajo minimo
 
-*Recordatorios / Pendientes:*
+*Pendientes (lo que hay que hacer y aun no es OT):*
+• `/p fabricar tripode para el D3 en 2 semanas` — lo anota al vuelo
+• `/p urgente comprar el reten del TH1 del secador 2` — saca plazo, prioridad y equipo del texto
+• `/pendientes` — los abiertos, vencidos primero
+• `/listo PEND-0007 se instalo el 12/09` — lo cierra (no se borra: queda en la bitacora)
+• `/anular PEND-0007 ya no aplica` — lo descarta dejando el motivo
+
+*Recordatorios de OT:*
 • `/recordar OT-0034 1m fabricar tripode` — agenda un recordatorio
 • `/recordar OT-0050 2026-06-15 recibir entrega` — fecha absoluta
-• `/recordatorios` — lista pendientes (vencidos + proximos 7 dias)
 • Tambien lenguaje natural: _"recordame en 30 dias inspeccionar D7 (OT-0028)"_
 
 *Analisis:*
@@ -1664,6 +1795,13 @@ pasados automaticamente y los usa como referencia. Pregunta cosas como
 
     action = action_data.get('action')
     data = action_data.get('data', {})
+
+    # El mensaje tal cual lo escribio el usuario viaja con la accion: las
+    # reglas de taxonomia que dependen del lenguaje de taller (ver
+    # bot.resolvers.th_component_override) se evaluan contra el original, no
+    # contra lo que el modelo haya resumido.
+    if isinstance(data, dict) and text:
+        data.setdefault('_user_text', text)
 
     # Plain query/response — just show the reply text
     if action == 'none' or not action:

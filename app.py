@@ -42,6 +42,7 @@ from models import (
     HammerBatch, HammerBatchMovement,
     Requirement,
     RentalEquipment, RentalHorometerReading, RentalFailure,
+    PendingTask,
 )
 from utils.crud_helpers import create_entry, get_entries, update_entry, delete_entry
 from utils.reporting_helpers import (
@@ -77,6 +78,7 @@ from routes.notices_routes import register_notices_routes
 from routes.reports_routes import register_reports_routes
 from routes.rotative_assets_routes import register_rotative_assets_routes
 from routes.motors_routes import register_motors_routes
+from routes.pending_routes import register_pending_routes
 from routes.hammer_batches_routes import register_hammer_batches_routes
 from routes.tools_routes import register_tools_routes
 from routes.purchasing_routes import register_purchasing_routes
@@ -298,6 +300,7 @@ _MODULE_ROUTES = {
     'activos_config':   {'pages': ['/configuracion'], 'api': ['/api/areas', '/api/lines', '/api/equipments', '/api/systems', '/api/components', '/api/spare-parts', '/api/upload-excel', '/api/bulk-paste']},
     'monitoreo':        {'pages': ['/monitoreo'], 'api': ['/api/monitoring']},
     'motores':          {'pages': ['/motores-electricos'], 'api': ['/api/motors']},
+    'pendientes':       {'pages': ['/pendientes'], 'api': ['/api/pending-tasks']},
     'lubricacion':      {'pages': ['/lubricacion'], 'api': ['/api/lubrication']},
     'inspecciones':     {'pages': ['/inspecciones'], 'api': ['/api/inspection']},
     'espesores':        {'pages': ['/espesores'], 'api': ['/api/thickness']},
@@ -626,8 +629,10 @@ _DEFAULT_PERMS = {
 # modulo ausente en defaults expande a view=True, lo que abre acceso de mas).
 #   requerimientos (backlog tecnico) <- compras (misma audiencia)
 #   motores <- monitoreo | equipos_alquilados <- ordenes
+#   pendientes <- ordenes (quien lleva las OT lleva los pendientes)
 _INHERIT_MODULE_DEFAULTS = {
     'requerimientos': 'compras',
+    'pendientes': 'ordenes',
     'motores': 'monitoreo',
     'equipos_alquilados': 'ordenes',
 }
@@ -1199,6 +1204,15 @@ register_motors_routes(
     MotorElectricalTest=MotorElectricalTest,
     MaintenanceNotice=MaintenanceNotice,
     Equipment=Equipment,
+)
+
+register_pending_routes(
+    app=app,
+    db=db,
+    logger=logger,
+    PendingTask=PendingTask,
+    MaintenanceNotice=MaintenanceNotice,
+    WorkOrder=WorkOrder,
 )
 
 register_hammer_batches_routes(
