@@ -1,5 +1,5 @@
 from typing import Optional
-from sqlalchemy import String, Integer, ForeignKey, Text, Boolean, Float, Date, DateTime, Index
+from sqlalchemy import String, Integer, ForeignKey, Text, Boolean, Float, Date, DateTime, Index, JSON
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 from database import db
 from datetime import datetime, date
@@ -2173,6 +2173,73 @@ class ShutdownTemplateItem(db.Model):
             "target_component_id": self.target_component_id,
             "target_component_name_resolved": self.target_component.name if self.target_component else None,
         }
+
+
+class WorkTemplate(db.Model):
+    """Trabajo estandar: OT repetitiva que se genera ya llena para uno o varios
+    equipos (cambio de chumacera conducida de TH1..TH9, empaquetadura de la
+    boca de llenado de cada digestor, plancha de sacrificio del molino...).
+
+    Los equipos candidatos se resuelven asi:
+      - equipment_id fijo  → solo ese equipo
+      - component_name     → equipos que tienen un componente con ese nombre
+      - ninguno            → equipos del area/linea/filtro de tag
+    area_id, line_id y tag_filter acotan siempre la lista.
+
+    description_template admite {tag}, {equipo}, {componente}, {sistema},
+    {linea} y {area}.
+    """
+    __tablename__ = 'work_templates'
+    id: Mapped[int] = mapped_column(primary_key=True)
+    name: Mapped[str] = mapped_column(String(150), nullable=False)
+    description_template: Mapped[str] = mapped_column(Text, nullable=False)
+    maintenance_type: Mapped[str] = mapped_column(String(50), default='Correctivo')
+    failure_mode: Mapped[Optional[str]] = mapped_column(String(200), nullable=True)
+    estimated_duration: Mapped[Optional[float]] = mapped_column(Float, nullable=True)
+    tech_count: Mapped[int] = mapped_column(Integer, default=1)
+    specialty: Mapped[Optional[str]] = mapped_column(String(50), nullable=True)
+
+    component_name: Mapped[Optional[str]] = mapped_column(String(120), nullable=True)
+    area_id: Mapped[Optional[int]] = mapped_column(ForeignKey('areas.id'), nullable=True)
+    line_id: Mapped[Optional[int]] = mapped_column(ForeignKey('lines.id'), nullable=True)
+    tag_filter: Mapped[Optional[str]] = mapped_column(String(60), nullable=True)
+    equipment_id: Mapped[Optional[int]] = mapped_column(ForeignKey('equipments.id'), nullable=True)
+    system_id: Mapped[Optional[int]] = mapped_column(ForeignKey('systems.id'), nullable=True)
+    component_id: Mapped[Optional[int]] = mapped_column(ForeignKey('components.id'), nullable=True)
+
+    # Crear tambien el aviso (enlazado) o solo la OT
+    create_notice: Mapped[bool] = mapped_column(Boolean, default=False)
+    priority: Mapped[Optional[str]] = mapped_column(String(20), nullable=True)
+    criticality: Mapped[Optional[str]] = mapped_column(String(20), nullable=True)
+
+    # Materiales previstos: [{item_type, item_id, code, name, quantity, unit, subtype}]
+    # No se descuentan del almacen al generar; quedan en la bitacora de la OT.
+    materials: Mapped[Optional[list]] = mapped_column(JSON, nullable=True)
+
+    is_active: Mapped[bool] = mapped_column(Boolean, default=True)
+    use_count: Mapped[int] = mapped_column(Integer, default=0)
+    last_used_at: Mapped[Optional[datetime]] = mapped_column(DateTime, nullable=True)
+    created_by: Mapped[Optional[str]] = mapped_column(String(120), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+
+    area = relationship("Area")
+    line = relationship("Line")
+    equipment = relationship("Equipment")
+    system = relationship("System")
+    component = relationship("Component")
+
+    def to_dict(self):
+        d = {c.name: getattr(self, c.name) for c in self.__table__.columns}
+        d['materials'] = self.materials or []
+        for k in ('created_at', 'last_used_at'):
+            d[k] = d[k].isoformat() if d[k] else None
+        d['area_name'] = self.area.name if self.area else None
+        d['line_name'] = self.line.name if self.line else None
+        d['equipment_tag'] = self.equipment.tag if self.equipment else None
+        d['equipment_name'] = self.equipment.name if self.equipment else None
+        d['system_name'] = self.system.name if self.system else None
+        d['component_fixed_name'] = self.component.name if self.component else None
+        return d
 
 
 # ============= PROGRAMA NOCTURNO SEMANAL =============

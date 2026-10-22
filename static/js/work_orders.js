@@ -956,6 +956,12 @@ window.onOTTreeChange = onOTTreeChange;
 function openCreateOTModal() {
     document.getElementById('otForm').reset();
     document.getElementById('otId').value = '';
+    // reset() no limpia los ocultos: sin esto la OT nueva se enlazaba al aviso
+    // de la ultima OT editada
+    document.getElementById('otNoticeId').value = '';
+    currentEditingOT = null;
+    const tplBtn = document.getElementById('otSaveAsTemplateBtn');
+    if (tplBtn) tplBtn.style.display = 'none';
     document.getElementById('otRotativeAsset').innerHTML = '<option value="">- Sin activo rotativo -</option>';
     renderOTTreeSelects({});
     loadFailureModeSuggestions();
@@ -988,6 +994,9 @@ async function editOT(id) {
 
     document.getElementById('otId').value = ot.id;
     document.getElementById('otNoticeId').value = ot.notice_id || '';
+    const tplBtn = document.getElementById('otSaveAsTemplateBtn');
+    const perms = window.CMMS_PERMS;
+    if (tplBtn) tplBtn.style.display = (!perms || perms.isAdmin || perms.can('ordenes', 'create')) ? '' : 'none';
     document.getElementById('otDescription').value = ot.description || '';
 
     // Trabajo realizado (comentarios del cierre) — visible si existen

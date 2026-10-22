@@ -148,6 +148,11 @@
                     <div class="toolbar planning-toolbar">
                         <button class="btn-primary" data-perm="ordenes.create" onclick="openCreateOTModal()"><i class="fas fa-plus"></i> Nueva OT
                             (Manual)</button>
+                        <button data-perm="ordenes.create" onclick="openWorkTemplates()"
+                            title="Trabajos repetitivos: elija el trabajo, marque los equipos y las OTs salen llenas"
+                            style="padding:8px 16px;border-radius:8px;border:1px solid #BF5AF2;background:rgba(191,90,242,0.14);color:#d9a8f7;cursor:pointer;font-size:0.9em;display:flex;align-items:center;gap:6px;">
+                            <i class="fas fa-layer-group"></i> Nueva OT desde trabajo estándar
+                        </button>
                         <button id="btnMisOTs" onclick="toggleMyOTs()"
                             style="padding:8px 16px;border-radius:8px;border:1px solid #0A84FF;background:rgba(10,132,255,0.12);color:#0A84FF;cursor:pointer;font-size:0.9em;display:flex;align-items:center;gap:6px;">
                             <i class="fas fa-user-hard-hat"></i> Mis OTs
@@ -1000,11 +1005,276 @@
                 </div>
 
                 <div class="modal-actions" style="margin-top: 20px;">
+                    <button type="button" id="otSaveAsTemplateBtn" data-perm="ordenes.create"
+                        onclick="saveOTAsWorkTemplate()" style="display:none;margin-right:auto;padding:8px 14px;border-radius:8px;border:1px solid #BF5AF2;background:rgba(191,90,242,0.14);color:#d9a8f7;cursor:pointer;"
+                        title="Usar esta OT como modelo para generar la misma OT en otros equipos">
+                        <i class="fas fa-layer-group"></i> Guardar como trabajo estándar
+                    </button>
                     <button type="button" class="btn-secondary"
                         onclick="document.getElementById('otModal').close()">Cancelar</button>
                     <button type="submit" class="btn-primary">Guardar</button>
                 </div>
             </form>
+        </dialog>
+
+        <!-- MODAL: TRABAJOS ESTANDAR (lista) -->
+        <dialog id="wtListModal" style="max-width:900px;width:95%;max-height:90vh;overflow-y:auto;">
+            <h2><i class="fas fa-layer-group" style="color:#BF5AF2"></i> Trabajos estándar</h2>
+            <p style="margin:-6px 0 14px;color:rgba(255,255,255,.55);font-size:.85rem;">
+                Trabajos que se repiten (cambio de chumacera conducida, empaquetadura de la boca de llenado...).
+                Elija uno, marque los equipos y las órdenes de trabajo salen llenas.
+            </p>
+            <div style="display:flex;gap:8px;margin-bottom:12px;flex-wrap:wrap;">
+                <input type="text" id="wtSearch" placeholder="Buscar trabajo..." oninput="renderWorkTemplateList()"
+                    style="flex:1;min-width:200px;">
+                <button type="button" class="btn-primary" onclick="openWorkTemplateEditor()">
+                    <i class="fas fa-plus"></i> Nuevo trabajo estándar
+                </button>
+            </div>
+            <div id="wtList"></div>
+            <div class="modal-actions" style="margin-top:16px;">
+                <button type="button" class="btn-secondary" onclick="document.getElementById('wtListModal').close()">Cerrar</button>
+            </div>
+        </dialog>
+
+        <!-- MODAL: TRABAJO ESTANDAR (crear / editar) -->
+        <dialog id="wtEditModal" style="max-width:900px;width:95%;max-height:92vh;overflow-y:auto;">
+            <form id="wtEditForm" novalidate onsubmit="saveWorkTemplate(event)">
+                <h2 id="wtEditTitle">Nuevo trabajo estándar</h2>
+                <input type="hidden" id="wtId">
+                <div id="wtSourceNote" style="display:none;margin:-6px 0 12px;color:#d9a8f7;font-size:.82rem;"></div>
+
+                <fieldset>
+                    <legend>El trabajo</legend>
+                    <div class="form-group">
+                        <label>Nombre del trabajo</label>
+                        <input type="text" id="wtName" placeholder="Ej: Cambio de chumacera conducida" required>
+                    </div>
+                    <div class="form-group">
+                        <label>Descripción que tendrá cada orden de trabajo</label>
+                        <textarea id="wtDescription" rows="2" placeholder="Ej: Cambio de chumacera conducida del {tag}" oninput="wtSchedulePreview()"></textarea>
+                        <div style="display:flex;gap:6px;flex-wrap:wrap;margin-top:6px;align-items:center;">
+                            <small style="color:rgba(255,255,255,.45);font-size:.74rem;">Insertar dato de cada equipo:</small>
+                            <button type="button" class="wt-chip" onclick="wtInsertPlaceholder('{tag}')">Tag del equipo</button>
+                            <button type="button" class="wt-chip" onclick="wtInsertPlaceholder('{equipo}')">Nombre del equipo</button>
+                            <button type="button" class="wt-chip" onclick="wtInsertPlaceholder('{componente}')">Componente</button>
+                            <button type="button" class="wt-chip" onclick="wtInsertPlaceholder('{sistema}')">Sistema</button>
+                            <button type="button" class="wt-chip" onclick="wtInsertPlaceholder('{linea}')">Línea</button>
+                            <button type="button" class="wt-chip" onclick="wtInsertPlaceholder('{area}')">Área</button>
+                        </div>
+                    </div>
+                    <div class="wt-row">
+                        <div class="form-group">
+                            <label>Tipo de mantenimiento</label>
+                            <select id="wtType">
+                                <option value="Correctivo">Correctivo</option>
+                                <option value="Preventivo">Preventivo</option>
+                                <option value="Predictivo">Predictivo</option>
+                                <option value="Mejora">Mejora</option>
+                                <option value="Proyecto">Proyecto</option>
+                                <option value="Infraestructura">Infraestructura</option>
+                            </select>
+                        </div>
+                        <div class="form-group">
+                            <label>Modo de falla (opcional)</label>
+                            <input type="text" id="wtFailureMode" list="failureModesList" placeholder="Ej: DESGASTE" autocomplete="off">
+                        </div>
+                    </div>
+                    <div class="wt-row">
+                        <div class="form-group">
+                            <label>Especialidad</label>
+                            <select id="wtSpecialty">
+                                <option value="">- Sin especificar -</option>
+                                <option value="MECANICO">Mecánico</option>
+                                <option value="ELECTRICO">Eléctrico</option>
+                                <option value="SOLDADOR">Soldador</option>
+                                <option value="INSTRUMENTISTA">Instrumentista</option>
+                            </select>
+                        </div>
+                        <div class="form-group">
+                            <label>Número de técnicos</label>
+                            <input type="number" id="wtTechCount" min="1" step="1" value="1">
+                        </div>
+                        <div class="form-group">
+                            <label>Duración estimada (horas)</label>
+                            <input type="number" id="wtDuration" min="0" step="0.5">
+                        </div>
+                    </div>
+                </fieldset>
+
+                <fieldset>
+                    <legend>¿En qué equipos se hace?</legend>
+                    <div style="display:flex;flex-direction:column;gap:6px;margin-bottom:10px;">
+                        <label class="wt-check">
+                            <input type="radio" name="wtMode" value="component" checked onchange="wtOnModeChange()">
+                            En los equipos que tienen este componente
+                        </label>
+                        <label class="wt-check">
+                            <input type="radio" name="wtMode" value="fixed" onchange="wtOnModeChange()">
+                            Siempre en el mismo equipo
+                        </label>
+                        <label class="wt-check">
+                            <input type="radio" name="wtMode" value="equipment" onchange="wtOnModeChange()">
+                            En el equipo completo, sin componente específico
+                        </label>
+                    </div>
+
+                    <div id="wtModeComponent" class="form-group">
+                        <label>Nombre del componente</label>
+                        <input type="text" id="wtComponentName" list="wtComponentNames" placeholder="Ej: CHUMACERA CONDUCIDA" autocomplete="off" oninput="wtSchedulePreview()">
+                        <datalist id="wtComponentNames"></datalist>
+                    </div>
+
+                    <div id="wtModeFixed" style="display:none;">
+                        <div class="wt-row">
+                            <div class="form-group">
+                                <label>Equipo</label>
+                                <select id="wtFixedEquip" onchange="wtOnFixedChange('equipment')"></select>
+                            </div>
+                            <div class="form-group">
+                                <label>Sistema (opcional)</label>
+                                <select id="wtFixedSystem" onchange="wtOnFixedChange('system')"></select>
+                            </div>
+                            <div class="form-group">
+                                <label>Componente (opcional)</label>
+                                <select id="wtFixedComp" onchange="wtSchedulePreview()"></select>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div id="wtFilters" class="wt-row">
+                        <div class="form-group">
+                            <label>Solo en el área (opcional)</label>
+                            <select id="wtArea" onchange="wtOnFilterAreaChange()"></select>
+                        </div>
+                        <div class="form-group">
+                            <label>Solo en la línea (opcional)</label>
+                            <select id="wtLine" onchange="wtSchedulePreview()"></select>
+                        </div>
+                        <div class="form-group">
+                            <label>El tag contiene (opcional)</label>
+                            <input type="text" id="wtTagFilter" placeholder="Ej: TH  o  D1, D2, D3" oninput="wtSchedulePreview()">
+                        </div>
+                    </div>
+                    <div id="wtPreview" style="font-size:.82rem;color:rgba(255,255,255,.6);padding:8px 10px;border-radius:8px;background:rgba(255,255,255,.04);"></div>
+                </fieldset>
+
+                <fieldset>
+                    <legend>Aviso</legend>
+                    <label class="wt-check">
+                        <input type="checkbox" id="wtCreateNotice" onchange="wtOnNoticeToggle()">
+                        Crear también el aviso (queda enlazado a la orden de trabajo)
+                    </label>
+                    <small style="color:rgba(255,255,255,.4);font-size:.74rem;display:block;margin-top:4px;">
+                        Márquelo si este trabajo debe contar en los indicadores de avisos (por ejemplo, un cambio por falla).
+                        Para trabajos planificados basta con la orden de trabajo.
+                    </small>
+                    <div id="wtNoticeFields" class="wt-row" style="display:none;margin-top:8px;">
+                        <div class="form-group">
+                            <label>Prioridad</label>
+                            <select id="wtPriority">
+                                <option value="Baja">Baja</option>
+                                <option value="Media" selected>Media</option>
+                                <option value="Alta">Alta</option>
+                                <option value="Emergencia">Emergencia</option>
+                            </select>
+                        </div>
+                        <div class="form-group">
+                            <label>Criticidad</label>
+                            <select id="wtCriticality">
+                                <option value="">- Sin especificar -</option>
+                                <option value="Baja">Baja</option>
+                                <option value="Media">Media</option>
+                                <option value="Alta">Alta</option>
+                            </select>
+                        </div>
+                    </div>
+                </fieldset>
+
+                <fieldset>
+                    <legend>Materiales previstos</legend>
+                    <small style="color:rgba(255,255,255,.45);font-size:.74rem;display:block;margin-bottom:8px;">
+                        Se anotan en la bitácora de cada orden de trabajo para preparar el trabajo.
+                        No se descuentan del almacén: la salida se registra en la pestaña Materiales al ejecutar.
+                    </small>
+                    <table class="data-table" style="width:100%;margin-bottom:8px;">
+                        <thead><tr><th>Tipo</th><th>Código</th><th>Nombre</th><th>Cantidad</th><th>Unidad</th><th></th></tr></thead>
+                        <tbody id="wtMaterialsBody"></tbody>
+                    </table>
+                    <div class="wt-row" style="align-items:flex-end;">
+                        <div class="form-group" style="flex:0 0 140px;">
+                            <label>Tipo</label>
+                            <select id="wtMatSubtype" onchange="wtLoadMaterialOptions()">
+                                <option value="repuesto">Repuesto</option>
+                                <option value="consumible">Consumible</option>
+                                <option value="herramienta">Herramienta</option>
+                            </select>
+                        </div>
+                        <div class="form-group" style="flex:3;">
+                            <label>Buscar en catálogo o escribir el nombre</label>
+                            <input type="text" id="wtMatName" list="wtMatOptions" autocomplete="off" placeholder="Código o nombre">
+                            <datalist id="wtMatOptions"></datalist>
+                        </div>
+                        <div class="form-group" style="flex:0 0 90px;">
+                            <label>Cantidad</label>
+                            <input type="number" id="wtMatQty" min="1" step="1" value="1">
+                        </div>
+                        <div class="form-group" style="flex:0 0 90px;">
+                            <label>Unidad</label>
+                            <input type="text" id="wtMatUnit" placeholder="UND">
+                        </div>
+                        <div class="form-group" style="flex:0 0 auto;">
+                            <button type="button" class="btn-success" onclick="wtAddMaterial()" style="padding:8px 14px;">
+                                <i class="fas fa-plus"></i> Agregar
+                            </button>
+                        </div>
+                    </div>
+                </fieldset>
+
+                <label class="wt-check" style="margin-top:10px;">
+                    <input type="checkbox" id="wtActive" checked> Activo (aparece en la lista para generar órdenes de trabajo)
+                </label>
+
+                <div class="modal-actions" style="margin-top:18px;">
+                    <button type="button" class="btn-secondary" onclick="document.getElementById('wtEditModal').close()">Cancelar</button>
+                    <button type="submit" class="btn-primary">Guardar trabajo</button>
+                </div>
+            </form>
+        </dialog>
+
+        <!-- MODAL: GENERAR OTs DESDE TRABAJO ESTANDAR -->
+        <dialog id="wtApplyModal" style="max-width:1050px;width:96%;max-height:92vh;overflow-y:auto;">
+            <h2 id="wtApplyTitle">Generar órdenes de trabajo</h2>
+            <div id="wtApplySummary" style="margin:-6px 0 12px;color:rgba(255,255,255,.6);font-size:.84rem;"></div>
+            <div class="wt-row" style="align-items:flex-end;">
+                <div class="form-group">
+                    <label>Fecha programada (opcional)</label>
+                    <input type="date" id="wtApplyDate">
+                    <small style="color:rgba(255,255,255,.4);font-size:.72rem;">Con fecha, la orden de trabajo queda Programada; sin fecha, queda Abierta.</small>
+                </div>
+                <div class="form-group">
+                    <label class="wt-check" style="margin-top:22px;">
+                        <input type="checkbox" id="wtApplyNotice"> Crear también el aviso
+                    </label>
+                </div>
+            </div>
+            <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin:6px 0 10px;">
+                <input type="text" id="wtApplySearch" placeholder="Filtrar por tag, equipo, área o línea..." oninput="renderWorkTemplateTargets()" style="flex:1;min-width:220px;">
+                <button type="button" class="btn-secondary" onclick="wtSelectAllTargets(true)">Marcar visibles</button>
+                <button type="button" class="btn-secondary" onclick="wtSelectAllTargets(false)">Desmarcar todo</button>
+            </div>
+            <div style="max-height:48vh;overflow-y:auto;border:1px solid rgba(255,255,255,.08);border-radius:8px;">
+                <table class="data-table" style="width:100%;margin:0;">
+                    <thead><tr><th style="width:34px;"></th><th>Equipo</th><th>Ubicación</th><th>Componente</th><th style="min-width:280px;">Descripción de la orden de trabajo</th></tr></thead>
+                    <tbody id="wtTargetsBody"></tbody>
+                </table>
+                <div id="wtTargetsEmpty" style="display:none;text-align:center;color:#888;padding:20px;"></div>
+            </div>
+            <div id="wtApplyResult" style="display:none;margin-top:12px;padding:10px 12px;border-radius:8px;background:rgba(48,209,88,.08);border:1px solid rgba(48,209,88,.35);color:#c8ffd4;font-size:.85rem;"></div>
+            <div class="modal-actions" style="margin-top:16px;">
+                <button type="button" class="btn-secondary" onclick="document.getElementById('wtApplyModal').close()">Cerrar</button>
+                <button type="button" class="btn-primary" id="wtApplyBtn" onclick="generateFromWorkTemplate()">Crear órdenes de trabajo</button>
+            </div>
         </dialog>
 
         <!-- MODAL: PURCHASE REQUEST -->
@@ -1347,7 +1617,7 @@
                     </div>
                 </div>
 
-                <div class="form-row">
+                <div class="wt-row">
                     <div class="form-group">
                         <label>Inicio Real</label>
                         <input type="datetime-local" id="realStart" required>
@@ -1376,7 +1646,7 @@
                     </div>
                 </div>
 
-                <div class="form-row">
+                <div class="wt-row">
                     <div class="form-group">
                         <label>¿Causó parada de producción?</label>
                         <select id="closeCausedDowntime" style="width:100%;padding:8px;border-radius:6px;background:rgba(255,255,255,.06);border:1px solid rgba(255,255,255,.12);color:rgba(255,255,255,.85)">
@@ -1475,7 +1745,7 @@
                 </p>
                 <input type="hidden" id="editClosedHoursOtId">
 
-                <div class="form-row">
+                <div class="wt-row">
                     <div class="form-group">
                         <label>Inicio Real</label>
                         <input type="datetime-local" id="editRealStart">
@@ -1486,7 +1756,7 @@
                     </div>
                 </div>
 
-                <div class="form-row">
+                <div class="wt-row">
                     <div class="form-group">
                         <label>¿Causó parada de producción?</label>
                         <select id="editCausedDowntime" style="width:100%;padding:8px;border-radius:6px;background:rgba(255,255,255,.06);border:1px solid rgba(255,255,255,.12);color:rgba(255,255,255,.85)">
@@ -1598,6 +1868,7 @@
         </dialog>
 
         <script src="/static/js/work_orders.js?v={{ v }}"></script>
+        <script src="/static/js/work_templates.js?v={{ v }}"></script>
         </div>
     </section>
     <script src="/static/js/sidebar.js?v={{ v }}"></script>

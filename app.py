@@ -43,6 +43,7 @@ from models import (
     Requirement,
     RentalEquipment, RentalHorometerReading, RentalFailure,
     PendingTask,
+    WorkTemplate,
 )
 from utils.crud_helpers import create_entry, get_entries, update_entry, delete_entry
 from utils.reporting_helpers import (
@@ -85,6 +86,7 @@ from routes.purchasing_routes import register_purchasing_routes
 from routes.requirements_routes import register_requirements_routes
 from routes.warehouse_routes import register_warehouse_routes
 from routes.work_orders_routes import register_work_orders_routes
+from routes.work_templates_routes import register_work_templates_routes
 from routes.production_routes import register_production_routes
 from routes.weekly_plan_routes import register_weekly_plan_routes
 from routes.insights_routes import register_insights_routes
@@ -289,7 +291,7 @@ _AUTH_EXEMPT = {'login', 'logout', 'static', 'health_check'}
 # Map module keys → page paths and API prefixes
 _MODULE_ROUTES = {
     'avisos':           {'pages': ['/avisos'], 'api': ['/api/notices']},
-    'ordenes':          {'pages': ['/ordenes'], 'api': ['/api/work-orders', '/api/work_orders', '/api/generate-preventive', '/api/pending-reports', '/api/pending-conformity', '/api/export-ots']},
+    'ordenes':          {'pages': ['/ordenes'], 'api': ['/api/work-orders', '/api/work_orders', '/api/work-templates', '/api/generate-preventive', '/api/pending-reports', '/api/pending-conformity', '/api/export-ots']},
     'compras':          {'pages': ['/compras'], 'api': ['/api/purchase']},
     'requerimientos':   {'pages': ['/requerimientos'], 'api': ['/api/requirements']},
     'almacen':          {'pages': ['/almacen'], 'api': ['/api/warehouse']},
@@ -1292,6 +1294,14 @@ register_operatividad_routes(
 # EN PARALELO al Diagnostico Mensual, sin hablar de toneladas.
 register_presentacion_routes(app=app, db=db, logger=logger)
 register_metodologia_routes(app=app, db=db, logger=logger)
+
+# Trabajos estandar: OTs repetitivas que se generan ya llenas
+register_work_templates_routes(
+    app=app, db=db, logger=logger,
+    WorkTemplate=WorkTemplate, WorkOrder=WorkOrder, MaintenanceNotice=MaintenanceNotice,
+    OTPersonnel=OTPersonnel, OTMaterial=OTMaterial, OTLogEntry=OTLogEntry,
+    Area=Area, Line=Line, Equipment=Equipment, System=System, Component=Component,
+)
 
 
 _ENSURE_INDEXES_SQL = [

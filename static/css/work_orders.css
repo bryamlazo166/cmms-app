@@ -434,3 +434,71 @@
     #tab-planning .table-container { max-height: none; }
     #planningTable.data-table { min-width: 1200px; }
 }
+
+/* Trabajos estandar */
+.wt-chip {
+    padding: 2px 9px;
+    border-radius: 12px;
+    border: 1px solid rgba(191, 90, 242, .45);
+    background: rgba(191, 90, 242, .12);
+    color: #d9a8f7;
+    font-size: .74rem;
+    cursor: pointer;
+}
+.wt-card {
+    display: flex;
+    gap: 12px;
+    align-items: center;
+    justify-content: space-between;
+    padding: 10px 12px;
+    border: 1px solid rgba(255, 255, 255, .08);
+    border-radius: 10px;
+    margin-bottom: 8px;
+    background: rgba(255, 255, 255, .03);
+    flex-wrap: wrap;
+}
+.wt-card.inactive { opacity: .55; }
+.wt-card .wt-actions { display: flex; gap: 6px; }
+.wt-card .wt-actions button {
+    padding: 5px 10px;
+    border-radius: 6px;
+    border: 1px solid rgba(255, 255, 255, .15);
+    background: transparent;
+    color: inherit;
+    cursor: pointer;
+    font-size: .82rem;
+}
+.wt-card .wt-actions .wt-use {
+    background: #BF5AF2;
+    border-color: #BF5AF2;
+    color: #fff;
+    font-weight: 600;
+}
+#wtTargetsBody tr.wt-has-open td { background: rgba(255, 159, 10, .06); }
+#wtTargetsBody input[type=text] { width: 100%; font-size: .82rem; }
+.wt-row {
+    display: flex;
+    gap: 10px;
+    flex-wrap: wrap;
+    align-items: flex-end;
+    margin-bottom: 10px;
+}
+.wt-row > .form-group { flex: 1 1 160px; }
+.wt-check {
+    display: flex;
+    gap: 8px;
+    align-items: center;
+    cursor: pointer;
+    font-size: .9rem;
+}
+.wt-check input[type=checkbox],
+.wt-check input[type=radio],
+#wtTargetsBody input[type=checkbox] {
+    width: 16px;
+    height: 16px;
+    min-width: 0;
+    margin: 0;
+    padding: 0;
+    flex: 0 0 auto;
+    accent-color: #BF5AF2;
+}
