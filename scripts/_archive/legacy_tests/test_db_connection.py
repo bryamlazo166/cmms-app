@@ -1,3 +1,4 @@
+import os
 import psycopg2
 import urllib.parse
 import sys
@@ -9,7 +10,7 @@ DB = "postgres"
 USER = "postgres"
 
 passwords_to_try = [
-    "Bryamlazo16"
+    os.environ['SUPABASE_DB_PASSWORD'],  # nunca escrita aqui: repo publico
 ]
 
 def test_connection():

@@ -1,8 +1,9 @@
+import os
 import psycopg2
 import sys
 
 PROJECT_REF = "zxgksjwszqqvwoyfrekw"
-PASSWORD = "Bryamlazo16"
+PASSWORD = os.environ['SUPABASE_DB_PASSWORD']  # nunca escrita aqui: repo publico
 DB_NAME = "postgres"
 
 # Common Supabase Regions

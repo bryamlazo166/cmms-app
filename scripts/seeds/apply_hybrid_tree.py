@@ -1,11 +1,11 @@
 """Apply hybrid asset tree: delete all taxonomy + rebuild in UPPERCASE."""
 import os
 os.environ['DB_MODE'] = 'supabase'
-os.environ['DATABASE_URL'] = 'postgresql://postgres.zxgksjwszqqvwoyfrekw:CmmsTest2026@aws-0-us-west-2.pooler.supabase.com:6543/postgres?sslmode=require'
+from dotenv import load_dotenv; load_dotenv()  # DATABASE_URL sale del .env: este repo es publico
 os.environ['SUPABASE_PROBE_TIMEOUT_SEC'] = '5'
 os.environ['ALLOW_LOCAL_FALLBACK'] = '0'
 os.environ['SUPABASE_URL'] = 'https://zxgksjwszqqvwoyfrekw.supabase.co'
-os.environ['SUPABASE_SERVICE_KEY'] = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Inp4Z2tzandzenFxdndveWZyZWt3Iiwicm9sZSI6InNlcnZpY2Vfcm9sZSIsImlhdCI6MTc3MDUxODY5MiwiZXhwIjoyMDg2MDk0NjkyfQ.8-bychgiueoasxrFLnkvIjyFP6DVlUi5aztz0JOBl5s'
+os.environ.setdefault('SUPABASE_SERVICE_KEY', 'x')  # la real va solo en el .env
 
 from app import app, db
 from sqlalchemy import text

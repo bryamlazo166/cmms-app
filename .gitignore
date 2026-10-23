@@ -26,3 +26,6 @@ whatsapp-gateway/auth_info*/
 
 # Entregable generado desde la presentacion (se rehace con un boton)
 entregable/
+
+# Logs del servidor local: imprimen la URL de la base con su contrasena
+.tmp_server_*.log

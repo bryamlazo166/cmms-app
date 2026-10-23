@@ -8,7 +8,7 @@ from dotenv import load_dotenv
 
 load_dotenv()
 
-DB_URL = os.getenv('DATABASE_URL') or 'postgresql://postgres.zxgksjwszqqvwoyfrekw:CmmsTest2026@aws-0-us-west-2.pooler.supabase.com:6543/postgres?sslmode=require'
+DB_URL = os.environ['DATABASE_URL']  # del .env: este repo es publico
 
 AREA_NAME = "BAJA / FUERA DE SERVICIO"
 LINE_NAME = "EQUIPOS DE BAJA"

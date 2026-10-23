@@ -25,7 +25,7 @@ import os
 import sys
 
 os.environ['DB_MODE'] = 'supabase'
-os.environ['DATABASE_URL'] = 'postgresql://postgres.zxgksjwszqqvwoyfrekw:CmmsTest2026@aws-0-us-west-2.pooler.supabase.com:6543/postgres?sslmode=require'
+from dotenv import load_dotenv; load_dotenv()  # DATABASE_URL sale del .env: este repo es publico
 os.environ['SUPABASE_PROBE_TIMEOUT_SEC'] = '5'
 os.environ['ALLOW_LOCAL_FALLBACK'] = '0'
 
