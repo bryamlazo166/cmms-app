@@ -3,6 +3,9 @@ setuptools
 wheel
 Flask
 Flask-SQLAlchemy
+# SQLAlchemy 2.1 usa psycopg (v3) por defecto para postgresql:// y aqui se
+# instala psycopg2: con 2.1 el servidor no arranca ("No module named psycopg").
+SQLAlchemy>=2.0,<2.1
 Flask-Login
 Flask-Limiter
 psycopg2-binary
